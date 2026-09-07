@@ -27,7 +27,8 @@ function row(id: number, name: string): CatalogFoodPayload {
 			sugar: 0,
 			fiber: 0,
 			sodium: 74,
-			saturatedFat: 1
+			saturatedFat: 1,
+			potassium: 256
 		}
 	};
 }
@@ -152,7 +153,7 @@ describe('FoodSearch', () => {
 		const onpick = vi.fn();
 		await render(FoodSearch, { props: { onpick } });
 		await page.getByLabelText(SEARCH).fill('kumquat');
-		const hit = page.getByRole('button', { name: /CATALOG CHICKEN BREAST/ });
+		const hit = page.getByRole('button', { name: /CATALOG CHICKEN BREAST/ }).first();
 		await expect.element(hit, ANSWERED).toBeInTheDocument();
 		await hit.click();
 		expect(onpick).toHaveBeenCalledWith(
@@ -265,5 +266,59 @@ describe('FoodSearch', () => {
 		await new Promise((settle) => setTimeout(settle, 50));
 		expect(document.body.textContent).toContain('CATALOG CHICKEN THIGH');
 		expect(document.body.textContent).not.toContain('CATALOG CHICKEN BREAST');
+	});
+
+	describe('the nutrition facts sheet', () => {
+		it('opens with the food’s name as its title when the ⓘ is tapped', async () => {
+			catalogAnswers(200, { foods: [BREAST] });
+			await render(FoodSearch, { props: { onpick: vi.fn() } });
+			await page.getByLabelText(SEARCH).fill('kumquat');
+			const info = page.getByLabelText(/Nutrition facts for CATALOG CHICKEN BREAST/);
+			await expect.element(info, ANSWERED).toBeInTheDocument();
+			await info.click();
+			await expect
+				.element(page.getByRole('heading', { name: 'CATALOG CHICKEN BREAST' }))
+				.toBeInTheDocument();
+		});
+
+		it('shows the catalog’s sodium and potassium for the serving', async () => {
+			catalogAnswers(200, { foods: [BREAST] });
+			await render(FoodSearch, { props: { onpick: vi.fn() } });
+			await page.getByLabelText(SEARCH).fill('kumquat');
+			const info = page.getByLabelText(/Nutrition facts for CATALOG CHICKEN BREAST/);
+			await expect.element(info, ANSWERED).toBeInTheDocument();
+			await info.click();
+			await expect.element(page.getByText('Sodium')).toBeInTheDocument();
+			await expect.element(page.getByText('74 mg')).toBeInTheDocument();
+			await expect.element(page.getByText('Potassium')).toBeInTheDocument();
+			await expect.element(page.getByText('256 mg')).toBeInTheDocument();
+		});
+
+		it('does not hand the row to the caller when the ⓘ is tapped', async () => {
+			catalogAnswers(200, { foods: [BREAST] });
+			const onpick = vi.fn();
+			await render(FoodSearch, { props: { onpick } });
+			await page.getByLabelText(SEARCH).fill('kumquat');
+			const info = page.getByLabelText(/Nutrition facts for CATALOG CHICKEN BREAST/);
+			await expect.element(info, ANSWERED).toBeInTheDocument();
+			await info.click();
+			expect(onpick).not.toHaveBeenCalled();
+		});
+
+		it('is a real button a keyboard can focus and activate', async () => {
+			catalogAnswers(200, { foods: [BREAST] });
+			await render(FoodSearch, { props: { onpick: vi.fn() } });
+			await page.getByLabelText(SEARCH).fill('kumquat');
+			const info = page.getByLabelText(/Nutrition facts for CATALOG CHICKEN BREAST/);
+			await expect.element(info, ANSWERED).toBeInTheDocument();
+			const el = info.element() as HTMLButtonElement;
+			el.focus();
+			expect(document.activeElement).toBe(el);
+			// A native `<button>` answers Enter/Space with its own click event.
+			el.click();
+			await expect
+				.element(page.getByRole('heading', { name: 'CATALOG CHICKEN BREAST' }))
+				.toBeInTheDocument();
+		});
 	});
 });

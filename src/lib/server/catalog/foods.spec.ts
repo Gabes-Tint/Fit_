@@ -157,7 +157,16 @@ describe('searchFoods', () => {
 				sugar: 4,
 				fiber: 1,
 				sodium: 50,
-				saturatedFat: 1
+				saturatedFat: 1,
+				potassium: 150,
+				iron: 1.2,
+				calcium: 120,
+				magnesium: 15,
+				zinc: 0.8,
+				vitaminA: 40,
+				vitaminC: 5,
+				vitaminD: 0.2,
+				vitaminB12: 0.6
 			},
 			quality: 94,
 			sources: 9
@@ -204,6 +213,18 @@ describe('searchFoods', () => {
 		const [food] = searchFoods(db, 'barley', 1);
 		expect(food?.brand).toBeNull();
 		expect(food?.serving.grams).toBeNull();
+	});
+
+	it('sends a #175 micro the row never set as null rather than coercing it to zero', () => {
+		// The same malformed row above sets no potassium column at all — closer
+		// to the live catalog's coverage gaps than a row this fixture curated.
+		malformed(
+			9003,
+			'Oats, raw',
+			"x'07', 'Test', 'generic', 'US', 'public-domain', 'serving', 'a lot', 100.0, 91, 1"
+		);
+		const [food] = searchFoods(db, 'oats', 1);
+		expect(food?.per100g.potassium).toBeNull();
 	});
 
 	it('refuses a row whose required number is not a number', () => {
