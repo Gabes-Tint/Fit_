@@ -1,6 +1,7 @@
 import type { DatabaseSync, SQLOutputValue } from 'node:sqlite';
 import type { CatalogFoodPayload } from '$lib/domain/catalog-food';
 import { text } from '../users/rows';
+import { withDefaultServing } from './default-serving';
 import { withPortions } from './portions';
 import { searchTerms, singular } from './query';
 import { searchSql } from './ranking';
@@ -102,7 +103,7 @@ export function searchFoods(db: DatabaseSync, typed: string, limit: number): Cat
 			limit
 		})
 		.map(toFood);
-	return withPortions(db, found);
+	return finish(db, found);
 }
 
 /**
@@ -117,5 +118,16 @@ export function foodsByBarcode(db: DatabaseSync, barcode: string): CatalogFood[]
 	)
 		.all(barcode)
 		.map(toFood);
-	return withPortions(db, found);
+	return finish(db, found);
+}
+
+/**
+ * The two reads every found row still needs before it can travel: its
+ * household measures, and — for the rows the source gave no serving of its
+ * own — the default this catalog picks in its place. One place to call both,
+ * so search results and `/api/foods/resolve` (which calls `searchFoods`
+ * itself) can never see one without the other.
+ */
+function finish(db: DatabaseSync, found: CatalogFood[]): CatalogFood[] {
+	return withDefaultServing(db, withPortions(db, found));
 }

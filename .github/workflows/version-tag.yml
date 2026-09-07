@@ -46,10 +46,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      # Bun only. This job runs `version:next` and the `gh` CLI and imports
+      # nothing from `node_modules`, so a Node toolchain and a dependency
+      # install would both be dead weight on every merge.
+      - name: Set up the toolchain
+        uses: ./.github/actions/setup
         with:
-          bun-version-file: .tool-versions
+          node: 'false'
+          install: 'false'
 
       - name: Decide the next version and tag this commit
         env:

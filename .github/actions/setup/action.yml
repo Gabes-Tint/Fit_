@@ -1,0 +1,56 @@
+name: Set up the toolchain
+description: >-
+  Node, Bun, the Bun package cache and a frozen install. Every job in this
+  repository pasted these four steps until #167; the pinned SHAs now live in
+  one place, so a bump is one edit rather than thirteen.
+
+  Checking out is not here. A composite action is read from the workspace, so
+  the repository has to be on disk before this action exists -- each job still
+  runs `actions/checkout` itself, and `check:ci-contract` fails any job that
+  calls a local action without one.
+
+inputs:
+  node:
+    description: >-
+      Set up Node.js from `.tool-versions`. The gates run under Node (see
+      README, "Runtime"), so this is true nearly everywhere; `version-tag` says
+      false because it runs one Bun script and touches no Node toolchain.
+    required: false
+    default: 'true'
+  install:
+    description: >-
+      Restore the Bun package cache and run `bun install --frozen-lockfile`.
+      `self-test-scope` and `version-tag` say false: both run a single script
+      that imports nothing from `node_modules`, and an install there is a
+      minute spent on nothing.
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      if: inputs.node == 'true'
+      uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+      with:
+        node-version-file: .tool-versions
+
+    - name: Set up Bun
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      with:
+        bun-version-file: .tool-versions
+
+    - name: Restore Bun package cache
+      if: inputs.install == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.bun/install/cache
+        key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+        restore-keys: bun-${{ runner.os }}-
+
+    # `--frozen-lockfile`, never a plain install: a job that quietly resolved a
+    # different tree would be measuring something other than what merges.
+    - name: Install locked dependencies
+      if: inputs.install == 'true'
+      shell: bash
+      run: bun install --frozen-lockfile

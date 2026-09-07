@@ -19,6 +19,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
+import { pickDefaultServing, type ServingRow } from '../../src/lib/domain/default-serving.ts';
 import { catalogPath } from '../../src/lib/server/catalog/connection.ts';
 import { searchTerms, singular } from '../../src/lib/server/catalog/query.ts';
 import { searchSql } from '../../src/lib/server/catalog/ranking.ts';
@@ -111,6 +112,54 @@ function ranked(db: DatabaseSync, typed: string, limit: number): string[] {
 		limit
 	});
 	return rows.map((row) => String(row['name']));
+}
+
+/**
+ * The exact label a food with no household measure fell back to before #157:
+ * a bare, unexplained "100 g" a person could mistake for a real serving. A
+ * different bare weight (Whopper's own reported "286.0g") is the source's own
+ * data and no fallback at all, so only this literal string counts.
+ */
+const SILENT_100G = '100 g';
+
+/**
+ * The serving label the top result of a query would carry, mirroring what
+ * `withDefaultServing` (`src/lib/server/catalog/default-serving.ts`) computes
+ * server-side: the food's own reported serving when it has one, otherwise its
+ * best household measure, otherwise the explicit "per 100 g" fallback.
+ *
+ * Reimplemented against raw SQL rather than importing that module, because it
+ * imports `$lib/domain/catalog-food` — an alias only SvelteKit's tooling
+ * resolves, not the plain `node` this runner executes under. `null` when the
+ * query returns nothing.
+ */
+function topServingLabel(db: DatabaseSync, typed: string, limit: number): string | null {
+	const terms = searchTerms(typed);
+	if (terms === null) return null;
+	const rows = prepared(db, searchSql('f.food_id, f.serving_label, f.serving_g')).all({
+		match: terms.match,
+		text: terms.text,
+		singular: singular(terms.text),
+		prefix: `${singular(terms.text)}%`,
+		limit
+	});
+	const top = rows[0];
+	if (top === undefined) return null;
+	const servingG = top['serving_g'];
+	if (typeof servingG === 'number') {
+		const label = top['serving_label'];
+		return typeof label === 'string' ? label : `${servingG} g`;
+	}
+	const foodId = Number(top['food_id']);
+	const servingRows: ServingRow[] = db
+		.prepare(
+			`select label, grams from food_serving
+			where food_id = ? and typeof(label) = 'text' and typeof(grams) in ('real', 'integer')
+			order by is_default desc, label`
+		)
+		.all(foodId)
+		.map((row) => ({ label: String(row['label']), grams: Number(row['grams']) }));
+	return pickDefaultServing(servingRows)?.label ?? 'per 100 g';
 }
 
 /** Milliseconds for one search, discarding the rows. */
@@ -262,6 +311,24 @@ const results: QueryResult[] = fixture.queries.map((entry) => {
 	const warm = Array.from({ length: WARM_SAMPLES }, () => timed(db, entry.query, fixture.limit));
 	return { ...score(entry, names), coldMs: cold.get(entry.query) ?? 0, warmMs: warm };
 });
+const restaurantDb = new DatabaseSync(file, { readOnly: true });
+restaurantDb.exec('pragma query_only = true');
+const servingViolations = fixture.queries
+	.filter((entry) => entry.group === 'restaurant')
+	.map((entry) => ({
+		query: entry.query,
+		label: topServingLabel(restaurantDb, entry.query, fixture.limit)
+	}))
+	.filter(({ label: servingLabel }) => servingLabel === null || servingLabel === SILENT_100G);
+restaurantDb.close();
+if (servingViolations.length > 0) {
+	throw new Error(
+		`#157: these restaurant queries still answer a silent 100 g serving:\n  ${servingViolations
+			.map(({ query, label: servingLabel }) => `${query}: ${servingLabel ?? '(no result)'}`)
+			.join('\n  ')}`
+	);
+}
+
 db.close();
 
 const warmSamples = results.flatMap((result) => result.warmMs);
