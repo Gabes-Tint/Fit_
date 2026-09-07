@@ -1,5 +1,5 @@
 import type { Server } from 'node:http';
-import type { Plugin } from 'vite';
+import type { Plugin, PreviewServer } from 'vite';
 
 /**
  * Stop the preview server from closing keep-alive connections its own client
@@ -45,8 +45,12 @@ export function holdKeepAliveConnections(httpServer: Server): void {
 export function previewKeepAlive(): Plugin {
 	return {
 		name: 'fit-preview-keep-alive',
-		configurePreviewServer(server) {
-			holdKeepAliveConnections(server.httpServer);
+		configurePreviewServer({ httpServer }: PreviewServer) {
+			// Vite types this as `http.Server | Http2SecureServer`, and only the first
+			// has keep-alive connections to hold: HTTP/2 multiplexes one connection and
+			// carries no `keepAliveTimeout`. Preview serves HTTP/1, so this is a type
+			// narrowing rather than a branch that runs.
+			if ('keepAliveTimeout' in httpServer) holdKeepAliveConnections(httpServer);
 		}
 	};
 }
