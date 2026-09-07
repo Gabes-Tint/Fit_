@@ -2,8 +2,11 @@
 	import Search from '@lucide/svelte/icons/search';
 	import { onDestroy } from 'svelte';
 	import { createFoodSearch, MIN_QUERY_LENGTH } from '$lib/catalog/food-search.svelte';
+	import { nutritionFactsForFood } from '$lib/domain/nutrition-facts';
 	import type { Food } from '$lib/domain/types';
 	import Input from '$lib/ui/Input.svelte';
+	import NutritionFactsButton from './NutritionFactsButton.svelte';
+	import NutritionFactsSheet from './NutritionFactsSheet.svelte';
 	import ProvenanceBadge from './ProvenanceBadge.svelte';
 
 	let {
@@ -68,6 +71,15 @@
 		search.ask(value);
 	}
 
+	/** The result the nutrition facts sheet was last opened for, and whether it is open. */
+	let factsFor = $state<Food | null>(null);
+	let factsOpen = $state(false);
+
+	function showFacts(food: Food) {
+		factsFor = food;
+		factsOpen = true;
+	}
+
 	// The panel is opened and closed inside a proposal row, so a pending request
 	// has to go with it rather than answering into a component that has left.
 	onDestroy(search.stop);
@@ -86,11 +98,13 @@
 	<ul class="flex flex-col gap-1">
 		{#each results as food (food.id)}
 			{@const summary = `${food.brand ? `${food.brand} · ` : ''}${food.servingLabel} · ${food.kcal} kcal · ${food.protein}g protein`}
-			<li>
+			<li
+				class="bg-background hover:bg-secondary flex items-center gap-1 rounded-2xl pr-1 transition-colors"
+			>
 				<button
 					type="button"
 					onclick={() => onpick(food)}
-					class="bg-background hover:bg-secondary flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition-colors"
+					class="flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-3 py-3 text-left"
 				>
 					<div class="min-w-0 flex-1">
 						<div class="flex items-center gap-2">
@@ -102,6 +116,7 @@
 						<p class="text-muted-foreground truncate text-xs">{summary}</p>
 					</div>
 				</button>
+				<NutritionFactsButton name={food.name} onclick={() => showFacts(food)} />
 			</li>
 		{/each}
 	</ul>
@@ -109,3 +124,12 @@
 		<p class="text-muted-foreground px-2 pb-2 text-center text-sm">{custom}</p>
 	{/if}
 </div>
+
+{#if factsFor}
+	<NutritionFactsSheet
+		bind:open={factsOpen}
+		name={factsFor.name}
+		servingLabel={factsFor.servingLabel}
+		rows={nutritionFactsForFood(factsFor)}
+	/>
+{/if}

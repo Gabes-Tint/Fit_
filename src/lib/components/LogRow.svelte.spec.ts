@@ -83,7 +83,10 @@ describe('LogRow', () => {
 		const ontoggle = vi.fn();
 		const entry = item();
 		await render(LogRow, { props: { item: entry, open: false, step: 0.5, ontoggle } });
-		await page.getByRole('button', { name: new RegExp(entry.name) }).click();
+		await page
+			.getByRole('button', { name: new RegExp(entry.name) })
+			.first()
+			.click();
 		expect(ontoggle).toHaveBeenCalled();
 	});
 
@@ -107,5 +110,44 @@ describe('LogRow', () => {
 		await render(LogRow, { props });
 		props.item = { ...props.item, servings: 3, kcal: 234 };
 		await expect.element(page.getByText(`3 × ${props.item.servingLabel}`)).toBeInTheDocument();
+	});
+
+	describe('the nutrition facts sheet', () => {
+		it('opens with the item’s name as its title when the ⓘ is tapped', async () => {
+			const entry = item();
+			await render(LogRow, { props: { item: entry, open: false, step: 0.5, ontoggle: vi.fn() } });
+			await page.getByLabelText(`Nutrition facts for ${entry.name}`).click();
+			await expect.element(page.getByRole('heading', { name: entry.name })).toBeInTheDocument();
+		});
+
+		it('shows the logged sodium and potassium, already scaled onto the servings', async () => {
+			const entry = item();
+			await render(LogRow, { props: { item: entry, open: false, step: 0.5, ontoggle: vi.fn() } });
+			await page.getByLabelText(`Nutrition facts for ${entry.name}`).click();
+			await expect.element(page.getByText('Sodium')).toBeInTheDocument();
+			await expect.element(page.getByText(`${entry.micros.sodium} mg`)).toBeInTheDocument();
+			await expect.element(page.getByText('Potassium')).toBeInTheDocument();
+			await expect.element(page.getByText(`${entry.micros.potassium} mg`)).toBeInTheDocument();
+		});
+
+		it('does not toggle the row open when the ⓘ is tapped', async () => {
+			const ontoggle = vi.fn();
+			const entry = item();
+			await render(LogRow, { props: { item: entry, open: false, step: 0.5, ontoggle } });
+			await page.getByLabelText(`Nutrition facts for ${entry.name}`).click();
+			expect(ontoggle).not.toHaveBeenCalled();
+		});
+
+		it('is a real button a keyboard can focus and activate', async () => {
+			const entry = item();
+			await render(LogRow, { props: { item: entry, open: false, step: 0.5, ontoggle: vi.fn() } });
+			const info = page.getByLabelText(`Nutrition facts for ${entry.name}`);
+			await expect.element(info).toBeInTheDocument();
+			const el = info.element() as HTMLButtonElement;
+			el.focus();
+			expect(document.activeElement).toBe(el);
+			el.click();
+			await expect.element(page.getByRole('heading', { name: entry.name })).toBeInTheDocument();
+		});
 	});
 });

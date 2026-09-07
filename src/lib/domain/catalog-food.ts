@@ -1,5 +1,5 @@
 import { UNIT_ML, type Portion } from './portions';
-import type { Food, Provenance } from './types';
+import type { Food, NutrientBasis, Provenance } from './types';
 import { ZERO_MICROS } from './types';
 import { round1 } from './utils';
 
@@ -50,16 +50,7 @@ export type CatalogFoodPayload = {
 	 */
 	portions?: readonly Portion[] | undefined;
 	/** Per 100 g or 100 ml, which is how the catalog stores every nutrient. */
-	per100g: {
-		kcal: number;
-		protein: number | null;
-		fat: number | null;
-		carbs: number | null;
-		sugar: number | null;
-		fiber: number | null;
-		sodium: number | null;
-		saturatedFat: number | null;
-	};
+	per100g: NutrientBasis;
 };
 
 function isText(value: unknown): boolean {
@@ -132,10 +123,23 @@ function namesAServing(serving: Record<string, unknown>): boolean {
  * zero-calorie line and quietly wrong the day's total, which is worse than
  * saying the catalog could not be read.
  */
+const SCALED_NUTRIENTS = ['protein', 'fat', 'carbs', 'sugar', 'fiber', 'sodium'];
+
+/**
+ * The nine micros #175 adds. Unlike `SCALED_NUTRIENTS`, absent is accepted as
+ * well as `null` — every payload written before this change omits them
+ * entirely, and that has to keep reading as "the catalog said nothing" rather
+ * than becoming a rejection.
+ */
+const NEW_MICROS =
+	'potassium iron calcium magnesium zinc vitaminA vitaminC vitaminD vitaminB12'.split(' ');
+
 function carriesNutrients(per100g: Record<string, unknown>): boolean {
 	if (typeof per100g.kcal !== 'number') return false;
-	const scaled = ['protein', 'fat', 'carbs', 'sugar', 'fiber', 'sodium'];
-	return scaled.every((nutrient) => isOptionalNumber(per100g[nutrient]));
+	return (
+		SCALED_NUTRIENTS.every((n) => isOptionalNumber(per100g[n])) &&
+		NEW_MICROS.every((n) => per100g[n] === undefined || isOptionalNumber(per100g[n]))
+	);
 }
 
 /** Whether a parsed body is a catalog row this side can log. */
@@ -186,7 +190,7 @@ export function catalogFoodToFood(payload: CatalogFoodPayload): Food {
 	const grams = payload.serving.grams ?? PER;
 	const per = payload.per100g;
 	const factor = grams / PER;
-	const scaled = (value: number | null) => round1((value ?? 0) * factor);
+	const scaled = (value: number | null | undefined) => round1((value ?? 0) * factor);
 	return {
 		// Prefixed because it is not a bundled food id and must never resolve as
 		// one. The catalog's own number is a hint the ETL does not promise to
@@ -214,7 +218,20 @@ export function catalogFoodToFood(payload: CatalogFoodPayload): Food {
 			...ZERO_MICROS,
 			fiber: scaled(per.fiber),
 			sugar: scaled(per.sugar),
-			sodium: scaled(per.sodium)
-		}
+			sodium: scaled(per.sodium),
+			potassium: scaled(per.potassium),
+			iron: scaled(per.iron),
+			calcium: scaled(per.calcium),
+			magnesium: scaled(per.magnesium),
+			zinc: scaled(per.zinc),
+			vitaminA: scaled(per.vitaminA),
+			vitaminC: scaled(per.vitaminC),
+			vitaminD: scaled(per.vitaminD),
+			vitaminB12: scaled(per.vitaminB12)
+		},
+		// Unscaled and nulls kept as `null`: `nutritionFactsRows` (#175) is the
+		// one reader that needs the catalog's own gaps rather than this food's
+		// zeroed convenience numbers.
+		per100g: per
 	};
 }

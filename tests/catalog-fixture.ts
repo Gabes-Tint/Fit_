@@ -341,7 +341,9 @@ create table food (
 	food_id bigint, gtin14 varchar, name varchar, brand varchar, category varchar,
 	kind varchar, region varchar, license varchar, serving_label varchar, serving_g double,
 	kcal double, protein double, fat double, carbs double, sugar double, fiber double,
-	sodium double, saturated_fat double, quality bigint, n_sources bigint
+	sodium double, saturated_fat double, potassium double, iron double, calcium double,
+	magnesium double, zinc double, vitamin_a double, vitamin_c double, vitamin_d double,
+	vitamin_b12 double, quality bigint, n_sources bigint
 );
 create table food_alias (food_id bigint, alias varchar);
 create table food_serving (food_id bigint, label varchar, grams double, is_default bigint);
@@ -359,9 +361,11 @@ export function createFixtureCatalog(): DatabaseSync {
 	const food = db.prepare(
 		`insert into food (food_id, gtin14, name, brand, category, kind, region, license,
 			serving_label, serving_g, kcal, protein, fat, carbs, sugar, fiber, sodium,
-			saturated_fat, quality, n_sources)
+			saturated_fat, potassium, iron, calcium, magnesium, zinc, vitamin_a, vitamin_c,
+			vitamin_d, vitamin_b12, quality, n_sources)
 		values (?, ?, ?, ?, 'Test', ?, 'US', 'public-domain', 'serving', 100.0,
-			100.0, 5.0, 3.0, 12.0, 4.0, 1.0, 50.0, 1.0, ?, ?)`
+			100.0, 5.0, 3.0, 12.0, 4.0, 1.0, 50.0, 1.0,
+			150.0, 1.2, 120.0, 15.0, 0.8, 40.0, 5.0, 0.2, 0.6, ?, ?)`
 	);
 	const alias = db.prepare('insert into food_alias (food_id, alias) values (?, ?)');
 	const serving = db.prepare(

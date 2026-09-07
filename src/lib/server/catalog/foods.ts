@@ -16,7 +16,8 @@ const MAX_LIMIT = 50;
 /** Read once, by both queries, so the row shape has a single definition. */
 const FOOD_COLUMNS = `f.food_id, f.name, f.brand, f.kind, f.category, f.gtin14, f.license,
 	f.serving_label, f.serving_g, f.kcal, f.protein, f.fat, f.carbs, f.sugar, f.fiber,
-	f.sodium, f.saturated_fat, f.quality, f.n_sources`;
+	f.sodium, f.saturated_fat, f.potassium, f.iron, f.calcium, f.magnesium, f.zinc,
+	f.vitamin_a, f.vitamin_c, f.vitamin_d, f.vitamin_b12, f.quality, f.n_sources`;
 
 /**
  * One catalog row as the client sees it.
@@ -73,7 +74,16 @@ function toFood(row: Row): CatalogFood {
 			sugar: optionalNumber(row, 'sugar'),
 			fiber: optionalNumber(row, 'fiber'),
 			sodium: optionalNumber(row, 'sodium'),
-			saturatedFat: optionalNumber(row, 'saturated_fat')
+			saturatedFat: optionalNumber(row, 'saturated_fat'),
+			potassium: optionalNumber(row, 'potassium'),
+			iron: optionalNumber(row, 'iron'),
+			calcium: optionalNumber(row, 'calcium'),
+			magnesium: optionalNumber(row, 'magnesium'),
+			zinc: optionalNumber(row, 'zinc'),
+			vitaminA: optionalNumber(row, 'vitamin_a'),
+			vitaminC: optionalNumber(row, 'vitamin_c'),
+			vitaminD: optionalNumber(row, 'vitamin_d'),
+			vitaminB12: optionalNumber(row, 'vitamin_b12')
 		},
 		quality: requiredNumber(row, 'quality'),
 		sources: requiredNumber(row, 'n_sources')

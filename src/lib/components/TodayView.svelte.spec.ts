@@ -99,7 +99,7 @@ describe('TodayView', () => {
 	it('collapses an expanded entry when tapped again', async () => {
 		logFood({ foodId: 'egg-large', servings: 2, meal: 'breakfast' });
 		await render(TodayView);
-		const row = page.getByRole('button', { name: new RegExp(logName()) });
+		const row = page.getByRole('button', { name: new RegExp(logName()) }).first();
 		await row.click();
 		await row.click();
 		expect(document.body.textContent).not.toContain('Remove');
@@ -109,7 +109,10 @@ describe('TodayView', () => {
 		onboard(true);
 		logFood({ foodId: 'egg-large', servings: 1, meal: 'breakfast' });
 		await render(TodayView);
-		await page.getByRole('button', { name: new RegExp(logName()) }).click();
+		await page
+			.getByRole('button', { name: new RegExp(logName()) })
+			.first()
+			.click();
 		await page.getByRole('button', { name: 'Increase' }).click();
 		expect(tend.profile?.log[0]?.servings).toBe(1.25);
 	});
@@ -187,7 +190,10 @@ describe('TodayView', () => {
 	it('expands an entry when it is tapped', async () => {
 		logFood({ foodId: 'egg-large', servings: 2, meal: 'breakfast' });
 		await render(TodayView);
-		await page.getByRole('button', { name: new RegExp(logName()) }).click();
+		await page
+			.getByRole('button', { name: new RegExp(logName()) })
+			.first()
+			.click();
 		await expect.element(page.getByRole('button', { name: 'Remove' })).toBeInTheDocument();
 	});
 
