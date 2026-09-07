@@ -696,6 +696,329 @@ describe('a change that cannot be sent', () => {
 	});
 });
 
+describe('a dropped request', () => {
+	/**
+	 * A server that answers the read and swallows every write, for ever. What a
+	 * device holding something of its own does about that is the whole story
+	 * here, so each attempt is exactly one PUT.
+	 */
+	function writesThatNeverLand(): () => number {
+		let writes = 0;
+		vi.spyOn(globalThis, 'fetch').mockImplementation((_input, init) => {
+			if ((init?.method ?? 'GET') === 'GET') return Promise.resolve(documentAnswer(0, null));
+			writes += 1;
+			return Promise.reject(DROPPED);
+		});
+		return () => writes;
+	}
+
+	it('is sent again a second later, with nobody touching the app', async () => {
+		vi.useFakeTimers();
+		try {
+			const sent = server([documentAnswer(0, null), DROPPED, stored(1)]);
+			const sync = syncFor(journal());
+
+			await sync.start(HOUSEHOLD);
+			expect(sync.status).toBe('waiting');
+
+			// No event, no visibility change, no further writing: the app is open
+			// in front of the person who logged the workout and nothing but time
+			// passes. A second is a wait, not an instant — this device is not
+			// hammering a connection that has just dropped.
+			await vi.advanceTimersByTimeAsync(999);
+			expect(sent).toHaveLength(2);
+			await vi.advanceTimersByTimeAsync(1);
+
+			expect(sent.map((call) => call.method)).toEqual(['GET', 'PUT', 'PUT']);
+			expect(record()?.dirty).toBe(false);
+			expect(sync.status).toBe('idle');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('is read again a second later when it was the read that never arrived', async () => {
+		vi.useFakeTimers();
+		try {
+			const sent = server([DROPPED, documentAnswer(2, remoteState('Robin'))]);
+			const store = blankDevice();
+			const sync = syncFor(store);
+
+			await sync.start(HOUSEHOLD);
+			// A device with nothing of its own is not waiting to send anything, so
+			// nothing about its status says something went wrong. What it is
+			// missing is the account's document — somebody has just signed in on a
+			// new phone and is looking at an empty app.
+			expect(sync.status).toBe('idle');
+
+			await vi.advanceTimersByTimeAsync(1_000);
+
+			expect(sent.map((call) => call.method)).toEqual(['GET', 'GET']);
+			expect(store.state.profiles[0]?.name).toBe('Robin');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('is tried again more slowly each time, and only so many times', async () => {
+		vi.useFakeTimers();
+		try {
+			const writes = writesThatNeverLand();
+			const sync = syncFor(journal());
+			await sync.start(HOUSEHOLD);
+			expect(writes()).toBe(1);
+
+			// The step each attempt waits, and how many writes there have been by
+			// the time it is made. Asserted a millisecond either side of the step,
+			// so a schedule that grew differently — or not at all — fails here
+			// rather than merely arriving eventually.
+			const steps: [number, number][] = [
+				[1_000, 2],
+				[4_000, 3],
+				[16_000, 4],
+				[60_000, 5]
+			];
+			for (const [delay, attempts] of steps) {
+				await vi.advanceTimersByTimeAsync(delay - 1);
+				expect(writes()).toBe(attempts - 1);
+				await vi.advanceTimersByTimeAsync(1);
+				expect(writes()).toBe(attempts);
+			}
+
+			// Four attempts is what one bad spell is worth. An hour of a phone in
+			// somebody's pocket waking its radio at a server that is plainly down
+			// is not, and the events are what own a connection gone that long.
+			await vi.advanceTimersByTimeAsync(60 * 60_000);
+
+			expect(writes()).toBe(5);
+			expect(sync.status).toBe('waiting');
+			expect(record()?.dirty).toBe(true);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('is taken off the clock by a change that supersedes it', async () => {
+		vi.useFakeTimers();
+		try {
+			const writes = writesThatNeverLand();
+			const store = journal();
+			const sync = syncFor(store);
+			await sync.start(HOUSEHOLD);
+			expect(writes()).toBe(1);
+
+			// Two hundred milliseconds into the first attempt's wait, somebody logs
+			// something, which sends at once and arms an attempt of its own.
+			await vi.advanceTimersByTimeAsync(200);
+			store.togglePantry('oats');
+			await vi.advanceTimersByTimeAsync(0);
+			expect(writes()).toBe(2);
+
+			// One attempt on the clock, never two: the wait the first failure armed
+			// was replaced rather than both coming due and asking twice, which is
+			// how a device with a bad connection and a busy person on it would
+			// build a queue of its own making.
+			await vi.advanceTimersByTimeAsync(1_500);
+
+			expect(writes()).toBe(3);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('gives the next change its own attempts, however long the outage', async () => {
+		vi.useFakeTimers();
+		try {
+			const writes = writesThatNeverLand();
+			const store = journal();
+			const sync = syncFor(store);
+			await sync.start(HOUSEHOLD);
+			await vi.advanceTimersByTimeAsync(1_000 + 4_000 + 16_000 + 60_000);
+			expect(writes()).toBe(5);
+
+			// The steps for that spell are spent, and then somebody logs a meal.
+			// What they have just recorded is not made to inherit an exhausted
+			// ladder: it is sent at once, and gets its own attempts behind it.
+			store.togglePantry('oats');
+			await vi.advanceTimersByTimeAsync(0);
+			expect(writes()).toBe(6);
+
+			await vi.advanceTimersByTimeAsync(1_000);
+
+			expect(writes()).toBe(7);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('puts nothing more on the clock once the document has landed', async () => {
+		vi.useFakeTimers();
+		try {
+			const sent = server([documentAnswer(0, null), DROPPED, stored(1)]);
+			const sync = syncFor(journal());
+			await sync.start(HOUSEHOLD);
+
+			await vi.advanceTimersByTimeAsync(1_000);
+			expect(record()?.dirty).toBe(false);
+
+			// The moment the write is accepted there is nothing on the clock at
+			// all. The count is what says so, where counting requests cannot: an
+			// attempt made with nothing outstanding reaches a `drain` that sends
+			// nothing, so a device left needlessly ticking looks exactly like one
+			// that is not, and it is still a phone woken for no reason.
+			// Nine hundred milliseconds later — long enough that the environment's
+			// own machinery has run out, short of the second an attempt would have
+			// waited — there is nothing on the clock at all. The count is what
+			// says so, where counting requests cannot: an attempt made with
+			// nothing outstanding reaches a `drain` that sends nothing, so a
+			// device left needlessly ticking looks exactly like one that is not,
+			// and it is still a phone woken for no reason.
+			await vi.advanceTimersByTimeAsync(900);
+			expect(vi.getTimerCount()).toBe(0);
+
+			// And five minutes later it is still quiet.
+			await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+			expect(sent).toHaveLength(3);
+			expect(sync.status).toBe('idle');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('waits a second again after a bad spell the server ended', async () => {
+		vi.useFakeTimers();
+		try {
+			const sent = server([
+				documentAnswer(0, null),
+				DROPPED,
+				DROPPED,
+				DROPPED,
+				stored(1),
+				DROPPED,
+				stored(2)
+			]);
+			const store = journal();
+			const sync = syncFor(store);
+			await sync.start(HOUSEHOLD);
+
+			// Three failures take the wait up to sixteen seconds, and the fourth
+			// attempt is accepted.
+			await vi.advanceTimersByTimeAsync(1_000 + 4_000 + 16_000);
+			expect(sent).toHaveLength(5);
+			expect(record()?.dirty).toBe(false);
+
+			// A later change, dropped again. The next attempt is a second away, not
+			// a minute: the steps are about the connection as it is now, and this
+			// one has just been shown to work.
+			store.togglePantry('oats');
+			await vi.advanceTimersByTimeAsync(999);
+			expect(sent).toHaveLength(6);
+			await vi.advanceTimersByTimeAsync(1);
+
+			expect(sent).toHaveLength(7);
+			expect(record()).toEqual({ householdId: HOUSEHOLD, version: 2, dirty: false });
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('is refused rather than clobbering when the retry loses a version race', async () => {
+		vi.useFakeTimers();
+		try {
+			localStorage.setItem(
+				SYNC_STORAGE_KEY,
+				JSON.stringify({ householdId: HOUSEHOLD, version: 3, dirty: true })
+			);
+			const sent = server([
+				documentAnswer(3, remoteState('Alex')),
+				DROPPED,
+				stale(0, null),
+				stored(1)
+			]);
+			const store = journal();
+			const sync = syncFor(store);
+			await sync.start(HOUSEHOLD);
+			expect(record()?.dirty).toBe(true);
+
+			await vi.advanceTimersByTimeAsync(1_000);
+
+			// The retry was refused — the version it wrote from no longer exists —
+			// and what this device is holding went out again from the version the
+			// server does hold rather than being dropped on the floor.
+			expect(sent.map((call) => call.method)).toEqual(['GET', 'PUT', 'PUT', 'PUT']);
+			expect(sent[3]?.body).toMatchObject({ version: 0 });
+			expect(record()).toEqual({ householdId: HOUSEHOLD, version: 1, dirty: false });
+			expect(store.state.profiles[0]?.name).toBe('Alex');
+			expect(announced).toEqual([]);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('is not tried again while the account holds a document a newer build wrote', async () => {
+		vi.useFakeTimers();
+		try {
+			const fromANewerBuild = { ...remoteState('Robin'), schemaVersion: SCHEMA_VERSION + 1 };
+			const sent = server([documentAnswer(3, fromANewerBuild)]);
+			const sync = syncFor(journal());
+			await sync.start(HOUSEHOLD);
+			expect(sync.status).toBe('outdated');
+
+			await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+			// The latch holds against the clock as well as against the three
+			// events: a device that must not write is not talked into writing by
+			// the fact that it is still holding something.
+			expect(sent).toHaveLength(1);
+			expect(sync.status).toBe('outdated');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('is not tried again while this device could not read its own document', async () => {
+		vi.useFakeTimers();
+		try {
+			localStorage.setItem(
+				STORAGE_KEY,
+				JSON.stringify({ pantry: ['rice'], schemaVersion: SCHEMA_VERSION + 1 })
+			);
+			const store = new TendStore();
+			store.hydrate();
+			const sent = server([documentAnswer(0, null)]);
+			const sync = syncFor(store);
+			await sync.start(HOUSEHOLD);
+			expect(store.refusal?.reason).toBe('future');
+
+			await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+			// The read landed, so there is nothing to try again; the empty state
+			// standing in for a document this build could not read is never sent,
+			// on a timer or otherwise.
+			expect(sent.map((call) => call.method)).toEqual(['GET']);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('is not tried again once the device has been forgotten', async () => {
+		vi.useFakeTimers();
+		try {
+			const sent = server([documentAnswer(0, null), DROPPED]);
+			const sync = syncFor(journal());
+			await sync.start(HOUSEHOLD);
+
+			sync.forget();
+			await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+			expect(sent).toHaveLength(2);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+});
+
 describe('writes while sync is running', () => {
 	it('records a change as unsent the moment it arrives, not when it is sent', async () => {
 		const store = blankDevice();
@@ -1049,9 +1372,11 @@ describe('a connection that never answers at all', () => {
 			const started = sync.start(HOUSEHOLD);
 			expect(sync.status).toBe('loading');
 
-			// Comfortably past the request's own timeout, with nothing else in the
-			// test ever resolving the connection.
-			await vi.advanceTimersByTimeAsync(15_000);
+			// Past the request's own timeout and short of the second in which the
+			// first retry follows it, with nothing else in the test ever resolving
+			// the connection. What happens after that second is a story of its
+			// own, in 'a dropped request' above.
+			await vi.advanceTimersByTimeAsync(10_500);
 			await started;
 
 			expect(connection.aborted()).toBe(1);
@@ -1071,7 +1396,7 @@ describe('a connection that never answers at all', () => {
 			const sync = syncFor(journal());
 
 			const started = sync.start(HOUSEHOLD);
-			await vi.advanceTimersByTimeAsync(15_000);
+			await vi.advanceTimersByTimeAsync(10_500);
 			await started;
 
 			expect(sync.status).toBe('waiting');
