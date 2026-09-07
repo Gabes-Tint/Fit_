@@ -2,6 +2,7 @@
 	import { emptyProfile } from '$lib/domain/profile';
 	import type { Activity, Goal, Profile, Restriction } from '$lib/domain/types';
 	import { heightFromFeetInches, heightToFeetInches, kgToLb, lbToKg } from '$lib/domain/units';
+	import { untrack } from 'svelte';
 	import { round1, todayISO, uid } from '$lib/domain/utils';
 	import { tend } from '$lib/state/tend.svelte';
 	import Button from '$lib/ui/Button.svelte';
@@ -9,6 +10,26 @@
 	import Label from '$lib/ui/Label.svelte';
 	import Switch from '$lib/ui/Switch.svelte';
 	import ToggleButton from '$lib/ui/ToggleButton.svelte';
+
+	/**
+	 * `redo`: re-asking the setup questions on an already-onboarded profile,
+	 * from the You screen, rather than the first-run flow `AppShell` shows
+	 * when `tend.state.onboarded` is false.
+	 *
+	 * The two paths finish differently on purpose. First-run `finish()` calls
+	 * `tend.completeOnboarding`, which replaces the profile list wholesale —
+	 * exactly what a fresh start means. A redo must not do that: it would
+	 * wipe the log, weight history and injections `completeOnboarding` resets
+	 * to empty. So a redo patches only the answered fields onto the existing
+	 * active profile with `tend.patchActive`, which touches nothing else.
+	 */
+	let {
+		redo = false,
+		onredo
+	}: {
+		redo?: boolean;
+		onredo?: () => void;
+	} = $props();
 
 	const GOALS: { id: Goal; label: string; hint: string }[] = [
 		{ id: 'lose', label: 'Lose', hint: 'Gentle deficit' },
@@ -37,7 +58,10 @@
 
 	const SEXES: Profile['sex'][] = ['female', 'male', 'other'];
 
-	let step = $state(0);
+	// A redo has no welcome screen — it goes straight to the questions — and
+	// the state below still starts at these fixed defaults rather than the
+	// profile's current answers, so redoing setup never looks pre-filled.
+	let step = $state(untrack(() => (redo ? 1 : 0)));
 	let name = $state('Alex');
 	let goal = $state<Goal>('lose');
 	let glp1 = $state(false);
@@ -92,9 +116,9 @@
 			: [...restrictions, id];
 	}
 
-	function finish(useSample: boolean) {
-		const profile = emptyProfile({
-			id: uid('p-'),
+	/** The fields both `finish` and `saveRedo` write — the answered questions only. */
+	function answers() {
+		return {
 			name: name.trim() || 'You',
 			goal: glp1 ? 'glp1' : goal,
 			glp1: glp1 || goal === 'glp1',
@@ -102,10 +126,29 @@
 			age,
 			heightCm,
 			activity,
-			restrictions,
+			restrictions
+		};
+	}
+
+	function finish(useSample: boolean) {
+		const profile = emptyProfile({
+			id: uid('p-'),
+			...answers(),
 			weights: [{ id: uid('w-'), date: todayISO(), kg }]
 		});
 		tend.completeOnboarding({ profile, household: false, useSample });
+	}
+
+	/**
+	 * The redo path: patches only the answered fields onto the existing
+	 * active profile. Unlike `finish`, this never touches `log`, `weights`,
+	 * `injections`, any override, or any other household profile — those
+	 * are not onboarding answers, and `patchActive` merges rather than
+	 * replaces.
+	 */
+	function saveRedo() {
+		tend.patchActive((p) => ({ ...p, ...answers() }));
+		onredo?.();
 	}
 </script>
 
@@ -205,15 +248,6 @@
 							/>
 						</div>
 					</div>
-					<div>
-						<Label for="onboard-weight">Weight lb</Label>
-						<Input
-							id="onboard-weight"
-							class="mt-1.5"
-							type="number"
-							bind:value={() => weightDisplay, (v) => setWeightDisplay(String(v))}
-						/>
-					</div>
 				{:else}
 					<div>
 						<Label for="onboard-height">Height cm</Label>
@@ -224,8 +258,10 @@
 							bind:value={() => Math.round(heightCm), (v) => setHeightCm(String(v))}
 						/>
 					</div>
+				{/if}
+				{#if !redo}
 					<div>
-						<Label for="onboard-weight">Weight kg</Label>
+						<Label for="onboard-weight">Weight {units === 'imperial' ? 'lb' : 'kg'}</Label>
 						<Input
 							id="onboard-weight"
 							class="mt-1.5"
@@ -291,8 +327,16 @@
 				class="border-border bg-background/95 sticky bottom-0 -mx-5 mt-auto border-t px-5 py-3 backdrop-blur-sm"
 			>
 				<div class="flex gap-2">
-					<Button variant="secondary" class="flex-1" onclick={() => (step = 0)}>Back</Button>
-					<Button class="flex-1" onclick={() => (step = 2)}>Continue</Button>
+					<Button
+						variant="secondary"
+						class="flex-1"
+						onclick={() => (redo ? onredo?.() : (step = 0))}
+					>
+						{redo ? 'Cancel' : 'Back'}
+					</Button>
+					<Button class="flex-1" onclick={() => (redo ? saveRedo() : (step = 2))}>
+						{redo ? 'Save' : 'Continue'}
+					</Button>
 				</div>
 			</div>
 		</div>
