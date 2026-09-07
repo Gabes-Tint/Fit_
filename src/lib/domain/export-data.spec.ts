@@ -273,6 +273,47 @@ describe('parseMfpCsv', () => {
 		const ragged = 'Date,Name,Calories\n2026-06-01';
 		expect(parseMfpCsv(ragged)).toEqual([]);
 	});
+
+	// Pins the header-to-row column alignment splitCsv relies on: every field
+	// lands under the header it was pasted under, across every column and every
+	// row, not just the first one a test happens to check.
+	it('keeps every column aligned with its header across every row', () => {
+		const wide = [
+			'Meal,Date,Name,Calories,Protein,Carbohydrates,Fat',
+			'Breakfast,2026-06-01,Oatmeal,300,10,50,5',
+			'Lunch,2026-06-01,Chicken salad,450,40,10,25',
+			'Dinner,2026-06-01,Salmon,600,45,5,35'
+		].join('\n');
+		expect(parseMfpCsv(wide)).toEqual([
+			{
+				date: '2026-06-01',
+				name: 'Oatmeal',
+				meal: 'breakfast',
+				kcal: 300,
+				protein: 10,
+				carbs: 50,
+				fat: 5
+			},
+			{
+				date: '2026-06-01',
+				name: 'Chicken salad',
+				meal: 'lunch',
+				kcal: 450,
+				protein: 40,
+				carbs: 10,
+				fat: 25
+			},
+			{
+				date: '2026-06-01',
+				name: 'Salmon',
+				meal: 'dinner',
+				kcal: 600,
+				protein: 45,
+				carbs: 5,
+				fat: 35
+			}
+		]);
+	});
 });
 
 describe('mfpRowsToLogItems', () => {
