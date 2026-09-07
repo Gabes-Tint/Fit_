@@ -135,6 +135,17 @@ be what puts the workspace there — without it a job fails on "Can't find actio
 action rather than the missing checkout. Four fixtures prove those halves — `ci-job-without-setup`,
 `gutted-setup-action`, `unconditional-report-upload` and `ci-job-without-checkout`.
 
+It also proves the workflow answers the merge queue. Branch protection requires one check,
+`Quality and security`, and the queue does not test a pull request — it builds `main` plus
+every queued pull request onto a `gh-readonly-queue/…` branch and asks for checks on that
+combined tree, which is the only place two separately green pull requests can be caught
+being red together. Those requests arrive as `merge_group` events, so a workflow that does
+not listen for them reports nothing at all: the required check stays pending and every merge
+blocks, with nothing red to explain it. `scripts/quality/merge-queue-trigger.ts` asserts that
+the workflow declaring `Quality and security` also declares a `merge_group` trigger, and the
+fixture `ci-without-merge-queue-trigger` proves it rejects the one-line deletion that would
+look like tidying an event list.
+
 `check:schedules` is the same proof for the lanes that deliberately do not gate a merge. A
 tier taken off the pull request only exists if a schedule still runs it, so this proves the
 `audit` and `nightly` tiers are each invoked by a workflow with a `cron`, and that the
