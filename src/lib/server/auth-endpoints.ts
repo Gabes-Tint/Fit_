@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { Cookies } from '@sveltejs/kit';
 import type { DatabaseSync } from 'node:sqlite';
-import { apiError, readTextBody } from './api';
+import { apiError, readTextBody, retryAfter } from './api';
 import { clientAddressFor } from './client-address';
 import { deviceLabelFrom } from './device-label';
 import { sessionTokenFrom } from './request-auth';
@@ -96,16 +96,6 @@ function registrationError(problem: { field: string; code: string }): Response {
 }
 
 /**
- * `Retry-After` is whole seconds and never zero: a client told to wait must
- * have something to wait for, and rounding up keeps it from returning early
- * only to be refused again.
- */
-function tooManyAttempts(retryAfterMs: number): Response {
-	const seconds = Math.max(1, Math.ceil(retryAfterMs / 1000));
-	return apiError('too-many-attempts', {}, { 'retry-after': String(seconds) });
-}
-
-/**
  * Create an account, its household and its own profile, then sign it in. The
  * four rows go in one transaction inside `registerAccount`; this only decides
  * what the caller is told.
@@ -127,7 +117,8 @@ export async function register(
 	if (fields === null) return apiError('invalid-body');
 	const clientAddress = clientAddressFor(event.request, event.getClientAddress);
 	const decision = checkRegistration(db, clientAddress);
-	if (!decision.allowed) return tooManyAttempts(decision.retryAfterMs);
+	if (!decision.allowed)
+		return apiError('too-many-attempts', {}, retryAfter(decision.retryAfterMs));
 	recordRegistration(db, clientAddress);
 	const result = await registerAccount(
 		db,
@@ -171,7 +162,8 @@ export async function signIn(
 		clientAddress: clientAddressFor(event.request, event.getClientAddress)
 	};
 	const decision = checkSignIn(db, attempt);
-	if (!decision.allowed) return tooManyAttempts(decision.retryAfterMs);
+	if (!decision.allowed)
+		return apiError('too-many-attempts', {}, retryAfter(decision.retryAfterMs));
 	const account = await authenticate(db, attempt.username, fields['password'] ?? '', { cost });
 	if (account === null) {
 		recordFailedSignIn(db, attempt);

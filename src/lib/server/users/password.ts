@@ -184,11 +184,6 @@ function verificationWork(stored: string | null, target: ScryptCost): PasswordVe
 	return PAD_ONLY_WORK;
 }
 
-/** Whether a successfully verified hash should be replaced with the target policy. */
-export function passwordHashNeedsUpgrade(stored: string, target = OWASP_SCRYPT): boolean {
-	return passwordVerificationWork(stored, target).upgradeStored;
-}
-
 /** The bounded KDF work an authentication attempt must perform. */
 export function passwordVerificationWork(
 	stored: string | null,

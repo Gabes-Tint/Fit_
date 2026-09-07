@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { DatabaseSync } from 'node:sqlite';
 import type { Meal } from '$lib/domain/types';
-import { apiError } from '../api';
+import { apiError, retryAfter } from '../api';
 import { resolveFood, type ResolvedFood } from '../catalog/resolve';
 import { readPhotoBody } from './request';
 import { reservePhotoCall } from './quota';
@@ -56,16 +56,6 @@ function resolveItem(catalog: DatabaseSync, item: PlateItem): PhotoItem {
 	return { label: item.label, grams: item.grams, ...resolveFood(catalog, item.searchQuery) };
 }
 
-/**
- * `Retry-After` is whole seconds and never zero, for the reason
- * `auth-endpoints.ts` gives: a client told to wait must have something to wait
- * for, and rounding up keeps it from returning early only to be refused again.
- */
-function overQuota(retryAfterMs: number): Response {
-	const seconds = Math.max(1, Math.ceil(retryAfterMs / 1000));
-	return apiError('too-many-attempts', {}, { 'retry-after': String(seconds) });
-}
-
 /** What the audit line says about a call that did not come back. */
 function upstreamOf(reading: PlateReading & { ok: false }): string {
 	if (reading.reason === 'not-configured') return 'not-configured';
@@ -110,7 +100,8 @@ export async function readMealPhoto(
 	// Reserved rather than checked, and reserved before the call rather than
 	// counted after it: `reservePhotoCall` says why.
 	const allowance = reservePhotoCall(db, accountId, now);
-	if (!allowance.allowed) return overQuota(allowance.retryAfterMs);
+	if (!allowance.allowed)
+		return apiError('too-many-attempts', {}, retryAfter(allowance.retryAfterMs));
 
 	const reading = await dependencies.read(parsed.image, parsed.meal);
 	if (!reading.ok) {

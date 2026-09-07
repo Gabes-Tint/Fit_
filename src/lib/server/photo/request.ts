@@ -1,4 +1,5 @@
 import { MEALS, type Meal } from '$lib/domain/types';
+import { declaredMediaType, JSON_CONTENT_TYPE, readJsonText, withinDeclaredLength } from '../api';
 
 /**
  * The body `POST /api/meals/photo` accepts, and the one reason it is refused.
@@ -36,15 +37,6 @@ export type ParsedPhotoBody =
 
 const REFUSED = { ok: false, code: 'invalid-body' } as const;
 
-/** The media type before any parameter, lower-cased. `null` when none was declared. */
-function declaredType(request: Request): string | null {
-	const header = request.headers.get('content-type');
-	if (header === null) return null;
-	const separator = header.indexOf(';');
-	const type = separator === -1 ? header : header.slice(0, separator);
-	return type.trim().toLowerCase();
-}
-
 /**
  * `includes` on a tuple of strings is already false for every value that is not
  * one of them, so there is no `typeof` guard here: it would be a branch no input
@@ -55,24 +47,6 @@ function isMeal(value: unknown): value is Meal {
 }
 
 /**
- * The body as something the caller can read fields off, or `null` for text that
- * is not JSON at all.
- *
- * There is deliberately no "is this an object" test: a string, a number and an
- * array all answer `undefined` to every field the caller reads, which is
- * already a rejection, and JSON's own `null` is returned as it is so the caller
- * turns it away beside them. A guard here would be a branch no body could take
- * differently.
- */
-function fieldsOf(raw: string): Record<string, unknown> | null {
-	try {
-		return JSON.parse(raw) as Record<string, unknown> | null;
-	} catch {
-		return null;
-	}
-}
-
-/**
  * The request as a still and a meal, or the refusal.
  *
  * The ceiling is checked twice: once against the declared `content-length`, so
@@ -80,20 +54,21 @@ function fieldsOf(raw: string): Record<string, unknown> | null {
  * actually received, because the header is only what the sender claims.
  */
 export async function readPhotoBody(request: Request): Promise<ParsedPhotoBody> {
-	if (declaredType(request) !== 'application/json') return REFUSED;
-	if (Number(request.headers.get('content-length')) > MAX_PHOTO_BODY_BYTES) return REFUSED;
+	if (declaredMediaType(request) !== JSON_CONTENT_TYPE) return REFUSED;
+	if (!withinDeclaredLength(request, MAX_PHOTO_BODY_BYTES)) return REFUSED;
 
-	let raw: string;
+	const raw = await readJsonText(request, MAX_PHOTO_BODY_BYTES);
+	if (raw === null) return REFUSED;
+
+	let parsed: unknown;
 	try {
-		raw = await request.text();
+		parsed = JSON.parse(raw);
 	} catch {
-		// A stream that broke is the sender's problem, not an error to throw here.
+		// Text that is not JSON at all is turned away beside JSON's own `null`.
 		return REFUSED;
 	}
-	if (raw.length > MAX_PHOTO_BODY_BYTES) return REFUSED;
-
-	const fields = fieldsOf(raw);
-	if (fields === null) return REFUSED;
+	if (parsed === null) return REFUSED;
+	const fields = parsed as Record<string, unknown>;
 	const image = fields['image'];
 	const meal = fields['meal'];
 	// The type check is not narrowing for the compiler's sake: `test` coerces its

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { apiError, MAX_BODY_BYTES, readTextBody } from './api';
+import { apiError, declaredMediaType, MAX_BODY_BYTES, readTextBody } from './api';
 
 const SITE = 'https://fit.example/api/sessions';
 
@@ -49,6 +49,40 @@ describe('apiError', () => {
 	});
 });
 
+/**
+ * The one matrix of content-type parsing, shared by every endpoint that reads
+ * a JSON body: `readTextBody` here and `readStateBody`, `readResolveBody` and
+ * `readPhotoBody` elsewhere all route through `declaredMediaType`, so each of
+ * their own spec files needs only a test for its own refusal shape, not this
+ * matrix again.
+ */
+describe('declaredMediaType', () => {
+	it.each([
+		['a bare JSON type', 'application/json', 'application/json'],
+		['a JSON type with a charset parameter', 'application/json; charset=utf-8', 'application/json'],
+		[
+			'a JSON type padded and cased differently',
+			'APPLICATION/JSON ; charset=UTF-8',
+			'application/json'
+		],
+		['a non-JSON type', 'text/plain', 'text/plain'],
+		[
+			'a form-encoded type, what a cross-site form can produce',
+			'application/x-www-form-urlencoded',
+			'application/x-www-form-urlencoded'
+		]
+	])('reads %s as %s', (_case, header, expected) => {
+		const request = new Request(SITE, { headers: { 'content-type': header } });
+		expect(declaredMediaType(request)).toBe(expected);
+	});
+
+	it('reads a request with no content-type header as declaring no media type', () => {
+		const request = new Request(SITE);
+		request.headers.delete('content-type');
+		expect(declaredMediaType(request)).toBeNull();
+	});
+});
+
 describe('readTextBody', () => {
 	it('reads the text fields of a JSON object', async () => {
 		expect(await readTextBody(jsonRequest('{"username":"jordan","password":"secret"}'))).toEqual({
@@ -57,33 +91,14 @@ describe('readTextBody', () => {
 		});
 	});
 
-	it('accepts a content type that carries a charset parameter', async () => {
-		const request = jsonRequest('{"username":"jordan"}', {
-			'content-type': 'application/json; charset=utf-8'
-		});
-		expect(await readTextBody(request)).toEqual({ username: 'jordan' });
-	});
-
-	it('reads the media type past its case and the spacing around it', async () => {
-		// Content-Type is case-insensitive and may carry space before its parameters.
-		const request = jsonRequest('{"username":"jordan"}', {
-			'content-type': 'Application/JSON ; charset=UTF-8'
-		});
-		expect(await readTextBody(request)).toEqual({ username: 'jordan' });
-	});
-
 	it('refuses a body that does not declare JSON, whatever it contains', async () => {
+		// The full matrix of content types is `declaredMediaType`'s, tested once
+		// above; this is readTextBody's own refusal shape for the case it names.
 		const request = new Request(SITE, {
 			method: 'POST',
 			headers: { 'content-type': 'text/plain' },
 			body: '{"username":"jordan"}'
 		});
-		expect(await readTextBody(request)).toBeNull();
-	});
-
-	it('refuses a body with no content type at all', async () => {
-		const request = new Request(SITE, { method: 'POST', body: 'jordan' });
-		request.headers.delete('content-type');
 		expect(await readTextBody(request)).toBeNull();
 	});
 

@@ -54,12 +54,78 @@ export function apiError(
 }
 
 /**
+ * A write whose expected version does not match what is stored. The current
+ * document is returned alongside the code — unlike `apiError`'s detail, this
+ * is a fact about stored state, not about what the caller got wrong — but the
+ * status still comes out of the same table, so a stale-version answer can
+ * never drift from the code that names it.
+ */
+export function staleVersion(current: {
+	version: number;
+	format: string;
+	body: unknown;
+}): Response {
+	return json(
+		{ error: { code: 'stale-version' }, ...current },
+		{ status: STATUS['stale-version'] }
+	);
+}
+
+/**
+ * `Retry-After` is whole seconds and never zero: a client told to wait must
+ * have something to wait for, and rounding up keeps it from returning early
+ * only to be refused again.
+ */
+export function retryAfter(retryAfterMs: number): Record<string, string> {
+	const seconds = Math.max(1, Math.ceil(retryAfterMs / 1000));
+	return { 'retry-after': String(seconds) };
+}
+
+/**
  * Refused before parsing: four short strings need far less than
  * `adapter-node`'s `BODY_SIZE_LIMIT`, which is sized for uploads.
  */
 export const MAX_BODY_BYTES = 4096;
 
-const JSON_CONTENT_TYPE = 'application/json';
+export const JSON_CONTENT_TYPE = 'application/json';
+
+/**
+ * The media type before any parameter, lower-cased. `null` when the request
+ * declares none at all.
+ */
+export function declaredMediaType(request: Request): string | null {
+	const header = request.headers.get('content-type');
+	if (header === null) return null;
+	const separator = header.indexOf(';');
+	const type = separator === -1 ? header : header.slice(0, separator);
+	return type.trim().toLowerCase();
+}
+
+/**
+ * Whether the declared `content-length` is within `max`. A request that
+ * declares no length at all passes here — the header is only what the sender
+ * claims, so a caller that needs the real ceiling enforced checks the text it
+ * actually reads too.
+ */
+export function withinDeclaredLength(request: Request, max: number): boolean {
+	return !(Number(request.headers.get('content-length')) > max);
+}
+
+/**
+ * The body text, read once, or `null` for a stream that failed to read or
+ * text past `max` bytes. Parsing is left to the caller: what counts as a
+ * malformed or wrongly-shaped body differs by endpoint.
+ */
+export async function readJsonText(request: Request, max: number): Promise<string | null> {
+	let raw: string;
+	try {
+		raw = await request.text();
+	} catch {
+		// A stream that broke is the sender's problem, not an error to throw here.
+		return null;
+	}
+	return raw.length > max ? null : raw;
+}
 
 /**
  * Every value is text; anything else is malformed, not something to coerce. No
@@ -87,12 +153,13 @@ function textFieldsOf(parsed: unknown): Record<string, string> | null {
  * cross-site form can produce.
  */
 export async function readTextBody(request: Request): Promise<Record<string, string> | null> {
-	const declaredType = request.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase();
-	if (declaredType !== JSON_CONTENT_TYPE) return null;
-	if (Number(request.headers.get('content-length')) > MAX_BODY_BYTES) return null;
+	if (declaredMediaType(request) !== JSON_CONTENT_TYPE) return null;
+	if (!withinDeclaredLength(request, MAX_BODY_BYTES)) return null;
+	const raw = await readJsonText(request, MAX_BODY_BYTES);
+	if (raw === null) return null;
 	let parsed: unknown;
 	try {
-		parsed = await request.json();
+		parsed = JSON.parse(raw);
 	} catch {
 		// A malformed body is the sender's error, not an error to throw here.
 		return null;

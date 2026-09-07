@@ -1,6 +1,13 @@
 import { json } from '@sveltejs/kit';
 import type { DatabaseSync } from 'node:sqlite';
-import { apiError } from '../api';
+import {
+	apiError,
+	declaredMediaType,
+	JSON_CONTENT_TYPE,
+	readJsonText,
+	staleVersion,
+	withinDeclaredLength
+} from '../api';
 import type { Auth, Membership } from '../users/types';
 import { readDocument, writeDocument } from './document';
 
@@ -15,8 +22,6 @@ const STATE_FORMAT = 'tend.v1';
  * `readTextBody` in `api.ts` caps at 4 KB for that reason and does not fit here.
  */
 const MAX_STATE_BODY_BYTES = 4 * 1024 * 1024;
-
-const JSON_CONTENT_TYPE = 'application/json';
 
 /**
  * The part of SvelteKit's `RequestEvent` these handlers use — see `AuthEvent`
@@ -37,33 +42,14 @@ export type ParsedStateBody =
 	| { ok: false; code: 'invalid-input'; field: string; reason: string };
 
 /**
- * Whether the request declares JSON. The media type is the text before any
- * parameter and is compared case-insensitively, so `application/json` and
- * `APPLICATION/JSON ; charset=utf-8` both count. A request that declares no
- * content type at all is not JSON.
- */
-function hasJsonContentType(request: Request): boolean {
-	const header = request.headers.get('content-type');
-	if (header === null) return false;
-	const separator = header.indexOf(';');
-	const declaredType = separator === -1 ? header : header.slice(0, separator);
-	return declaredType.trim().toLowerCase() === JSON_CONTENT_TYPE;
-}
-
-/**
  * The body as a JSON object, or `null` for a stream that failed, a body past
  * the ceiling, or text that is not a JSON object. The three share one answer
  * because the caller reports one `invalid-body` for all of them; splitting the
  * read from the parse only produced an intermediate no caller could observe.
  */
 async function readJsonObject(request: Request): Promise<Record<string, unknown> | null> {
-	let raw: string;
-	try {
-		raw = await request.text();
-	} catch {
-		return null;
-	}
-	if (raw.length > MAX_STATE_BODY_BYTES) return null;
+	const raw = await readJsonText(request, MAX_STATE_BODY_BYTES);
+	if (raw === null) return null;
 	try {
 		const parsed: unknown = JSON.parse(raw);
 		return isPlainObject(parsed) ? parsed : null;
@@ -89,8 +75,10 @@ function isValidVersion(value: unknown): value is number {
  * is only what the sender claims.
  */
 export async function readStateBody(request: Request): Promise<ParsedStateBody> {
-	const declaredLength = Number(request.headers.get('content-length'));
-	if (!hasJsonContentType(request) || declaredLength > MAX_STATE_BODY_BYTES) {
+	if (
+		declaredMediaType(request) !== JSON_CONTENT_TYPE ||
+		!withinDeclaredLength(request, MAX_STATE_BODY_BYTES)
+	) {
 		return { ok: false, code: 'invalid-body' };
 	}
 	const parsed = await readJsonObject(request);
@@ -161,13 +149,9 @@ export async function writeState(db: DatabaseSync, event: StateEvent): Promise<R
 	});
 	if (result.ok) return json({ version: result.version, updatedAt: result.updatedAt });
 	const current = result.current;
-	return json(
-		{
-			error: { code: 'stale-version' },
-			version: current?.version ?? 0,
-			format: current?.format ?? STATE_FORMAT,
-			body: current ? (JSON.parse(current.body) as unknown) : null
-		},
-		{ status: 409 }
-	);
+	return staleVersion({
+		version: current?.version ?? 0,
+		format: current?.format ?? STATE_FORMAT,
+		body: current ? (JSON.parse(current.body) as unknown) : null
+	});
 }
