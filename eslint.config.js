@@ -13,7 +13,9 @@ const gitignorePath = path.resolve(import.meta.dirname, '.gitignore');
 export default defineConfig(
 	includeIgnoreFile(gitignorePath),
 	// Built web assets in the Android project; root `.gitignore` doesn't cover them.
-	{ ignores: ['android/**'] },
+	// `/build/**` and `/.svelte-kit/**` are anchored to the repo root — unanchored
+	// `build/**` would also swallow the real, tracked scripts/build/*.ts sources.
+	{ ignores: ['android/**', '/build/**', '/.svelte-kit/**'] },
 	js.configs.recommended,
 	ts.configs.recommendedTypeChecked,
 	svelte.configs.recommended,

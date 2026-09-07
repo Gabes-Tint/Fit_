@@ -25,10 +25,14 @@ const reportPath = path.join(projectRoot, 'reports', 'quality', 'eslint.json');
 await mkdir(path.dirname(reportPath), { recursive: true });
 
 // ESLint takes one formatter per run, so emit the machine-readable one and
-// render it for humans here. Type-aware lint is the tier's critical path; past
-// the measured turnover point extra workers cost more than they save, so
-// concurrency is half the host's cores, capped at eight, floored at one.
-const concurrency = Math.min(8, Math.max(1, Math.floor(availableParallelism() / 2)));
+// render it for humans here. eslint.config.js's projectService gives each
+// worker its own full TypeScript program (~1.1 GB) — separate processes
+// can't share it, so peak memory grows with worker count, though not quite
+// linearly (measured via cgroup accounting on a 32-core box: 8 workers
+// ~8.9 GB, 4 workers ~5.4-5.7 GB — not half, since some memory is shared
+// fixed overhead). Concurrency is half the host's cores, capped at four to
+// bound memory, floored at one.
+const concurrency = Math.min(4, Math.max(1, Math.floor(availableParallelism() / 2)));
 
 const { exitCode } = await captureStatus(
 	path.join(projectRoot, 'node_modules', '.bin', 'eslint'),
