@@ -173,6 +173,26 @@ describe('FormCheckModal', () => {
 		}
 	});
 
+	it('ignores keys other than Enter and Space, since those are not the toggle', async () => {
+		const playSpy = vi
+			.spyOn(HTMLMediaElement.prototype, 'play')
+			.mockImplementation(() => Promise.resolve());
+		const pauseSpy = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+		try {
+			await render(FormCheckModal, { props: { open: true, name: 'Push-up', onclose: vi.fn() } });
+			const video = document.querySelector('video') as HTMLVideoElement;
+
+			video.dispatchEvent(
+				new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true })
+			);
+			expect(playSpy).not.toHaveBeenCalled();
+			expect(pauseSpy).not.toHaveBeenCalled();
+		} finally {
+			playSpy.mockRestore();
+			pauseSpy.mockRestore();
+		}
+	});
+
 	it('does not autoplay when the system asks for reduced motion', async () => {
 		const matchMediaSpy = vi.spyOn(window, 'matchMedia').mockImplementation(
 			(query: string) =>

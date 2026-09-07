@@ -17,7 +17,6 @@
 	const cues = $derived(formCues(name));
 	const demo = $derived(demoFor(name));
 	const hasDemo = $derived(demo !== undefined);
-	const demoAriaLabel = $derived(`${demo?.description ?? ''} Tap or press Enter to pause or play.`);
 
 	// WCAG 2.2.2: motion that starts on its own, runs past five seconds, and sits
 	// beside other content needs a way to stop it. Someone who has asked their
@@ -66,7 +65,7 @@
 			autoplay={!prefersReducedMotion}
 			role="button"
 			tabindex={0}
-			aria-label={demoAriaLabel}
+			aria-label={`${demo?.description} Tap or press Enter to pause or play.`}
 			onclick={toggleDemo}
 			onkeydown={onDemoKeydown}
 		>
