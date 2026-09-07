@@ -186,11 +186,11 @@ function unitIsInstalled(environment: NodeJS.ProcessEnv): boolean {
 let cachedSupport: SliceSupport | undefined;
 
 /** What this machine supports, probed once per process. */
-export function sliceSupport(): SliceSupport {
+function sliceSupport(): SliceSupport {
 	if (cachedSupport !== undefined) return cachedSupport;
 	const ci = process.env['CI'] !== undefined && process.env['CI'] !== '';
 	// Nothing is probed under CI: the skip has to be free of any filesystem or
-	// PATH behaviour that could differ on a runner.
+	// PATH behavior that could differ on a runner.
 	cachedSupport = ci
 		? { ci, systemdRun: null, memoryDelegated: false, sliceInstalled: false }
 		: {
