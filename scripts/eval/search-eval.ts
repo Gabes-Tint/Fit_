@@ -24,7 +24,7 @@ import { catalogPath } from '../../src/lib/server/catalog/connection.ts';
 import { searchTerms, singular } from '../../src/lib/server/catalog/query.ts';
 import { searchSql } from '../../src/lib/server/catalog/ranking.ts';
 import { prepared } from '../../src/lib/server/catalog/statements.ts';
-import { readJsonFile } from '../security/shared';
+import { readJsonFile } from '../security/shared.ts';
 import type { SearchFixture, SearchFixtureQuery } from '../quality/config-types';
 
 /** How deep a person is credited with looking. Precision is measured over this many rows. */
