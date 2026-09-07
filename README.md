@@ -236,6 +236,33 @@ fixture for the secret scanner would trip the secret scanner on this repository.
 Adding a gate without a fixture is incomplete work: the self-test is what separates a
 quality framework from a collection of configuration.
 
+### Memory ceiling on a workstation
+
+Every gate sizes itself to the whole machine, which is right for one run and wrong for
+several. With a few agents each running `verify:changed` in its own worktree, the total is
+unbounded, and `systemd-oomd` picks the largest cgroup to kill — which was the editor.
+Capping each gate separately does not help: five worktrees capped individually still ask for
+the whole machine.
+
+The ceiling therefore lives on a shared cgroup rather than on any one process.
+`scripts/dev/fit-gates.slice` declares an 18 GB `MemoryMax` and a 2 GB `MemorySwapMax`, and
+every gate step runs inside it in a transient scope capped at 12 GB. A user slice is a named
+cgroup, not something a process owns, so every gate launched by this user joins it — two
+editor instances in two worktrees share the one ceiling, which an in-process semaphore could
+never do. One runaway step then dies alone and says why; the total never exceeds 18 GB.
+
+Install it once, explicitly — a gate run never writes to your home directory as a side
+effect:
+
+```sh
+bun run dev:gate-slice
+```
+
+Until then, and on any machine without `systemd-run` or without a delegated memory
+controller, gates print one line and run unbounded as before. A missing ceiling is never a
+reason for a gate to fail. **CI is untouched**: with `CI` set nothing is probed and nothing
+is wrapped, because a hosted runner is already a machine per job.
+
 ### Blocking versus advisory security
 
 Gitleaks and Semgrep are derived from the code in the repository, so they are reproducible

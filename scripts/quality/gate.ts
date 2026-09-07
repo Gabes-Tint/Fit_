@@ -9,6 +9,7 @@ import { gateLogDirectory, gateReportPath } from './gate-paths';
 import { pooled } from './pool';
 import { stepOutcome, summarizeOutcomes, summaryExitCode, type StepOutcome } from './run-outcome';
 import { captureStatus } from '../security/shared';
+import { underGateSlice } from '../dev/gate-slice';
 
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 const reportDirectory = path.join(projectRoot, 'reports', 'quality');
@@ -85,7 +86,10 @@ async function runStep(
 ): Promise<StepRun> {
 	const logPath = path.join(logDirectory, `${step.name.replace(/:/g, '-')}.log`);
 	const startedAt = Date.now();
-	const { exitCode, output } = await captureStatus('bun', ['run', step.name], {
+	// Locally the step runs inside the shared memory slice; under CI, and
+	// wherever the slice is unavailable, this is `bun run <step>` untouched.
+	const launch = underGateSlice('bun', ['run', step.name]);
+	const { exitCode, output } = await captureStatus(launch.command, launch.args, {
 		stream,
 		signal,
 		env: { ...process.env, FORCE_COLOR: '0' }

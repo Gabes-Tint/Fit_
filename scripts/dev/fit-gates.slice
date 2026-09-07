@@ -1,0 +1,24 @@
+# The shared memory ceiling for every gate run on a developer workstation.
+#
+# Installed to ~/.config/systemd/user/ by `bun run dev:gate-slice`; it is not
+# part of the repository's runtime and CI never sees it.
+#
+# The ceiling has to be declared here rather than passed per invocation:
+# `systemd-run -p MemoryMax=` sets the limit on the transient *scope* it
+# creates, not on this parent slice, so an ad-hoc limit would leave the slice
+# at infinity and whichever invocation created it first would win.
+#
+# A user slice is a named cgroup under the user session, not something one
+# process owns. Every process running as this user that names it joins the same
+# cgroup, so two Claude Code instances in two worktrees are accounted together
+# and share this one ceiling.
+
+[Unit]
+Description=Fit_ quality gates (shared memory ceiling)
+
+[Slice]
+# 18 GB of the box's 30 GiB, leaving the desktop, browser and editor their share.
+MemoryMax=18G
+# As load-bearing as MemoryMax: the crash this exists to prevent peaked at
+# 26.5 GB of swap, so the machine was thrashing long before it ran out of RAM.
+MemorySwapMax=2G
