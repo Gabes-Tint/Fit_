@@ -314,27 +314,45 @@ describe('parseMfpCsv', () => {
 			}
 		]);
 	});
+
+	it('returns nothing for a paste that is only a header', () => {
+		expect(parseMfpCsv('Date,Name,Calories')).toEqual([]);
+	});
+
+	it('finds the columns of a header whose cells are padded with spaces', () => {
+		const padded = ' Date , Name , Calories \n2026-06-01,Oatmeal,300';
+		expect(parseMfpCsv(padded)[0]).toMatchObject({
+			date: '2026-06-01',
+			name: 'Oatmeal',
+			kcal: 300
+		});
+	});
 });
 
 describe('mfpRowsToLogItems', () => {
-	const rows = parseMfpCsv(
-		['Date,Meal,Name,Calories,Protein', '2026-06-01,Breakfast,Oatmeal,300,10'].join('\n')
-	);
+	// Parsed per test, not once while the suite is being collected: a collection
+	// that throws reports no test results at all, and a mutation runner reading
+	// those results sees a mutant nothing failed on rather than one that was
+	// killed. Every import here has to run inside a test for that reason.
+	const oatmeal = () =>
+		parseMfpCsv(
+			['Date,Meal,Name,Calories,Protein', '2026-06-01,Breakfast,Oatmeal,300,10'].join('\n')
+		);
 
 	it('maps one item per row', () => {
-		expect(mfpRowsToLogItems(rows, () => 'id')).toHaveLength(1);
+		expect(mfpRowsToLogItems(oatmeal(), () => 'id')).toHaveLength(1);
 	});
 
 	it('leaves imported items unmatched to the catalog', () => {
-		expect(mfpRowsToLogItems(rows, () => 'id')[0]?.foodId).toBeNull();
+		expect(mfpRowsToLogItems(oatmeal(), () => 'id')[0]?.foodId).toBeNull();
 	});
 
 	it('zeroes micronutrients rather than inventing them', () => {
-		expect(mfpRowsToLogItems(rows, () => 'id')[0]?.micros.fiber).toBe(0);
+		expect(mfpRowsToLogItems(oatmeal(), () => 'id')[0]?.micros.fiber).toBe(0);
 	});
 
 	it('labels the serving as imported rather than inventing one', () => {
-		expect(mfpRowsToLogItems(rows, () => 'id')[0]).toMatchObject({
+		expect(mfpRowsToLogItems(oatmeal(), () => 'id')[0]).toMatchObject({
 			servingLabel: 'imported',
 			source: 'manual'
 		});

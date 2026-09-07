@@ -49,9 +49,14 @@ function csv(s: string) {
 
 /** Best-effort MyFitnessPal daily summary / diary CSV. */
 export function parseMfpCsv(text: string) {
-	const lines = text.split(/\r?\n/).filter((l) => l.trim().length);
-	if (lines.length < 2) return [];
-	const header = splitCsv(lines[0] ?? '').map((h) => h.trim().toLowerCase());
+	// A paste with no first line has no header to key the columns on. Past that,
+	// a header naming no food column and a paste with no rows both come out as
+	// no rows below, so neither is worth a second early return.
+	const [headerLine, ...rows] = text.split(/\r?\n/).filter((l) => l.trim().length);
+	if (headerLine === undefined) return [];
+	// Matched as a substring, so surrounding spaces in a pasted heading are
+	// already tolerated and trimming one would change nothing.
+	const header = splitCsv(headerLine).map((h) => h.toLowerCase());
 	const idx = (names: string[]) => header.findIndex((h) => names.some((n) => h.includes(n)));
 	const dateI = idx(['date']);
 	const nameI = idx(['name', 'food', 'item']);
@@ -60,7 +65,6 @@ export function parseMfpCsv(text: string) {
 	const cI = idx(['carb']);
 	const fI = idx(['fat']);
 	const mealI = idx(['meal', 'folder']);
-	if (nameI < 0) return [];
 
 	const out: {
 		date: string;
@@ -72,13 +76,15 @@ export function parseMfpCsv(text: string) {
 		fat: number;
 	}[] = [];
 
-	for (const line of lines.slice(1)) {
+	for (const line of rows) {
 		const cols = splitCsv(line);
 		const name = cols[nameI]?.trim();
 		// Summary rows ("Totals", "Goal", "Remaining") are not food.
 		if (!name || /^(total|goal|remaining|foods)/i.test(name)) continue;
 		out.push({
-			date: rowDate(dateI >= 0 ? cols[dateI] : undefined),
+			// `idx` answers -1 for a heading the paste lacks, and `cols[-1]` is the
+			// same undefined the guarded form used to pass in.
+			date: rowDate(cols[dateI]),
 			name,
 			meal: (cols[mealI] ?? 'snack').toLowerCase(),
 			kcal: num(cols[kcalI]),
@@ -92,25 +98,35 @@ export function parseMfpCsv(text: string) {
 
 /** Anything that is not a plain ISO date falls back to today. */
 function rowDate(raw: string | undefined) {
-	const date = (raw ?? '').slice(0, 10);
+	if (raw === undefined) return todayISO();
+	const date = raw.slice(0, 10);
 	return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : todayISO();
 }
 
 function num(s: string | undefined) {
-	const n = Number(String(s ?? '').replace(/[^0-9.-]/g, ''));
+	if (s === undefined) return 0;
+	const n = Number(s.replace(/[^0-9.-]/g, ''));
 	return Number.isFinite(n) ? n : 0;
 }
 
 function splitCsv(line: string) {
+	const chars = [...line];
 	const out: string[] = [];
 	let cur = '';
 	let q = false;
-	for (let i = 0; i < line.length; i++) {
-		const ch = line[i];
+	// The second half of a doubled quote is skipped by this flag rather than by
+	// winding the loop index on: an index the body moves can be mutated into a
+	// loop that never ends, which no test can do anything about.
+	let skipNext = false;
+	for (const [i, ch] of chars.entries()) {
+		if (skipNext) {
+			skipNext = false;
+			continue;
+		}
 		if (ch === '"') {
-			if (q && line[i + 1] === '"') {
+			if (q && chars[i + 1] === '"') {
 				cur += '"';
-				i++;
+				skipNext = true;
 			} else q = !q;
 		} else if (ch === ',' && !q) {
 			out.push(cur);
