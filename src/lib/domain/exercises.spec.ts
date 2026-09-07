@@ -1,9 +1,11 @@
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DEMOS, EXERCISE_LIBRARY, FORM_CUES, ROUTINE_TEMPLATES } from './exercise-catalog';
 import {
 	alternativesTo,
 	bumpField,
-	demoFor,
 	emptyRoutine,
 	exercisesFromLibrary,
 	formatLoad,
@@ -15,6 +17,8 @@ import {
 	routineTotals
 } from './exercises';
 import type { Routine, RoutineExercise } from './types';
+
+const STATIC_ROOT = fileURLToPath(new URL('../../../static', import.meta.url));
 
 function row(name: string, group: RoutineExercise['group'], sets = 3): RoutineExercise {
 	return { name, group, sets, reps: 10, load: 20 };
@@ -76,13 +80,33 @@ describe('form cues', () => {
 });
 
 describe('demo clips', () => {
-	it('gives the real clip for a movement that has one', () => {
-		expect(demoFor('Push-up')).toBe(DEMOS['Push-up']);
-		expect(demoFor('Squat')).toBe(DEMOS['Squat']);
+	it('names the movements that have one, and no others', () => {
+		expect(Object.keys(DEMOS).sort()).toEqual(['Push-up', 'Squat']);
 	});
 
 	it('has nothing for a movement with no clip yet', () => {
-		expect(demoFor('Bench Press')).toBeUndefined();
+		expect(DEMOS['Bench Press']).toBeUndefined();
+	});
+
+	// The modal renders `src` straight into a <video>, so an entry naming a file
+	// that is not shipped is a broken player rather than the honest gap.
+	it('points every entry at a clip that is actually shipped', () => {
+		const broken = Object.entries(DEMOS)
+			.filter(
+				([, demo]) =>
+					!/^\/media\/[\w-]+\.mp4$/.test(demo.src) || !existsSync(join(STATIC_ROOT, demo.src))
+			)
+			.map(([name, demo]) => `${name}: ${demo.src}`);
+		expect(broken).toEqual([]);
+	});
+
+	// The clip carries the whole instruction, so a demo without a description
+	// leaves a screen-reader user with a button and nothing else.
+	it('describes every clip for someone who cannot see it', () => {
+		const silent = Object.entries(DEMOS)
+			.filter(([, demo]) => demo.description.length < 40)
+			.map(([name]) => name);
+		expect(silent).toEqual([]);
 	});
 });
 

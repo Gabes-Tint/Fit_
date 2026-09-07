@@ -1,7 +1,8 @@
 <script lang="ts">
 	import Play from '@lucide/svelte/icons/play';
 	import { browser } from '$app/environment';
-	import { demoFor, formCues } from '$lib/domain/exercises';
+	import { DEMOS } from '$lib/domain/exercise-catalog';
+	import { formCues } from '$lib/domain/exercises';
 	import Button from '$lib/ui/Button.svelte';
 	import Modal from '$lib/ui/Modal.svelte';
 
@@ -15,8 +16,7 @@
 	}: { open?: boolean; name: string; onclose: () => void } = $props();
 
 	const cues = $derived(formCues(name));
-	const demo = $derived(demoFor(name));
-	const hasDemo = $derived(demo !== undefined);
+	const demo = $derived(DEMOS[name]);
 
 	// WCAG 2.2.2: motion that starts on its own, runs past five seconds, and sits
 	// beside other content needs a way to stop it. Someone who has asked their
@@ -41,7 +41,7 @@
 </script>
 
 <Modal bind:open title={name} description="Form check">
-	{#if hasDemo}
+	{#if demo}
 		<!--
 			Modal only mounts this markup once `open` is true (bits-ui's Dialog.Content
 			renders nothing while closed — see the "shows nothing until it is opened"
@@ -57,7 +57,7 @@
 		<video
 			bind:this={videoEl}
 			class="bg-secondary focus-visible:ring-ring ring-offset-background mt-4 aspect-square w-full rounded-2xl object-cover focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
-			src={demo?.src}
+			src={demo.src}
 			preload="none"
 			playsinline
 			muted
@@ -65,11 +65,11 @@
 			autoplay={!prefersReducedMotion}
 			role="button"
 			tabindex={0}
-			aria-label={`${demo?.description} Tap or press Enter to pause or play.`}
+			aria-label={`${demo.description} Tap or press Enter to pause or play.`}
 			onclick={toggleDemo}
 			onkeydown={onDemoKeydown}
 		>
-			<p>{demo?.description}</p>
+			<p>{demo.description}</p>
 		</video>
 	{:else}
 		<div
