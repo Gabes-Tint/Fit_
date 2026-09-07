@@ -119,7 +119,8 @@ lets the session pace itself; without it, run cycles by hand.
 3. **Plan.** Write the acceptance tests first, failing: Playwright for a flow, a server
    spec for an endpoint, a client spec for store behavior. Decide the slice. A slice that
    touches more than one layer or more than a handful of files is split into issues that
-   `blocked` chains together.
+   `blocked` chains together. A story that touches a screen adds or extends a `mobile-chrome`
+   e2e using `expectFitsViewport` at 360px (`tests/e2e-support.ts`, #152).
 4. **Delegate.** Choose the agent from the ladder and say why. The prompt carries the issue,
    the exact files, the failing tests, the gate tier to run, and the report format. One
    slice per agent, in a worktree.

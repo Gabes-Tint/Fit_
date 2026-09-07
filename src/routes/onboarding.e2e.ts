@@ -2,6 +2,7 @@ import { expect } from '@playwright/test';
 import { test } from '../../tests/preview-server';
 import {
 	EGG_ROW,
+	expectFitsViewport,
 	openLogSheetAndType,
 	openSampleJournal,
 	signInThroughApi,
@@ -206,8 +207,7 @@ test.describe('once onboarded', () => {
 		expect(stripMetrics.scrollWidth).toBeGreaterThan(stripMetrics.clientWidth);
 
 		const viewportWidth = page.viewportSize()?.width ?? 0;
-		const docScrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
-		expect(docScrollWidth).toBeLessThanOrEqual(viewportWidth);
+		await expectFitsViewport(page);
 
 		const todayBox = await page.getByRole('button', { name: /^Today/ }).boundingBox();
 		expect(todayBox).not.toBeNull();

@@ -25,14 +25,20 @@ const selected =
 		: [requested];
 /** Playwright has no fake-camera flag outside Chromium, so this file stays out of those projects. */
 const CHROMIUM_ONLY_SPECS = '**/photo-camera.e2e.ts';
-/** Its assertions only hold at a phone viewport, so desktop-width projects skip it. */
-const PHONE_ONLY_SPECS = '**/log-sheet-height.e2e.ts';
+/**
+ * Their assertions only hold at a phone viewport, so desktop-width projects
+ * skip them (`phone: false` in `scripts/quality/e2e-projects.ts`).
+ * `phone-layout.e2e.ts` (#152) resizes to 360px inside its own tests, joining
+ * `log-sheet-height.e2e.ts` under the same ignore rather than a runtime
+ * `test.skip`.
+ */
+const PHONE_ONLY_SPECS = ['**/log-sheet-height.e2e.ts', '**/phone-layout.e2e.ts'];
 
 const projects = selected.map((name) => {
 	const project = e2eProjects[name as keyof typeof e2eProjects];
 	const testIgnore = [
 		...(project.browser === 'chromium' ? [] : [CHROMIUM_ONLY_SPECS]),
-		...(project.phone ? [] : [PHONE_ONLY_SPECS])
+		...(project.phone ? [] : PHONE_ONLY_SPECS)
 	];
 	return {
 		name,
