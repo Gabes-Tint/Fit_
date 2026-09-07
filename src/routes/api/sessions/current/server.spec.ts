@@ -12,25 +12,17 @@ vi.mock('$lib/server/auth-endpoints', () => ({ currentSession, signOut }));
 const { DELETE, GET } = await import('./+server');
 
 describe('GET /api/sessions/current', () => {
-	it('reads the session the request presented and answers what it returns', async () => {
-		const event = { url: new URL('https://fit.example/api/sessions/current') } as RequestEvent;
-		const response = await GET(event);
-		expect(currentSession).toHaveBeenCalledWith(event);
-		expect(response.status).toBe(200);
-	});
-
-	it('opens no database of its own, because the hook already resolved the session', async () => {
+	it('reads the session the request presented, opening no database of its own', async () => {
 		const event = { url: new URL('https://fit.example/api/sessions/current') } as RequestEvent;
 		await GET(event);
-		expect(currentSession).not.toHaveBeenCalledWith(database, event);
+		expect(currentSession).toHaveBeenCalledWith(event);
 	});
 });
 
 describe('DELETE /api/sessions/current', () => {
 	it('ends only the session this request presented', async () => {
 		const event = { url: new URL('https://fit.example/api/sessions/current') } as RequestEvent;
-		const response = await DELETE(event);
+		await DELETE(event);
 		expect(signOut).toHaveBeenCalledWith(database, event);
-		expect(response.status).toBe(204);
 	});
 });

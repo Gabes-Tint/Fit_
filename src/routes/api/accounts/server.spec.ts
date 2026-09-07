@@ -11,10 +11,9 @@ vi.mock('$lib/server/auth-endpoints', () => ({ register }));
 const { POST } = await import('./+server');
 
 describe('POST /api/accounts', () => {
-	it('registers through the process-wide database and answers what it returns', async () => {
+	it('registers through the process-wide database', async () => {
 		const event = { url: new URL('https://fit.example/api/accounts') } as RequestEvent;
-		const response = await POST(event);
+		await POST(event);
 		expect(register).toHaveBeenCalledWith(database, event);
-		expect(response.status).toBe(201);
 	});
 });

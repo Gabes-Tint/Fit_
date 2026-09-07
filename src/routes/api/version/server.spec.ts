@@ -14,18 +14,13 @@ function request(): RequestEvent {
 }
 
 describe('GET /api/version', () => {
-	it('answers with the version and commit this build carries', async () => {
+	it('answers with the version and commit this build carries, asking for no session', async () => {
+		// No `locals` on the event below: reading one would throw rather than answer.
 		const response = await GET(request());
 		expect(response.status).toBe(200);
 		await expect(response.json()).resolves.toEqual({
 			version: __APP_VERSION__,
 			commit: __APP_COMMIT__
 		});
-	});
-
-	it('asks for no session, so a deploy can check it before it has an account', async () => {
-		const response = await GET(request());
-		// No `locals` on the event above: reading one would throw rather than answer.
-		expect(response.status).toBe(200);
 	});
 });
