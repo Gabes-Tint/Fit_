@@ -123,42 +123,22 @@
 		},
 		{
 			"file": "src/lib/server/api.ts",
-			"mutatorName": "OptionalChaining",
-			"replacement": "request.headers.get('content-type')?.split(';')[0].trim",
-			"location": {
-				"end": {
-					"column": 79,
-					"line": 90
-				},
-				"start": {
-					"column": 23,
-					"line": 90
-				}
-			},
-			"sourceHash": "9ceb48fdfc4fdb13669ac2ba06de721da162db97ce42e9db58528befa6ff9cfc",
-			"fingerprint": "a64bbbaa89a24d42c393be034e3c5d3c5a9f9452034f45b608888c32592b5909",
-			"classification": "equivalent",
-			"rationale": "String.prototype.split always returns at least one element, so the element at index 0 is never null or undefined and the optional access before trim can only ever take its defined branch.",
-			"review": "https://github.com/gabepsilva/Fit_/pull/5"
-		},
-		{
-			"file": "src/lib/server/api.ts",
 			"mutatorName": "BlockStatement",
 			"replacement": "{}",
 			"location": {
 				"end": {
 					"column": 3,
-					"line": 99
+					"line": 166
 				},
 				"start": {
 					"column": 10,
-					"line": 96
+					"line": 163
 				}
 			},
-			"sourceHash": "9ceb48fdfc4fdb13669ac2ba06de721da162db97ce42e9db58528befa6ff9cfc",
-			"fingerprint": "9248d5c53a2d6a46c138363d296c4dad2e959e67942228bcf2a06c658615c005",
+			"sourceHash": "7fb024cf1c6cff6f6e9b5547e62f303c616fd93a397c19927726e1d339bf90a4",
+			"fingerprint": "947c2d75635b1fa9b05e8cfe2c1c2759126e0c4604d30aef7042428001ae36e7",
 			"classification": "equivalent",
-			"rationale": "Emptying the catch leaves parsed as undefined, which textFieldsOf already refuses because it is not an object, so a malformed body still answers null on both the guarded and the unguarded path.",
+			"rationale": "Emptying the catch leaves parsed as undefined, which textFieldsOf already refuses because it is not an object, so a malformed body still answers null on both the guarded and the unguarded path. (Relocated by #163/#165: readTextBody now reads through readJsonText and declaredMediaType, moving this catch from line 96 to line 163 without changing its behavior; the sibling OptionalChaining review for the old `?.split(';')[0]?.trim` at line 90 is removed because that code no longer exists — declaredMediaType uses indexOf/slice instead.)",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
 		},
 		{
@@ -168,17 +148,17 @@
 			"location": {
 				"end": {
 					"column": 83,
-					"line": 175
+					"line": 167
 				},
 				"start": {
 					"column": 81,
-					"line": 175
+					"line": 167
 				}
 			},
-			"sourceHash": "89d3cfaef06931c4b4f3c5ad48d4f45eed946735ce45e7b9d7141512f5d48454",
-			"fingerprint": "33e6a21914a98b080acd8a370922fb53c2033727d49127af4a6f7e9f9c0c4c26",
+			"sourceHash": "dc0994ad4cc5de44ab60d858283d2039e99518168bb0b82cfe9fbda2c0256f99",
+			"fingerprint": "89005b9b2cf3a6e989ad9c21b62f3038d2ae2534625dd2deb4ed17b5862960a6",
 			"classification": "equivalent",
-			"rationale": "The fallback for an absent password field is only ever verified against a stored hash and never persisted, so any literal that is not somebody's password yields the same invalid-credentials answer; the upgrade candidate a longer literal would derive is discarded because verification failed.",
+			"rationale": "The fallback for an absent password field is only ever verified against a stored hash and never persisted, so any literal that is not somebody's password yields the same invalid-credentials answer; the upgrade candidate a longer literal would derive is discarded because verification failed. (Relocated by #163/#165: removing the file-local tooManyAttempts wrapper in favor of api.ts's shared retryAfter moved this line from 175 to 167 without changing it.)",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
 		},
 		{
@@ -335,10 +315,10 @@
 					"line": 145
 				}
 			},
-			"sourceHash": "b408597c4c8f46692d6161995f240a3117e96f21b0f0aa352188fc0a248a49ad",
-			"fingerprint": "26da3329f5b37e0e32a9effd03aea178f05123f7621c9cb462ce28764c5c2b6a",
+			"sourceHash": "73677b7257f7ef75cd12f078987002c8da6809a973ebe609392ea4354495b77f",
+			"fingerprint": "23e6b148fe2667fb23c2187d7f27c2955cb678c992f84efecee2779b4c107dfb",
 			"classification": "equivalent",
-			"rationale": "For a non-string stored credential, both the empty fallback and this exact replacement fail the anchored fixed-width serialized-hash grammar before any derivation or authentication.",
+			"rationale": "For a non-string stored credential, both the empty fallback and this exact replacement fail the anchored fixed-width serialized-hash grammar before any derivation or authentication. (sourceHash refreshed by #163/#165: password.ts changed elsewhere — the unused passwordHashNeedsUpgrade wrapper was deleted — this line is untouched.)",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
 		},
 		{

@@ -1,7 +1,14 @@
 import { json } from '@sveltejs/kit';
 import type { DatabaseSync } from 'node:sqlite';
 import { withinLimits } from '$lib/domain/resolve-limits';
-import { apiError, MAX_BODY_BYTES } from '../api';
+import {
+	apiError,
+	declaredMediaType,
+	JSON_CONTENT_TYPE,
+	MAX_BODY_BYTES,
+	readJsonText,
+	withinDeclaredLength
+} from '../api';
 import { ready } from './endpoints';
 import { resolveFood } from './resolve';
 
@@ -38,33 +45,6 @@ function namesQueries(value: unknown): value is string[] {
 }
 
 /**
- * Whether the request declares JSON. The media type is the text before any
- * parameter, compared case-insensitively; a request that declares no content
- * type at all is not JSON, which also keeps this endpoint outside the content
- * types a cross-site form can produce.
- */
-function declaresJson(request: Request): boolean {
-	const header = request.headers.get('content-type');
-	if (header === null) return false;
-	const separator = header.indexOf(';');
-	const type = separator === -1 ? header : header.slice(0, separator);
-	return type.trim().toLowerCase() === 'application/json';
-}
-
-/**
- * The body as something the caller can read fields off, or `null` for text that
- * is not JSON at all. JSON's own `null` comes back as it is, and is turned away
- * beside the text that could not be parsed.
- */
-function fieldsOf(raw: string): Record<string, unknown> | null {
-	try {
-		return JSON.parse(raw) as Record<string, unknown> | null;
-	} catch {
-		return null;
-	}
-}
-
-/**
  * The names asked about, or the refusal.
  *
  * The caps come from `resolve-limits.ts`, which both sides of the wire read, so
@@ -74,24 +54,25 @@ function fieldsOf(raw: string): Record<string, unknown> | null {
  * twelve names of eighty characters sits well inside it.
  */
 async function readResolveBody(request: Request): Promise<ParsedResolveBody> {
-	if (!declaresJson(request)) return REFUSED;
-	if (Number(request.headers.get('content-length')) > MAX_BODY_BYTES) return REFUSED;
+	if (declaredMediaType(request) !== JSON_CONTENT_TYPE) return REFUSED;
+	if (!withinDeclaredLength(request, MAX_BODY_BYTES)) return REFUSED;
 
-	let raw: string;
+	const raw = await readJsonText(request, MAX_BODY_BYTES);
+	if (raw === null) return REFUSED;
+
+	let parsed: unknown;
 	try {
-		raw = await request.text();
+		parsed = JSON.parse(raw);
 	} catch {
-		// A stream that broke is the sender's problem, not an error to throw here.
+		// Text that is not JSON at all is turned away beside JSON's own `null`,
+		// which `namesQueries` already refuses through the field it never has.
 		return REFUSED;
 	}
-	if (raw.length > MAX_BODY_BYTES) return REFUSED;
-
-	const fields = fieldsOf(raw);
-	if (fields === null) return REFUSED;
+	if (parsed === null) return REFUSED;
 	// A string and a number answer `undefined` for the field, which
 	// `namesQueries` already turns away, so there is no separate "is this an
 	// object" test for a body no caller could get past it.
-	const queries = fields['queries'];
+	const queries = (parsed as Record<string, unknown>)['queries'];
 	if (!namesQueries(queries)) return REFUSED;
 	return { ok: true, queries };
 }

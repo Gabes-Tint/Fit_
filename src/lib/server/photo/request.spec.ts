@@ -35,30 +35,16 @@ describe('readPhotoBody', () => {
 		expect(parsed).toEqual({ ok: true, image: IMAGE, meal: 'dinner' });
 	});
 
-	it('accepts a content type that carries a charset', async () => {
-		const parsed = await readPhotoBody(
-			sending(
-				{ image: IMAGE, meal: 'lunch' },
-				{ 'content-type': 'APPLICATION/JSON ; charset=utf-8' }
-			)
-		);
-		expect(parsed).toMatchObject({ ok: true });
-	});
-
 	it('refuses a body that does not declare JSON', async () => {
+		// The full matrix of content types is `declaredMediaType`'s, tested once in
+		// `api.spec.ts`; this is readPhotoBody's own refusal shape for the case it
+		// names.
 		const request = new Request('https://fit.example/api/meals/photo', {
 			method: 'POST',
 			body: JSON.stringify({ image: IMAGE, meal: 'lunch' })
 		});
 		request.headers.delete('content-type');
 		expect(await readPhotoBody(request)).toEqual(REFUSED);
-	});
-
-	it('refuses a form-encoded body, which is what a cross-site form can produce', async () => {
-		const parsed = await readPhotoBody(
-			sending({ image: IMAGE, meal: 'lunch' }, { 'content-type': 'text/plain' })
-		);
-		expect(parsed).toEqual(REFUSED);
 	});
 
 	it('refuses a body whose declared length is over the ceiling, before reading it', async () => {
