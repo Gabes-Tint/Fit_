@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import process from 'node:process';
 import { captureStatus } from '../security/shared';
+import { underGateSlice } from '../dev/gate-slice';
 import { gateLogDirectory, gateReportPath } from './gate-paths';
 import { tiers } from './gates';
 import { isServerSource, walk } from './mutation-scope';
@@ -225,7 +226,9 @@ async function runCommand(
 }> {
 	const logPath = path.join(logDirectory, `${logName.replace(/[/:]/g, '-')}.log`);
 	const startedAt = Date.now();
-	const { exitCode, output } = await captureStatus(command, args, {
+	// Same launch decision the tiered gate makes: sliced locally, untouched in CI.
+	const launch = underGateSlice(command, args);
+	const { exitCode, output } = await captureStatus(launch.command, launch.args, {
 		env: { ...process.env, ...extraEnv, FORCE_COLOR: '0' }
 	});
 	await writeFile(logPath, output);

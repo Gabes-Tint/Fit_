@@ -75,6 +75,7 @@
 		"security": "bun run security:blocking && bun run security:advisory",
 		"deploy": "bun scripts/deploy/deploy.ts",
 		"deploy:smoke": "bun scripts/deploy/smoke.ts",
+		"dev:gate-slice": "bun scripts/dev/install-gate-slice.ts",
 		"worktree:new": "bun scripts/dev/worktree.ts new",
 		"worktree:done": "bun scripts/dev/worktree.ts done",
 		"ci:rerun-failed": "bun scripts/ci/rerun-failed.ts",
