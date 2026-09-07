@@ -468,15 +468,15 @@
 			"location": {
 				"end": {
 					"column": 30,
-					"line": 96
+					"line": 103
 				},
 				"start": {
 					"column": 9,
-					"line": 96
+					"line": 103
 				}
 			},
-			"sourceHash": "73988f9fc1030732ac5d22db232715ccb160673b42dedff07c46caf3b68f3ee9",
-			"fingerprint": "09adddef5fff1e13d9653cc6b4d42f17ad39fb44b1cebb6e7d784ee28cc0f7be",
+			"sourceHash": "077f418fb83137c1dcb51447d69d49128e9012aa5ed7ec36026a6b9763676be7",
+			"fingerprint": "5899e54d66af30f3bf8ed23655ff454a68aa19de24f522bd40f95f5a0a4ea44e",
 			"classification": "equivalent",
 			"rationale": "The subject is raw.slice(0, 10), so it is at most ten characters, and the pattern matches exactly ten. A ten-character pattern can only match a ≤10-character string at offset 0 running to the end, so ‘matches somewhere’ and ‘matches the whole string’ are the same proposition here, and dropping ^ cannot change the verdict. The anchor stays in the code because it documents intent and would start mattering the moment the slice changes.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/199"
@@ -488,15 +488,15 @@
 			"location": {
 				"end": {
 					"column": 30,
-					"line": 96
+					"line": 103
 				},
 				"start": {
 					"column": 9,
-					"line": 96
+					"line": 103
 				}
 			},
-			"sourceHash": "73988f9fc1030732ac5d22db232715ccb160673b42dedff07c46caf3b68f3ee9",
-			"fingerprint": "e78b32d17f828a33772b874b89f67d3754d70c9460ae0ccd97df970f3d68de3f",
+			"sourceHash": "077f418fb83137c1dcb51447d69d49128e9012aa5ed7ec36026a6b9763676be7",
+			"fingerprint": "8139b57bf8563f793cdd0e363720d1f69c75188c708cfc079f31bbe6d192d06f",
 			"classification": "equivalent",
 			"rationale": "Same slice, the other anchor: raw.slice(0, 10) is at most ten characters and the pattern matches exactly ten, so a match at offset 0 already runs to the end of whatever there is to match. Dropping $ cannot separate ‘matches somewhere’ from ‘matches the whole string’ given that slice. The anchor stays in the code because it documents intent and would start mattering the moment the slice changes.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/199"
@@ -508,15 +508,15 @@
 			"location": {
 				"end": {
 					"column": 26,
-					"line": 105
+					"line": 114
 				},
 				"start": {
 					"column": 24,
-					"line": 105
+					"line": 114
 				}
 			},
-			"sourceHash": "73988f9fc1030732ac5d22db232715ccb160673b42dedff07c46caf3b68f3ee9",
-			"fingerprint": "24b8a3ad37c5cc561cd99c32d0c3bcd24e82d0a2168f79db914b76e92a202efa",
+			"sourceHash": "077f418fb83137c1dcb51447d69d49128e9012aa5ed7ec36026a6b9763676be7",
+			"fingerprint": "2ac8747dfd64a12fb9875720642800748a2e8d7d780f5b2f01b17cad1fc12cb7",
 			"classification": "equivalent",
 			"rationale": "splitCsv is private to the module — three references, all inside export-data.ts — and both the header line and every data row are split by the same function, so a constant prefix element shifts every column index by exactly one on both sides and the header-to-row alignment survives. A test pinning that alignment directly (a wide CSV, checking every field lands under its header, across every row) was tried first and still could not kill it: the junk cell is also the only new header cell, and ‘stryker was here’ contains none of the substrings idx() looks for (date, name/food/item, calor, protein, carb, fat, meal/folder), so it never captures a column and the shift stays symmetric. The call rests on today’s idx() keyword heuristics rather than a structural impossibility — a future keyword colliding with the junk string would invalidate it, and the source hash would not catch that because the change would land in a different function. See issue/145 for the full discussion.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/199"
