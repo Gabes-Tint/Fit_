@@ -215,7 +215,11 @@
 				</div>
 				<div class="mt-4">
 					<p class="text-muted-foreground text-sm font-medium">Exercise load label</p>
-					<div class="mt-2 inline-flex gap-1" role="group" aria-label="Exercise load label: kg or lb">
+					<div
+						class="mt-2 inline-flex gap-1"
+						role="group"
+						aria-label="Exercise load label: kg or lb"
+					>
 						{#each LOAD_UNITS as u (u.id)}
 							<ToggleButton
 								pressed={tend.state.loadUnit === u.id}
