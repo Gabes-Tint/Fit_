@@ -94,7 +94,7 @@ function changedFiles(base: string): ChangedFile[] {
 	return changes;
 }
 
-function specCandidates(file: string): string[] {
+export function specCandidates(file: string): string[] {
 	const withoutExtension = file.replace(/\.ts$/, '').replace(/\.svelte$/, '.svelte');
 	const base = withoutExtension.replace(/\.svelte$/, '');
 	const isSvelte = file.endsWith('.svelte');
@@ -111,32 +111,70 @@ async function exists(file: string): Promise<boolean> {
 }
 
 /** Every `.ts`/`.svelte` source file under `src/`, for the import-path grep. */
-async function allSourceFiles(): Promise<string[]> {
+export async function allSourceFiles(): Promise<string[]> {
 	const files = await walk(path.join(projectRoot, 'src'));
 	return files
 		.map((file) => path.relative(projectRoot, file).split(path.sep).join('/'))
 		.filter((file) => file.endsWith('.ts') || file.endsWith('.svelte'));
 }
 
+const SPEC_OR_E2E = /\.(?:spec|e2e)\.ts$/;
+
 /**
- * Specs (`.spec.ts`/`.svelte.spec.ts`) anywhere under `src/` whose source
- * imports the module path a changed file resolves to — a plain string search
- * over the import specifier, not a type-checked resolution: cheap, and exact
- * enough for widening a spec list.
+ * A regex over an import specifier for a module whose basename is `base`:
+ * requires a path-segment boundary (a quote or `/`) right before `base`, and
+ * `base` immediately followed by an optional `.svelte` then the closing
+ * quote — so `'$lib/components/WeekStrip'` and `'./WeekStrip.svelte'` both
+ * match, while a longer name that merely contains `base` as a substring
+ * (`WeekStripFoo`, `FooWeekStrip`) does not.
  */
-async function importingSpecsOf(file: string, allFiles: readonly string[]): Promise<string[]> {
+function importPattern(base: string): RegExp {
+	return new RegExp(`(?:['"]|/)${escapeRegExp(base)}(?:\\.svelte)?['"]`);
+}
+
+/**
+ * Files (specs or plain modules) anywhere under `src/` whose source imports
+ * the module path `file` resolves to — a plain string search over the
+ * import specifier, not a type-checked resolution: cheap, and exact enough
+ * for widening a spec list.
+ */
+async function filesImporting(file: string, allFiles: readonly string[]): Promise<string[]> {
 	const withoutExtension = file.replace(/\.svelte$/, '').replace(/\.ts$/, '');
 	const base = path.basename(withoutExtension);
-	const specs = allFiles.filter((candidate) => /\.(?:spec|e2e)\.ts$/.test(candidate));
+	const pattern = importPattern(base);
 	const matches: string[] = [];
-	for (const spec of specs) {
-		if (spec === file) continue;
-		const source = await readFile(path.join(projectRoot, spec), 'utf8');
-		if (new RegExp(`['"][^'"]*${escapeRegExp(base)}(?:\\.svelte)?['"]`).test(source)) {
-			matches.push(spec);
-		}
+	for (const candidate of allFiles) {
+		if (candidate === file) continue;
+		const source = await readFile(path.join(projectRoot, candidate), 'utf8');
+		if (pattern.test(source)) matches.push(candidate);
 	}
 	return matches;
+}
+
+/**
+ * Specs (`.spec.ts`/`.svelte.spec.ts`/`.e2e.ts`) that select for a changed
+ * file: specs that import it directly, plus — one level of reverse imports
+ * out (issue #154) — the sibling specs of any non-spec module that imports
+ * it. That widening is what makes changing `WeekStrip.svelte` select
+ * `TodayView.svelte.spec.ts`: `TodayView.svelte` imports `WeekStrip.svelte`,
+ * not the other way around, and its spec never mentions `WeekStrip` at all.
+ */
+export async function importingSpecsOf(
+	file: string,
+	allFiles: readonly string[]
+): Promise<string[]> {
+	const importers = await filesImporting(file, allFiles);
+	const matches: string[] = [];
+	for (const importer of importers) {
+		if (SPEC_OR_E2E.test(importer)) {
+			matches.push(importer);
+			continue;
+		}
+		for (const candidate of specCandidates(importer)) {
+			if (await exists(candidate)) matches.push(candidate);
+		}
+	}
+	return [...new Set(matches)];
 }
 
 function escapeRegExp(literal: string): string {
