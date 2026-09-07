@@ -227,6 +227,72 @@ export const fixtures: GateFixture[] = [
 			)
 	},
 	{
+		// A composite action is read from the workspace, so a job that calls one
+		// without checking out first fails on "Can't find action" -- naming the
+		// action, not the missing checkout. Three comments and QUALITY.md say this
+		// check proves checkout stays in every job; this is the assertion that
+		// makes that true.
+		name: 'ci-job-without-checkout',
+		gate: 'check:ci-contract',
+		failureIncludes: 'CI jobs do not check the repository out',
+		description:
+			'A CI job that calls a local composite action without checking the repository out.',
+		apply: (root) =>
+			edit(root, '.github/workflows/ci.yml', (content) =>
+				content.replace(
+					'      - name: Check out repository\n        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n        with:\n          fetch-depth: 0\n          persist-credentials: false\n\n',
+					''
+				)
+			)
+	},
+	{
+		// #167 moved the five pasted setup steps into one composite action, and
+		// that is the shape that can hollow this check out: a job with no
+		// toolchain in it reads exactly like a job with one, unless something
+		// asks. This is the half that asks the job.
+		name: 'ci-job-without-setup',
+		gate: 'check:ci-contract',
+		failureIncludes: 'CI jobs run Bun without the shared toolchain setup: static',
+		description: 'A CI job that runs Bun with its shared toolchain setup removed.',
+		apply: (root) =>
+			edit(root, '.github/workflows/ci.yml', (content) =>
+				content.replace(
+					'      - name: Set up the toolchain\n        uses: ./.github/actions/setup\n\n',
+					''
+				)
+			)
+	},
+	{
+		// The half that asks the action. Every job could still call it while it
+		// had quietly stopped installing anything, and each job would then fail
+		// on its own missing dependencies instead of naming what broke.
+		name: 'gutted-setup-action',
+		gate: 'check:ci-contract',
+		failureIncludes: 'no longer installs from the lockfile',
+		description: 'The shared toolchain action no longer installs the locked dependencies.',
+		apply: (root) =>
+			edit(root, '.github/actions/setup/action.yml', (content) =>
+				content.replace('      run: bun install --frozen-lockfile\n', '')
+			)
+	},
+	{
+		// `if: always()` has to stay at the call site. A condition inside the
+		// composite cannot resurrect a step the job already skipped, so a gate
+		// that failed would upload no evidence at all and the run would look
+		// tidier for it.
+		name: 'unconditional-report-upload',
+		gate: 'check:ci-contract',
+		failureIncludes: 'Upload static reports',
+		description: 'A report upload that no longer runs once the gate it documents fails.',
+		apply: (root) =>
+			edit(root, '.github/workflows/ci.yml', (content) =>
+				content.replace(
+					'        if: always()\n        uses: ./.github/actions/upload-report\n',
+					'        uses: ./.github/actions/upload-report\n'
+				)
+			)
+	},
+	{
 		// The full mutation lane is no longer a merge gate, so nothing in ci.yml
 		// would notice it disappearing. This is what stands in its place: delete
 		// the cron and the lane stops running entirely, which is the exact way

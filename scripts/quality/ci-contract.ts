@@ -8,9 +8,13 @@ import { fixtures } from './fixtures';
 import { groupRequirements, selfTestGroupNames } from './self-test-groups';
 
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
-const [workflow, makefile] = await Promise.all([
+const setupAction = path.join('.github', 'actions', 'setup', 'action.yml');
+const uploadAction = path.join('.github', 'actions', 'upload-report', 'action.yml');
+const [workflow, makefile, setupSource, uploadSource] = await Promise.all([
 	readFile(path.join(projectRoot, '.github', 'workflows', 'ci.yml'), 'utf8'),
-	readFile(path.join(projectRoot, 'Makefile'), 'utf8')
+	readFile(path.join(projectRoot, 'Makefile'), 'utf8'),
+	readFile(path.join(projectRoot, setupAction), 'utf8'),
+	readFile(path.join(projectRoot, uploadAction), 'utf8')
 ]);
 
 function referencedJobs(source: string): Set<string> {
@@ -148,6 +152,71 @@ function ungatedConditionalSkips(
 		.map((job) => job.name);
 }
 
+/**
+ * The five setup steps every job used to paste (#167) now live in one composite
+ * action, and that is the shape #172 warns about: reading `ci.yml` alone, a job
+ * with no toolchain in it looks exactly like a job that has one, and this check
+ * would go quiet at the moment it mattered. So the preamble's guarantee is
+ * asserted in two halves that only hold together -- every job that runs Bun
+ * calls the action, and the action still does what the paste did.
+ */
+const setupUses = './.github/actions/setup';
+const uploadUses = './.github/actions/upload-report';
+
+/** Step blocks, split on the `- ` that opens one at job-step indentation. */
+function stepBlocks(source: string): string[] {
+	const starts = [...source.matchAll(/^ {6}- /gm)];
+	return starts.map((start, index) =>
+		source.slice(start.index ?? 0, starts[index + 1]?.index ?? source.length)
+	);
+}
+
+/**
+ * A job that runs `bun` or `bunx` anywhere outside a comment needs the
+ * toolchain the composite installs. `all-green` is the one job that does not:
+ * it reads the other jobs' results in bash and installs nothing.
+ */
+function runsBun(body: string): boolean {
+	return /(?:^|[\s'"])bunx? /.test(body.replace(/^\s*#.*$/gm, ''));
+}
+
+/**
+ * A composite action is read from the workspace, so it cannot be the step that
+ * puts the workspace there: a job calling `./.github/actions/setup` without
+ * checking out first fails on "Can't find action", naming the action rather
+ * than the missing checkout. So every job that calls a local action keeps its
+ * own `actions/checkout`, and this says so instead of a comment promising it.
+ * `all-green` is exempt because it calls none: it reads the other jobs'
+ * results and never touches the tree.
+ */
+function missingCheckout(sections: Map<string, string>): string[] {
+	return [...sections]
+		.filter(
+			([, body]) =>
+				body.includes('uses: ./.github/') && !/uses: actions\/checkout@[0-9a-f]{40}/.test(body)
+		)
+		.map(([name]) => name)
+		.sort();
+}
+
+/** Named guarantees, each a pattern the action file has to keep satisfying. */
+function unmetGuarantees(source: string, guarantees: readonly [string, RegExp][]): string[] {
+	return guarantees.filter(([, pattern]) => !pattern.test(source)).map(([claim]) => claim);
+}
+
+/**
+ * The report upload was `if: always()` in every pasted block, and it has to
+ * stay at the call site: a condition inside the composite cannot bring back a
+ * step the job already skipped, so a gate that failed would upload no evidence
+ * at all. That is the one thing moving these blocks into an action could break
+ * without anything else noticing.
+ */
+function uploadsMissingAlways(source: string): string[] {
+	return stepBlocks(source)
+		.filter((step) => step.includes(`uses: ${uploadUses}`) && !/^ {8}if: always\(\)$/m.test(step))
+		.map((step) => /^ {6}- name: (.+)$/m.exec(step)?.[1] ?? step.split('\n')[0] ?? '');
+}
+
 const expected = Object.keys(ciJobs).sort();
 const workflowJobs = referencedJobs(workflow);
 const makeJobs = referencedJobs(makefile);
@@ -175,10 +244,59 @@ const wronglySetUpGroups = selfTestGroupNames
 		const needed = groupRequirements(fixtures, group);
 		return declared.docker !== needed.docker || declared.browser !== needed.browser;
 	});
+const toolchainJobs = [...workflowSections]
+	.filter(([, body]) => runsBun(body))
+	.map(([name]) => name)
+	.sort();
+const uncheckedOutJobs = missingCheckout(workflowSections);
+const missingSetup = toolchainJobs.filter(
+	(job) => !(workflowSections.get(job) ?? '').includes(`uses: ${setupUses}`)
+);
+const brokenSetup = unmetGuarantees(setupSource, [
+	[
+		'pins Node to .tool-versions',
+		/uses: actions\/setup-node@[0-9a-f]{40}[\s\S]*?node-version-file: \.tool-versions/
+	],
+	[
+		'pins Bun to .tool-versions',
+		/uses: oven-sh\/setup-bun@[0-9a-f]{40}[\s\S]*?bun-version-file: \.tool-versions/
+	],
+	[
+		'restores the Bun package cache',
+		/uses: actions\/cache@[0-9a-f]{40}[\s\S]*?path: ~\/\.bun\/install\/cache/
+	],
+	['installs from the lockfile', /run: bun install --frozen-lockfile/]
+]);
+const brokenUpload = unmetGuarantees(uploadSource, [
+	['uploads through actions/upload-artifact', /uses: actions\/upload-artifact@[0-9a-f]{40}/],
+	['keeps a report for 14 days', /retention-days: 14/],
+	[
+		'names each artifact after the run and attempt',
+		/name: \$\{\{ inputs\.name \}\}-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/
+	]
+]);
+const unconditionalUploads = uploadsMissingAlways(workflow);
 const allGreenJob = workflowSections.get('all-green') ?? '';
 const conditionalJobs = conditionalSelfTestJobs(workflowSections);
 const ungatedSkips = ungatedConditionalSkips(allGreenJob, conditionalJobs);
 const failures = [
+	...(uncheckedOutJobs.length === 0
+		? []
+		: [
+				`CI jobs do not check the repository out, so the local composite actions they call cannot be read: ${uncheckedOutJobs.join(', ')}`
+			]),
+	...(missingSetup.length === 0
+		? []
+		: [`CI jobs run Bun without the shared toolchain setup: ${missingSetup.join(', ')}`]),
+	...(brokenSetup.length === 0 ? [] : [`${setupAction} no longer ${brokenSetup.join(', nor ')}`]),
+	...(brokenUpload.length === 0
+		? []
+		: [`${uploadAction} no longer ${brokenUpload.join(', nor ')}`]),
+	...(unconditionalUploads.length === 0
+		? []
+		: [
+				`CI report uploads are not gated on if: always(), so a failed gate uploads no evidence: ${unconditionalUploads.join(', ')}`
+			]),
 	...(missingWorkflow.length === 0
 		? []
 		: [`CI workflow does not invoke declared jobs: ${missingWorkflow.join(', ')}`]),
@@ -208,7 +326,7 @@ const failures = [
 
 if (failures.length === 0) {
 	console.log(
-		`CI contract: ${expected.length} declared jobs are wired locally, ${hostedGateJobs.length} hosted jobs are protected by all-green, and the matrices run ${runProjects.size} end-to-end projects and ${allRunGroups.size} self-test groups.`
+		`CI contract: ${expected.length} declared jobs are wired locally, ${hostedGateJobs.length} hosted jobs are protected by all-green, ${toolchainJobs.length} jobs set the toolchain up through ${setupUses}, and the matrices run ${runProjects.size} end-to-end projects and ${allRunGroups.size} self-test groups.`
 	);
 } else {
 	for (const failure of failures) console.error(failure);
