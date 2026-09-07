@@ -501,7 +501,7 @@ describe('LogSheet', () => {
 		await openSheet();
 		await page.getByRole('button', { name: 'Search' }).click();
 		await page.getByLabelText('Search foods, brands, barcodes').fill('kumquat');
-		const hit = page.getByRole('button', { name: /HONEY NUT CHEERIOS/ });
+		const hit = page.getByRole('button', { name: /HONEY NUT CHEERIOS/ }).first();
 		await expect.element(hit, { timeout: 4000 }).toBeInTheDocument();
 		await hit.click();
 		await page.getByRole('button', { name: 'Add to today' }).click();

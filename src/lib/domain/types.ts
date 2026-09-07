@@ -59,6 +59,40 @@ export const ZERO_MICROS: Micros = {
 	folate: 0
 };
 
+/**
+ * A food's nutrients per 100 g/mL, the basis the catalog stores them on,
+ * before they are scaled onto a serving. Unlike `Micros`, a value the source
+ * never reported stays `null` here rather than becoming zero — the nutrition
+ * facts sheet (#175) needs that distinction to show an em dash instead of a
+ * false zero. `folate` is on `Micros` but not here: nothing yet reads it off
+ * the wire, so it stays out of this basis until something does.
+ */
+export type NutrientBasis = {
+	kcal: number;
+	protein: number | null;
+	fat: number | null;
+	carbs: number | null;
+	saturatedFat: number | null;
+	fiber: number | null;
+	sugar: number | null;
+	sodium: number | null;
+	/**
+	 * Optional, unlike the fields above: they were on the wire before #175 and
+	 * every fixture in the tree sets them, so they stay required. These nine
+	 * are new — a payload that omits them entirely (every fixture written
+	 * before this change) is still a valid one, read the same as `null`.
+	 */
+	potassium?: number | null | undefined;
+	iron?: number | null | undefined;
+	calcium?: number | null | undefined;
+	magnesium?: number | null | undefined;
+	zinc?: number | null | undefined;
+	vitaminA?: number | null | undefined;
+	vitaminC?: number | null | undefined;
+	vitaminD?: number | null | undefined;
+	vitaminB12?: number | null | undefined;
+};
+
 export type Food = {
 	id: string;
 	name: string;
@@ -80,6 +114,12 @@ export type Food = {
 	carbs: number;
 	fat: number;
 	micros: Micros;
+	/**
+	 * The raw per-100 g basis a catalog row carried, nulls and all. Absent for
+	 * a bundled food, which never had one — `nutritionFactsRows` falls back to
+	 * this food's own already-scaled numbers in that case (#175).
+	 */
+	per100g?: NutrientBasis | undefined;
 };
 
 /**

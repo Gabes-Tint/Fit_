@@ -24,7 +24,16 @@ const CEREAL: CatalogFoodPayload = {
 		sugar: 24.3,
 		fiber: 8.1,
 		sodium: 500,
-		saturatedFat: 0.7
+		saturatedFat: 0.7,
+		potassium: 300,
+		iron: 27,
+		calcium: 500,
+		magnesium: 60,
+		zinc: 12,
+		vitaminA: 500,
+		vitaminC: 15,
+		vitaminD: 5,
+		vitaminB12: 1.8
 	}
 };
 
@@ -116,6 +125,28 @@ describe('isCatalogFoodPayload', () => {
 
 	it('rejects any nutrient that is neither a number nor absent', () => {
 		for (const nutrient of ['protein', 'fat', 'carbs', 'sugar', 'fiber', 'sodium']) {
+			expect(
+				isCatalogFoodPayload({ ...CEREAL, per100g: { ...CEREAL.per100g, [nutrient]: 'lots' } })
+			).toBe(false);
+		}
+	});
+
+	it('accepts any of the nine #175 micros as a number, as null, or absent entirely', () => {
+		for (const nutrient of ['potassium', 'iron', 'calcium', 'magnesium', 'zinc', 'vitaminA']) {
+			expect(
+				isCatalogFoodPayload({ ...CEREAL, per100g: { ...CEREAL.per100g, [nutrient]: 12 } })
+			).toBe(true);
+			expect(
+				isCatalogFoodPayload({ ...CEREAL, per100g: { ...CEREAL.per100g, [nutrient]: null } })
+			).toBe(true);
+			const withoutIt: Record<string, unknown> = { ...CEREAL.per100g, [nutrient]: undefined };
+			delete withoutIt[nutrient];
+			expect(isCatalogFoodPayload({ ...CEREAL, per100g: withoutIt })).toBe(true);
+		}
+	});
+
+	it('rejects a #175 micro that is neither a number, null, nor absent', () => {
+		for (const nutrient of ['potassium', 'vitaminC', 'vitaminB12']) {
 			expect(
 				isCatalogFoodPayload({ ...CEREAL, per100g: { ...CEREAL.per100g, [nutrient]: 'lots' } })
 			).toBe(false);
@@ -224,8 +255,38 @@ describe('catalogFoodToFood', () => {
 		expect(food.micros.sodium).toBe(185);
 	});
 
-	it('leaves the micronutrients the catalog has no column for at zero', () => {
-		expect(catalogFoodToFood(CEREAL).micros.potassium).toBe(0);
+	it('scales the nine micros #175 adds, the same as the ones already wired', () => {
+		const food = catalogFoodToFood(CEREAL);
+		// 37 g of a 100 g basis, factor 0.37.
+		expect(food.micros.potassium).toBe(111);
+		expect(food.micros.iron).toBe(10);
+		expect(food.micros.vitaminB12).toBe(0.7);
+	});
+
+	it('leaves a #175 micro the payload omitted entirely at zero, same as null', () => {
+		const food = catalogFoodToFood({
+			...CEREAL,
+			per100g: { ...CEREAL.per100g, potassium: undefined }
+		});
+		expect(food.micros.potassium).toBe(0);
+	});
+
+	it('leaves folate at zero: nothing reads it off the wire yet, on purpose', () => {
+		expect(catalogFoodToFood(CEREAL).micros.folate).toBe(0);
+	});
+
+	it('carries the raw per-100 g basis through unscaled, for the nutrition facts sheet', () => {
+		const food = catalogFoodToFood(CEREAL);
+		expect(food.per100g?.kcal).toBe(375);
+		expect(food.per100g?.potassium).toBe(300);
+	});
+
+	it('keeps a gap in the raw basis as null rather than filling it in', () => {
+		const food = catalogFoodToFood({
+			...CEREAL,
+			per100g: { ...CEREAL.per100g, potassium: null }
+		});
+		expect(food.per100g?.potassium).toBeNull();
 	});
 
 	it('keeps the name, brand and barcode', () => {
