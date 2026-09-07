@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { jsonResponse } from '$lib/testing/fixtures';
 import {
 	currentSession,
 	register,
@@ -43,13 +44,6 @@ function stub(response: Response | Error): Call[] {
 		return response instanceof Error ? Promise.reject(response) : Promise.resolve(response);
 	});
 	return calls;
-}
-
-function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
-	return new Response(JSON.stringify(body), {
-		...init,
-		headers: { 'content-type': 'application/json', ...init.headers }
-	});
 }
 
 const SESSION = {

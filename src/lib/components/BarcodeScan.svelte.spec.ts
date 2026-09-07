@@ -3,6 +3,7 @@ import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import type { CatalogFoodPayload } from '$lib/domain/catalog-food';
 import { FOOD_BY_BARCODE } from '$lib/domain/foods';
+import { paintingStream, stopPainting, stubMediaDevices } from '$lib/testing/fixtures';
 import BarcodeScan from './BarcodeScan.svelte';
 
 /** Long enough for the viewfinder to receive a frame and the scan timer to fire. */
@@ -10,8 +11,6 @@ const SCAN = { timeout: 5000 };
 
 const BUNDLED = '602652171032';
 const OFF_SHELF = '00016000275287';
-
-const painters: number[] = [];
 
 const CEREAL: CatalogFoodPayload = {
 	id: 4213,
@@ -33,27 +32,6 @@ const CEREAL: CatalogFoodPayload = {
 		saturatedFat: 0.7
 	}
 };
-
-function stubMediaDevices(value: unknown) {
-	Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value });
-}
-
-/** A still canvas emits no frames, so it repaints on a timer. */
-function paintingStream() {
-	const canvas = document.createElement('canvas');
-	canvas.width = 320;
-	canvas.height = 240;
-	const context = canvas.getContext('2d');
-	let tick = 0;
-	painters.push(
-		setInterval(() => {
-			if (!context) return;
-			context.fillStyle = tick++ % 2 ? '#3f5a48' : '#f3eee4';
-			context.fillRect(0, 0, canvas.width, canvas.height);
-		}, 30) as unknown as number
-	);
-	return canvas.captureStream(30);
-}
 
 function cameraOpens() {
 	stubMediaDevices({ getUserMedia: vi.fn(() => Promise.resolve(paintingStream())) });
@@ -104,7 +82,7 @@ async function type(code: string) {
 }
 
 afterEach(() => {
-	for (const painter of painters.splice(0)) clearInterval(painter);
+	stopPainting();
 	Reflect.deleteProperty(navigator, 'mediaDevices');
 	Reflect.deleteProperty(globalThis, 'BarcodeDetector');
 	vi.restoreAllMocks();

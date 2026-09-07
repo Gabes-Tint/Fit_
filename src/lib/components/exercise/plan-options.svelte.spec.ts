@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { REST_WEEK, type PlannedWeek, type Routine } from '$lib/domain/types';
+import { REST_WEEK, type PlannedWeek } from '$lib/domain/types';
+import { routine } from '$lib/testing/fixtures';
 import { plannedOption, planOptions } from './plan-options';
-
-function routine(id: string, name: string, freq = 3): Routine {
-	return { id, name, freq, exercises: [] };
-}
 
 const ROUTINES = [routine('push', 'Chest & Shoulders'), routine('legs', 'Legs', 2)];
 const OPTIONS = planOptions(ROUTINES);

@@ -1,18 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
-import type { SignedInSession } from '$lib/auth/api';
 import { session } from '$lib/state/session.svelte';
+import { signedInSession } from '$lib/testing/fixtures';
 import { APP_VERSION } from '$lib/version';
 import SideNav from './SideNav.svelte';
 
 const DESTINATIONS = ['Today', 'Progress', 'Exercise', 'Plan', 'You'];
 
-const SESSION: SignedInSession = {
-	account: { id: 'a-1', username: 'robin', displayName: 'Robin', createdAt: '2026-08-01' },
-	households: [{ householdId: 'h-1', name: 'Home', role: 'owner' }],
-	expiresAt: new Date(Date.now() + 86_400_000).toISOString()
-};
+const SESSION = signedInSession(new Date(Date.now() + 86_400_000).toISOString());
 
 beforeEach(() => {
 	localStorage.clear();

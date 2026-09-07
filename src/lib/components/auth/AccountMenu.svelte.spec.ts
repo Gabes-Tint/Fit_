@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
-import type { SignedInSession } from '$lib/auth/api';
 import { session } from '$lib/state/session.svelte';
 import { sync, SYNC_STORAGE_KEY } from '$lib/state/sync.svelte';
 import { STORAGE_KEY, tend } from '$lib/state/tend.svelte';
+import { signedInSession } from '$lib/testing/fixtures';
 import AccountMenu from './AccountMenu.svelte';
 
 type Sent = { path: string; method: string | undefined };
@@ -30,11 +30,7 @@ function answer(status: number, body: unknown = null): Sent[] {
 	return sent;
 }
 
-const SESSION: SignedInSession = {
-	account: { id: 'a-1', username: 'robin', displayName: 'Robin', createdAt: '2026-08-01' },
-	households: [{ householdId: 'h-1', name: 'Home', role: 'owner' }],
-	expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString()
-};
+const SESSION = signedInSession();
 
 function signedIn() {
 	session.begin(SESSION);

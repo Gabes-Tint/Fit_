@@ -6,6 +6,7 @@ import { logUi } from '$lib/state/log-ui.svelte';
 import { session, SESSION_STORAGE_KEY } from '$lib/state/session.svelte';
 import { sync } from '$lib/state/sync.svelte';
 import { STORAGE_KEY, tend } from '$lib/state/tend.svelte';
+import { signedInSession } from '$lib/testing/fixtures';
 import AppShellHarness from './AppShellHarness.svelte';
 
 const goto = vi.hoisted(() => vi.fn());
@@ -36,14 +37,7 @@ function seedOnboardedStorage() {
 /** A session record of the shape signing in leaves behind, still in date. */
 function seedSessionStorage({ expiresInMs = 90 * 24 * 60 * 60 * 1000 } = {}) {
 	const expiresAt = new Date(Date.now() + expiresInMs).toISOString();
-	localStorage.setItem(
-		SESSION_STORAGE_KEY,
-		JSON.stringify({
-			account: { id: 'a-1', username: 'robin', displayName: 'Robin', createdAt: '2026-08-01' },
-			households: [{ householdId: 'h-1', name: 'Home', role: 'owner' }],
-			expiresAt
-		})
-	);
+	localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(signedInSession(expiresAt)));
 }
 
 /** Signed in and past onboarding: what most of these tests are about is what follows. */

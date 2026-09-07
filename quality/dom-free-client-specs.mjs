@@ -35,6 +35,7 @@ export const DOM_FREE_CLIENT_SPECS = [
 	'src/lib/state/session.svelte.spec.ts',
 	'src/lib/state/sync.svelte.spec.ts',
 	'src/lib/state/tend.svelte.spec.ts',
+	'src/lib/testing/fixtures.svelte.spec.ts',
 	'src/lib/ui/barcode-reader.svelte.spec.ts',
 	'src/lib/ui/cn.svelte.spec.ts',
 	'src/lib/ui/dictation.svelte.spec.ts',
