@@ -18,7 +18,7 @@
 			"sourceHash": "040553b69fdf4f9ac052f53cced9ec81ee3ad3e23238c3113695b497ff1c5ed6",
 			"fingerprint": "7fb89f2b6cc2744066b5ca551fd383a59688522931020b0476855c3c1de6e286",
 			"classification": "equivalent",
-			"rationale": "The `typeof body !== ‘object’` half only short-circuits a body that is a JSON string, number or boolean; each of those reads `.error` as undefined, so the very next guard returns the same `invalid-body`. Both halves reach one verdict and no response body can separate them.",
+			"rationale": "The `typeof body !== \u2018object\u2019` half only short-circuits a body that is a JSON string, number or boolean; each of those reads `.error` as undefined, so the very next guard returns the same `invalid-body`. Both halves reach one verdict and no response body can separate them.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
 		},
 		{
@@ -58,7 +58,7 @@
 			"sourceHash": "040553b69fdf4f9ac052f53cced9ec81ee3ad3e23238c3113695b497ff1c5ed6",
 			"fingerprint": "f14e7d1a8b16a4238d9c6fdd2d18bbb6532533d54b69e030a874c18476e3ec58",
 			"classification": "equivalent",
-			"rationale": "The catch supplies the value `codeOf` and `textOf` then read. `undefined` fails `typeof body !== ‘object’` where `null` fails `body === null`, both returning `invalid-body`, and `?.error` is undefined for either. No caller can tell the two apart.",
+			"rationale": "The catch supplies the value `codeOf` and `textOf` then read. `undefined` fails `typeof body !== \u2018object\u2019` where `null` fails `body === null`, both returning `invalid-body`, and `?.error` is undefined for either. No caller can tell the two apart.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
 		},
 		{
@@ -78,7 +78,7 @@
 			"sourceHash": "040553b69fdf4f9ac052f53cced9ec81ee3ad3e23238c3113695b497ff1c5ed6",
 			"fingerprint": "53d81fce847f031f92b911484e422f9e65e248e3c080f61f9edf599f884c6446",
 			"classification": "equivalent",
-			"rationale": "Same catch, in `sessionFrom`: the very next line rejects `undefined` on `typeof value !== ‘object’` and `null` on `value === null`, and both produce the identical `unreachable` failure.",
+			"rationale": "Same catch, in `sessionFrom`: the very next line rejects `undefined` on `typeof value !== \u2018object\u2019` and `null` on `value === null`, and both produce the identical `unreachable` failure.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
 		},
 		{
@@ -98,7 +98,7 @@
 			"sourceHash": "098164e58f7e3e8d03e8115fb4e31d5c6a53dcdf9a4a0911ef1a6dcbc44fb443",
 			"fingerprint": "c1d30753ddb4a6324680835dc54f6c51c8a40400f64199a06b1da7612bf9f22b",
 			"classification": "equivalent",
-			"rationale": "The fallback is a lookup key for a reason that was not sent. No field record in `FIELD_WORDING` holds an empty key, so `‘’` and any other absent key alike miss the table and fall through to the same `UNRECOGNIZED_FIELD` sentence.",
+			"rationale": "The fallback is a lookup key for a reason that was not sent. No field record in `FIELD_WORDING` holds an empty key, so `\u2018\u2019` and any other absent key alike miss the table and fall through to the same `UNRECOGNIZED_FIELD` sentence.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
 		},
 		{
@@ -118,7 +118,7 @@
 			"sourceHash": "098164e58f7e3e8d03e8115fb4e31d5c6a53dcdf9a4a0911ef1a6dcbc44fb443",
 			"fingerprint": "4adee6cac89f63edd12ccea8cbf8bf4b3baf9d6650f307062aa1c333b3b8fd27",
 			"classification": "equivalent",
-			"rationale": "The fallback is a field name for a failure that named none. `FIELD_WORDING` has no empty-string field, so `‘’` and any other unlisted name both miss the table and produce the same `UNRECOGNIZED_FIELD` sentence.",
+			"rationale": "The fallback is a field name for a failure that named none. `FIELD_WORDING` has no empty-string field, so `\u2018\u2019` and any other unlisted name both miss the table and produce the same `UNRECOGNIZED_FIELD` sentence.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
 		},
 		{
@@ -138,7 +138,7 @@
 			"sourceHash": "7fb024cf1c6cff6f6e9b5547e62f303c616fd93a397c19927726e1d339bf90a4",
 			"fingerprint": "947c2d75635b1fa9b05e8cfe2c1c2759126e0c4604d30aef7042428001ae36e7",
 			"classification": "equivalent",
-			"rationale": "Emptying the catch leaves parsed as undefined, which textFieldsOf already refuses because it is not an object, so a malformed body still answers null on both the guarded and the unguarded path. (Relocated by #163/#165: readTextBody now reads through readJsonText and declaredMediaType, moving this catch from line 96 to line 163 without changing its behavior; the sibling OptionalChaining review for the old `?.split(';')[0]?.trim` at line 90 is removed because that code no longer exists — declaredMediaType uses indexOf/slice instead.)",
+			"rationale": "Emptying the catch leaves parsed as undefined, which textFieldsOf already refuses because it is not an object, so a malformed body still answers null on both the guarded and the unguarded path. (Relocated by #163/#165: readTextBody now reads through readJsonText and declaredMediaType, moving this catch from line 96 to line 163 without changing its behavior; the sibling OptionalChaining review for the old `?.split(';')[0]?.trim` at line 90 is removed because that code no longer exists \u2014 declaredMediaType uses indexOf/slice instead.)",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
 		},
 		{
@@ -158,7 +158,7 @@
 			"sourceHash": "7fb024cf1c6cff6f6e9b5547e62f303c616fd93a397c19927726e1d339bf90a4",
 			"fingerprint": "b47ff36a2d65b7bd41bb0dcdc7bc3d7a1448380b03070a87d12d80ad124bb3e5",
 			"classification": "equivalent",
-			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null — it coerces to the string \"null\" and returns JS null — and the very next line, textFieldsOf's `parsed === null` check, refuses that the same way one step later. Both versions answer null for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away.",
+			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null \u2014 it coerces to the string \"null\" and returns JS null \u2014 and the very next line, textFieldsOf's `parsed === null` check, refuses that the same way one step later. Both versions answer null for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/186"
 		},
 		{
@@ -178,7 +178,7 @@
 			"sourceHash": "7a415b94ca26620a10984920ec8b62a7c92479d2935a969df36e4c3ced8b81e9",
 			"fingerprint": "3d533881f870273edfe3918de53af2e8b50e14afd380e453753d36749109f023",
 			"classification": "equivalent",
-			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null — it coerces to the string \"null\" and returns JS null — and this function's own `parsed === null` refusal a few lines below catches that the same way one step later. Both versions answer REFUSED for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away.",
+			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null \u2014 it coerces to the string \"null\" and returns JS null \u2014 and this function's own `parsed === null` refusal a few lines below catches that the same way one step later. Both versions answer REFUSED for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/186"
 		},
 		{
@@ -198,7 +198,7 @@
 			"sourceHash": "c56d1fbf23e9343b48df3cefda2a46fee75ff11bc48838aecbd87503cf7b6c51",
 			"fingerprint": "4417d0f35caaa3385c30c32e8fc45ea57e3090390aab0b93e6a5d17c3cd59dc8",
 			"classification": "equivalent",
-			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null — it coerces to the string \"null\" and returns JS null — and this function's own `parsed === null` refusal a few lines below catches that the same way one step later. Both versions answer REFUSED for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away.",
+			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null \u2014 it coerces to the string \"null\" and returns JS null \u2014 and this function's own `parsed === null` refusal a few lines below catches that the same way one step later. Both versions answer REFUSED for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/186"
 		},
 		{
@@ -218,7 +218,7 @@
 			"sourceHash": "1c1d0159300857a27ea636fe7093d1fc1a4de4159f33d1a61b9464958e9c4465",
 			"fingerprint": "5fff05600127abd27b5a62f90ad913b01f226add5c176719db2c2bc52e2fec40",
 			"classification": "equivalent",
-			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null — it coerces to the string \"null\" and returns JS null — and the isPlainObject check on the very next line refuses that the same way one step later. Both versions answer null for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away.",
+			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null \u2014 it coerces to the string \"null\" and returns JS null \u2014 and the isPlainObject check on the very next line refuses that the same way one step later. Both versions answer null for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/186"
 		},
 		{
@@ -398,7 +398,7 @@
 			"sourceHash": "73677b7257f7ef75cd12f078987002c8da6809a973ebe609392ea4354495b77f",
 			"fingerprint": "23e6b148fe2667fb23c2187d7f27c2955cb678c992f84efecee2779b4c107dfb",
 			"classification": "equivalent",
-			"rationale": "For a non-string stored credential, both the empty fallback and this exact replacement fail the anchored fixed-width serialized-hash grammar before any derivation or authentication. (sourceHash refreshed by #163/#165: password.ts changed elsewhere — the unused passwordHashNeedsUpgrade wrapper was deleted — this line is untouched.)",
+			"rationale": "For a non-string stored credential, both the empty fallback and this exact replacement fail the anchored fixed-width serialized-hash grammar before any derivation or authentication. (sourceHash refreshed by #163/#165: password.ts changed elsewhere \u2014 the unused passwordHashNeedsUpgrade wrapper was deleted \u2014 this line is untouched.)",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
 		},
 		{
@@ -458,7 +458,7 @@
 			"sourceHash": "50b053f538a12120ebdbbaa2ba509a528b4ead15afe83b80ea5d4f4f0b1ffdc8",
 			"fingerprint": "04a42dde80d6e6782956ab721b4801f4b0413a10dc41024f5b55aba7aba1c679",
 			"classification": "equivalent",
-			"rationale": "The guard is a short circuit, not a decision. Without it an absent record reaches `JSON.parse`, where `null`, `undefined` and `‘’` either parse to a value `isSession` rejects or throw into the catch beside it — every path returns the same `null`, and nothing is written.",
+			"rationale": "The guard is a short circuit, not a decision. Without it an absent record reaches `JSON.parse`, where `null`, `undefined` and `\u2018\u2019` either parse to a value `isSession` rejects or throw into the catch beside it \u2014 every path returns the same `null`, and nothing is written.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
 		},
 		{
@@ -478,7 +478,7 @@
 			"sourceHash": "77e2a3deadcca09d20206cb8b2be16e0569e615264a3befa4db8b26e770d3fbe",
 			"fingerprint": "cc7a03c07acee845cbd2aa1d371b5bf4396a8cde542f430b021614bada7944d2",
 			"classification": "equivalent",
-			"rationale": "The subject is raw.slice(0, 10), so it is at most ten characters, and the pattern matches exactly ten. A ten-character pattern can only match a ≤10-character string at offset 0 running to the end, so ‘matches somewhere’ and ‘matches the whole string’ are the same proposition here, and dropping ^ cannot change the verdict. The anchor stays in the code because it documents intent and would start mattering the moment the slice changes.",
+			"rationale": "The subject is raw.slice(0, 10), so it is at most ten characters, and the pattern matches exactly ten. A ten-character pattern can only match a \u226410-character string at offset 0 running to the end, so \u2018matches somewhere\u2019 and \u2018matches the whole string\u2019 are the same proposition here, and dropping ^ cannot change the verdict. The anchor stays in the code because it documents intent and would start mattering the moment the slice changes.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/199"
 		},
 		{
@@ -498,7 +498,7 @@
 			"sourceHash": "77e2a3deadcca09d20206cb8b2be16e0569e615264a3befa4db8b26e770d3fbe",
 			"fingerprint": "29bf007b4f381d01c7fe7d83a027889efc7304736a6fb69190ee52e5349678f1",
 			"classification": "equivalent",
-			"rationale": "Same slice, the other anchor: raw.slice(0, 10) is at most ten characters and the pattern matches exactly ten, so a match at offset 0 already runs to the end of whatever there is to match. Dropping $ cannot separate ‘matches somewhere’ from ‘matches the whole string’ given that slice. The anchor stays in the code because it documents intent and would start mattering the moment the slice changes.",
+			"rationale": "Same slice, the other anchor: raw.slice(0, 10) is at most ten characters and the pattern matches exactly ten, so a match at offset 0 already runs to the end of whatever there is to match. Dropping $ cannot separate \u2018matches somewhere\u2019 from \u2018matches the whole string\u2019 given that slice. The anchor stays in the code because it documents intent and would start mattering the moment the slice changes.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/199"
 		},
 		{
@@ -518,8 +518,29 @@
 			"sourceHash": "77e2a3deadcca09d20206cb8b2be16e0569e615264a3befa4db8b26e770d3fbe",
 			"fingerprint": "8f49e67a169d9ec1e947ea6fb49cb5519244a7d6441261dfcd8c84a60d6579a0",
 			"classification": "equivalent",
-			"rationale": "splitCsv is private to the module — three references, all inside export-data.ts — and both the header line and every data row are split by the same function, so a constant prefix element shifts every column index by exactly one on both sides and the header-to-row alignment survives. A test pinning that alignment directly (a wide CSV, checking every field lands under its header, across every row) was tried first and still could not kill it: the junk cell is also the only new header cell, and ‘stryker was here’ contains none of the substrings idx() looks for (date, name/food/item, calor, protein, carb, fat, meal/folder), so it never captures a column and the shift stays symmetric. The call rests on today’s idx() keyword heuristics rather than a structural impossibility — a future keyword colliding with the junk string would invalidate it, and the source hash would not catch that because the change would land in a different function. See issue/145 for the full discussion.",
+			"rationale": "splitCsv is private to the module \u2014 three references, all inside export-data.ts \u2014 and both the header line and every data row are split by the same function, so a constant prefix element shifts every column index by exactly one on both sides and the header-to-row alignment survives. A test pinning that alignment directly (a wide CSV, checking every field lands under its header, across every row) was tried first and still could not kill it: the junk cell is also the only new header cell, and \u2018stryker was here\u2019 contains none of the substrings idx() looks for (date, name/food/item, calor, protein, carb, fat, meal/folder), so it never captures a column and the shift stays symmetric. The call rests on today\u2019s idx() keyword heuristics rather than a structural impossibility \u2014 a future keyword colliding with the junk string would invalidate it, and the source hash would not catch that because the change would land in a different function. See issue/145 for the full discussion.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/199"
+		},
+		{
+			"file": "src/lib/domain/utils.ts",
+			"mutatorName": "UpdateOperator",
+			"replacement": "i++",
+			"location": {
+				"end": {
+					"column": 33,
+					"line": 61
+				},
+				"start": {
+					"column": 30,
+					"line": 61
+				}
+			},
+			"sourceHash": "ca2a39dfe98c513488933d50543987a3e4e152aa4ffcf013dbdc17e035421ad3",
+			"fingerprint": "a772ec2c6e87a81f50ccc296788e3adb987ca7e5369be869dfeabbbcdb175bac",
+			"classification": "equivalent",
+			"status": "Timeout",
+			"rationale": "lastNDates counts i down from n - 1 to 0 with i--; replacing it with i++ turns the countdown into a count-up that never reaches the loop's exit condition (i >= 0), so the loop runs forever and Stryker can only ever report Timeout for this mutant, never Survived. No assertion can kill it without asserting non-termination, which is not a test anyone should write. Gabriel accepted this as equivalent on 2026-09-07 (issue #145, proposal 1); recording required issue #200's status field because the mutant cannot report Survived.",
+			"review": "https://github.com/gabepsilva/Fit_/pull/212"
 		}
 	]
 }
