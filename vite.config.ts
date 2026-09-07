@@ -11,10 +11,18 @@ import tailwindcss from '@tailwindcss/vite';
 
 // DOM-free project first: Stryker's `bail: 1` + perTest coverage means the fast unit spec
 // must fail before the browser project boots, or the mutant times out instead of being killed.
+//
+// Each project below gets its own dependency-optimizer cache dir. `ignorePatterns`
+// keeps `node_modules/.vite` out of the Stryker sandbox, so every worker's vitest
+// optimizes from nothing — and the projects in that worker start together and were
+// writing into one directory, because the cache key does not include the project.
+// Two of them then raced on the rename that publishes it and the run died with
+// ENOTEMPTY before a single mutant ran. A directory each removes the collision
+// rather than retrying it.
 const testProjects = [
 	{
 		extends: './vite.config.ts',
-		// Per-project cache dir: concurrent vitest projects in one Stryker worker would otherwise race on rename.
+		// Its own per-project dep-optimizer cache; see above.
 		cacheDir: 'node_modules/.vite-client-node',
 		test: {
 			name: 'client-node',
@@ -28,14 +36,7 @@ const testProjects = [
 	},
 	{
 		extends: './vite.config.ts',
-		// Its own dependency-optimizer cache, per project.
-		//
-		// `ignorePatterns` keeps `node_modules/.vite` out of the Stryker sandbox, so
-		// every worker's vitest optimizes from nothing — and the projects in that
-		// worker start together and were writing into one directory, because the
-		// cache key does not include the project. Two of them then raced on the
-		// rename that publishes it and the run died with ENOTEMPTY before a single
-		// mutant ran. A directory each removes the collision rather than retrying it.
+		// Its own per-project dep-optimizer cache; see above.
 		cacheDir: 'node_modules/.vite-client',
 		test: {
 			name: 'client',
@@ -51,14 +52,7 @@ const testProjects = [
 	},
 	{
 		extends: './vite.config.ts',
-		// Its own dependency-optimizer cache, per project.
-		//
-		// `ignorePatterns` keeps `node_modules/.vite` out of the Stryker sandbox, so
-		// every worker's vitest optimizes from nothing — and the projects in that
-		// worker start together and were writing into one directory, because the
-		// cache key does not include the project. Two of them then raced on the
-		// rename that publishes it and the run died with ENOTEMPTY before a single
-		// mutant ran. A directory each removes the collision rather than retrying it.
+		// Its own per-project dep-optimizer cache; see above.
 		cacheDir: 'node_modules/.vite-server',
 		test: {
 			name: 'server',

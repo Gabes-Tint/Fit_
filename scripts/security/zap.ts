@@ -1,7 +1,14 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { containerImages } from './config';
-import { assertDocker, capture, projectRoot, resetReportDirectory, run } from './shared';
+import {
+	assertDocker,
+	capture,
+	projectRoot,
+	readJsonFile,
+	resetReportDirectory,
+	run
+} from './shared';
 
 interface ZapAlert {
 	alert: string;
@@ -31,9 +38,7 @@ if (!/^\d+$/.test(previewPort)) throw new Error('FIT_PREVIEW_PORT must be numeri
 const targetUrl = `http://host.docker.internal:${previewPort}`;
 const containerName = `fit-zap-${process.pid}`;
 const apiHeaders = { Host: 'zap' } as const;
-const policy = JSON.parse(
-	await readFile(path.join(projectRoot, 'security', 'zap-policy.json'), 'utf8')
-) as ZapPolicy;
+const policy = await readJsonFile<ZapPolicy>(path.join(projectRoot, 'security', 'zap-policy.json'));
 const reportDirectory = await resetReportDirectory('zap');
 const riskCodes = new Map([
 	['Informational', 0],

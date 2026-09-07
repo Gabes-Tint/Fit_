@@ -5,10 +5,11 @@ import path from 'node:path';
 import process from 'node:process';
 import { mutationReviewLedgerFailures } from './mutation-verdict';
 import type { MutationReviewLedger } from './mutation-types';
+import { readJsonFile } from '../security/shared';
 
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 const ledgerPath = path.join(projectRoot, 'quality', 'mutation-equivalents.json');
-const ledger = JSON.parse(await readFile(ledgerPath, 'utf8')) as unknown;
+const ledger = await readJsonFile<unknown>(ledgerPath);
 const failures = mutationReviewLedgerFailures(ledger);
 if (failures.length === 0) {
 	for (const entry of (ledger as MutationReviewLedger).entries) {

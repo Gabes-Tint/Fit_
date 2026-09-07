@@ -1,6 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir, readFile, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -147,4 +147,33 @@ export function hostUser(): string {
 	const userId = process.getuid?.();
 	const groupId = process.getgid?.();
 	return userId === undefined || groupId === undefined ? '1000:1000' : `${userId}:${groupId}`;
+}
+
+/**
+ * The one place `JSON.parse(await readFile(file, 'utf8')) as T` gets written,
+ * for every gate and script that reads a committed or generated JSON file.
+ * Throws with the file's path relative to the project root so a bad path or
+ * an unparsable file names itself in the error rather than in a stack trace.
+ */
+export async function readJsonFile<T>(file: string): Promise<T> {
+	let raw: string;
+	try {
+		raw = await readFile(file, 'utf8');
+	} catch (error) {
+		throw new Error(`could not read ${path.relative(projectRoot, file)}`, { cause: error });
+	}
+	try {
+		return JSON.parse(raw) as T;
+	} catch (error) {
+		throw new Error(`${path.relative(projectRoot, file)} is not parsable JSON.`, { cause: error });
+	}
+}
+
+/** `readJsonFile`, but a missing or unparsable file resolves to `null` instead of throwing. */
+export async function readJsonFileOrNull<T>(file: string): Promise<T | null> {
+	try {
+		return JSON.parse(await readFile(file, 'utf8')) as T;
+	} catch {
+		return null;
+	}
 }
