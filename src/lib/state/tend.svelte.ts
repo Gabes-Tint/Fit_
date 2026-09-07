@@ -240,20 +240,10 @@ export class TendStore {
 		this.persist();
 	}
 
-	setActive(id: string) {
-		this.state.activeProfileId = id;
-		this.persist();
-	}
-
 	patchActive(fn: (p: Profile) => Profile) {
 		this.state.profiles = this.state.profiles.map((p) =>
 			p.id === this.state.activeProfileId ? fn($state.snapshot(p)) : p
 		);
-		this.persist();
-	}
-
-	addProfile(p: Profile) {
-		this.state.profiles.push(p);
 		this.persist();
 	}
 
@@ -519,11 +509,6 @@ export class TendStore {
 		this.state.activeWorkout = null;
 		this.persist();
 		return finished;
-	}
-
-	discardWorkout() {
-		this.state.activeWorkout = null;
-		this.persist();
 	}
 
 	get currentExercise() {
