@@ -6,12 +6,14 @@ import { ciJobs } from './gates';
 import { e2eProjects } from './e2e-projects';
 import { fixtures } from './fixtures';
 import { groupRequirements, selfTestGroupNames } from './self-test-groups';
+import { mergeQueueFailures } from './merge-queue-trigger';
 
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
+const ciWorkflow = path.join('.github', 'workflows', 'ci.yml');
 const setupAction = path.join('.github', 'actions', 'setup', 'action.yml');
 const uploadAction = path.join('.github', 'actions', 'upload-report', 'action.yml');
 const [workflow, makefile, setupSource, uploadSource] = await Promise.all([
-	readFile(path.join(projectRoot, '.github', 'workflows', 'ci.yml'), 'utf8'),
+	readFile(path.join(projectRoot, ciWorkflow), 'utf8'),
 	readFile(path.join(projectRoot, 'Makefile'), 'utf8'),
 	readFile(path.join(projectRoot, setupAction), 'utf8'),
 	readFile(path.join(projectRoot, uploadAction), 'utf8')
@@ -279,7 +281,9 @@ const unconditionalUploads = uploadsMissingAlways(workflow);
 const allGreenJob = workflowSections.get('all-green') ?? '';
 const conditionalJobs = conditionalSelfTestJobs(workflowSections);
 const ungatedSkips = ungatedConditionalSkips(allGreenJob, conditionalJobs);
+const unqueuedTrigger = mergeQueueFailures(workflow, ciWorkflow);
 const failures = [
+	...unqueuedTrigger,
 	...(uncheckedOutJobs.length === 0
 		? []
 		: [
@@ -326,7 +330,7 @@ const failures = [
 
 if (failures.length === 0) {
 	console.log(
-		`CI contract: ${expected.length} declared jobs are wired locally, ${hostedGateJobs.length} hosted jobs are protected by all-green, ${toolchainJobs.length} jobs set the toolchain up through ${setupUses}, and the matrices run ${runProjects.size} end-to-end projects and ${allRunGroups.size} self-test groups.`
+		`CI contract: ${expected.length} declared jobs are wired locally, ${hostedGateJobs.length} hosted jobs are protected by all-green, ${toolchainJobs.length} jobs set the toolchain up through ${setupUses}, the matrices run ${runProjects.size} end-to-end projects and ${allRunGroups.size} self-test groups, and ${ciWorkflow} answers the merge queue with the branch's required check.`
 	);
 } else {
 	for (const failure of failures) console.error(failure);

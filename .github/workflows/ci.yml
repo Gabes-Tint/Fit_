@@ -4,14 +4,31 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The merge queue builds `main` plus the queued pull requests onto a
+  # `gh-readonly-queue/...` branch and asks for checks on that combined tree.
+  # Without this trigger those requests go unanswered, the required check never
+  # reports, and nothing can ever merge -- so this trigger and the branch
+  # protection setting have to be turned on in that order.
+  merge_group:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# Keyed per ref so a pull request, a push to `main` and a queue entry never
+# share a group. `github.event.merge_group.head_ref` is named explicitly rather
+# than leaning on `github.ref` reporting the queue branch, because that is the
+# one identity here we do not control.
+#
+# Cancellation is off for queue runs on purpose. A cancelled run reports a
+# cancelled required check, GitHub reads that as a failure and ejects the pull
+# request from the queue, so the cost of one wrong cancel is a stalled queue and
+# a human re-queueing by hand -- against a saving of runner minutes on work that
+# has to happen before anything can land anyway. Pull requests and pushes keep
+# superseding themselves as before.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event.merge_group.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'merge_group' }}
 
 jobs:
   # Every gate below runs to completion and writes reports/quality/gate-*.json.
@@ -125,8 +142,11 @@ jobs:
             lane: security
             browser: false
             timeout: 20
+    # On a queue run `github.base_ref` is empty and `HEAD^` would be one
+    # commit of one queued pull request; `merge_group.base_sha` is the tip of
+    # `main` the group was built on, so the scope is every queued change.
     env:
-      MUTATION_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || 'HEAD^' }}
+      MUTATION_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event_name == 'merge_group' && github.event.merge_group.base_sha || 'HEAD^' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -380,7 +400,8 @@ jobs:
       - name: Decide whether the mutation self-test group can break
         id: scope
         env:
-          SELF_TEST_SCOPE_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || 'HEAD^' }}
+          # Same reasoning as MUTATION_BASE above: the whole queued diff.
+          SELF_TEST_SCOPE_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event_name == 'merge_group' && github.event.merge_group.base_sha || 'HEAD^' }}
         run: bun scripts/quality/self-test-scope.ts
 
   # Two runners here, split by what a fixture costs and what it needs
