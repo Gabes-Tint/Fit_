@@ -133,7 +133,12 @@ function planSpecs(input: VerifyChangedPlanInput): PlanStep[] {
 	};
 	for (const { path: file } of input.changed) {
 		if (!specEligible(file)) continue;
-		if (isSpecFile(file)) {
+		// `isSpecFile` also matches `.e2e.ts` (it doubles as the "not client code"
+		// check `isClientCode` needs), but no vitest project ever includes an
+		// `.e2e.ts` file — `planE2e` below is what runs those. Adding one here
+		// sent it to vitest as a "changed directly" spec, which failed every
+		// time with "No test files found" (#152).
+		if (isSpecFile(file) && !file.endsWith('.e2e.ts')) {
 			add(file, 'changed directly');
 			continue;
 		}

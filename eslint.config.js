@@ -95,7 +95,14 @@ export default defineConfig(
 		rules: {
 			...playwright.configs['flat/recommended'].rules,
 			'playwright/no-focused-test': 'error',
-			'playwright/no-skipped-test': 'error'
+			'playwright/no-skipped-test': 'error',
+			// expectFitsViewport (tests/e2e-support.ts) wraps its own `expect` calls, so a
+			// test whose only assertion is the layout check reads as assertion-free to the
+			// rule's static scan without naming it here too. #152.
+			'playwright/expect-expect': [
+				'warn',
+				{ assertFunctionNames: ['expect', 'expectFitsViewport'] }
+			]
 		}
 	}
 );

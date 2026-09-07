@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 /**
  * Reset one worker's registration allowance: the suite makes more than the ten attempts an
@@ -245,4 +245,47 @@ export async function openEmptyJournal(page: Page): Promise<void> {
 	await page.getByRole('button', { name: 'Continue' }).click();
 	await page.getByRole('button', { name: 'Start empty' }).click();
 	await expect(page.getByRole('heading', { name: 'Today', level: 1 })).toBeVisible();
+}
+
+/**
+ * Asserts nothing overflows the viewport at the page's current size.
+ *
+ * `document.documentElement.scrollWidth <= clientWidth` catches page-level
+ * horizontal overflow wherever it comes from — the check #133's day strip
+ * needed and no project's default width ever exercised. When `locator` is
+ * passed too, its own box must also sit inside the viewport: a
+ * `position: absolute` element scrolled out of flow could leave the document
+ * itself un-widened while still spilling off screen. On failure the message
+ * names the overflowing width, so a failing run does not need a debugger to
+ * find it.
+ */
+export async function expectFitsViewport(page: Page, locator?: Locator): Promise<void> {
+	const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+		scrollWidth: document.documentElement.scrollWidth,
+		clientWidth: document.documentElement.clientWidth
+	}));
+	expect(
+		scrollWidth,
+		`document.documentElement.scrollWidth is ${scrollWidth}px, wider than the ${clientWidth}px viewport`
+	).toBeLessThanOrEqual(clientWidth);
+
+	if (locator === undefined) return;
+	const box = await locator.boundingBox();
+	expect(box, 'element has no box to measure — is it visible?').not.toBeNull();
+	const { x, width } = box as { x: number; width: number };
+	const rightEdge = x + width;
+	expect(
+		rightEdge,
+		`element's right edge is at ${rightEdge}px, past the ${clientWidth}px viewport`
+	).toBeLessThanOrEqual(clientWidth);
+	expect(x, `element's left edge is at ${x}px, left of the viewport`).toBeGreaterThanOrEqual(0);
+}
+
+/**
+ * 360×800: the width #133's day strip overflowed at and no project in
+ * `scripts/quality/e2e-projects.ts` emulates by default (Pixel 7 is 412px,
+ * iPhone 15 is 393px). #152.
+ */
+export async function atNarrowPhone(page: Page): Promise<void> {
+	await page.setViewportSize({ width: 360, height: 800 });
 }

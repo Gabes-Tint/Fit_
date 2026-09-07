@@ -44,10 +44,21 @@ function storedDocument(page: Page): Promise<string | null> {
 	return page.evaluate(() => globalThis.localStorage.getItem('tend.v1'));
 }
 
-/** Wait until this device has sent everything it holds. */
+/**
+ * Wait until this device has sent everything it holds.
+ *
+ * `timeout: 20_000` on every `expect.poll` in this file, above the sync
+ * client's `REQUEST_TIMEOUT_MS` (10_000, `src/lib/state/sync.svelte.ts:49`):
+ * Playwright's default 5 s `expect` timeout gave up before one aborted
+ * attempt could even finish, which #125 found behind two of its five flakes.
+ */
 async function settled(page: Page) {
-	await expect.poll(async () => (await syncRecord(page))?.dirty ?? true).toBe(false);
-	await expect.poll(async () => (await syncRecord(page))?.version ?? 0).toBeGreaterThan(0);
+	await expect
+		.poll(async () => (await syncRecord(page))?.dirty ?? true, { timeout: 20_000 })
+		.toBe(false);
+	await expect
+		.poll(async () => (await syncRecord(page))?.version ?? 0, { timeout: 20_000 })
+		.toBeGreaterThan(0);
 }
 
 /** A second device: its own context, its own storage, the same account. */
@@ -172,13 +183,17 @@ test.describe('with the server out of reach', () => {
 		await page.route('**/api/state', (route) => route.abort());
 
 		await logTwoEggs(page);
-		await expect.poll(async () => (await syncRecord(page))?.dirty ?? false).toBe(true);
+		await expect
+			.poll(async () => (await syncRecord(page))?.dirty ?? false, { timeout: 20_000 })
+			.toBe(true);
 
 		await page.unroute('**/api/state');
 		// One of the three moments a device that could not reach the server tries again.
 		await page.evaluate(() => globalThis.dispatchEvent(new Event('online')));
 
-		await expect.poll(() => accepted.filter((status) => status === 200).length).toBeGreaterThan(0);
+		await expect
+			.poll(() => accepted.filter((status) => status === 200).length, { timeout: 20_000 })
+			.toBeGreaterThan(0);
 		await settled(page);
 	});
 });

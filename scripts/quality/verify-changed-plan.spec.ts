@@ -151,6 +151,20 @@ describe('buildVerifyChangedPlan', () => {
 		);
 	});
 
+	it('a changed .e2e.ts file runs as an e2e step, never as a vitest spec (#152)', () => {
+		const file = 'src/routes/phone-layout.e2e.ts';
+		const plan = buildVerifyChangedPlan(
+			input({
+				changed: [{ path: file, status: 'A' }],
+				projectFor: () => 'client'
+			})
+		);
+		expect(plan.steps).toContainEqual(
+			expect.objectContaining({ category: 'e2e', name: file, reason: 'changed directly' })
+		);
+		expect(plan.steps.filter((step) => step.category === 'spec')).toEqual([]);
+	});
+
 	it('--all-browsers widens the e2e project', () => {
 		const plan = buildVerifyChangedPlan(input({ allBrowsers: true }));
 		expect(plan.e2eProject).toBe('all');
