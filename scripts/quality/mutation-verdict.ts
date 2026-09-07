@@ -81,7 +81,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-const REVIEWED_MUTANT_KEYS = [
+const REVIEWED_MUTANT_BASE_KEYS = [
 	'classification',
 	'file',
 	'fingerprint',
@@ -92,6 +92,34 @@ const REVIEWED_MUTANT_KEYS = [
 	'review',
 	'sourceHash'
 ].sort();
+
+const REVIEWED_MUTANT_KEYS_WITH_STATUS = [...REVIEWED_MUTANT_BASE_KEYS, 'status'].sort();
+
+/** The Stryker status a ledger entry excuses, defaulting to `'Survived'` when the entry omits it. */
+function declaredStatus(entry: ReviewedMutant): 'Survived' | 'Timeout' {
+	return entry.status ?? 'Survived';
+}
+
+/**
+ * Sorts object keys recursively so a value's JSON serialization no longer
+ * depends on the order its source wrote them in.
+ *
+ * A mutant's `location` reaches this hash from two different writers: Stryker's
+ * own report, which puts `end` before `start`, and a human typing a ledger
+ * entry, who naturally writes `start` first. Both describe the same location,
+ * so both must fingerprint to the same hash — otherwise a correct re-pin looks
+ * indistinguishable from a wrong one, and the honest fix (re-pin, keep the
+ * judgement) is punished while deleting the entry is rewarded.
+ */
+function canonicalize(value: unknown): unknown {
+	if (Array.isArray(value)) return value.map(canonicalize);
+	if (isRecord(value)) {
+		const sorted: Record<string, unknown> = {};
+		for (const key of Object.keys(value).sort()) sorted[key] = canonicalize(value[key]);
+		return sorted;
+	}
+	return value;
+}
 
 function isPosition(value: unknown): value is Position {
 	return (
@@ -106,8 +134,11 @@ function isPosition(value: unknown): value is Position {
 function isReviewedMutant(value: unknown): value is ReviewedMutant {
 	if (!isRecord(value)) return false;
 	const normalized = typeof value.file === 'string' ? path.posix.normalize(value.file) : '';
+	const keys = JSON.stringify(Object.keys(value).sort());
+	const hasStatus = keys === JSON.stringify(REVIEWED_MUTANT_KEYS_WITH_STATUS);
 	return (
-		JSON.stringify(Object.keys(value).sort()) === JSON.stringify(REVIEWED_MUTANT_KEYS) &&
+		(keys === JSON.stringify(REVIEWED_MUTANT_BASE_KEYS) || hasStatus) &&
+		(!hasStatus || value.status === 'Survived' || value.status === 'Timeout') &&
 		typeof value.fingerprint === 'string' &&
 		typeof value.file === 'string' &&
 		typeof value.mutatorName === 'string' &&
@@ -139,18 +170,23 @@ export function mutantFingerprint(input: {
 			file: input.file,
 			mutatorName: input.mutatorName,
 			replacement: input.replacement,
-			location: input.location,
+			location: canonicalize(input.location),
 			sourceHash: input.sourceHash
 		})
 	);
+}
+
+interface ReviewedFingerprint {
+	file: string;
+	status: 'Survived' | 'Timeout';
 }
 
 function reviewedFingerprints(
 	ledger: MutationReviewLedger,
 	expected: ReadonlySet<string>,
 	failures: string[]
-): Map<string, string> {
-	const fingerprints = new Map<string, string>();
+): Map<string, ReviewedFingerprint> {
+	const fingerprints = new Map<string, ReviewedFingerprint>();
 	const seen = new Set<string>();
 	if (!isRecord(ledger) || ledger.version !== 1 || !Array.isArray(ledger.entries)) {
 		failures.push('reviewed-mutant ledger must have version 1 and an entries array');
@@ -177,7 +213,8 @@ function reviewedFingerprints(
 			continue;
 		}
 		seen.add(entry.fingerprint);
-		if (expected.has(entry.file)) fingerprints.set(entry.fingerprint, entry.file);
+		if (expected.has(entry.file))
+			fingerprints.set(entry.fingerprint, { file: entry.file, status: declaredStatus(entry) });
 	}
 	return fingerprints;
 }
@@ -387,7 +424,8 @@ export async function evaluateMutationReport(options: {
 				location: mutant.location,
 				sourceHash
 			});
-			const isReviewed = mutant.status === 'Survived' && reviewed.has(fingerprint);
+			const reviewedEntry = reviewed.get(fingerprint);
+			const isReviewed = reviewedEntry !== undefined && mutant.status === reviewedEntry.status;
 			if (isReviewed) {
 				matchedReviewed.add(fingerprint);
 				reviewedSurvivors += 1;
@@ -460,7 +498,7 @@ export async function evaluateMutationReport(options: {
 			);
 		}
 	}
-	for (const [fingerprint, file] of reviewed) {
+	for (const [fingerprint, { file }] of reviewed) {
 		if (!matchedReviewed.has(fingerprint)) {
 			failures.push(`reviewed mutant is stale or no longer survives: ${file} ${fingerprint}`);
 		}
