@@ -80,6 +80,24 @@ export const DEFAULT_FORM_CUES: readonly string[] = [
 	'Two seconds down, one second up.'
 ];
 
+/**
+ * Real demonstration clips, keyed by movement name. A movement with no entry
+ * here has no clip — `FormCheckModal` shows the honest gap instead of a fake
+ * player. `description` is the screen-reader account of what the clip shows.
+ */
+export const DEMOS: Readonly<Record<string, { src: string; description: string }>> = {
+	'Push-up': {
+		src: '/media/push-up-demo.mp4',
+		description:
+			'Demonstration: a push-up performed with hands under the shoulders, body in a straight line from head to heel, lowering the chest toward the floor, then pressing back up.'
+	},
+	Squat: {
+		src: '/media/squat-demo.mp4',
+		description:
+			'Demonstration: a squat performed with the feet planted, descending under control with the knees tracking over the toes and the spine neutral, then driving back up to standing.'
+	}
+};
+
 /** A routine row as it appears within a template. */
 type TemplateRoutine = {
 	id: string;

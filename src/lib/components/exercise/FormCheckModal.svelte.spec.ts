@@ -26,7 +26,7 @@ describe('FormCheckModal', () => {
 
 	it('names the movement it is checking', async () => {
 		await render(FormCheckModal, { props: { open: true, name: 'Squat', onclose: vi.fn() } });
-		await expect.element(page.getByText('Squat')).toBeInTheDocument();
+		await expect.element(page.getByText('Squat', { exact: true })).toBeInTheDocument();
 		await expect.element(page.getByText('Form check')).toBeInTheDocument();
 	});
 
@@ -64,15 +64,20 @@ describe('FormCheckModal', () => {
 	});
 
 	it('is honest that the demonstration is not there yet', async () => {
-		await render(FormCheckModal, { props: { open: true, name: 'Squat', onclose: vi.fn() } });
+		await render(FormCheckModal, {
+			props: { open: true, name: 'Bench Press', onclose: vi.fn() }
+		});
 		await expect.element(page.getByText('A demonstration clip belongs here')).toBeInTheDocument();
+		expect(document.querySelector('video')).toBeNull();
 	});
 
-	it('does not show the honest placeholder for the one movement with a real clip', async () => {
-		await render(FormCheckModal, { props: { open: true, name: 'Push-up', onclose: vi.fn() } });
-		await expect
-			.element(page.getByText('A demonstration clip belongs here'))
-			.not.toBeInTheDocument();
+	it('does not show the honest placeholder for a movement with a real clip', async () => {
+		for (const name of ['Push-up', 'Squat']) {
+			await render(FormCheckModal, { props: { open: true, name, onclose: vi.fn() } });
+			await expect
+				.element(page.getByText('A demonstration clip belongs here'))
+				.not.toBeInTheDocument();
+		}
 	});
 
 	it('plays the push-up demo clip from static, not the bundle, with an accessible label', async () => {
@@ -81,6 +86,14 @@ describe('FormCheckModal', () => {
 		expect(video).not.toBeNull();
 		expect(video?.getAttribute('src')).toBe('/media/push-up-demo.mp4');
 		expect(video?.getAttribute('aria-label')?.toLowerCase()).toContain('push-up');
+	});
+
+	it('plays the squat demo clip from static, not the bundle, with an accessible label', async () => {
+		await render(FormCheckModal, { props: { open: true, name: 'Squat', onclose: vi.fn() } });
+		const video = document.querySelector('video');
+		expect(video).not.toBeNull();
+		expect(video?.getAttribute('src')).toBe('/media/squat-demo.mp4');
+		expect(video?.getAttribute('aria-label')?.toLowerCase()).toContain('squat');
 	});
 
 	it('never fetches the clip until the modal is opened', async () => {
@@ -154,6 +167,26 @@ describe('FormCheckModal', () => {
 				new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })
 			);
 			expect(pauseSpy).toHaveBeenCalledTimes(1);
+		} finally {
+			playSpy.mockRestore();
+			pauseSpy.mockRestore();
+		}
+	});
+
+	it('ignores keys other than Enter and Space, since those are not the toggle', async () => {
+		const playSpy = vi
+			.spyOn(HTMLMediaElement.prototype, 'play')
+			.mockImplementation(() => Promise.resolve());
+		const pauseSpy = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+		try {
+			await render(FormCheckModal, { props: { open: true, name: 'Push-up', onclose: vi.fn() } });
+			const video = document.querySelector('video') as HTMLVideoElement;
+
+			video.dispatchEvent(
+				new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true })
+			);
+			expect(playSpy).not.toHaveBeenCalled();
+			expect(pauseSpy).not.toHaveBeenCalled();
 		} finally {
 			playSpy.mockRestore();
 			pauseSpy.mockRestore();
