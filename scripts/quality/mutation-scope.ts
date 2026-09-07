@@ -7,6 +7,10 @@ import type { LineRange, MutationLane, MutationScope, MutationScopeFile } from '
 
 const TEST_FILE = /\.(?:test|spec|e2e)\.[jt]s$/;
 const SERVER_ROUTE = /^\+(?:server|page\.server|layout\.server)\.ts$/;
+// A route's server spec sits beside its `+server.ts` sibling but drops the
+// leading `+` (SvelteKit reserves `+`-prefixed names for its own modules), e.g.
+// `src/routes/api/accounts/server.spec.ts` next to `src/routes/api/accounts/+server.ts`.
+const SERVER_ROUTE_SPEC = /^(?:server|page\.server|layout\.server)\.spec\.ts$/;
 const CROSS_CUTTING = [
 	'bun.lock',
 	'package.json',
@@ -231,7 +235,8 @@ export function isServerSource(file: string): boolean {
 		file.startsWith('src/lib/domain/') ||
 		file.startsWith('src/lib/server/') ||
 		file.endsWith('.server.ts') ||
-		SERVER_ROUTE.test(path.posix.basename(file))
+		SERVER_ROUTE.test(path.posix.basename(file)) ||
+		(file.startsWith('src/routes/') && SERVER_ROUTE_SPEC.test(path.posix.basename(file)))
 	);
 }
 
@@ -263,7 +268,7 @@ function belongsToProject(file: string, project: 'server' | 'client'): boolean {
 		file.startsWith('src/lib/server/') ||
 		file.endsWith('.server.ts') ||
 		SERVER_ROUTE.test(path.posix.basename(file)) ||
-		/^\+(?:server|page\.server|layout\.server)\.spec\.ts$/.test(path.posix.basename(file));
+		(file.startsWith('src/routes/') && SERVER_ROUTE_SPEC.test(path.posix.basename(file)));
 	return project === 'server' ? server : !server;
 }
 
