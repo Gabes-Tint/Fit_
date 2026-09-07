@@ -9,6 +9,7 @@
 		title,
 		description,
 		class: className,
+		tall = false,
 		onclose,
 		children
 	}: {
@@ -16,6 +17,15 @@
 		title: string;
 		description?: string | undefined;
 		class?: string | undefined;
+		/**
+		 * Below the `sm` breakpoint, the panel takes 95% of the viewport height
+		 * instead of the normal bottom-sheet sizing, while staying anchored to
+		 * the bottom with its top corners rounded — it still reads as a sheet
+		 * with the page visible above it. For dialogs whose content is a long
+		 * scrolling list (food logging) that need the extra room on a phone;
+		 * other sheets leave this off.
+		 */
+		tall?: boolean;
 		/** Renders a close control in the header when provided. */
 		onclose?: (() => void) | undefined;
 		children: Snippet;
@@ -29,7 +39,10 @@
 		/>
 		<Dialog.Content
 			class={cn(
-				'bg-card text-card-foreground fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[92dvh] w-full max-w-lg flex-col rounded-t-3xl outline-none',
+				'bg-card text-card-foreground fixed inset-x-0 bottom-0 z-50 mx-auto flex w-full max-w-lg flex-col rounded-t-3xl outline-none',
+				tall
+					? 'h-[95dvh] max-h-[95dvh] max-w-none pb-[env(safe-area-inset-bottom)] sm:h-auto sm:max-h-[90dvh] sm:max-w-lg sm:pb-0'
+					: 'max-h-[92dvh]',
 				className
 			)}
 		>

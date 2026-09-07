@@ -6,12 +6,14 @@
 		open = $bindable(false),
 		body,
 		description,
-		closable = false
+		closable = false,
+		tall = false
 	}: {
 		open?: boolean;
 		body: string;
 		description?: string | undefined;
 		closable?: boolean;
+		tall?: boolean;
 	} = $props();
 
 	function handleClose() {
@@ -19,6 +21,6 @@
 	}
 </script>
 
-<Sheet bind:open title="Log" {description} onclose={closable ? handleClose : undefined}>
+<Sheet bind:open title="Log" {description} {tall} onclose={closable ? handleClose : undefined}>
 	<p>{body}</p>
 </Sheet>
