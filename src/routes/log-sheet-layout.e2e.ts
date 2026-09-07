@@ -1,5 +1,4 @@
-import { env } from 'node:process';
-import { expect, type Locator, type Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { test } from '../../tests/preview-server';
 import { openEmptyJournal, openLogSheet, signInThroughApi } from '../../tests/e2e-support';
 
@@ -9,21 +8,11 @@ import { openEmptyJournal, openLogSheet, signInThroughApi } from '../../tests/e2
  * rounded top corners below the `sm` breakpoint, so the page still shows
  * above it. `LogSheet` pins its "Add to today" button in a footer outside
  * the scrollable results/proposals region so a long list cannot scroll it
- * away.
- *
- * `sm:` and up is unaffected — the panel reverts to the normal centered
- * bottom sheet there — so the 95%-height assertion below is registered only
- * for a phone-width project (mirrors `CHROMIUM_ONLY_SPECS` in
- * `playwright.config.ts`, which gates a whole spec the same way rather than
- * skipping inside a test). `E2E_PROJECT` is how both CI and a manual
- * `E2E_PROJECT=chromium bunx playwright test --project=chromium` run name
- * the project this file is executing under; `chromium` (Desktop Chrome,
- * 1280x720) is the only one of this file's two target projects past the
- * `sm` breakpoint. Everything else here — search, scroll containment,
- * Escape — is asserted on every project this file runs on.
+ * away. The 95%-height assertion itself lives in `log-sheet-height.e2e.ts`,
+ * gated to phone-width projects only (see that file) — everything here
+ * (search, scroll containment, Escape) holds at any viewport, so it runs on
+ * every project this file executes under.
  */
-
-const isPhoneWidthProject = env.E2E_PROJECT !== 'chromium';
 
 /** 30 rows named `Chicken breast, style 0..29` — enough to make the list scroll. */
 function chickenRows(count: number) {
@@ -38,14 +27,6 @@ function chickenRows(count: number) {
 		serving: { label: '100 g', grams: 100 },
 		per100g: { kcal: 165, protein: 31, fat: 3.6, carbs: 0, sugar: 0, fiber: 0, sodium: 74 }
 	}));
-}
-
-/** Narrows Playwright's nullable `boundingBox()` result outside any test body. */
-function requireBoundingBox(
-	box: Awaited<ReturnType<Locator['boundingBox']>>
-): NonNullable<typeof box> {
-	if (!box) throw new Error('panel has no bounding box');
-	return box;
 }
 
 async function stubChickenSearch(page: Page) {
@@ -67,32 +48,6 @@ test.describe('the Log sheet fills the screen on a phone', () => {
 		await openEmptyJournal(page);
 		await stubChickenSearch(page);
 	});
-
-	if (isPhoneWidthProject) {
-		test('the panel takes ~95% of the viewport height below `sm`, anchored to the bottom, and never overflows horizontally', async ({
-			page
-		}) => {
-			const viewport = page.viewportSize() ?? { width: 0, height: 0 };
-			expect(viewport.width).toBeGreaterThan(0);
-			await openLogSheet(page);
-			const panel = page.getByRole('dialog');
-			const box = requireBoundingBox(await panel.boundingBox());
-			// ~95% of the viewport height, not edge to edge: the page still shows
-			// above the sheet. Allow ±2% for the safe-area padding and rounding.
-			expect(box.height).toBeGreaterThan(viewport.height * 0.93);
-			expect(box.height).toBeLessThan(viewport.height * 0.97);
-			expect(box.width).toBe(viewport.width);
-			expect(box.x).toBe(0);
-			// Bottom-anchored: the panel's bottom edge sits on the viewport's
-			// bottom edge, and its top edge is below y=0 (the page is visible
-			// above it), not fixed to the top like an edge-to-edge screen.
-			expect(box.y).toBeGreaterThan(0);
-			expect(box.y + box.height).toBeGreaterThan(viewport.height - 2);
-			expect(box.y + box.height).toBeLessThan(viewport.height + 2);
-			const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
-			expect(scrollWidth).toBeLessThanOrEqual(viewport.width);
-		});
-	}
 
 	test('the results scroll inside the panel, not the page, and the action button stays reachable', async ({
 		page
