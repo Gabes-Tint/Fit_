@@ -1,0 +1,40 @@
+name: Upload a run report
+description: >-
+  `actions/upload-artifact` with this repository's report conventions, which
+  every upload block repeated by hand until #167: the run id and attempt are
+  appended to the name so a re-run cannot collide with the run it replaces, and
+  reports are kept for fourteen days.
+
+  The caller keeps its own `if: always()`. A composite step's condition cannot
+  resurrect the step that calls it, so the evidence for a failed gate is only
+  uploaded because the job asks for it explicitly.
+
+inputs:
+  name:
+    description: >-
+      The artifact's stable prefix -- `static`, `e2e-blob-firefox`. The run id
+      and attempt are appended, so the published name is exactly what it was
+      before #167 and `e2e-report`'s download pattern still matches.
+    required: true
+  path:
+    description: Paths to upload, one per line. Defaults to the report tree an agent reads.
+    required: false
+    default: reports/
+  if-no-files-found:
+    description: >-
+      `warn` where an empty directory means the gate died before writing one
+      and the job's own red already says so; `error` where the artifact is the
+      only evidence the run produced -- the mutation lanes and the merged
+      end-to-end report -- and losing it silently would be worse than a red job.
+    required: false
+    default: warn
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: ${{ inputs.name }}-${{ github.run_id }}-${{ github.run_attempt }}
+        if-no-files-found: ${{ inputs.if-no-files-found }}
+        retention-days: 14
+        path: ${{ inputs.path }}
