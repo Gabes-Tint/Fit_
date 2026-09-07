@@ -20,7 +20,7 @@ const scopedMutate = scope === null ? null : scope.files.map(({ path }) => path)
  * run, so the aggregate break below should stand down.
  *
  * The break is the legacy full-tree defense and stays exactly that. On a
- * changed lane the verdict is harder than it on every file it judges: killed
+ * changed lane the verdict is harder than the break on every file it judges: killed
  * only, where the break also credits a timeout; per file as well as in
  * aggregate; and no tolerance at all for a timeout or an uncovered mutant. It
  * also holds unchanged fallback files to this same 80 in their own pool.

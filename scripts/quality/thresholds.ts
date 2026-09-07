@@ -1,8 +1,9 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import process from 'node:process';
 import { parseMutationPolicy } from './mutation-types';
+import { readJsonFile } from '../security/shared';
 
 /** Fails when a gate threshold moves against its ratchet direction. */
 
@@ -19,22 +20,25 @@ interface Guarded {
 	source: string;
 }
 
-async function readJson(relativePath: string): Promise<Record<string, unknown>> {
-	return JSON.parse(await readFile(path.join(projectRoot, relativePath), 'utf8')) as Record<
-		string,
-		unknown
-	>;
-}
-
 function pick(source: Record<string, unknown>, key: string): Record<string, number | boolean> {
 	return source[key] as Record<string, number | boolean>;
 }
 
-const thresholds = await readJson('quality/thresholds.json');
-const mutationPolicy = parseMutationPolicy(await readJson('quality/mutation-policy.json'));
-const budgets = await readJson('quality/bundle-budgets.json');
-const duplication = await readJson('.jscpd.json');
-const suppressions = await readJson('quality/suppression-baseline.json');
+type JsonRecord = Record<string, unknown>;
+
+const thresholds = await readJsonFile<JsonRecord>(
+	path.join(projectRoot, 'quality/thresholds.json')
+);
+const mutationPolicy = parseMutationPolicy(
+	await readJsonFile<JsonRecord>(path.join(projectRoot, 'quality/mutation-policy.json'))
+);
+const budgets = await readJsonFile<JsonRecord>(
+	path.join(projectRoot, 'quality/bundle-budgets.json')
+);
+const duplication = await readJsonFile<JsonRecord>(path.join(projectRoot, '.jscpd.json'));
+const suppressions = await readJsonFile<JsonRecord>(
+	path.join(projectRoot, 'quality/suppression-baseline.json')
+);
 
 const coverage = pick(thresholds, 'coverage');
 const mutation = pick(thresholds, 'mutation');
@@ -98,10 +102,7 @@ if (process.argv.includes('--update')) {
 	process.exit(0);
 }
 
-const baseline = JSON.parse(await readFile(baselinePath, 'utf8')) as Record<
-	string,
-	number | boolean
->;
+const baseline = await readJsonFile<Record<string, number | boolean>>(baselinePath);
 const weakened: string[] = [];
 const missing: string[] = [];
 

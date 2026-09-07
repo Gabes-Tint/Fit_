@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +14,7 @@ import type { PerfReport } from './report.ts';
 import { compareReports, formatCompare } from './compare.ts';
 import { formatCommitted } from './prettier-format.ts';
 import { catalogPath } from '../../src/lib/server/catalog/connection.ts';
+import { readJsonFile } from '../security/shared';
 
 /**
  * The one command issue #130 asks for: runs instruments 1 to 4 and writes
@@ -50,12 +51,13 @@ async function measurePhonePaint(): Promise<PhonePaintReport> {
 	if (result.status !== 0) {
 		throw new Error(`Phone-profile paint run failed (exit ${String(result.status)}).`);
 	}
-	const raw = JSON.parse(await readFile(phonePaintRawPath, 'utf8')) as {
+	interface PhonePaintRaw {
 		routeSamples: Record<string, RouteSample[]>;
 		logSheetSamples: number[];
 		catalogSearchMs: number | null;
 		catalogSearchSkipReason: string | null;
-	};
+	}
+	const raw = await readJsonFile<PhonePaintRaw>(phonePaintRawPath);
 	const routes = Object.entries(raw.routeSamples).map(([route, samples]) =>
 		medianRouteMetrics(route, samples)
 	);
@@ -127,7 +129,7 @@ async function main(): Promise<void> {
 		if (!existsSync(baselinePath)) {
 			throw new Error(`No baseline at ${baselinePath}; run --baseline first.`);
 		}
-		const baseline = JSON.parse(await readFile(baselinePath, 'utf8')) as PerfReport;
+		const baseline = await readJsonFile<PerfReport>(baselinePath);
 		console.log('');
 		console.log(formatCompare(compareReports(baseline, report)));
 	}

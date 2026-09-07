@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -9,6 +9,7 @@ import {
 	type MutationCrash
 } from './mutation-crash';
 import { CRASH_EXIT_CODE } from './run-outcome';
+import { readJsonFile } from '../security/shared';
 
 const roots: string[] = [];
 
@@ -98,7 +99,7 @@ describe('mutation crash message', () => {
 		const root = await workspace();
 		const crashPath = path.join(root, 'crash.json');
 		await recordMutationCrash(crashPath, crash);
-		const stored = JSON.parse(await readFile(crashPath, 'utf8')) as MutationCrash;
+		const stored = await readJsonFile<MutationCrash>(crashPath);
 		expect(stored).toStrictEqual(crash);
 	});
 });

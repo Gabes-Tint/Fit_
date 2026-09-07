@@ -1,7 +1,8 @@
-import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import process from 'node:process';
+import { readJsonFile } from '../security/shared';
+import type { Thresholds } from './config-types';
 
 /**
  * The percentage threshold weakens as the tree grows, so this adds an absolute
@@ -14,13 +15,13 @@ interface JscpdReport {
 
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 const reportPath = path.join(projectRoot, 'reports', 'quality', 'duplication', 'jscpd-report.json');
-const { duplication } = JSON.parse(
-	await readFile(path.join(projectRoot, 'quality', 'thresholds.json'), 'utf8')
-) as { duplication: { maxClones: number } };
+const { duplication } = await readJsonFile<Thresholds>(
+	path.join(projectRoot, 'quality', 'thresholds.json')
+);
 
 let report: JscpdReport;
 try {
-	report = JSON.parse(await readFile(reportPath, 'utf8')) as JscpdReport;
+	report = await readJsonFile<JscpdReport>(reportPath);
 } catch {
 	throw new Error(
 		`jscpd did not write a parsable report at ${path.relative(projectRoot, reportPath)}.`

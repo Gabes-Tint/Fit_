@@ -15,7 +15,7 @@
  *   node scripts/eval/search-eval.ts --label baseline
  *   node scripts/eval/search-eval.ts --label byproducts --baseline reports/eval/search-baseline.json
  */
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
@@ -24,6 +24,8 @@ import { catalogPath } from '../../src/lib/server/catalog/connection.ts';
 import { searchTerms, singular } from '../../src/lib/server/catalog/query.ts';
 import { searchSql } from '../../src/lib/server/catalog/ranking.ts';
 import { prepared } from '../../src/lib/server/catalog/statements.ts';
+import { readJsonFile } from '../security/shared';
+import type { SearchFixture, SearchFixtureQuery } from '../quality/config-types';
 
 /** How deep a person is credited with looking. Precision is measured over this many rows. */
 const PRECISION_DEPTH = 3;
@@ -36,15 +38,7 @@ const WARM_SAMPLES = 5;
 
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 
-type EvalQuery = {
-	query: string;
-	group: string;
-	means: string;
-	acceptable: string[];
-	forbidden: string[];
-};
-
-type EvalFixture = { catalog: string; limit: number; note: string; queries: EvalQuery[] };
+type EvalQuery = SearchFixtureQuery;
 
 type QueryResult = {
 	query: string;
@@ -248,7 +242,7 @@ function unknownNames(db: DatabaseSync, queries: EvalQuery[]): string[] {
  * are process-cold, not machine-cold, and the honest use of them is comparing
  * two variants on one machine rather than predicting the VM's first request.
  */
-function coldPass(file: string, fixture: EvalFixture): Map<string, number> {
+function coldPass(file: string, fixture: SearchFixture): Map<string, number> {
 	const samples = new Map<string, number>();
 	for (const entry of fixture.queries) {
 		const db = new DatabaseSync(file, { readOnly: true });
@@ -294,9 +288,9 @@ function metricRows(report: Report, baseline: Report | null): string[][] {
 
 const { label, baseline: baselinePath } = options(process.argv.slice(2));
 const file = catalogPath();
-const fixture = JSON.parse(
-	await readFile(path.join(projectRoot, 'data', 'eval', 'search-queries.json'), 'utf8')
-) as EvalFixture;
+const fixture = await readJsonFile<SearchFixture>(
+	path.join(projectRoot, 'data', 'eval', 'search-queries.json')
+);
 
 const db = new DatabaseSync(file, { readOnly: true });
 db.exec('pragma query_only = true');
@@ -353,8 +347,7 @@ const report: Report = {
 	queries: results
 };
 
-const baseline =
-	baselinePath === null ? null : (JSON.parse(await readFile(baselinePath, 'utf8')) as Report);
+const baseline = baselinePath === null ? null : await readJsonFile<Report>(baselinePath);
 const outputDirectory = path.join(projectRoot, 'reports', 'eval');
 await mkdir(outputDirectory, { recursive: true });
 const output = path.join(outputDirectory, `search-${label}.json`);

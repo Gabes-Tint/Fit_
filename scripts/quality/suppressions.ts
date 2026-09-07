@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import process from 'node:process';
+import { readJsonFile } from '../security/shared';
 
 const execFileAsync = promisify(execFile);
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
@@ -86,7 +87,7 @@ for (const file of files) {
 }
 
 const unjustified = occurrences.filter((occurrence) => !occurrence.justified);
-const baseline = JSON.parse(await readFile(baselinePath, 'utf8')) as Baseline;
+const baseline = await readJsonFile<Baseline>(baselinePath);
 
 await mkdir(path.dirname(reportPath), { recursive: true });
 await writeFile(

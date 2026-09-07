@@ -1,4 +1,4 @@
-import { appendFile, readFile, writeFile } from 'node:fs/promises';
+import { appendFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import process from 'node:process';
@@ -10,6 +10,7 @@ import {
 	rankFilesBySurvivors,
 	type StrykerReport
 } from './mutation-file-rank';
+import { readJsonFileOrNull } from '../security/shared';
 
 /**
  * The reporting half of the scheduled mutation audit.
@@ -215,13 +216,7 @@ export async function collectMutationDebt(
 if (import.meta.main) {
 	const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 	const mutationRoot = path.join(projectRoot, 'reports', 'mutation');
-	const readJson: JsonReader = async (file) => {
-		try {
-			return JSON.parse(await readFile(file, 'utf8')) as unknown;
-		} catch {
-			return null;
-		}
-	};
+	const readJson: JsonReader = (file) => readJsonFileOrNull<unknown>(file);
 	const report = await collectMutationDebt(mutationRoot, tiers.audit.map(laneOf), readJson);
 
 	await writeFile(path.join(mutationRoot, 'debt.md'), report.body);

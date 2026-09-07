@@ -1,11 +1,12 @@
 import { execFileSync } from 'node:child_process';
-import { readFile, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import process from 'node:process';
 import { laneOf } from './mutation-debt';
 import { tiers } from './gates';
 import { describeMutant, rankFilesBySurvivors, type StrykerReport } from './mutation-file-rank';
+import { readJsonFileOrNull } from '../security/shared';
 
 /**
  * The daily routine's starting point: the three worst files in the current
@@ -70,11 +71,7 @@ export function formatDebtPlan(report: StrykerReport, worstCount = WORST_FILES_P
 }
 
 async function readReport(file: string): Promise<StrykerReport | null> {
-	try {
-		return JSON.parse(await readFile(file, 'utf8')) as StrykerReport;
-	} catch {
-		return null;
-	}
+	return readJsonFileOrNull<StrykerReport>(file);
 }
 
 /**

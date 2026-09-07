@@ -1,20 +1,16 @@
-import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
+import { writeFile, mkdir, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { readJsonFile } from '../security/shared';
 import { collectAssets, measure } from './bundle-assets';
-
-interface BundleBudgets {
-	clientCssBytes: number;
-	clientJavaScriptBytes: number;
-	largestAssetBytes: number;
-}
+import type { BundleBudgets } from './config-types';
 
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 const assetRoot = path.join(projectRoot, '.svelte-kit', 'output', 'client', '_app', 'immutable');
 const reportDirectory = path.join(projectRoot, 'reports', 'quality', 'bundle');
-const budgets = JSON.parse(
-	await readFile(path.join(projectRoot, 'quality', 'bundle-budgets.json'), 'utf8')
-) as BundleBudgets;
+const budgets = await readJsonFile<BundleBudgets>(
+	path.join(projectRoot, 'quality', 'bundle-budgets.json')
+);
 
 const { assets, javascriptBytes, cssBytes, largestAsset } = measure(
 	await collectAssets(assetRoot, projectRoot)
