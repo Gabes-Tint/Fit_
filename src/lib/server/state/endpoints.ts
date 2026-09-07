@@ -8,14 +8,15 @@ import {
 	staleVersion,
 	withinDeclaredLength
 } from '../api';
+import { isStateFormat, SCHEMA_VERSION, stateFormat } from '../../domain/state-document';
 import type { Auth, Membership } from '../users/types';
 import { readDocument, writeDocument } from './document';
 
 /**
- * The one document every household has: the whole client-side store, synced
- * through this pair of endpoints rather than through individual fields.
+ * The format this build would write, which is only ever used to label a
+ * household that has nothing stored yet.
  */
-const STATE_FORMAT = 'tend.v1';
+const STATE_FORMAT = stateFormat(SCHEMA_VERSION);
 
 /**
  * The document is the household's entire store, not a handful of text fields;
@@ -90,7 +91,13 @@ export async function readStateBody(request: Request): Promise<ParsedStateBody> 
 		return { ok: false, code: 'invalid-input', field: 'version', reason: 'invalid' };
 	}
 	const format = parsed['format'];
-	if (format !== STATE_FORMAT) {
+	// Well formed, not equal to this build's. The document is stored opaquely and
+	// never read here, so a schema this server has never heard of costs it
+	// nothing — while refusing one would lock a phone running a newer build out
+	// of its own account, and lock it out precisely when it has data no older
+	// build can reproduce. Deciding which copy may be used belongs to the client,
+	// which is the only party that reads the body; see `state-document.ts`.
+	if (!isStateFormat(format)) {
 		return { ok: false, code: 'invalid-input', field: 'format', reason: 'unsupported' };
 	}
 	return { ok: true, version, format, body: parsed['body'] };

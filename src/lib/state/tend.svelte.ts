@@ -24,38 +24,39 @@ import type {
 	Workout,
 	WorkoutSet
 } from '$lib/domain/types';
+import { MAX_REST_SECONDS, MIN_REST_SECONDS } from '$lib/domain/types';
 import {
-	DEFAULT_LOAD_UNIT,
-	DEFAULT_REST_SECONDS,
-	DEFAULT_UNITS,
-	MAX_REST_SECONDS,
-	MIN_REST_SECONDS
-} from '$lib/domain/types';
+	emptyState,
+	parseStateDocument,
+	loadStateDocument,
+	storedDocument,
+	type LoadRefusal
+} from '$lib/domain/state-document';
 import { round1, todayISO, uid } from '$lib/domain/utils';
 import { currentExercise, workoutFromRoutine } from '$lib/domain/workout';
 import { buildWeekPlan, mealPool } from '$lib/domain/week-plan';
 
 export const STORAGE_KEY = 'tend.v1';
 
+/**
+ * Where a document this build could not read is set aside when a readable one
+ * takes its place.
+ *
+ * The case is a rollback: a newer build wrote this device's document, the app
+ * was then downgraded — a web deploy rolled back, an Android version reinstalled
+ * — and the account's copy on the server is the older one this build can read.
+ * Adopting that is right, and it is the only thing that gets the device working
+ * again; but the document being replaced is the only copy of whatever was
+ * recorded on the newer build, so it is kept rather than dropped. Not read back
+ * automatically: this build could not read it when it refused it, and cannot
+ * once it has been superseded either. It is there to be recovered from, by hand
+ * or by the newer build being reinstalled, and it is removed on sign-out with
+ * everything else.
+ */
+export const REFUSED_STORAGE_KEY = 'tend.v1.refused';
+
 // A held stepper shares one save; a tab closed a moment later still makes it.
 const PERSIST_WINDOW_MS = 200;
-
-function emptyState(): TendState {
-	return {
-		onboarded: false,
-		activeProfileId: '',
-		profiles: [],
-		weekPlan: [],
-		pantry: [],
-		routines: [],
-		trainingPlan: [],
-		workouts: [],
-		activeWorkout: null,
-		loadUnit: DEFAULT_LOAD_UNIT,
-		restSeconds: DEFAULT_REST_SECONDS,
-		units: DEFAULT_UNITS
-	};
-}
 
 function rescale(item: LogItem, servings: number): LogItem {
 	const source = item.foodId ? SEED_FOOD_BY_ID[item.foodId] : undefined;
@@ -85,6 +86,15 @@ export class TendStore {
 	state = $state<TendState>(emptyState());
 	hydrated = $state(false);
 
+	/**
+	 * Why the stored document was not loaded, and `null` when there was nothing
+	 * to refuse. Set only by `hydrate()` and cleared by taking a document this
+	 * build can read, or by `clear()`. While it is set this store writes
+	 * nothing: what is on the device is newer or stranger than anything in
+	 * memory, and overwriting it is the one unrecoverable move.
+	 */
+	refusal = $state<LoadRefusal | null>(null);
+
 	private pendingWrite: ReturnType<typeof setTimeout> | null = null;
 	private lifecycleFlushBound = false;
 	private onWrite: (() => void) | null = null;
@@ -95,15 +105,22 @@ export class TendStore {
 
 	// -- persistence ---------------------------------------------------------
 
+	/**
+	 * Read what this device has stored. A document from an older build comes up
+	 * the ladder; one this build cannot read is refused rather than guessed at,
+	 * and a refusal leaves the stored text exactly where it is — `write()` stops
+	 * while `refusal` is set, so an empty document can never be saved over data
+	 * this build merely failed to understand.
+	 */
 	hydrate() {
 		if (this.hydrated) return;
 		const raw = globalThis.localStorage?.getItem(STORAGE_KEY);
 		if (raw) {
-			try {
-				// Merge over `emptyState()` so an older payload cannot leave a key undefined.
-				this.state = { ...emptyState(), ...(JSON.parse(raw) as Partial<TendState>) };
-			} catch {
-				this.state = emptyState();
+			const loaded = parseStateDocument(raw);
+			if (loaded.ok) {
+				this.state = loaded.state;
+			} else {
+				this.refusal = loaded;
 			}
 		}
 		this.hydrated = true;
@@ -132,7 +149,10 @@ export class TendStore {
 
 	private write() {
 		if (!this.hydrated) return;
-		globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify($state.snapshot(this.state)));
+		// Never over a document this build could not read: see `refusal`.
+		if (this.refusal !== null) return;
+		const document = storedDocument($state.snapshot(this.state));
+		globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(document));
 		this.onWrite?.();
 	}
 
@@ -153,15 +173,37 @@ export class TendStore {
 	}
 
 	/**
-	 * Take a document from the server in place of this device's. Merged over
-	 * `emptyState()` exactly as `hydrate()` merges, so a document written by an
-	 * older client cannot leave a key undefined, and any debounced write still
-	 * pending is dropped rather than allowed to undo what was just taken.
+	 * Take a document from the server in place of this device's, and say whether
+	 * it was taken. It goes up the ladder exactly as `hydrate()`'s does, so a
+	 * document written by an older build arrives complete; one this build cannot
+	 * read changes nothing at all and answers `false`, leaving the caller to
+	 * decide what to say about it. Any debounced write still pending is dropped
+	 * rather than allowed to undo what was just taken.
 	 */
-	replace(document: Partial<TendState>) {
+	replace(document: unknown): boolean {
+		const loaded = loadStateDocument(document);
+		if (!loaded.ok) return false;
 		this.cancelPendingWrite();
-		this.state = { ...emptyState(), ...document };
+		this.setAside();
+		// A document this build can read supersedes whatever this device failed
+		// to read on its own, so the store is writable again.
+		this.refusal = null;
+		this.state = loaded.state;
 		this.writeSilently();
+		return true;
+	}
+
+	/**
+	 * Keep the document this build refused, before something readable is written
+	 * where it was. See `REFUSED_STORAGE_KEY`. Any refusal is kept, not only a
+	 * document from a newer build: the reason this build could not read it does
+	 * not change that the text about to be overwritten is the only copy.
+	 */
+	private setAside(): void {
+		const storage = globalThis.localStorage;
+		if (this.refusal === null || storage === undefined) return;
+		const raw = storage.getItem(STORAGE_KEY);
+		if (typeof raw === 'string') storage.setItem(REFUSED_STORAGE_KEY, raw);
 	}
 
 	/**
@@ -171,8 +213,12 @@ export class TendStore {
 	 */
 	clear() {
 		this.cancelPendingWrite();
+		this.refusal = null;
 		this.state = emptyState();
 		globalThis.localStorage?.removeItem(STORAGE_KEY);
+		// A document set aside is still this account's data, and leaving it for
+		// whoever signs in next is exactly what this method exists to prevent.
+		globalThis.localStorage?.removeItem(REFUSED_STORAGE_KEY);
 	}
 
 	/** `write()` without the notification: see `watch()`. */

@@ -2,12 +2,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import { sync } from '$lib/state/sync.svelte';
+import { tend } from '$lib/state/tend.svelte';
 import SyncStatusBadge from './SyncStatusBadge.svelte';
 
 afterEach(() => {
-	// `sync` is a module singleton; leaving it in a non-idle status would leak
-	// into whichever test runs next.
+	// `sync` and `tend` are module singletons; leaving either saying something
+	// would leak into whichever test runs next.
 	sync.status = 'idle';
+	tend.refusal = null;
 	vi.useRealTimers();
 });
 
@@ -106,6 +108,34 @@ describe('SyncStatusBadge, a write the server refused', () => {
 		sync.status = 'error';
 		await render(SyncStatusBadge);
 		await expect.element(page.getByText(/couldn't reach the server/i)).toBeInTheDocument();
+	});
+});
+
+describe('SyncStatusBadge, data this build cannot read', () => {
+	it('tells someone to update the app when the account is ahead of it', async () => {
+		sync.status = 'outdated';
+		await render(SyncStatusBadge);
+		await expect.element(page.getByText(/update the app/i)).toBeInTheDocument();
+	});
+
+	it('says the same when it is this device’s own saved data that is ahead', async () => {
+		tend.refusal = { ok: false, reason: 'future', message: 'Update the app to load it.' };
+		await render(SyncStatusBadge);
+		await expect.element(page.getByText(/update the app/i)).toBeInTheDocument();
+	});
+
+	it('outranks a save in flight, because it is the reason the save is going nowhere', async () => {
+		vi.useFakeTimers();
+		sync.status = 'saving';
+		tend.refusal = {
+			ok: false,
+			reason: 'malformed',
+			message: 'Your saved data could not be read.'
+		};
+		await render(SyncStatusBadge);
+		await vi.advanceTimersByTimeAsync(600);
+		expect(document.body.textContent).toContain('could not be read');
+		expect(document.body.textContent).not.toContain('Saving…');
 	});
 });
 

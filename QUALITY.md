@@ -24,6 +24,18 @@ missing, so it is not proposed again.
   schedule and never gate. Do not promote them.
 - Passing tools cannot prove a feature satisfies its requirement. Acceptance criteria and
   regression tests remain the primary evidence of behavioral correctness.
+- **Every shape change to the state document ships with its migration.** `TendState` is one
+  JSON document shared by every device on the account, and no two devices run the same build
+  — the browser has whatever was last deployed, the phone has whatever Android last
+  installed. So adding, removing or retyping a field means, in the same pull request:
+  bump `SCHEMA_VERSION` in `src/lib/domain/state-document.ts`, append a pure
+  `migrate_N_to_N+1` to `MIGRATIONS` that carries the old shape to the new one, extend
+  `FIELD_CHECKS`, and test the upgrade against a fixture of the old document. `FIELD_CHECKS`
+  is typed against the document, so half of that is a compile error rather than a review
+  note. A migration reads no clock, no random source and no storage: same document in, same
+  document out, every time. A document older than the build is migrated forward; one newer
+  is refused, never merged and never written over, because an old build cannot know what a
+  new field means and the only safe thing it can do is leave the data alone and say so.
 
 ## Settled: do not propose additions here
 

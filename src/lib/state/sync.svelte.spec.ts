@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyProfile } from '$lib/domain/profile';
 import type { TendState } from '$lib/domain/types';
-import { STORAGE_KEY, TendStore } from './tend.svelte';
+import { OUTDATED_MESSAGE, SCHEMA_VERSION } from '$lib/domain/state-document';
+import { REFUSED_STORAGE_KEY, STORAGE_KEY, TendStore } from './tend.svelte';
 import { SYNC_STORAGE_KEY, SyncStore, type SyncRecord } from './sync.svelte';
 
 const announced = vi.hoisted(() => [] as string[]);
@@ -1378,5 +1379,191 @@ describe('the running state', () => {
 		} finally {
 			if (real) Object.defineProperty(globalThis, 'localStorage', real);
 		}
+	});
+});
+
+describe('a household whose document a newer build wrote', () => {
+	/** What a build one rung up this ladder would leave on the server. */
+	function fromANewerBuild(): Record<string, unknown> {
+		return { ...remoteState('Robin'), schemaVersion: SCHEMA_VERSION + 1 };
+	}
+
+	it('is not adopted, and this device keeps what it has', async () => {
+		const store = journal();
+		const sent = server([documentAnswer(3, fromANewerBuild())]);
+		const sync = syncFor(store);
+
+		await sync.start(HOUSEHOLD);
+
+		expect(store.state.profiles[0]?.name).toBe('Alex');
+		expect(sync.status).toBe('outdated');
+		expect(sync.version).toBe(0);
+		// One request, and no PUT: this device's older document is never offered
+		// in place of the one it could not read.
+		expect(sent.map((call) => call.method)).toEqual(['GET']);
+	});
+
+	it('says so, rather than letting sync look merely broken', async () => {
+		server([documentAnswer(3, fromANewerBuild())]);
+		const sync = syncFor(journal());
+
+		await sync.start(HOUSEHOLD);
+
+		expect(announced).toEqual([OUTDATED_MESSAGE]);
+	});
+
+	it('leaves this device still holding its own work, unsent', async () => {
+		const sync = syncFor(journal());
+		server([documentAnswer(3, fromANewerBuild())]);
+
+		await sync.start(HOUSEHOLD);
+
+		expect(record()?.dirty).toBe(true);
+		expect(await sync.flush()).toBe(false);
+	});
+
+	it('stops the conversation: a later change is not sent either', async () => {
+		const store = journal();
+		const sent = server([documentAnswer(3, fromANewerBuild())]);
+		const sync = syncFor(store);
+		await sync.start(HOUSEHOLD);
+
+		store.state.pantry.push('oats');
+		store.persist();
+		await sync.flush();
+
+		expect(sent).toHaveLength(1);
+	});
+
+	it('is refused just as firmly when it arrives as a refused write', async () => {
+		const store = journal();
+		localStorage.setItem(
+			SYNC_STORAGE_KEY,
+			JSON.stringify({ householdId: HOUSEHOLD, version: 3, dirty: true })
+		);
+		const sent = server([documentAnswer(3, remoteState('Robin')), stale(4, fromANewerBuild())]);
+		const sync = syncFor(store);
+
+		await sync.start(HOUSEHOLD);
+
+		expect(sync.status).toBe('outdated');
+		expect(store.state.profiles[0]?.name).toBe('Alex');
+		expect(record()?.dirty).toBe(true);
+		// The refusal is not followed by a second attempt at the same write.
+		expect(sent).toHaveLength(2);
+	});
+
+	it('starts over when a different account signs in on this device', async () => {
+		const sent = server([documentAnswer(3, fromANewerBuild()), documentAnswer(0, null)]);
+		const sync = syncFor(journal());
+		await sync.start(HOUSEHOLD);
+
+		await sync.start('h-2');
+
+		// The block belongs to the document that caused it, not to the device.
+		expect(sent.map((call) => call.method)).toEqual(['GET', 'GET']);
+		expect(sync.status).toBe('idle');
+	});
+});
+
+describe('a document that is not the shape this build expects', () => {
+	it('is not adopted, and this device keeps what it has', async () => {
+		const store = journal();
+		server([documentAnswer(3, { schemaVersion: SCHEMA_VERSION, onboarded: 'yes' })]);
+		const sync = syncFor(store);
+
+		await sync.start(HOUSEHOLD);
+
+		expect(store.state.profiles[0]?.name).toBe('Alex');
+		expect(sync.status).toBe('error');
+		expect(sync.version).toBe(0);
+	});
+});
+
+describe('the version this device sends', () => {
+	it('goes out with the document, so the next reader knows its shape', async () => {
+		const store = journal();
+		const sent = server([documentAnswer(0, null), stored(1)]);
+		const sync = syncFor(store);
+
+		await sync.start(HOUSEHOLD);
+
+		const put = sent[1]?.body as { format: string; body: Record<string, unknown> } | undefined;
+		expect(put?.format).toBe(`tend.v${SCHEMA_VERSION}`);
+		expect(put?.body['schemaVersion']).toBe(SCHEMA_VERSION);
+	});
+
+	it('survives the round trip, so another device reads what this one wrote', async () => {
+		const first = journal();
+		const sent = server([documentAnswer(0, null), stored(1)]);
+		await syncFor(first).start(HOUSEHOLD);
+		const pushed = (sent[1]?.body as { body: Record<string, unknown> }).body;
+
+		vi.restoreAllMocks();
+		localStorage.clear();
+		const second = blankDevice();
+		server([documentAnswer(1, pushed)]);
+		const sync = syncFor(second);
+
+		await sync.start(HOUSEHOLD);
+
+		expect(sync.status).toBe('idle');
+		expect(second.state.profiles[0]?.name).toBe('Alex');
+	});
+});
+
+describe('a device that could not read its own document', () => {
+	/** A device holding a document written by a build one rung further up. */
+	function unreadable(): TendStore {
+		localStorage.setItem(
+			STORAGE_KEY,
+			JSON.stringify({ pantry: ['rice'], schemaVersion: SCHEMA_VERSION + 1 })
+		);
+		const store = new TendStore();
+		store.hydrate();
+		return store;
+	}
+
+	it('does not offer its empty state to a household with nothing stored', async () => {
+		const store = unreadable();
+		const sent = server([documentAnswer(0, null)]);
+		const sync = syncFor(store);
+
+		await sync.start(HOUSEHOLD);
+
+		// The one request is the read. Pushing here would make the empty document
+		// the account's, and every other device would adopt it.
+		expect(sent.map((call) => call.method)).toEqual(['GET']);
+		expect(store.refusal?.reason).toBe('future');
+	});
+
+	it('does not offer it to a household that is behind, either', async () => {
+		localStorage.setItem(
+			SYNC_STORAGE_KEY,
+			JSON.stringify({ householdId: HOUSEHOLD, version: 4, dirty: true })
+		);
+		const sent = server([documentAnswer(2, remoteState('Robin'))]);
+		const sync = syncFor(unreadable());
+
+		await sync.start(HOUSEHOLD);
+
+		expect(sent.map((call) => call.method)).toEqual(['GET']);
+	});
+
+	it('recovers when the account has a document it can read', async () => {
+		const store = unreadable();
+		const refused = localStorage.getItem(STORAGE_KEY);
+		server([documentAnswer(3, remoteState('Robin'))]);
+		const sync = syncFor(store);
+
+		await sync.start(HOUSEHOLD);
+
+		expect(store.refusal).toBeNull();
+		expect(store.state.profiles[0]?.name).toBe('Robin');
+		expect(sync.version).toBe(3);
+		// The device works again, and the document it could not read — the only
+		// copy of whatever the newer build recorded here — was kept rather than
+		// deleted on the way past. See `REFUSED_STORAGE_KEY`.
+		expect(localStorage.getItem(REFUSED_STORAGE_KEY)).toBe(refused);
 	});
 });
