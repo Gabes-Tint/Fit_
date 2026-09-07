@@ -41,7 +41,10 @@ describe('Sheet', () => {
 	it('closes on Escape', async () => {
 		const props = $state({ open: true, body: 'Sheet body' });
 		await render(SheetHarness, { props });
-		await page.getByRole('dialog').click();
+		// Click the body text itself, not the dialog's geometric centre — a
+		// container click can land on whatever future markup ends up centred,
+		// including a real link (see #196).
+		await page.getByText('Sheet body', { exact: true }).click();
 		await userEscape();
 		expect(props.open).toBe(false);
 	});
