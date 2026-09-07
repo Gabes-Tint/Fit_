@@ -135,7 +135,7 @@ describe('hydration', () => {
 
 	it('leaves what is already in memory alone when there is nothing stored', () => {
 		const store = new TendStore();
-		store.addProfile(emptyProfile({ name: 'Alex' }));
+		store.state.profiles.push(emptyProfile({ name: 'Alex' }));
 		store.hydrate();
 		expect(store.state.profiles).toHaveLength(1);
 	});
@@ -143,7 +143,7 @@ describe('hydration', () => {
 	it('starts clean rather than throwing on a corrupt payload', () => {
 		localStorage.setItem(STORAGE_KEY, '{not json');
 		const store = new TendStore();
-		store.addProfile(emptyProfile({ name: 'Alex' }));
+		store.state.profiles.push(emptyProfile({ name: 'Alex' }));
 		store.hydrate();
 		expect(store.state.onboarded).toBe(false);
 		expect(store.state.profiles).toEqual([]);
@@ -401,21 +401,21 @@ describe('injections', () => {
 		expect(store.profile?.injections[0]?.id.startsWith('i-')).toBe(true);
 	});
 
-	it('switches the active profile', () => {
-		const store = onboarded();
-		const other = emptyProfile({ name: 'Jordan' });
-		store.addProfile(other);
-		store.setActive(other.id);
-		expect(store.profile?.name).toBe('Jordan');
-	});
-
 	it('patches only the active profile', () => {
 		const store = onboarded();
 		const other = emptyProfile({ name: 'Jordan' });
-		store.addProfile(other);
+		store.state.profiles.push(other);
 		store.patchActive((p) => ({ ...p, glp1: true }));
 		expect(store.profile?.glp1).toBe(true);
 		expect(store.state.profiles.find((p) => p.id === other.id)?.glp1).toBe(false);
+	});
+
+	it('reads the profile matching the active id, not just the first one', () => {
+		const store = onboarded();
+		const other = emptyProfile({ name: 'Jordan' });
+		store.state.profiles.push(other);
+		store.state.activeProfileId = other.id;
+		expect(store.profile?.name).toBe('Jordan');
 	});
 });
 
@@ -456,7 +456,7 @@ describe('the week plan', () => {
 
 	it('treats one member on a GLP-1 as a protein floor for the household', () => {
 		const store = onboarded({ glp1: true });
-		store.addProfile(emptyProfile({ name: 'Jordan' }));
+		store.state.profiles.push(emptyProfile({ name: 'Jordan' }));
 		store.generatePlan();
 		expect(store.state.weekPlan).toHaveLength(21);
 		for (const slot of store.state.weekPlan) {
@@ -578,9 +578,11 @@ describe('whole-state operations', () => {
 	it('saves each change to the profile list as it is made', () => {
 		const store = onboarded();
 		const other = emptyProfile({ name: 'Jordan' });
-		store.addProfile(other);
+		store.state.profiles.push(other);
+		store.persist();
 		expect(stored().profiles).toHaveLength(2);
-		store.setActive(other.id);
+		store.state.activeProfileId = other.id;
+		store.persist();
 		expect(stored().activeProfileId).toBe(other.id);
 		store.patchActive((p) => ({ ...p, glp1: true }));
 		expect(stored().profiles[1]?.glp1).toBe(true);
@@ -603,7 +605,7 @@ describe('whole-state operations', () => {
 
 	it('does not write anything before the store is hydrated', () => {
 		const store = new TendStore();
-		store.addProfile(emptyProfile({ name: 'Alex' }));
+		store.state.profiles.push(emptyProfile({ name: 'Alex' }));
 		expect(store.state.profiles).toHaveLength(1);
 		expect(localStorage.getItem('tend.v1')).toBeNull();
 	});
@@ -615,7 +617,8 @@ describe('whole-state operations', () => {
 		try {
 			const store = new TendStore();
 			store.hydrate();
-			store.addProfile(emptyProfile({ name: 'Alex' }));
+			store.state.profiles.push(emptyProfile({ name: 'Alex' }));
+			expect(() => store.persist()).not.toThrow();
 			expect(store.hydrated).toBe(true);
 			expect(store.state.profiles).toHaveLength(1);
 		} finally {
@@ -1294,14 +1297,6 @@ describe('filing a session', () => {
 		expect(filed?.exercises.flatMap((e) => e.sets).every((set) => !set.done)).toBe(true);
 		expect(stored().workouts[0]?.id).toBe(filed?.id);
 	});
-
-	it('throws away a session on request', () => {
-		const store = inSession();
-		store.toggleSet(0);
-		store.discardWorkout();
-		expect(store.state.activeWorkout).toBeNull();
-		expect(store.state.workouts).toEqual([]);
-	});
 });
 
 describe('what counts as training', () => {
@@ -1432,7 +1427,8 @@ describe('training across a reload', () => {
 		expect(stored().activeWorkout?.exercises[0]?.note).toBe('felt strong');
 		store.nextExercise();
 		expect(stored().activeWorkout?.exerciseIndex).toBe(1);
-		store.discardWorkout();
+		store.state.activeWorkout = null;
+		store.persist();
 		expect(stored().activeWorkout).toBeNull();
 	});
 
