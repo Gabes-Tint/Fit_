@@ -108,6 +108,21 @@ hosted one, that costs no time, only the tidiness of never pushing red.
 `check:ci-contract` proves every declared local CI slice is hosted and every hosted gate job
 is listed in `all-green.needs`; a job outside that protected aggregator is not a merge gate.
 
+Since #167 it also proves the setup the jobs stopped pasting. The five preamble steps live in
+`.github/actions/setup` and the report uploads in `.github/actions/upload-report`, which is
+the shape that can hollow a workflow check out: a job with no toolchain in it reads exactly
+like a job with one. So the guarantee is asserted in halves that only hold together — every
+job running Bun calls the setup action; that action still pins Node and Bun to
+`.tool-versions`, restores the Bun cache and installs `--frozen-lockfile`; the upload action
+still names each artifact after the run and attempt and keeps it fourteen days; and every
+upload is still gated on `if: always()` at the call site, because a condition inside a
+composite action cannot resurrect a step the job already skipped, and a gate that failed
+would otherwise upload no evidence at all. And every job that calls a local action still
+checks the repository out, because a composite action is read from the workspace and cannot
+be what puts the workspace there — without it a job fails on "Can't find action", naming the
+action rather than the missing checkout. Four fixtures prove those halves — `ci-job-without-setup`,
+`gutted-setup-action`, `unconditional-report-upload` and `ci-job-without-checkout`.
+
 `check:schedules` is the same proof for the lanes that deliberately do not gate a merge. A
 tier taken off the pull request only exists if a schedule still runs it, so this proves the
 `audit` and `nightly` tiers are each invoked by a workflow with a `cron`, and that the
