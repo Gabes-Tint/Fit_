@@ -3,7 +3,12 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildMutationScope, discoverSecurityRoots, expandRuntimeImports } from './mutation-scope';
+import {
+	buildMutationScope,
+	discoverSecurityRoots,
+	expandRuntimeImports,
+	isServerSource
+} from './mutation-scope';
 
 const roots: string[] = [];
 
@@ -66,6 +71,11 @@ describe('mutation security scope', () => {
 			'src/routes/api/+page.server.ts',
 			'src/routes/api/+server.ts'
 		]);
+	});
+
+	it('classifies a route server spec into the server project, not a component spec', () => {
+		expect(isServerSource('src/routes/api/accounts/server.spec.ts')).toBe(true);
+		expect(isServerSource('src/lib/components/AvgRow.svelte.spec.ts')).toBe(false);
 	});
 
 	it('includes transitive local runtime imports but not type-only imports', async () => {
