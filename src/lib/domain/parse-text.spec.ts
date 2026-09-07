@@ -68,7 +68,10 @@ const WRITTEN_NUMBER_CASES: ChunkCase[] = [
 	['2 x eggs', 'eggs', servings(2)],
 	['2 × eggs', 'eggs', servings(2)],
 	['2x eggs', 'eggs', servings(2)],
-	['12.5 x brown rice', 'brown rice', servings(12.5)]
+	['12.5 x brown rice', 'brown rice', servings(12.5)],
+	// Neither half of a fraction is a single digit here: a chocolate bar scored
+	// into 16 squares, ten of them eaten.
+	['10/16 chocolate bar', 'chocolate bar', servings(0.625)]
 ];
 
 const GLUED_UNIT_CASES: ChunkCase[] = [
@@ -161,6 +164,17 @@ describe('parseLocalText', () => {
 		expect(reading('of two eggs')).toEqual({ query: 'eggs', quantity: servings(2) });
 	});
 
+	it('drops a leading "of" and every space behind it, not just the first', () => {
+		expect(reading('of  two eggs')).toEqual({ query: 'eggs', quantity: servings(2) });
+	});
+
+	it('keeps an "of" that belongs to the food name rather than to the filler', () => {
+		expect(reading('2 cans cream of mushroom soup')).toEqual({
+			query: 'cream of mushroom soup',
+			quantity: servings(2)
+		});
+	});
+
 	it('drops the unit and the "of" between a quantity and its food', () => {
 		expect(reading('2 slices of toast')).toEqual({ query: 'toast', quantity: servings(2) });
 	});
@@ -183,6 +197,18 @@ describe('parseLocalText', () => {
 
 	it('leaves no leading space on the query when the number word was followed by two', () => {
 		expect(reading('a  banana')).toEqual({ query: 'banana', quantity: servings(1) });
+	});
+
+	it('still reads the unit when a second space was typed after the fraction', () => {
+		expect(reading('1/2  cup rice')).toEqual({ query: 'rice', quantity: volume(0.5, 'cup') });
+	});
+
+	it('still reads the unit when a second space was typed after the number', () => {
+		expect(reading('200  g chicken')).toEqual({ query: 'chicken', quantity: mass(200, 'g') });
+	});
+
+	it('still reads the unit when a second space was typed after the multiplier', () => {
+		expect(reading('2 x  cup of tea')).toEqual({ query: 'tea', quantity: volume(2, 'cup') });
 	});
 
 	it('splits a sentence on commas into separate items', () => {
@@ -244,12 +270,20 @@ describe('parseLocalText', () => {
 		expect(reading('half an avocado')).toEqual({ query: 'avocado', quantity: servings(0.5) });
 	});
 
+	it('reads through the article after a fraction, which no number word swallowed', () => {
+		expect(reading('1/2 a cucumber')).toEqual({ query: 'cucumber', quantity: servings(0.5) });
+	});
+
 	it('reads through the unit and the "of" in "a cup of coffee"', () => {
 		expect(reading('a cup of coffee')).toEqual({ query: 'coffee', quantity: volume(1, 'cup') });
 	});
 
 	it('keeps a phrase that is nothing but filler rather than asking for nothing', () => {
 		expect(reading('3 cups')).toEqual({ query: 'cups', quantity: servings(3) });
+	});
+
+	it('takes the unit off even when the food left behind is itself a filler word', () => {
+		expect(reading('250 ml can')).toEqual({ query: 'can', quantity: volume(250, 'ml') });
 	});
 
 	it('has nothing to ask about an empty sentence', () => {

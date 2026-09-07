@@ -90,12 +90,12 @@ function group(m: RegExpMatchArray, index: number): string {
  */
 const QUANTITY_PATTERNS: {
 	re: RegExp;
-	qty: (m: RegExpMatchArray) => number | undefined;
+	qty: (m: RegExpMatchArray) => number;
 	restIndex: number;
 	unitIndex?: number;
 }[] = [
-	{ re: /^(\d+)\s*\/\s*(\d+)\s+(.*)$/, qty: (m) => Number(m[1]) / Number(m[2]), restIndex: 3 },
-	{ re: /^(\d+\.?\d*)\s*(x|×)?\s+(.*)$/, qty: (m) => Number(m[1]), restIndex: 3 },
+	{ re: /^(\d+)\s*\/\s*(\d+)\s+(.*)/, qty: (m) => Number(m[1]) / Number(m[2]), restIndex: 3 },
+	{ re: /^(\d+\.?\d*)\s*(x|×)?\s+(.*)/, qty: (m) => Number(m[1]), restIndex: 3 },
 	{ re: GLUED_UNIT_RE, qty: (m) => Number(m[1]), restIndex: 3, unitIndex: 2 }
 ];
 
@@ -127,12 +127,12 @@ function readMeasureUnit(rest: string): { unit: string; rest: string } {
 }
 
 function parseQuantity(raw: string): { amount: number; unit: string; rest: string } {
-	const s = raw.trim().replace(/^of\s+/, '');
+	const s = raw.replace(/^of\s+/, '');
 	for (const { re, qty, restIndex, unitIndex } of QUANTITY_PATTERNS) {
 		const m = s.match(re);
 		if (!m) continue;
 		const n = qty(m);
-		if (n == null || !Number.isFinite(n)) continue;
+		if (!Number.isFinite(n)) continue;
 		const glued = unitIndex === undefined ? '' : group(m, unitIndex).toLowerCase();
 		const tail = group(m, restIndex);
 		const read = glued ? { unit: glued, rest: tail } : readMeasureUnit(tail);
@@ -160,8 +160,9 @@ export function guessMeal(date = new Date()): Meal {
 	const h = date.getHours();
 	if (h >= 5 && h < 10) return 'breakfast';
 	if (h >= 10 && h < 14) return 'lunch';
-	if (h >= 14 && h < 17) return 'snack';
 	if (h >= 17 && h < 22) return 'dinner';
+	// Afternoon and the small hours are both snacks, so they share this return
+	// rather than each naming one.
 	return 'snack';
 }
 
@@ -185,9 +186,11 @@ export function parseLocalText(text: string, meal: Meal = guessMeal()): ParsedCh
 		// is a fraction ("1/2 avocado") that must survive to parseQuantity. A line
 		// break separates too, so a pasted list reads as one food per line.
 		//
-		// The class is every line break, not just `\n`: a Windows clipboard brings
-		// `\r` and a Word or PDF paste brings U+2028 or U+2029, and a list pasted
-		// from one of those is a list all the same.
+		// The class is every character `.` refuses, not just `\n`: a Windows
+		// clipboard brings `\r` and a Word or PDF paste brings U+2028 or U+2029,
+		// and one that reached a chunk would end `(.*)` early and drop the rest of
+		// the line on the floor. Splitting on all four is what lets the patterns
+		// above end at `(.*)` with no anchor to say so.
 		.split(/\s*(?:,|;|\+|[\n\r\u2028\u2029]|(?<!\d)\/(?!\d)|\band\b)\s*/i)
 		.map((c) => c.trim())
 		.filter((c) => c.length > 1);
