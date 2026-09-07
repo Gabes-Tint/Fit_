@@ -8,6 +8,7 @@ import {
 	storedDocument,
 	type StoredDocument
 } from '$lib/domain/state-document';
+import { SyncRetry } from './sync-retry';
 import { STORAGE_KEY, tend } from './tend.svelte';
 import type { TendStore } from './tend.svelte';
 
@@ -246,6 +247,12 @@ export class SyncStore {
 
 	private retryBound = false;
 
+	/**
+	 * The fourth chance: the clock a device winds after an exchange that never
+	 * reached the server, so recovering does not wait on the person noticing.
+	 */
+	private readonly retries = new SyncRetry(() => void this.schedule());
+
 	constructor(store: TendStore) {
 		this.store = store;
 	}
@@ -326,22 +333,35 @@ export class SyncStore {
 		if (householdId === null) return;
 		this.dirty = true;
 		this.save(householdId);
+		this.retry();
+	}
+
+	/**
+	 * Try now, on news from outside the exchange: the network back, the page in
+	 * view, something new to send. Each of those is a reason to believe the last
+	 * failure is over, so the timed steps start again from the top rather than
+	 * the change somebody has just recorded inheriting the ladder an earlier one
+	 * already spent.
+	 */
+	private retry(): void {
+		this.retries.reset();
 		void this.schedule();
 	}
 
 	/**
-	 * The three moments a device that could not reach the server gets another
-	 * chance. Bound once and never removed: `schedule()` does nothing while
-	 * nothing is being synced, so there is no teardown and no window in which a
-	 * listener is missing.
+	 * Three of the four moments a device that could not reach the server gets
+	 * another chance; `settle()` below is the fourth, and the only one that does
+	 * not wait on the world outside the app. Bound once and never removed:
+	 * `schedule()` does nothing while nothing is being synced, so there is no
+	 * teardown and no window in which a listener is missing.
 	 */
 	private bindRetries(): void {
 		if (this.retryBound) return;
 		if (typeof globalThis.addEventListener !== 'function') return;
 		this.retryBound = true;
-		globalThis.addEventListener('online', () => void this.schedule());
+		globalThis.addEventListener('online', () => this.retry());
 		globalThis.addEventListener('visibilitychange', () => {
-			if (globalThis.document.visibilityState === 'visible') void this.schedule();
+			if (globalThis.document.visibilityState === 'visible') this.retry();
 		});
 	}
 
@@ -364,6 +384,7 @@ export class SyncStore {
 		}
 		const done: Promise<void> = Promise.resolve()
 			.then(() => this.drain(householdId))
+			.then(() => this.settle())
 			.finally(() => {
 				// Only while it is still the current one: an exchange the next
 				// account replaced must not clear that account's handle on its way
@@ -372,6 +393,35 @@ export class SyncStore {
 			});
 		this.inFlight = { householdId, done };
 		return done;
+	}
+
+	/**
+	 * What the exchange just finished leaves behind: another attempt on the
+	 * clock, or nothing.
+	 *
+	 * Two things are outstanding. A document the server has not accepted leaves
+	 * `'waiting'`, which is the status an unanswered read or write both end at
+	 * and the only status that means the server was not reached. And a household
+	 * this device has never read is one whose document it has not got, whether or
+	 * not it is holding anything of its own — the read that never landed is worth
+	 * making again.
+	 *
+	 * Everything else is either finished or latched, and the latches are the
+	 * reason this asks the state rather than every failure site: a device the
+	 * server refused, a document written by a newer build, and a document this
+	 * build could not read all leave the household read and the status somewhere
+	 * other than `'waiting'`. None of them arms anything, which is what stops a
+	 * latched device pushing over a document it must not touch.
+	 *
+	 * Nothing here takes an attempt off the clock, because nothing can be on it:
+	 * an attempt is only ever armed by the exchange before this one, and every
+	 * other way of opening an exchange goes through `retry()`, which clears the
+	 * clock on its way past. A device that has stopped is the one loose end — it
+	 * can leave a last attempt armed, and that attempt reaches a `schedule()`
+	 * with nothing to sync and dies there, the same way the listeners above do.
+	 */
+	private settle(): void {
+		if (this.status === 'waiting' || this.pulledFor !== this.householdId) this.retries.arm();
 	}
 
 	/**

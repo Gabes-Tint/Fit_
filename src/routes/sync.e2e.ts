@@ -48,9 +48,15 @@ function storedDocument(page: Page): Promise<string | null> {
  * Wait until this device has sent everything it holds.
  *
  * `timeout: 20_000` on every `expect.poll` in this file, above the sync
- * client's `REQUEST_TIMEOUT_MS` (10_000, `src/lib/state/sync.svelte.ts:49`):
+ * client's `REQUEST_TIMEOUT_MS` (10_000, `src/lib/state/sync.svelte.ts`):
  * Playwright's default 5 s `expect` timeout gave up before one aborted
  * attempt could even finish, which #125 found behind two of its five flakes.
+ *
+ * The timed retry added for #193 is why a dropped attempt now recovers at all
+ * rather than stalling here for ever, but it does not shorten this wait: the
+ * window it has to cover is an attempt aborting at ten seconds, the first step
+ * of a second, and the round trip after it. Twenty is that with room, and a
+ * poll only costs the time it actually takes.
  */
 async function settled(page: Page) {
 	await expect
