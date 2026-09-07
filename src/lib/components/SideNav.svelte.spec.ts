@@ -115,10 +115,27 @@ describe('SideNav', () => {
 		expect(shown?.closest('a, button')).toBeNull();
 	});
 
+	// The click puts the pointer inside the drawer before the key goes out, and
+	// it names what it is aiming at. Clicking the dialog itself aimed at the
+	// panel's geometric centre, and what sits at that point depends on the
+	// viewport and on how tall the account block has rendered by then — on CI it
+	// landed on the third destination and really navigated the test iframe to
+	// /exercise, which ends the browser session and takes every spec file behind
+	// this one with it.
+	const INERT_SURFACE = 'Everything stays on this device.';
+
+	it('keeps that surface inert: it is text, and no destination sits on it', async () => {
+		await render(SideNav, { props: { open: true, pathname: '/' } });
+		const surface = [...document.querySelectorAll('*')].find(
+			(element) => element.textContent === INERT_SURFACE
+		);
+		expect(surface?.closest('a, button')).toBeNull();
+	});
+
 	it('closes on Escape', async () => {
 		const props = $state({ open: true, pathname: '/' });
 		await render(SideNav, { props });
-		await page.getByRole('dialog').click();
+		await page.getByText(INERT_SURFACE, { exact: true }).click();
 		document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 		await new Promise((resolve) => setTimeout(resolve, 50));
 		expect(props.open).toBe(false);
