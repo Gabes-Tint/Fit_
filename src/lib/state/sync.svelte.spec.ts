@@ -737,6 +737,29 @@ describe('a dropped request', () => {
 		}
 	});
 
+	it('is read again a second later when it was the read that never arrived', async () => {
+		vi.useFakeTimers();
+		try {
+			const sent = server([DROPPED, documentAnswer(2, remoteState('Robin'))]);
+			const store = blankDevice();
+			const sync = syncFor(store);
+
+			await sync.start(HOUSEHOLD);
+			// A device with nothing of its own is not waiting to send anything, so
+			// nothing about its status says something went wrong. What it is
+			// missing is the account's document — somebody has just signed in on a
+			// new phone and is looking at an empty app.
+			expect(sync.status).toBe('idle');
+
+			await vi.advanceTimersByTimeAsync(1_000);
+
+			expect(sent.map((call) => call.method)).toEqual(['GET', 'GET']);
+			expect(store.state.profiles[0]?.name).toBe('Robin');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it('is tried again more slowly each time, and only so many times', async () => {
 		vi.useFakeTimers();
 		try {
@@ -770,6 +793,34 @@ describe('a dropped request', () => {
 			expect(writes()).toBe(5);
 			expect(sync.status).toBe('waiting');
 			expect(record()?.dirty).toBe(true);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('is taken off the clock by a change that supersedes it', async () => {
+		vi.useFakeTimers();
+		try {
+			const writes = writesThatNeverLand();
+			const store = journal();
+			const sync = syncFor(store);
+			await sync.start(HOUSEHOLD);
+			expect(writes()).toBe(1);
+
+			// Two hundred milliseconds into the first attempt's wait, somebody logs
+			// something, which sends at once and arms an attempt of its own.
+			await vi.advanceTimersByTimeAsync(200);
+			store.togglePantry('oats');
+			await vi.advanceTimersByTimeAsync(0);
+			expect(writes()).toBe(2);
+
+			// One attempt on the clock, never two: the wait the first failure armed
+			// was replaced rather than both coming due and asking twice, which is
+			// how a device with a bad connection and a busy person on it would
+			// build a queue of its own making.
+			await vi.advanceTimersByTimeAsync(1_500);
+
+			expect(writes()).toBe(3);
 		} finally {
 			vi.useRealTimers();
 		}
@@ -809,9 +860,23 @@ describe('a dropped request', () => {
 
 			await vi.advanceTimersByTimeAsync(1_000);
 			expect(record()?.dirty).toBe(false);
-			// Five minutes of a device with nothing outstanding: the accepted write
-			// took the pending attempt off the clock rather than leaving a timer
-			// waking the phone about a document the server already has.
+
+			// The moment the write is accepted there is nothing on the clock at
+			// all. The count is what says so, where counting requests cannot: an
+			// attempt made with nothing outstanding reaches a `drain` that sends
+			// nothing, so a device left needlessly ticking looks exactly like one
+			// that is not, and it is still a phone woken for no reason.
+			// Nine hundred milliseconds later — long enough that the environment's
+			// own machinery has run out, short of the second an attempt would have
+			// waited — there is nothing on the clock at all. The count is what
+			// says so, where counting requests cannot: an attempt made with
+			// nothing outstanding reaches a `drain` that sends nothing, so a
+			// device left needlessly ticking looks exactly like one that is not,
+			// and it is still a phone woken for no reason.
+			await vi.advanceTimersByTimeAsync(900);
+			expect(vi.getTimerCount()).toBe(0);
+
+			// And five minutes later it is still quiet.
 			await vi.advanceTimersByTimeAsync(5 * 60_000);
 
 			expect(sent).toHaveLength(3);

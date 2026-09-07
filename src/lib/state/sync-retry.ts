@@ -35,8 +35,11 @@ const ATTEMPTS = 4;
 export class SyncRetry {
 	private readonly attempt: () => void;
 
-	/** Attempts made on the current bad spell, and so which step is next. */
+	/** Attempts made on the current bad spell. */
 	private made = 0;
+
+	/** What the next one waits. */
+	private delay = FIRST_DELAY_MS;
 
 	private timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -46,16 +49,18 @@ export class SyncRetry {
 
 	/**
 	 * Put the next attempt on the clock, a step further out than the last, and
-	 * nothing at all once this spell's attempts are spent. Whatever was already
-	 * on the clock is replaced, so there is never more than one waiting however
-	 * many exchanges have ended badly.
+	 * nothing at all once this spell's attempts are spent.
+	 *
+	 * Nothing is taken off the clock first, because nothing can be on it: the
+	 * caller arms at the end of an exchange, and an exchange only begins from an
+	 * attempt this armed — which has fired by then — or from `reset()`, which
+	 * clears the clock on its way past.
 	 */
 	arm(): void {
 		if (this.made >= ATTEMPTS) return;
-		const delay = Math.min(FIRST_DELAY_MS * 4 ** this.made, LONGEST_DELAY_MS);
 		this.made += 1;
-		clearTimeout(this.timer);
-		this.timer = setTimeout(() => this.attempt(), delay);
+		this.timer = setTimeout(() => this.attempt(), this.delay);
+		this.delay = Math.min(this.delay * 4, LONGEST_DELAY_MS);
 	}
 
 	/**
@@ -67,5 +72,6 @@ export class SyncRetry {
 	reset(): void {
 		clearTimeout(this.timer);
 		this.made = 0;
+		this.delay = FIRST_DELAY_MS;
 	}
 }
