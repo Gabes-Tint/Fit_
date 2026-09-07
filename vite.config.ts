@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config';
 import thresholds from './quality/thresholds.json' with { type: 'json' };
 import { readBuildVersion } from './scripts/build/app-version.ts';
+import { previewKeepAlive } from './scripts/build/preview-keep-alive.ts';
 import { DOM_FREE_CLIENT_SPECS } from './quality/dom-free-client-specs.mjs';
 import { playwright } from '@vitest/browser-playwright';
 import adapter from '@sveltejs/adapter-node';
@@ -151,6 +152,7 @@ export default defineConfig({
 	},
 	plugins: [
 		tailwindcss(),
+		previewKeepAlive(),
 		sveltekit({
 			compilerOptions: {
 				// Force runes mode for the project, except for libraries. Can be removed in svelte 6.
