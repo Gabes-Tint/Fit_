@@ -24,7 +24,6 @@
 
 	let wipeOpen = $state(false);
 	let redoOnboarding = $state(false);
-	let editingEnergy = $state(false);
 	let energyError = $state('');
 
 	/** The floor `computeTargets` itself enforces — an override may not sit below it. */
@@ -75,29 +74,21 @@
 
 	function saveEnergy(event: SubmitEvent) {
 		event.preventDefault();
-		if (!profile) return;
 		const data = new FormData(event.currentTarget as HTMLFormElement);
 		const value = Number(data.get('energy-kcal'));
-		if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
-			energyError = 'Enter a whole number of calories.';
-			return;
-		}
-		if (value < MIN_ENERGY_KCAL) {
-			energyError = `Energy target can’t go below ${MIN_ENERGY_KCAL} kcal.`;
+		if (!Number.isInteger(value) || value < MIN_ENERGY_KCAL) {
+			energyError = `Enter at least ${MIN_ENERGY_KCAL} kcal.`;
 			return;
 		}
 		energyError = '';
 		tend.patchActive((p) => ({ ...p, calorieOverride: value }));
-		editingEnergy = false;
-		toast('Energy target saved.');
+		toast('Energy saved.');
 	}
 
 	function useAutomaticEnergy() {
-		if (!profile) return;
 		tend.patchActive((p) => ({ ...p, calorieOverride: null }));
-		editingEnergy = false;
 		energyError = '';
-		toast('Energy target set to automatic.');
+		toast('Energy set to automatic.');
 	}
 
 	function setGlp1(on: boolean) {
@@ -312,7 +303,7 @@
 					class="text-primary mt-1 inline-flex h-10 items-center text-sm font-medium"
 					onclick={() => (redoOnboarding = true)}
 				>
-					Answer the setup questions again
+					Redo setup
 				</button>
 				<p class="text-muted-foreground mt-1 text-sm">
 					{targets.source === 'adaptive'
@@ -324,30 +315,19 @@
 				<dl class="mt-3 grid grid-cols-2 gap-2 text-sm">
 					<div class="bg-background rounded-2xl px-3 py-2">
 						<dt class="text-muted-foreground text-xs">Energy</dt>
-						{#if editingEnergy}
-							<form onsubmit={saveEnergy} class="mt-1 flex items-center gap-1">
-								<Input
-									id="you-energy-kcal"
-									name="energy-kcal"
-									class="h-8 w-20 px-2 text-sm"
-									inputmode="numeric"
-									aria-label="Energy target, kcal"
-									value={targets.kcal}
-								/>
-								<Button size="sm" type="submit">Save</Button>
-							</form>
-							{#if energyError}
-								<p class="text-destructive mt-1 text-xs">{energyError}</p>
-							{/if}
-						{:else}
-							<dd class="tabular font-medium">{targets.kcal} kcal</dd>
-							<button
-								type="button"
-								class="text-primary mt-1 block text-xs font-medium"
-								onclick={() => (editingEnergy = true)}
-							>
-								Edit
-							</button>
+						<form onsubmit={saveEnergy} class="mt-1 flex items-center gap-1">
+							<Input
+								id="you-energy-kcal"
+								name="energy-kcal"
+								class="h-8 w-20 px-2 text-sm"
+								inputmode="numeric"
+								aria-label="Energy, kcal"
+								value={targets.kcal}
+							/>
+							<Button size="sm" type="submit">Save</Button>
+						</form>
+						{#if energyError}
+							<p class="text-destructive mt-1 text-xs">{energyError}</p>
 						{/if}
 						{#if profile.calorieOverride != null}
 							<button
@@ -355,7 +335,7 @@
 								class="text-primary mt-1 block text-xs font-medium"
 								onclick={useAutomaticEnergy}
 							>
-								Use the automatic target
+								Use automatic
 							</button>
 						{/if}
 					</div>

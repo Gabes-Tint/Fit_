@@ -97,13 +97,7 @@
 	}
 
 	const heading = $derived(
-		step === 0
-			? 'A quieter tracker'
-			: step === 1
-				? 'About you'
-				: redo
-					? 'Save your answers'
-					: 'How to start'
+		step === 0 ? 'A quieter tracker' : step === 1 ? 'About you' : 'How to start'
 	);
 
 	function pickGoal(id: Goal) {
@@ -122,9 +116,9 @@
 			: [...restrictions, id];
 	}
 
-	function finish(useSample: boolean) {
-		const profile = emptyProfile({
-			id: uid('p-'),
+	/** The fields both `finish` and `saveRedo` write — the answered questions only. */
+	function answers() {
+		return {
 			name: name.trim() || 'You',
 			goal: glp1 ? 'glp1' : goal,
 			glp1: glp1 || goal === 'glp1',
@@ -132,7 +126,14 @@
 			age,
 			heightCm,
 			activity,
-			restrictions,
+			restrictions
+		};
+	}
+
+	function finish(useSample: boolean) {
+		const profile = emptyProfile({
+			id: uid('p-'),
+			...answers(),
 			weights: [{ id: uid('w-'), date: todayISO(), kg }]
 		});
 		tend.completeOnboarding({ profile, household: false, useSample });
@@ -146,17 +147,7 @@
 	 * replaces.
 	 */
 	function saveRedo() {
-		tend.patchActive((p) => ({
-			...p,
-			name: name.trim() || 'You',
-			goal: glp1 ? 'glp1' : goal,
-			glp1: glp1 || goal === 'glp1',
-			sex,
-			age,
-			heightCm,
-			activity,
-			restrictions
-		}));
+		tend.patchActive((p) => ({ ...p, ...answers() }));
 		onredo?.();
 	}
 </script>
@@ -234,7 +225,7 @@
 				<Switch aria-label="GLP-1 mode" bind:checked={() => glp1, setGlp1} />
 			</div>
 
-			<div class="grid {redo ? 'grid-cols-2' : 'grid-cols-3'} gap-2">
+			<div class="grid grid-cols-3 gap-2">
 				<div>
 					<Label for="onboard-age">Age</Label>
 					<Input id="onboard-age" class="mt-1.5" type="number" bind:value={age} />
@@ -257,17 +248,6 @@
 							/>
 						</div>
 					</div>
-					{#if !redo}
-						<div>
-							<Label for="onboard-weight">Weight lb</Label>
-							<Input
-								id="onboard-weight"
-								class="mt-1.5"
-								type="number"
-								bind:value={() => weightDisplay, (v) => setWeightDisplay(String(v))}
-							/>
-						</div>
-					{/if}
 				{:else}
 					<div>
 						<Label for="onboard-height">Height cm</Label>
@@ -278,17 +258,17 @@
 							bind:value={() => Math.round(heightCm), (v) => setHeightCm(String(v))}
 						/>
 					</div>
-					{#if !redo}
-						<div>
-							<Label for="onboard-weight">Weight kg</Label>
-							<Input
-								id="onboard-weight"
-								class="mt-1.5"
-								type="number"
-								bind:value={() => weightDisplay, (v) => setWeightDisplay(String(v))}
-							/>
-						</div>
-					{/if}
+				{/if}
+				{#if !redo}
+					<div>
+						<Label for="onboard-weight">Weight {units === 'imperial' ? 'lb' : 'kg'}</Label>
+						<Input
+							id="onboard-weight"
+							class="mt-1.5"
+							type="number"
+							bind:value={() => weightDisplay, (v) => setWeightDisplay(String(v))}
+						/>
+					</div>
 				{/if}
 			</div>
 
@@ -354,21 +334,10 @@
 					>
 						{redo ? 'Cancel' : 'Back'}
 					</Button>
-					<Button class="flex-1" onclick={() => (step = 2)}>Continue</Button>
+					<Button class="flex-1" onclick={() => (redo ? saveRedo() : (step = 2))}>
+						{redo ? 'Save' : 'Continue'}
+					</Button>
 				</div>
-			</div>
-		</div>
-	{:else if redo}
-		<div class="flex flex-1 flex-col pt-6">
-			<h1 class="font-display text-3xl tracking-tight">Save your updated answers.</h1>
-			<p class="text-muted-foreground mt-3">
-				This only changes the answers above. Your log, weight history and workouts are untouched.
-			</p>
-			<div class="mt-auto flex flex-col gap-2 pt-10">
-				<Button size="lg" class="w-full" onclick={saveRedo}>Save</Button>
-				<Button size="lg" variant="secondary" class="w-full" onclick={() => onredo?.()}>
-					Cancel
-				</Button>
 			</div>
 		</div>
 	{:else}
