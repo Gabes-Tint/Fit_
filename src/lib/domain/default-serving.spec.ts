@@ -66,6 +66,21 @@ describe('pickDefaultServing — mutation-hardening cases', () => {
 		).toEqual({ label: ' 1 sandwich', grams: 200 });
 	});
 
+	it('trims a whole-item label even when it is not the first named measure', () => {
+		// The previous case leaves the whole-item row first, so an untrimmed
+		// match failure would still fall through to the same row via
+		// `named[0]` and never be caught. Putting it second forces a real
+		// difference: without `.trim()` the leading space breaks the `^`
+		// anchor, `find` comes up empty, and the answer would wrongly be the
+		// first plain measure instead.
+		expect(
+			pickDefaultServing([
+				{ label: '2 Tbsp', grams: 30 },
+				{ label: ' 1 sandwich', grams: 200 }
+			])
+		).toEqual({ label: ' 1 sandwich', grams: 200 });
+	});
+
 	it('does not treat a label that merely contains a weight as the catch-all row', () => {
 		// PLAIN_GRAMS is anchored at both ends: a label carrying more than a bare
 		// weight is a real, if odd, household measure and must survive the
