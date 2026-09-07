@@ -9,14 +9,7 @@ import {
 	weeklyAdherence,
 	weekSpan
 } from './training-progress';
-import {
-	REST_WEEK,
-	type LoadUnit,
-	type MuscleGroup,
-	type Routine,
-	type Workout,
-	type WorkoutSet
-} from './types';
+import type { LoadUnit, MuscleGroup, PlannedDay, Workout, WorkoutSet } from './types';
 import { addDaysISO } from './utils';
 
 /** Week 1 of the 2026 training year opens on 5 January; week 2 on the 12th. */
@@ -306,34 +299,33 @@ describe('volume by muscle group', () => {
 
 describe('weekly adherence', () => {
 	const weeks = calendarWeeks(2026);
-	const routines: Routine[] = [
-		{ id: 'push', name: 'Push', freq: 3, exercises: [] },
-		{ id: 'legs', name: 'Legs', freq: 2, exercises: [] }
-	];
-	const plan = [
-		{ year: 2026, week: 1, routineId: 'push' },
-		{ year: 2026, week: 2, routineId: REST_WEEK },
-		{ year: 2026, week: 4, routineId: 'legs' },
-		{ year: 2025, week: 3, routineId: 'push' }
+	/**
+	 * Week 1 asks for three sessions across three days, week 4 for two on one
+	 * day — a lift and a run — and weeks 2 and 3 for nothing at all.
+	 */
+	const plan: PlannedDay[] = [
+		{ date: '2026-01-05', routineIds: ['push'] },
+		{ date: '2026-01-07', routineIds: ['push'] },
+		{ date: '2026-01-09', routineIds: ['push'] },
+		{ date: '2026-01-26', routineIds: ['legs', 'run'] },
+		{ date: '2025-01-13', routineIds: ['push'] }
 	];
 
 	function adherence(workouts: Workout[], count = 4) {
-		return weeklyAdherence({
-			workouts,
-			plan,
-			routines,
-			weeks,
-			year: 2026,
-			throughWeek: 4,
-			count
-		});
+		return weeklyAdherence({ workouts, plan, weeks, throughWeek: 4, count });
 	}
 
-	it('asks for as many sessions as the planned routine runs', () => {
+	it('asks for as many sessions as the week has routines on its days', () => {
 		expect(adherence([]).map((w) => w.planned)).toEqual([3, 0, 0, 2]);
 	});
 
-	it('asks for nothing in a rest week or a week nobody planned', () => {
+	// The point of counting routines rather than days: two sessions on one day is
+	// two sessions, which is the whole reason a day holds a list.
+	it('counts a day holding two routines twice', () => {
+		expect(adherence([])[3]?.planned).toBe(2);
+	});
+
+	it('asks for nothing in a week nobody planned', () => {
 		const rows = adherence([]);
 		expect(rows[1]).toEqual({ week: 2, label: 'Week 2', planned: 0, done: 0 });
 		expect(rows[2]?.planned).toBe(0);
@@ -368,8 +360,21 @@ describe('weekly adherence', () => {
 		expect(adherence(workouts).map((w) => w.done)).toEqual([1, 0, 0, 0]);
 	});
 
-	it('ignores a session from another year', () => {
+	// Both ends of the week are inside it: a session on the Sunday that closes
+	// week 1 belongs to week 1, not to nothing.
+	it('counts a session trained on the last day of the week', () => {
+		expect(adherence([done('2026-01-11', [ex('Squat', 'Legs', [set(60)])])])[0]?.done).toBe(1);
+		expect(adherence([done('2026-01-12', [ex('Squat', 'Legs', [set(60)])])])[0]?.done).toBe(0);
+	});
+
+	it('ignores a session from outside the weeks it was given', () => {
 		expect(adherence([done('2025-06-01', [ex('Squat', 'Legs', [set(60)])])])[0]?.done).toBe(0);
+	});
+
+	it('ignores a day planned outside the weeks it was given', () => {
+		// 13 January 2025 sits in the 2025 training year, and its sessions must not
+		// be added to the 2025-dated stretch of any 2026 week.
+		expect(adherence([]).reduce((total, w) => total + w.planned, 0)).toBe(5);
 	});
 
 	it('stops at the week it was asked to report through', () => {
@@ -381,14 +386,7 @@ describe('weekly adherence', () => {
 	});
 
 	it('shows four weeks when nobody said how many', () => {
-		const rows = weeklyAdherence({
-			workouts: [],
-			plan,
-			routines,
-			weeks,
-			year: 2026,
-			throughWeek: 10
-		});
+		const rows = weeklyAdherence({ workouts: [], plan, weeks, throughWeek: 10 });
 		expect(rows.map((w) => w.week)).toEqual([7, 8, 9, 10]);
 	});
 

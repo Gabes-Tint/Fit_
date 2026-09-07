@@ -21,7 +21,6 @@
 	} = $props();
 
 	const tone = $derived(routineTone(index));
-	const cadence = $derived(`${routine.freq}×`);
 	const summary = $derived.by(() => {
 		const totals = routineTotals(routine);
 		return `${totals.exercises} exercises · ${totals.sets} sets`;
@@ -46,8 +45,6 @@
 			)}
 		>
 			<span class="font-display text-base leading-none">{index + 1}</span>
-			<!-- No opacity here: dimming an already tinted chip drops an 8.8px label to 3.5:1. -->
-			<span class="text-[0.55rem] tracking-[0.08em] uppercase">{cadence}</span>
 		</span>
 		<span class="min-w-0 flex-1">
 			<span class="block truncate text-sm font-medium">{routine.name}</span>

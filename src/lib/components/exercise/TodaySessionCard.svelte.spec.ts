@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
-import type { PlannedWeek, Routine, Workout } from '$lib/domain/types';
+import type { PlannedDay, Routine, Workout } from '$lib/domain/types';
 import TodaySessionCard from './TodaySessionCard.svelte';
 
 /** Week 1 of 2026 runs Monday the 5th to Sunday the 11th. */
@@ -10,11 +10,10 @@ const TUESDAY = '2026-01-06';
 const WEDNESDAY = '2026-01-07';
 const THURSDAY = '2026-01-08';
 
-function routine(id: string, name: string, freq: number, moves: number): Routine {
+function routine(id: string, name: string, moves: number): Routine {
 	return {
 		id,
 		name,
-		freq,
 		exercises: Array.from({ length: moves }, (_, i) => ({
 			name: `Move ${i + 1}`,
 			group: 'Chest',
@@ -50,9 +49,9 @@ function walkedOut(date: string): Workout {
 	return filed(date, false);
 }
 
-const push = routine('push', 'Chest & Shoulders', 3, 5);
-const legs = routine('legs', 'Legs', 3, 5);
-const plan: PlannedWeek[] = [{ year: 2026, week: 1, routineId: 'push' }];
+const push = routine('push', 'Chest & Shoulders', 5);
+const legs = routine('legs', 'Legs', 5);
+const plan: PlannedDay[] = [{ date: MONDAY, routineIds: ['push'] }];
 const noop = () => {};
 
 const base = {
@@ -65,8 +64,8 @@ const base = {
 	onopen: noop
 };
 
-/** Same name and frequency as `push`, but nothing on it to run. */
-const bare = routine('push', 'Chest & Shoulders', 3, 0);
+/** Same id and name as `push`, but nothing on it to run. */
+const bare = routine('push', 'Chest & Shoulders', 0);
 
 describe('TodaySessionCard', () => {
 	it('names the routine the plan calls for today', async () => {
@@ -93,7 +92,6 @@ describe('TodaySessionCard', () => {
 		const twice: Routine = {
 			id: 'push',
 			name: 'Chest & Shoulders',
-			freq: 3,
 			exercises: [
 				{ name: 'Bench Press', group: 'Chest', sets: 3, reps: 10, load: 60 },
 				{ name: 'Incline Bench Press', group: 'Chest', sets: 3, reps: 10, load: 40 },
@@ -118,7 +116,7 @@ describe('TodaySessionCard', () => {
 			.toHaveAttribute('href', '/exercise/routines/push');
 	});
 
-	it('calls a day the routine does not fall on a rest day', async () => {
+	it('calls a day with nothing on it a rest day', async () => {
 		await render(TodaySessionCard, { props: { ...base, today: TUESDAY } });
 		await expect
 			.element(page.getByRole('heading', { name: 'Rest day', level: 2 }))
@@ -126,7 +124,7 @@ describe('TodaySessionCard', () => {
 		await expect.element(page.getByText('The calendar has nothing scheduled.')).toBeInTheDocument();
 	});
 
-	it('rests when the week has no routine on it at all', async () => {
+	it('rests when nothing is planned at all', async () => {
 		await render(TodaySessionCard, { props: { ...base, plan: [] } });
 		await expect
 			.element(page.getByRole('heading', { name: 'Rest day', level: 2 }))
@@ -175,14 +173,14 @@ describe('TodaySessionCard', () => {
 		await expect.element(page.getByText('The calendar has nothing scheduled.')).toBeInTheDocument();
 	});
 
-	it('trains this week’s routine when someone trains anyway', async () => {
+	it('trains the first routine in the rotation when someone trains anyway', async () => {
 		const onstart = vi.fn();
 		await render(TodaySessionCard, { props: { ...base, today: TUESDAY, onstart } });
 		await page.getByRole('button', { name: 'Train anyway' }).click();
 		expect(onstart).toHaveBeenCalledWith('push');
 	});
 
-	it('falls back to the first routine when the week names none', async () => {
+	it('falls back to the first routine whatever order the rotation is in', async () => {
 		const onstart = vi.fn();
 		await render(TodaySessionCard, {
 			props: { ...base, routines: [legs, push], plan: [], onstart }
@@ -206,6 +204,42 @@ describe('TodaySessionCard', () => {
 	it('still starts a routine that does have exercises on it', async () => {
 		await render(TodaySessionCard, { props: { ...base } });
 		await expect.element(page.getByRole('button', { name: 'Start session' })).toBeEnabled();
+	});
+
+	it('leads with the first session of a day that holds two', async () => {
+		const twoUp: PlannedDay[] = [{ date: MONDAY, routineIds: ['legs', 'push'] }];
+		await render(TodaySessionCard, { props: { ...base, plan: twoUp } });
+		await expect.element(page.getByRole('heading', { name: 'Legs', level: 2 })).toBeInTheDocument();
+		await expect.element(page.getByText('Today’s sessions')).toBeInTheDocument();
+	});
+
+	it('names the later session of the day, and what it asks for', async () => {
+		const twoUp: PlannedDay[] = [{ date: MONDAY, routineIds: ['legs', 'push'] }];
+		await render(TodaySessionCard, { props: { ...base, plan: twoUp } });
+		await expect.element(page.getByText('then Chest & Shoulders')).toBeInTheDocument();
+		await expect
+			.element(page.getByText('5 exercises · 15 sets', { exact: true }))
+			.toBeInTheDocument();
+	});
+
+	it('starts the first of the day, not the second', async () => {
+		const onstart = vi.fn();
+		const twoUp: PlannedDay[] = [{ date: MONDAY, routineIds: ['legs', 'push'] }];
+		await render(TodaySessionCard, { props: { ...base, plan: twoUp, onstart } });
+		await page.getByRole('button', { name: 'Start session' }).click();
+		expect(onstart).toHaveBeenCalledWith('legs');
+	});
+
+	it('says "session" in the singular when the day holds only one', async () => {
+		await render(TodaySessionCard, { props: { ...base } });
+		await expect.element(page.getByText('Today’s session')).toBeInTheDocument();
+		expect(page.getByText(/^then /).elements()).toHaveLength(0);
+	});
+
+	it('leaves out a routine the plan names but the rotation no longer has', async () => {
+		const dangling: PlannedDay[] = [{ date: MONDAY, routineIds: ['push', 'deleted'] }];
+		await render(TodaySessionCard, { props: { ...base, plan: dangling } });
+		await expect.element(page.getByText('Today’s session')).toBeInTheDocument();
 	});
 
 	it('says there is nothing to run rather than showing a rest day', async () => {

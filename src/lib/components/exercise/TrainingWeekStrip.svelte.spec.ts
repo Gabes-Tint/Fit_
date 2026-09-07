@@ -1,18 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
-import type { PlannedWeek, Routine, Workout } from '$lib/domain/types';
+import type { PlannedDay, Routine, Workout } from '$lib/domain/types';
 import TrainingWeekStrip from './TrainingWeekStrip.svelte';
 
 /** Week 1 of 2026 runs Monday the 5th to Sunday the 11th. */
 const MONDAY = '2026-01-05';
 const TUESDAY = '2026-01-06';
 const WEDNESDAY = '2026-01-07';
+const FRIDAY = '2026-01-09';
 
 const push: Routine = {
 	id: 'push',
 	name: 'Chest & Shoulders',
-	freq: 3,
 	exercises: [{ name: 'Bench Press', group: 'Chest', sets: 4, reps: 8, load: 45 }]
 };
 
@@ -41,7 +41,18 @@ function walkedOut(date: string): Workout {
 	return filed(date, false);
 }
 
-const plan: PlannedWeek[] = [{ year: 2026, week: 1, routineId: 'push' }];
+const run: Routine = {
+	id: 'run',
+	name: 'Easy run',
+	exercises: [{ name: 'Squat', group: 'Legs', sets: 1, reps: 1, load: 0 }]
+};
+
+/** Monday, Wednesday and Friday of week 1 hold the one routine. */
+const plan: PlannedDay[] = [
+	{ date: MONDAY, routineIds: ['push'] },
+	{ date: WEDNESDAY, routineIds: ['push'] },
+	{ date: FRIDAY, routineIds: ['push'] }
+];
 const base = { routines: [push], plan, workouts: [], today: TUESDAY };
 
 /** The small filled markers, which is how a day says it happened. */
@@ -62,7 +73,7 @@ describe('TrainingWeekStrip', () => {
 		expect(page.getByText('Tue', { exact: true }).elements()).toHaveLength(0);
 	});
 
-	it('marks the days the week’s routine falls on', async () => {
+	it('marks the days the routine was actually put on', async () => {
 		await render(TrainingWeekStrip, { props: { ...base } });
 		expect(page.getByText('C', { exact: true }).elements()).toHaveLength(3);
 	});
@@ -70,6 +81,32 @@ describe('TrainingWeekStrip', () => {
 	it('leaves the days between them empty', async () => {
 		await render(TrainingWeekStrip, { props: { ...base } });
 		expect(page.getByText('·', { exact: true }).elements()).toHaveLength(4);
+	});
+
+	it('draws both initials, in order, on a day holding two routines', async () => {
+		await render(TrainingWeekStrip, {
+			props: {
+				...base,
+				routines: [push, run],
+				plan: [{ date: MONDAY, routineIds: ['push', 'run'] }]
+			}
+		});
+		await expect.element(page.getByText('CE', { exact: true })).toBeInTheDocument();
+	});
+
+	it('names both of a day’s routines in the order they are trained', async () => {
+		await render(TrainingWeekStrip, {
+			props: {
+				...base,
+				routines: [push, run],
+				plan: [{ date: MONDAY, routineIds: ['push', 'run'] }]
+			}
+		});
+		await expect
+			.element(
+				page.getByRole('link', { name: 'Mon, Chest & Shoulders, then Easy run', exact: true })
+			)
+			.toBeInTheDocument();
 	});
 
 	it('leaves the whole week empty when nothing is planned', async () => {
@@ -122,7 +159,7 @@ describe('TrainingWeekStrip', () => {
 			props: { ...base, today: WEDNESDAY, workouts: [finished(MONDAY), walkedOut(TUESDAY)] }
 		});
 		await expect
-			.element(page.getByRole('link', { name: 'Mon, training day, trained', exact: true }))
+			.element(page.getByRole('link', { name: 'Mon, Chest & Shoulders, trained', exact: true }))
 			.toBeInTheDocument();
 		expect(page.getByRole('link', { name: /trained$/ }).elements()).toHaveLength(1);
 	});
@@ -153,21 +190,21 @@ describe('TrainingWeekStrip', () => {
 		}
 	});
 
-	it('tells a screen reader which day it is on and whether it trains', async () => {
+	it('tells a screen reader which day it is on and what it holds', async () => {
 		await render(TrainingWeekStrip, { props: { ...base } });
 		await expect
-			.element(page.getByRole('link', { name: 'Mon, training day', exact: true }))
+			.element(page.getByRole('link', { name: 'Mon, Chest & Shoulders', exact: true }))
 			.toBeInTheDocument();
 	});
 
-	it('says plainly that a day the routine skips holds nothing', async () => {
+	it('says plainly that a day with nothing on it holds nothing', async () => {
 		await render(TrainingWeekStrip, { props: { ...base } });
 		await expect
 			.element(page.getByRole('link', { name: 'Today, rest day', exact: true }))
 			.toBeInTheDocument();
 	});
 
-	it('calls every day a rest day when the week has no routine on it', async () => {
+	it('calls every day a rest day when nothing is planned at all', async () => {
 		await render(TrainingWeekStrip, { props: { ...base, plan: [] } });
 		expect(page.getByRole('link', { name: /rest day$/ }).elements()).toHaveLength(7);
 	});
@@ -177,7 +214,7 @@ describe('TrainingWeekStrip', () => {
 			props: { ...base, today: WEDNESDAY, workouts: [finished(MONDAY)] }
 		});
 		await expect
-			.element(page.getByRole('link', { name: 'Mon, training day, trained', exact: true }))
+			.element(page.getByRole('link', { name: 'Mon, Chest & Shoulders, trained', exact: true }))
 			.toBeInTheDocument();
 		// Read once, not retried: the claim is exactly one day carries "trained".
 		expect(page.getByRole('link', { name: /trained$/ }).elements()).toHaveLength(1);

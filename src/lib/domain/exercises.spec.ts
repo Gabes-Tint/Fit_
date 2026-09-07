@@ -25,7 +25,7 @@ function row(name: string, group: RoutineExercise['group'], sets = 3): RoutineEx
 }
 
 function routine(exercises: RoutineExercise[]): Routine {
-	return { id: 'r1', name: 'Push', freq: 3, exercises };
+	return { id: 'r1', name: 'Push', exercises };
 }
 
 describe('the exercise library', () => {
@@ -173,13 +173,12 @@ describe('adding from the library', () => {
 });
 
 describe('starting from a template', () => {
-	it('carries every routine over with its name, frequency and movements', () => {
+	it('carries every routine over with its name and movements', () => {
 		const template = ROUTINE_TEMPLATES[0];
 		if (!template) throw new Error('the template list is empty');
 		const routines = routinesFromTemplate(template);
 		expect(routines.map((r) => r.id)).toEqual(template.routines.map((r) => r.id));
 		expect(routines[0]?.name).toBe(template.routines[0]?.name);
-		expect(routines[0]?.freq).toBe(template.routines[0]?.freq);
 		expect(routines[0]?.exercises).toEqual(template.routines[0]?.exercises);
 	});
 
@@ -205,7 +204,6 @@ describe('an empty routine', () => {
 		expect(emptyRoutine('r-7')).toEqual({
 			id: 'r-7',
 			name: 'New routine',
-			freq: 3,
 			exercises: []
 		});
 	});

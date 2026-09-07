@@ -11,7 +11,7 @@ const squat: RoutineExercise = { name: 'Squat', group: 'Legs', sets: 2, reps: 5,
 
 function session(date: string, finished: boolean): Workout {
 	const workout = workoutFromRoutine(
-		{ id: 'r1', name: 'Full body', freq: 3, exercises: [press, squat] },
+		{ id: 'r1', name: 'Full body', exercises: [press, squat] },
 		{ id: `w${date}`, date, startedAt: 0 }
 	);
 	for (const exercise of workout.exercises) {

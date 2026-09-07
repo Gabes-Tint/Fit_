@@ -7,7 +7,6 @@ import RoutineRow from './RoutineRow.svelte';
 const routine: Routine = {
 	id: 'push',
 	name: 'Chest & Shoulders',
-	freq: 3,
 	exercises: [
 		{ name: 'Bench Press', group: 'Chest', sets: 4, reps: 8, load: 45 },
 		{ name: 'Lateral Raise', group: 'Shoulders', sets: 3, reps: 15, load: 8 }
@@ -17,7 +16,6 @@ const routine: Routine = {
 const legs: Routine = {
 	id: 'legs',
 	name: 'Legs',
-	freq: 2,
 	exercises: [
 		{ name: 'Squat', group: 'Legs', sets: 5, reps: 5, load: 70 },
 		{ name: 'Leg Press', group: 'Legs', sets: 4, reps: 10, load: 120 },
@@ -43,9 +41,9 @@ describe('RoutineRow', () => {
 		await expect.element(page.getByText('3', { exact: true })).toBeInTheDocument();
 	});
 
-	it('says how often the routine comes round', async () => {
-		await render(RoutineRow, { props: { routine, index: 0, onstart: noop } });
-		await expect.element(page.getByText('3×')).toBeInTheDocument();
+	it('marks the row when the day’s plan holds the routine', async () => {
+		await render(RoutineRow, { props: { routine, index: 1, current: true, onstart: noop } });
+		expect(document.querySelectorAll('[class*="bg-primary"]')).toHaveLength(1);
 	});
 
 	it('opens the routine', async () => {
@@ -63,7 +61,7 @@ describe('RoutineRow', () => {
 	});
 
 	it('will not start a routine with nothing on it', async () => {
-		const bare: Routine = { id: 'bare', name: 'Blank', freq: 2, exercises: [] };
+		const bare: Routine = { id: 'bare', name: 'Blank', exercises: [] };
 		await render(RoutineRow, { props: { routine: bare, index: 0, onstart: noop } });
 		await expect.element(page.getByRole('button', { name: 'Start Blank' })).toBeDisabled();
 	});
@@ -81,7 +79,6 @@ describe('RoutineRow', () => {
 		props.index = 1;
 		await expect.element(page.getByText('Legs')).toBeInTheDocument();
 		await expect.element(page.getByText('3 exercises · 13 sets')).toBeInTheDocument();
-		await expect.element(page.getByText('2×')).toBeInTheDocument();
 		await expect.element(page.getByText('2', { exact: true })).toBeInTheDocument();
 		await expect
 			.element(page.getByRole('link', { name: /Legs/ }))

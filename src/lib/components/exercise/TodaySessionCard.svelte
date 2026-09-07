@@ -2,17 +2,18 @@
 	import List from '@lucide/svelte/icons/list';
 	import { resolve } from '$app/paths';
 	import { routineTotals } from '$lib/domain/exercises';
-	import { plannedRoutineId, trainingDays, weekOf, weekdayIndex } from '$lib/domain/training-plan';
-	import type { PlannedWeek, Routine, Workout } from '$lib/domain/types';
+	import { routineIdsOn } from '$lib/domain/planned-days';
+	import type { PlannedDay, Routine, Workout } from '$lib/domain/types';
 	import { startOfWeek } from '$lib/domain/utils';
 	import { countsAsTraining } from '$lib/domain/workout';
 	import SectionLabel from '$lib/components/SectionLabel.svelte';
 	import Button from '$lib/ui/Button.svelte';
 
 	/**
-	 * What today asks for is decided by the plan, not a picker: the week names a
-	 * routine and its frequency decides which days it lands on. Days it skips are
-	 * rest days; with no routines at all the card says so.
+	 * What today asks for is what was put on today in the planner — nothing more
+	 * is inferred. A day can hold more than one session, so the card leads with
+	 * the first and names the rest in order; a day with nothing on it is a rest
+	 * day, and with no routines at all the card says so instead.
 	 */
 	let {
 		routines,
@@ -24,7 +25,7 @@
 		onopen
 	}: {
 		routines: Routine[];
-		plan: PlannedWeek[];
+		plan: PlannedDay[];
 		/** Filed workouts, so a rest day can say what the week already holds. */
 		workouts: Workout[];
 		today: string;
@@ -36,23 +37,26 @@
 	} = $props();
 
 	/**
-	 * "Has history, no routines left" — unreachable until `tend.removeRoutine`
-	 * exists and something calls it. First run (no routines, no history) is a
-	 * different branch and shows the template shelf instead.
+	 * "Has history, no routines left" — reachable once a rotation is deleted.
+	 * First run (no routines, no history) is a different branch and shows the
+	 * template shelf instead.
 	 */
 	const nothingYet = $derived(routines.length === 0);
 
-	const planned = $derived.by(() => {
-		const { year, week } = weekOf(today);
-		return routines.find((r) => r.id === plannedRoutineId(plan, year, week));
-	});
-
-	const routine = $derived(
-		planned && trainingDays(planned.freq).includes(weekdayIndex(today)) ? planned : undefined
+	/** Today's sessions, in the order the day was planned. */
+	const planned = $derived(
+		routineIdsOn(plan, today).flatMap((id) => routines.filter((r) => r.id === id))
 	);
 
-	/** Training anyway on a rest day trains this week's routine, or the first one. */
-	const anyway = $derived(planned ?? routines[0]);
+	const routine = $derived(planned[0]);
+
+	/** The sessions after the first, named so the day reads in full. */
+	const later = $derived(
+		planned.slice(1).map((r) => ({ id: r.id, name: r.name, totals: routineTotals(r) }))
+	);
+
+	/** Training anyway on a rest day trains the first routine in the rotation. */
+	const anyway = $derived(routines[0]);
 
 	/**
 	 * `startWorkout` refuses a routine with no movements, so its run control is
@@ -88,7 +92,7 @@
 		if (!routine) return { kicker: 'Today', title: 'Rest day', meta: restMeta };
 		const totals = routineTotals(routine);
 		return {
-			kicker: 'Today’s session',
+			kicker: later.length > 0 ? 'Today’s sessions' : 'Today’s session',
 			title: routine.name,
 			meta: `${totals.exercises} exercises · ${totals.sets} sets · about ${totals.minutes} min`
 		};
@@ -114,6 +118,20 @@
 				</span>
 			{/each}
 		</div>
+		{#if later.length > 0}
+			<!-- Named, not run from here: any of them can be started from the rotation below,
+			     and a second control for the same thing is a second thing to read. -->
+			<ol class="border-border mt-3.5 flex flex-col gap-1 border-t pt-3">
+				{#each later as session (session.id)}
+					<li class="text-muted-foreground flex items-baseline justify-between gap-3 text-xs">
+						<span class="text-foreground truncate">then {session.name}</span>
+						<span class="shrink-0">
+							{session.totals.exercises} exercises · {session.totals.sets} sets
+						</span>
+					</li>
+				{/each}
+			</ol>
+		{/if}
 		<div class="mt-4 flex gap-2">
 			<Button
 				size="lg"

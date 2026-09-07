@@ -55,7 +55,7 @@ describe('the starter templates', () => {
 			expect(template.name.length).toBeGreaterThan(0);
 			expect(template.sub.length).toBeGreaterThan(0);
 			expect(template.body.length).toBeGreaterThan(0);
-			expect(template.freq).toMatch(/^\d×$/);
+			expect(template.badge).toMatch(/^\d×$/);
 		}
 	});
 
@@ -66,7 +66,6 @@ describe('the starter templates', () => {
 			expect(template.routines.length).toBeGreaterThan(0);
 			for (const routine of template.routines) {
 				expect(routine.exercises.length).toBeGreaterThan(0);
-				expect(routine.freq).toBeGreaterThan(0);
 			}
 		}
 	});

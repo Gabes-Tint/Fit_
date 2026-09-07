@@ -1,14 +1,10 @@
 <script lang="ts">
 	import { calendarWeeks, weekOf } from '$lib/domain/training-plan';
 	import { weeklyAdherence } from '$lib/domain/training-progress';
-	import type { PlannedWeek, Routine, Workout } from '$lib/domain/types';
+	import type { PlannedDay, Workout } from '$lib/domain/types';
 	import { todayISO } from '$lib/domain/utils';
 
-	let {
-		workouts,
-		plan,
-		routines
-	}: { workouts: Workout[]; plan: PlannedWeek[]; routines: Routine[] } = $props();
+	let { workouts, plan }: { workouts: Workout[]; plan: PlannedDay[] } = $props();
 
 	const now = weekOf(todayISO());
 
@@ -16,9 +12,7 @@
 		weeklyAdherence({
 			workouts,
 			plan,
-			routines,
 			weeks: calendarWeeks(now.year),
-			year: now.year,
 			throughWeek: now.week
 		})
 	);

@@ -16,7 +16,6 @@ import {
 const ROUTINE: Routine = {
 	id: 'push',
 	name: 'Chest & Shoulders',
-	freq: 3,
 	exercises: [
 		{ name: 'Bench Press', group: 'Chest', sets: 3, reps: 8, load: 45 },
 		{ name: 'Pull-up', group: 'Back', sets: 2, reps: 8, load: 0 }

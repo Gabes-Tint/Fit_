@@ -1,4 +1,4 @@
-import { expect } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { test } from '../../tests/preview-server';
 import {
 	EGG_ROW,
@@ -41,6 +41,30 @@ const SANDWICH_ROW = {
 	serving: { label: '1 sandwich (219 g)', grams: 219 },
 	per100g: { kcal: 250, protein: 12, fat: 14, carbs: 20, sugar: 4, fiber: 1.5, sodium: 460 }
 };
+
+/**
+ * The Plan screen with the three-routine starter loaded. Its routine names are
+ * the longest the app ships, so two of them sharing one day is the widest a
+ * planned day can get — the shape #152 exists to catch.
+ */
+async function planScreenWithLongRoutines(page: Page, baseURL: string) {
+	await signInThroughApi(page, baseURL);
+	await page.goto('/');
+	await openSampleJournal(page);
+	await page.getByRole('button', { name: 'Open menu' }).click();
+	await page.getByRole('link', { name: 'Exercise' }).click();
+	await page.getByRole('button', { name: /Back & Arms/ }).click();
+	await expect(page.getByRole('heading', { name: 'Exercise', level: 1 })).toBeVisible();
+	await page.getByRole('link', { name: 'Plan', exact: true }).click();
+	await expect(page.getByRole('button', { name: /^Mon / })).toBeVisible();
+}
+
+/** Puts the two longest-named routines on the week's Monday, in that order. */
+async function fillMondayWithTwo(page: Page) {
+	await page.getByRole('button', { name: /^Mon / }).click();
+	await page.getByRole('button', { name: /Chest & Shoulders/ }).click();
+	await page.getByRole('button', { name: /Back & Arms/ }).click();
+}
 
 test.describe('at 360px', () => {
 	test('the Today week strip stays inside the viewport', async ({ page, baseURL }) => {
@@ -154,6 +178,33 @@ test.describe('at 360px', () => {
 		const modal = page.getByRole('dialog');
 		await expect(modal).toBeVisible();
 		await expectFitsViewport(page, modal);
+	});
+
+	test('a day carrying two routines stays inside the viewport', async ({ page, baseURL }) => {
+		await planScreenWithLongRoutines(page, baseURL ?? '');
+		await atNarrowPhone(page);
+
+		await fillMondayWithTwo(page);
+		await page.getByRole('button', { name: 'Close' }).click();
+
+		// The row that carries both names, which is the one that can spill.
+		const row = page.getByRole('button', { name: /^Mon .*, then / });
+		await expect(row).toBeVisible();
+		await expectFitsViewport(page, row);
+	});
+
+	test('the day planner stays inside the viewport with two routines on the day', async ({
+		page,
+		baseURL
+	}) => {
+		await planScreenWithLongRoutines(page, baseURL ?? '');
+		await atNarrowPhone(page);
+
+		await fillMondayWithTwo(page);
+
+		const sheet = page.getByRole('dialog');
+		await expect(sheet).toBeVisible();
+		await expectFitsViewport(page, sheet);
 	});
 
 	test('a unit-toggled log row stays inside the viewport in both views (#178)', async ({

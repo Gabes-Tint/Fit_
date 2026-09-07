@@ -52,9 +52,7 @@
 	{@const thisWeek = weeklyAdherence({
 		workouts: tend.state.workouts,
 		plan: tend.state.trainingPlan,
-		routines: tend.state.routines,
 		weeks: calendarWeeks(nowWeek.year),
-		year: nowWeek.year,
 		throughWeek: nowWeek.week,
 		count: 1
 	})[0] ?? { planned: 0, done: 0 }}
