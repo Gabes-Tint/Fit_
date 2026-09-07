@@ -10,6 +10,7 @@ import { pooled } from './pool';
 import { summarizeOutcomes, summaryExitCode, type StepOutcome } from './run-outcome';
 import { runLoggedStep } from './step-runner';
 import { captureStatus } from '../security/shared';
+import { findAbortedSummary, formatAbortedCoverageMessage } from './coverage-abort';
 
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 const reportDirectory = path.join(projectRoot, 'reports', 'quality');
@@ -89,14 +90,22 @@ async function runStep(
 		signal
 	});
 
+	// A vitest browser session can die mid-run and still exit non-zero. That
+	// looks exactly like a coverage failure unless the run is checked for
+	// files vitest collected but never finished — see coverage-abort.ts.
+	const aborted =
+		!run.ok && step.name === 'test:coverage' ? findAbortedSummary(run.output) : undefined;
+	const output =
+		aborted === undefined ? run.output : formatAbortedCoverageMessage(step.name, aborted);
+
 	return {
-		output: run.output,
+		output,
 		result: {
 			name: step.name,
 			purpose: step.purpose,
 			command: `bun run ${step.name}`,
 			ok: run.ok,
-			outcome: run.outcome,
+			outcome: aborted === undefined ? run.outcome : 'crashed',
 			exitCode: run.exitCode,
 			durationMs: run.durationMs,
 			log: run.log,
