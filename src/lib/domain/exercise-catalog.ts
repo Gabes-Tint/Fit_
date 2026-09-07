@@ -102,14 +102,17 @@ export const DEMOS: Readonly<Record<string, { src: string; description: string }
 type TemplateRoutine = {
 	id: string;
 	name: string;
-	freq: number;
 	exercises: RoutineExercise[];
 };
 
 export type RoutineTemplate = {
 	id: string;
-	/** How many days a week the whole template asks for, as a badge. */
-	freq: string;
+	/**
+	 * The badge on the shelf: how many sessions a week the programme is written
+	 * for. It describes the template, not a schedule — which days those sessions
+	 * land on is planned per day, afterwards.
+	 */
+	badge: string;
 	name: string;
 	sub: string;
 	body: string;
@@ -123,7 +126,7 @@ export type RoutineTemplate = {
 export const ROUTINE_TEMPLATES: readonly RoutineTemplate[] = [
 	{
 		id: 'ppl',
-		freq: '3×',
+		badge: '3×',
 		name: 'Chest & Shoulders / Back & Arms / Legs',
 		sub: 'Three days a week',
 		body: 'The classic rotation. Each day covers a couple of muscle groups, so nothing waits a fortnight for its turn.',
@@ -131,7 +134,6 @@ export const ROUTINE_TEMPLATES: readonly RoutineTemplate[] = [
 			{
 				id: 'push',
 				name: 'Chest & Shoulders',
-				freq: 3,
 				exercises: [
 					{ name: 'Bench Press', group: 'Chest', sets: 4, reps: 8, load: 45 },
 					{ name: 'Incline Bench Press', group: 'Chest', sets: 3, reps: 10, load: 30 },
@@ -144,7 +146,6 @@ export const ROUTINE_TEMPLATES: readonly RoutineTemplate[] = [
 			{
 				id: 'pull',
 				name: 'Back & Arms',
-				freq: 2,
 				exercises: [
 					{ name: 'Lat Pulldown', group: 'Back', sets: 4, reps: 10, load: 50 },
 					{ name: 'Seated Row', group: 'Back', sets: 3, reps: 10, load: 45 },
@@ -157,7 +158,6 @@ export const ROUTINE_TEMPLATES: readonly RoutineTemplate[] = [
 			{
 				id: 'legs',
 				name: 'Legs',
-				freq: 2,
 				exercises: [
 					{ name: 'Squat', group: 'Legs', sets: 5, reps: 5, load: 70 },
 					{ name: 'Leg Press', group: 'Legs', sets: 4, reps: 10, load: 120 },
@@ -170,7 +170,7 @@ export const ROUTINE_TEMPLATES: readonly RoutineTemplate[] = [
 	},
 	{
 		id: 'ul',
-		freq: '4×',
+		badge: '4×',
 		name: 'Upper / Lower',
 		sub: 'Four days a week',
 		body: 'Two upper-body days and two lower-body days. More frequency per muscle group, more days in the gym.',
@@ -178,7 +178,6 @@ export const ROUTINE_TEMPLATES: readonly RoutineTemplate[] = [
 			{
 				id: 'upper',
 				name: 'Upper',
-				freq: 2,
 				exercises: [
 					{ name: 'Bench Press', group: 'Chest', sets: 4, reps: 8, load: 45 },
 					{ name: 'Lat Pulldown', group: 'Back', sets: 4, reps: 10, load: 50 },
@@ -192,7 +191,6 @@ export const ROUTINE_TEMPLATES: readonly RoutineTemplate[] = [
 			{
 				id: 'lower',
 				name: 'Lower',
-				freq: 2,
 				exercises: [
 					{ name: 'Squat', group: 'Legs', sets: 4, reps: 6, load: 70 },
 					{ name: 'Leg Press', group: 'Legs', sets: 4, reps: 10, load: 120 },
@@ -205,7 +203,7 @@ export const ROUTINE_TEMPLATES: readonly RoutineTemplate[] = [
 	},
 	{
 		id: 'fb',
-		freq: '2×',
+		badge: '2×',
 		name: 'Full body',
 		sub: 'Two days a week',
 		body: 'Six compound movements, twice a week. The least time in the gym for a first month back.',
@@ -213,7 +211,6 @@ export const ROUTINE_TEMPLATES: readonly RoutineTemplate[] = [
 			{
 				id: 'full-body',
 				name: 'Full body',
-				freq: 2,
 				exercises: [
 					{ name: 'Squat', group: 'Legs', sets: 3, reps: 8, load: 60 },
 					{ name: 'Bench Press', group: 'Chest', sets: 3, reps: 8, load: 45 },

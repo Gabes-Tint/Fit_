@@ -2,32 +2,62 @@
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import { resolve } from '$app/paths';
-	import { calendarWeeks, MONTHS_LONG, plannedRoutineId } from '$lib/domain/training-plan';
+	import { page } from '$app/state';
+	import { routineIdsOn } from '$lib/domain/planned-days';
+	import { calendarWeeks, MONTHS_LONG, WEEKDAYS, weekOf } from '$lib/domain/training-plan';
+	import { addDaysISO, parseISODate, startOfWeek, todayISO, weekdayLong } from '$lib/domain/utils';
 	import { tend } from '$lib/state/tend.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
-	import MonthWeekRow from '$lib/components/exercise/MonthWeekRow.svelte';
-	import { planOptions } from '$lib/components/exercise/plan-options';
-	import RoutineBrushes from '$lib/components/exercise/RoutineBrushes.svelte';
+	import DayRoutineSheet from '$lib/components/exercise/DayRoutineSheet.svelte';
+	import PlanDayRow from '$lib/components/exercise/PlanDayRow.svelte';
+	import { optionsOn, planOptions } from '$lib/components/exercise/plan-options';
 	import ScreenHeader from '$lib/components/exercise/ScreenHeader.svelte';
-	import Button from '$lib/ui/Button.svelte';
 	import LinkButton from '$lib/ui/LinkButton.svelte';
 
-	const year = new Date().getFullYear();
+	/** A `from` that is not a date is somebody's typing, not a week: fall back rather than land in 1970. */
+	const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+	const today = todayISO();
 	const yearHref = resolve('/exercise/plan/year');
-	let month = $state(new Date().getMonth());
+	const arrivedAt = page.url.searchParams.get('from') ?? '';
+
+	/** The week on show. The year view names one on the way in; otherwise it is this one. */
+	let monday = $state(startOfWeek(ISO_DATE.test(arrivedAt) ? arrivedAt : today));
 	let picked = $state('');
+	let open = $state(false);
 
 	const routines = $derived(tend.state.routines);
 	const options = $derived(planOptions(routines));
-	const weeks = $derived(calendarWeeks(year).filter((week) => week.month === month));
-	const assigned = $derived(
-		weeks.filter((week) => plannedRoutineId(tend.state.trainingPlan, year, week.week)).length
+	const at = $derived(weekOf(monday));
+	const label = $derived(calendarWeeks(at.year).find((week) => week.week === at.week)?.label ?? '');
+
+	const days = $derived(
+		WEEKDAYS.map((name, index) => {
+			const iso = addDaysISO(monday, index);
+			return {
+				iso,
+				label: `${name} ${parseISODate(iso).getDate()}`,
+				on: optionsOn(options, routineIdsOn(tend.state.trainingPlan, iso)),
+				isToday: iso === today
+			};
+		})
 	);
-	// Until a pill is tapped the first routine is the brush, so a week row means
-	// something on arrival rather than doing nothing until something is chosen.
-	const brush = $derived(
-		options.find((option) => option.id === picked)?.id ?? options[0]?.id ?? ''
-	);
+
+	const planned = $derived(days.filter((day) => day.on.length > 0).length);
+
+	const sheetDay = $derived.by(() => {
+		if (picked === '') return null;
+		const date = parseISODate(picked);
+		return {
+			heading: weekdayLong(picked),
+			when: `${date.getDate()} ${MONTHS_LONG[date.getMonth()]} ${date.getFullYear()}`
+		};
+	});
+
+	function openDay(iso: string) {
+		picked = iso;
+		open = true;
+	}
 </script>
 
 <svelte:head>
@@ -43,7 +73,8 @@
 
 	{#if routines.length === 0}
 		<EmptyState title="Nothing to plan yet">
-			A week names one routine. Add a routine first, then the year has something to hold.
+			A day holds the routines you mean to train that day. Add a routine first, then the week has
+			something to hold.
 			{#snippet action()}
 				<LinkButton href={resolve('/exercise')}>Back to Exercise</LinkButton>
 			{/snippet}
@@ -52,53 +83,49 @@
 		<div class="flex items-center justify-between gap-2">
 			<button
 				type="button"
-				aria-label="Previous month"
-				disabled={month === 0}
-				onclick={() => (month -= 1)}
-				class="bg-secondary text-foreground flex size-10 items-center justify-center rounded-2xl disabled:opacity-40"
+				aria-label="Previous week"
+				onclick={() => (monday = addDaysISO(monday, -7))}
+				class="bg-secondary text-foreground flex size-10 items-center justify-center rounded-2xl"
 			>
 				<ChevronLeft class="size-4" />
 			</button>
 			<div class="text-center">
-				<h1 class="font-display text-2xl">{MONTHS_LONG[month]} {year}</h1>
-				<p class="text-muted-foreground text-xs">{weeks.length} weeks · {assigned} assigned</p>
+				<h1 class="font-display text-2xl">Week {at.week}</h1>
+				<p class="text-muted-foreground text-xs">{label} · {planned} of 7 days planned</p>
 			</div>
 			<button
 				type="button"
-				aria-label="Next month"
-				disabled={month === MONTHS_LONG.length - 1}
-				onclick={() => (month += 1)}
-				class="bg-secondary text-foreground flex size-10 items-center justify-center rounded-2xl disabled:opacity-40"
+				aria-label="Next week"
+				onclick={() => (monday = addDaysISO(monday, 7))}
+				class="bg-secondary text-foreground flex size-10 items-center justify-center rounded-2xl"
 			>
 				<ChevronRight class="size-4" />
 			</button>
 		</div>
 
-		<RoutineBrushes {options} selected={brush} onpick={(id: string) => (picked = id)} />
-
 		<div class="flex flex-col gap-2">
-			{#each weeks as week (week.week)}
-				<MonthWeekRow
-					{week}
-					{options}
-					{year}
-					plan={tend.state.trainingPlan}
-					onpick={() => tend.planWeeks(year, [week.week], brush)}
+			{#each days as day (day.iso)}
+				<PlanDayRow
+					label={day.label}
+					sessions={day.on}
+					isToday={day.isToday}
+					onpick={() => openDay(day.iso)}
 				/>
 			{/each}
 		</div>
 
-		<Button
-			size="lg"
-			class="w-full text-[15px]"
-			onclick={() =>
-				tend.planWeeks(
-					year,
-					weeks.map((week) => week.week),
-					brush
-				)}
-		>
-			Apply to all {weeks.length} weeks
-		</Button>
+		<p class="text-muted-foreground px-1 text-xs">
+			Tap a day to put a routine on it. A day can hold more than one — a lift in the morning, a run
+			in the evening — and a day left empty is a rest day.
+		</p>
 	{/if}
 </div>
+
+<DayRoutineSheet
+	bind:open
+	day={sheetDay}
+	{options}
+	chosen={routineIdsOn(tend.state.trainingPlan, picked)}
+	onpick={(routineId: string) => tend.planDay(picked, routineId)}
+	onclose={() => (open = false)}
+/>

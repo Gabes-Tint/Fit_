@@ -256,11 +256,13 @@ export type RoutineExercise = LibraryExercise & {
 	load: number;
 };
 
+/**
+ * A session's worth of movements, and nothing about when it runs: a routine is
+ * a template, and which days it lands on is planned per day in `trainingPlan`.
+ */
 export type Routine = {
 	id: string;
 	name: string;
-	/** Sessions a week, which is what decides the days the week strip marks. */
-	freq: number;
 	exercises: RoutineExercise[];
 };
 
@@ -294,15 +296,16 @@ export type Workout = {
 	exercises: WorkoutExercise[];
 };
 
-/** The routine id a planned week carries when the week is deliberately empty. */
-export const REST_WEEK = 'rest';
-
-export type PlannedWeek = {
-	year: number;
-	/** 1-based week of the training year — see `calendarWeeks`. */
-	week: number;
-	/** A routine id, or `REST_WEEK`. */
-	routineId: string;
+/**
+ * The routines one calendar day holds. A date with no entry is a rest day, so
+ * rest is the absence of a plan rather than a value the plan carries — which is
+ * why there is no id standing in for "nothing".
+ */
+export type PlannedDay = {
+	/** ISO `YYYY-MM-DD`. */
+	date: string;
+	/** Routine ids in the order they are meant to be trained: the lift, then the run. */
+	routineIds: string[];
 };
 
 export type TendState = {
@@ -316,7 +319,7 @@ export type TendState = {
 	 * lifts, unlike meals, which are shared.
 	 */
 	routines: Routine[];
-	trainingPlan: PlannedWeek[];
+	trainingPlan: PlannedDay[];
 	/** Finished workouts, oldest first. The unfinished one is `activeWorkout`. */
 	workouts: Workout[];
 	activeWorkout: Workout | null;

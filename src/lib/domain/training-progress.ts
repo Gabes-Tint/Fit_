@@ -1,10 +1,6 @@
-import {
-	plannedRoutineId,
-	weekOf,
-	WEEKS_IN_YEAR,
-	type CalendarWeek
-} from '$lib/domain/training-plan';
-import type { LoadUnit, MuscleGroup, PlannedWeek, Routine, Workout } from '$lib/domain/types';
+import { weekOf, WEEKS_IN_YEAR, type CalendarWeek } from '$lib/domain/training-plan';
+import { plannedSessionsBetween } from '$lib/domain/planned-days';
+import type { LoadUnit, MuscleGroup, PlannedDay, Workout } from '$lib/domain/types';
 import { round1 } from '$lib/domain/utils';
 import { countsAsTraining, setsDone } from '$lib/domain/workout';
 
@@ -101,39 +97,32 @@ export type AdherenceWeek = {
 };
 
 /**
- * What the plan asked for against what happened, for recent weeks. A week the
- * plan left empty asks for nothing, so training there shows as done with no
- * shortfall.
+ * What the plan asked for against what happened, for recent weeks. The
+ * denominator is the sessions actually put on the week's days — a day holding a
+ * lift and a run asks for two — so a week nobody planned asks for nothing, and
+ * training through it shows as done with no shortfall to answer for.
  */
 export function weeklyAdherence(args: {
 	workouts: Workout[];
-	plan: PlannedWeek[];
-	routines: Routine[];
+	plan: PlannedDay[];
 	weeks: CalendarWeek[];
-	year: number;
 	throughWeek: number;
 	count?: number;
 }): AdherenceWeek[] {
-	const { workouts, plan, routines, weeks, year, throughWeek, count = 4 } = args;
-	const done = new Map<number, number>();
+	const { workouts, plan, weeks, throughWeek, count = 4 } = args;
 	// A filed-but-empty session is not one the plan asked for; counting it would
 	// let a week be met by walking in and out again.
-	for (const workout of workouts.filter(countsAsTraining)) {
-		const at = weekOf(workout.date);
-		if (at.year === year) done.set(at.week, (done.get(at.week) ?? 0) + 1);
-	}
+	const trained = workouts.filter(countsAsTraining);
 	return weeks
 		.filter((w) => w.week <= throughWeek)
 		.slice(-count)
-		.map((w) => {
-			const routine = routines.find((r) => r.id === plannedRoutineId(plan, year, w.week));
-			return {
-				week: w.week,
-				label: `Week ${w.week}`,
-				planned: routine?.freq ?? 0,
-				done: done.get(w.week) ?? 0
-			};
-		});
+		.map((w) => ({
+			week: w.week,
+			label: `Week ${w.week}`,
+			planned: plannedSessionsBetween(plan, w.startISO, w.endISO),
+			done: trained.filter((workout) => workout.date >= w.startISO && workout.date <= w.endISO)
+				.length
+		}));
 }
 
 export type PersonalRecord = {

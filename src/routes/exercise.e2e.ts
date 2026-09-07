@@ -93,12 +93,24 @@ test.describe('once a routine is in the rotation', () => {
 		await expect(page.getByRole('button', { name: 'Start this session' })).toBeVisible();
 	});
 
-	test('plans a week from the month view', async ({ page }) => {
+	// A day taking a second routine needs a rotation with two in it, so that flow
+	// is exercised end to end in `phone-layout.e2e.ts` against the three-routine
+	// starter. This one is the single-routine path and says only that.
+	test('puts a routine on a day from the week view', async ({ page }) => {
 		await page.getByRole('link', { name: 'Plan', exact: true }).click();
 		await expect(page.getByRole('link', { name: 'Year' })).toBeVisible();
-		await page.getByRole('button', { name: /Apply to all/ }).click();
+
+		await page.getByRole('button', { name: /^Mon / }).click();
+		await page.getByRole('button', { name: /Full body/ }).click();
+		await expect(page.getByText('Session 1 of the day')).toBeVisible();
+		await page.getByRole('button', { name: 'Close' }).click();
+
+		await expect(page.getByRole('button', { name: /^Mon .*Full body/ })).toBeVisible();
+		await expect(page.getByText('1 of 7 days planned')).toBeVisible();
+
+		// The year view counts the week the day sits in, and leads back into it.
 		await page.getByRole('link', { name: 'Year' }).click();
-		await expect(page.getByText(/\/52 planned/)).toBeVisible();
+		await expect(page.getByText(/1\/52 planned/)).toBeVisible();
 	});
 
 	test('reaches training progress, which waits for a finished session', async ({ page }) => {
@@ -139,15 +151,21 @@ test.describe('once a routine is in the rotation', () => {
 
 	test('has no detectable accessibility violations while planning', async ({ page }) => {
 		await page.getByRole('link', { name: 'Plan', exact: true }).click();
-		await expect(page.getByRole('button', { name: /Apply to all/ })).toBeVisible();
+		await expect(page.getByRole('button', { name: /^Mon / })).toBeVisible();
 		expect(await axeViolations(page)).toEqual([]);
 	});
 
-	test('has no detectable accessibility violations picking a week', async ({ page }) => {
+	test('has no detectable accessibility violations picking a day', async ({ page }) => {
+		await page.getByRole('link', { name: 'Plan', exact: true }).click();
+		await page.getByRole('button', { name: /^Mon / }).click();
+		await expect(page.getByRole('dialog')).toBeVisible();
+		expect(await axeViolations(page)).toEqual([]);
+	});
+
+	test('has no detectable accessibility violations on the year', async ({ page }) => {
 		await page.getByRole('link', { name: 'Plan', exact: true }).click();
 		await page.getByRole('link', { name: 'Year' }).click();
-		await page.getByRole('button', { name: /^Week 40/ }).click();
-		await expect(page.getByRole('dialog')).toBeVisible();
+		await expect(page.getByRole('link', { name: /^Week 40/ })).toBeVisible();
 		expect(await axeViolations(page)).toEqual([]);
 	});
 
@@ -165,18 +183,25 @@ test.describe('once a routine is in the rotation', () => {
 
 /**
  * A session with no ticks is still filed, so the summary renders — but it is
- * not counted as this week's training. The clock is pinned to a Tuesday, a rest
- * day for the Mon/Thu `Full body` template, so "not counted" is the real
- * assertion; on a training day it would be vacuous.
+ * not counted as this week's training. The clock is pinned to a Tuesday and the
+ * routine is put on the Wednesday, so "not counted" is the real assertion; on a
+ * planned day it would be vacuous.
  */
 test.describe('a session where nothing was ticked', () => {
-	/** Tuesday, week 1 of 2026 — a rest day under the two-day template. */
+	/** Tuesday, week 1 of 2026. */
 	const TUESDAY = new Date('2026-01-06T09:00:00');
 
 	test.beforeEach(async ({ page, baseURL }) => {
 		await page.clock.setFixedTime(TUESDAY);
 		await onboard(page, baseURL ?? '');
 		await pickFullBody(page);
+		// Wednesday, so today is deliberately a rest day rather than an unplanned one.
+		await page.getByRole('link', { name: 'Plan', exact: true }).click();
+		await page.getByRole('button', { name: /^Wed / }).click();
+		await page.getByRole('button', { name: /Full body/ }).click();
+		await page.getByRole('button', { name: 'Close' }).click();
+		await page.getByRole('link', { name: 'Back' }).click();
+		await expect(page.getByRole('heading', { name: 'Exercise', level: 1 })).toBeVisible();
 	});
 
 	test('is filed, and the summary says so kindly', async ({ page }) => {

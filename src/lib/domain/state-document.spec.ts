@@ -131,9 +131,32 @@ const STORED_BEFORE_THE_LADDER = {
 	units: 'imperial'
 };
 
+/**
+ * The same household once the whole ladder has run. Two rungs changed it: the
+ * routine lost the `freq` that used to decide its days, and the single week it
+ * had planned became the two dated days version 1 drew for a twice-a-week
+ * routine — Monday 7 and Thursday 10 September, the Monday and Thursday of
+ * training week 36 of 2026. Everything else is untouched, which is the claim
+ * this fixture exists to hold the ladder to.
+ */
+const AFTER_THE_LADDER = {
+	...STORED_BEFORE_THE_LADDER,
+	routines: [
+		{
+			id: 'r-1',
+			name: 'Upper A',
+			exercises: [{ id: 'ex-1', name: 'Bench press', group: 'chest', sets: 3, reps: 8, load: 45 }]
+		}
+	],
+	trainingPlan: [
+		{ date: '2026-09-07', routineIds: ['r-1'] },
+		{ date: '2026-09-10', routineIds: ['r-1'] }
+	]
+};
+
 /** The same content, as this build stores it. */
 function atCurrentVersion(): Record<string, unknown> {
-	return { ...STORED_BEFORE_THE_LADDER, schemaVersion: SCHEMA_VERSION };
+	return { ...AFTER_THE_LADDER, schemaVersion: SCHEMA_VERSION };
 }
 
 function loaded(document: unknown) {
@@ -147,8 +170,9 @@ describe('a document stored before the ladder existed', () => {
 		const result = loaded(STORED_BEFORE_THE_LADDER);
 
 		expect(result.migrated).toBe(true);
-		// The whole document, field for field: not one value defaulted away.
-		expect(result.state).toEqual(STORED_BEFORE_THE_LADDER);
+		// The whole document, field for field: nothing defaulted away, and the two
+		// fields the ladder reshapes carrying the same training they always did.
+		expect(result.state).toEqual(AFTER_THE_LADDER);
 	});
 });
 
@@ -169,9 +193,20 @@ describe('what a migrated document still holds', () => {
 		expect(state().profiles[0]?.log).toEqual(STORED_BEFORE_THE_LADDER.profiles[0]?.log);
 	});
 
-	it('keeps the routines and the training plan', () => {
-		expect(state().routines).toEqual(STORED_BEFORE_THE_LADDER.routines);
-		expect(state().trainingPlan).toEqual(STORED_BEFORE_THE_LADDER.trainingPlan);
+	it('keeps the routine, minus the frequency that no longer describes it', () => {
+		expect(state().routines).toEqual(AFTER_THE_LADDER.routines);
+		expect(state().routines[0]).not.toHaveProperty('freq');
+		expect(state().routines[0]?.exercises).toHaveLength(1);
+	});
+
+	// The point of the rung, asserted by content: the week that said "Upper A,
+	// twice" becomes the two dates the app already showed for it, so a person
+	// opening the planner after the upgrade sees the week they saw before it.
+	it('turns the week it had planned into the days it was already drawing', () => {
+		expect(state().trainingPlan).toEqual([
+			{ date: '2026-09-07', routineIds: ['r-1'] },
+			{ date: '2026-09-10', routineIds: ['r-1'] }
+		]);
 	});
 
 	it('keeps the workouts, down to the set that was not finished', () => {

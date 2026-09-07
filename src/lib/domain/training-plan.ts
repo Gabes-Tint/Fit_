@@ -1,5 +1,4 @@
-import { REST_WEEK, type PlannedWeek } from '$lib/domain/types';
-import { addDaysISO, parseISODate, todayISO } from '$lib/domain/utils';
+import { addDaysISO, parseISODate } from '$lib/domain/utils';
 
 const MONTHS_SHORT = [
 	'Jan',
@@ -103,57 +102,4 @@ function daysBetween(fromISO: string, toISO: string): number {
 		Date.UTC(to.getFullYear(), to.getMonth(), to.getDate()) -
 		Date.UTC(from.getFullYear(), from.getMonth(), from.getDate());
 	return ms / 86_400_000;
-}
-
-/** Monday is 0, Sunday is 6 — the order the week strip draws. */
-export function weekdayIndex(iso: string): number {
-	return (parseISODate(iso).getDay() + 6) % 7;
-}
-
-/**
- * Which weekdays a routine lands on. Sessions are spread evenly rather than
- * stacked at the front, so three a week means Mon, Wed, Fri.
- */
-export function trainingDays(freq: number): number[] {
-	const count = Math.max(0, Math.min(7, Math.floor(freq)));
-	return Array.from({ length: count }, (_, i) => Math.floor((i * 7) / count));
-}
-
-export function plannedRoutineId(
-	plan: PlannedWeek[],
-	year: number,
-	week: number
-): string | undefined {
-	return plan.find((p) => p.year === year && p.week === week)?.routineId;
-}
-
-export function plannedWeekCount(plan: PlannedWeek[], year: number): number {
-	return plan.filter((p) => p.year === year).length;
-}
-
-/**
- * A plan for the rest of the year. The routines run through in order twice,
- * then a rest week — so the cycle is `2n + 1` weeks long, which is every
- * seventh week for the three routines a starter template ships, and not for
- * any other count. Days between New Year and the first Monday belong to the
- * previous year's week 52, so a plan drawn there opens with that trailing week.
- */
-export function seedTrainingPlan(
-	routineIds: string[],
-	year = new Date().getFullYear(),
-	fromISO = todayISO()
-): PlannedWeek[] {
-	if (routineIds.length === 0) return [];
-	const cycle = [...routineIds, ...routineIds, REST_WEEK];
-	const at = weekOf(fromISO);
-	const inTrailingWeek = at.year === year - 1 && at.week === WEEKS_IN_YEAR;
-	const from = at.year === year ? at.week : 1;
-	const weeks: { year: number; week: number }[] = inTrailingWeek
-		? [{ year: at.year, week: at.week }]
-		: [];
-	for (let week = from; week <= WEEKS_IN_YEAR; week++) weeks.push({ year, week });
-	return weeks.flatMap((w, i) => {
-		const routineId = cycle[i % cycle.length];
-		return routineId ? [{ ...w, routineId }] : [];
-	});
 }

@@ -9,7 +9,6 @@ import RoutineSheet from './RoutineSheet.svelte';
 const ROUTINE: Routine = {
 	id: 'r-1',
 	name: 'Push',
-	freq: 3,
 	exercises: [
 		{ name: 'Bench Press', group: 'Chest', sets: 4, reps: 8, load: 60 },
 		{ name: 'Lat Pulldown', group: 'Back', sets: 3, reps: 10, load: 45 },

@@ -34,7 +34,7 @@
 	{:else}
 		<LoadTrend {workouts} />
 		<VolumeByGroup {workouts} />
-		<AdherenceList {workouts} plan={tend.state.trainingPlan} routines={tend.state.routines} />
+		<AdherenceList {workouts} plan={tend.state.trainingPlan} />
 		<PersonalRecordList {workouts} />
 	{/if}
 </div>

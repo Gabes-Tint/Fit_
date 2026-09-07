@@ -19,7 +19,7 @@ const squat: RoutineExercise = { name: 'Squat', group: 'Legs', sets: 2, reps: 5,
 function session(weekIndex: number, exercises: RoutineExercise[]): Workout {
 	const date = addDaysISO(monday, weekIndex * 7 + 1);
 	const workout = workoutFromRoutine(
-		{ id: 'r1', name: 'Push', freq: 3, exercises },
+		{ id: 'r1', name: 'Push', exercises },
 		{ id: `w${weekIndex}`, date, startedAt: 0 }
 	);
 	for (const exercise of workout.exercises) {

@@ -38,9 +38,9 @@ export function stopPainting(): void {
 	for (const painter of painters.splice(0)) clearInterval(painter);
 }
 
-/** A minimal routine: an id, a name, a weekly frequency, and no exercises. */
-export function routine(id: string, name: string, freq = 3): Routine {
-	return { id, name, freq, exercises: [] };
+/** A minimal routine: an id, a name, and no exercises. */
+export function routine(id: string, name: string): Routine {
+	return { id, name, exercises: [] };
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;

@@ -1,16 +1,18 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { plannedRoutineId, trainingDays, WEEKDAYS, weekOf } from '$lib/domain/training-plan';
-	import type { PlannedWeek, Routine, Workout } from '$lib/domain/types';
+	import { routineIdsOn } from '$lib/domain/planned-days';
+	import { WEEKDAYS } from '$lib/domain/training-plan';
+	import type { PlannedDay, Routine, Workout } from '$lib/domain/types';
 	import { addDaysISO, startOfWeek } from '$lib/domain/utils';
 	import { countsAsTraining } from '$lib/domain/workout';
 	import SectionLabel from '$lib/components/SectionLabel.svelte';
-	import { routineLetter, routineTone } from '$lib/components/exercise/routine-tone';
+	import { optionsOn, planOptions } from '$lib/components/exercise/plan-options';
 	import { cn } from '$lib/ui/cn';
 
 	/**
-	 * Read-only: every cell links to the planner, where a week is actually
-	 * changed.
+	 * Read-only: every cell links to the planner, where a day is actually
+	 * changed. What a day is marked with comes from what was put on it — a day
+	 * can hold two routines, and it shows both initials in that order.
 	 */
 	let {
 		routines,
@@ -19,29 +21,20 @@
 		today
 	}: {
 		routines: Routine[];
-		plan: PlannedWeek[];
+		plan: PlannedDay[];
 		/** Filed workouts; the unfinished one has not happened yet. */
 		workouts: Workout[];
 		today: string;
 	} = $props();
 
-	const planned = $derived.by(() => {
-		const { year, week } = weekOf(today);
-		const index = routines.findIndex((r) => r.id === plannedRoutineId(plan, year, week));
-		const routine = routines[index];
-		return {
-			letter: routine ? routineLetter(routine.name) : null,
-			days: routine ? trainingDays(routine.freq) : [],
-			tone: routineTone(index)
-		};
-	});
+	const options = $derived(planOptions(routines));
 
 	const days = $derived.by(() => {
 		const monday = startOfWeek(today);
 		return WEEKDAYS.map((label, i) => {
 			const iso = addDaysISO(monday, i);
+			const on = optionsOn(options, routineIdsOn(plan, iso));
 			const isToday = iso === today;
-			const letter = planned.days.includes(i) ? planned.letter : null;
 			// A session filed with nothing ticked is not a trained day.
 			const done = iso < today && workouts.some((w) => w.date === iso && countsAsTraining(w));
 			const name = isToday ? 'Today' : label;
@@ -49,11 +42,16 @@
 				iso,
 				label: name,
 				isToday,
-				letter,
 				done,
-				// The cell's glyphs read as nothing to a screen reader; this is what
-				// they say. The routine is named once above, not per day.
-				description: `${name}, ${letter ? 'training day' : 'rest day'}${done ? ', trained' : ''}`
+				letters: on.map((option) => option.letter).join(''),
+				// The first routine of the day gives the cell its color; a day with
+				// nothing on it has none.
+				tone: on[0]?.tone,
+				// The cell's glyphs read as nothing to a screen reader, so the label
+				// names what is actually on the day rather than describing the marks.
+				description: `${name}, ${
+					on.length > 0 ? on.map((option) => option.name).join(', then ') : 'rest day'
+				}${done ? ', trained' : ''}`
 			};
 		});
 	});
@@ -81,10 +79,10 @@
 				<span
 					class={cn(
 						'text-[0.65rem] font-semibold',
-						day.isToday ? 'opacity-90' : day.letter ? planned.tone.ink : 'text-muted-foreground'
+						day.isToday ? 'opacity-90' : (day.tone?.ink ?? 'text-muted-foreground')
 					)}
 				>
-					{day.letter ?? '·'}
+					{day.letters || '·'}
 				</span>
 				<span
 					class={cn(
@@ -93,8 +91,8 @@
 							? 'bg-primary'
 							: day.isToday
 								? 'bg-primary-foreground/50'
-								: day.letter
-									? ['border-[1.5px]', planned.tone.dot]
+								: day.tone
+									? ['border-[1.5px]', day.tone.dot]
 									: 'bg-border'
 					)}
 				></span>

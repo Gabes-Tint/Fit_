@@ -86,17 +86,12 @@ describe('paintingStream / stopPainting', () => {
 });
 
 describe('routine', () => {
-	it('builds a routine with no exercises and a default weekly frequency of 3', () => {
+	it('builds a routine with a name and no exercises', () => {
 		expect(routine('push', 'Chest & Shoulders')).toEqual({
 			id: 'push',
 			name: 'Chest & Shoulders',
-			freq: 3,
 			exercises: []
 		});
-	});
-
-	it('accepts an explicit frequency', () => {
-		expect(routine('legs', 'Legs', 2).freq).toBe(2);
 	});
 });
 

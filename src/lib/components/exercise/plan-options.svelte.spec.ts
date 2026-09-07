@@ -1,31 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { REST_WEEK, type PlannedWeek } from '$lib/domain/types';
 import { routine } from '$lib/testing/fixtures';
-import { plannedOption, planOptions } from './plan-options';
+import { optionsOn, planOptions } from './plan-options';
 
-const ROUTINES = [routine('push', 'Chest & Shoulders'), routine('legs', 'Legs', 2)];
+const ROUTINES = [routine('push', 'Chest & Shoulders'), routine('legs', 'Legs')];
 const OPTIONS = planOptions(ROUTINES);
-const PLAN: PlannedWeek[] = [{ year: 2026, week: 5, routineId: 'legs' }];
 
 describe('planOptions', () => {
-	it('offers every routine plus a rest week', () => {
-		expect(OPTIONS.map((option) => option.id)).toEqual(['push', 'legs', REST_WEEK]);
+	it('offers the rotation and nothing else — rest is a day with nothing on it', () => {
+		expect(OPTIONS.map((option) => option.id)).toEqual(['push', 'legs']);
+		expect(planOptions([])).toEqual([]);
 	});
 
-	it('names the rest week', () => {
-		expect(planOptions([]).at(-1)?.name).toBe('Rest week');
-	});
-
-	it('carries the routine initial and the days its frequency lands on', () => {
-		expect(OPTIONS[1]).toMatchObject({ letter: 'L', days: [0, 3] });
-	});
-
-	it('marks the rest week with a dash rather than an initial', () => {
-		expect(OPTIONS.at(-1)?.letter).toBe('—');
-	});
-
-	it('leaves a rest week without training days', () => {
-		expect(OPTIONS.at(-1)?.days).toEqual([]);
+	it('carries the routine name and its initial', () => {
+		expect(OPTIONS[1]).toMatchObject({ name: 'Legs', letter: 'L' });
 	});
 
 	it('gives each routine its own tone', () => {
@@ -33,16 +20,23 @@ describe('planOptions', () => {
 	});
 });
 
-describe('plannedOption', () => {
-	it('finds what a week was planned as', () => {
-		expect(plannedOption(OPTIONS, PLAN, 2026, 5)?.name).toBe('Legs');
+describe('optionsOn', () => {
+	it('dresses a day’s routines in the order the day holds them', () => {
+		expect(optionsOn(OPTIONS, ['legs', 'push']).map((option) => option.name)).toEqual([
+			'Legs',
+			'Chest & Shoulders'
+		]);
 	});
 
-	it('returns nothing for a week that was never assigned', () => {
-		expect(plannedOption(OPTIONS, PLAN, 2026, 6)).toBeUndefined();
+	it('shows the same routine twice when a day asks for it twice', () => {
+		expect(optionsOn(OPTIONS, ['push', 'push'])).toHaveLength(2);
 	});
 
-	it('returns nothing for a week planned in a different year', () => {
-		expect(plannedOption(OPTIONS, PLAN, 2025, 5)).toBeUndefined();
+	it('leaves out an id no routine answers to, rather than drawing a gap', () => {
+		expect(optionsOn(OPTIONS, ['deleted', 'push']).map((option) => option.id)).toEqual(['push']);
+	});
+
+	it('has nothing to dress for a day with nothing on it', () => {
+		expect(optionsOn(OPTIONS, [])).toEqual([]);
 	});
 });

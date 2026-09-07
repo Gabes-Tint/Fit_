@@ -1,27 +1,45 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
+	import type { ResolvedPathname } from '$app/types';
+	import { routineIdsOn } from '$lib/domain/planned-days';
 	import { MONTHS_LONG, WEEKDAYS, type CalendarWeek } from '$lib/domain/training-plan';
+	import type { PlannedDay } from '$lib/domain/types';
+	import { addDaysISO } from '$lib/domain/utils';
 	import SectionLabel from '$lib/components/SectionLabel.svelte';
-	import type { PlannedWeek } from '$lib/domain/types';
 	import { cn } from '$lib/ui/cn';
-	import { plannedOption, type PlanOption } from './plan-options';
+	import { optionsOn, type PlanOption } from './plan-options';
 
 	/**
-	 * At chip size a week carries only its initial and color, so the legend above
-	 * is what makes the colors mean anything.
+	 * The year as it was actually planned: one mark per day that holds something.
+	 * At chip size a week carries only a letter and a color, so the legend above
+	 * is what makes the colors mean anything, and a week opens in the week view
+	 * where a day is changed.
 	 */
 	let {
 		weeks,
 		options,
-		plan,
-		year,
-		onpick
+		plan
 	}: {
 		weeks: CalendarWeek[];
 		options: PlanOption[];
-		plan: PlannedWeek[];
-		year: number;
-		onpick: (week: CalendarWeek) => void;
+		plan: PlannedDay[];
 	} = $props();
+
+	/**
+	 * The week view, opened on this week: the route with the Monday it should
+	 * show. Typed as a resolved path so the link is one, rather than a string
+	 * that happens to look like one.
+	 */
+	function weekHref(week: CalendarWeek): ResolvedPathname {
+		return resolve(`/exercise/plan?from=${week.startISO}`);
+	}
+
+	/** Each week as its seven days, so the row draws what is there rather than a frequency. */
+	function weekDays(week: CalendarWeek): PlanOption[][] {
+		return WEEKDAYS.map((_, index) =>
+			optionsOn(options, routineIdsOn(plan, addDaysISO(week.startISO, index)))
+		);
+	}
 </script>
 
 <div class="flex flex-col gap-4">
@@ -39,35 +57,32 @@
 				<SectionLabel class="mb-1.5 ml-0.5">{name.slice(0, 3)}</SectionLabel>
 				<div class="flex flex-col gap-1">
 					{#each weeks.filter((week) => week.month === month) as week (week.week)}
-						{@const option = plannedOption(options, plan, year, week.week)}
-						<button
-							type="button"
-							onclick={() => onpick(week)}
-							aria-label={`Week ${week.week}, ${option?.name ?? 'unassigned'}`}
+						{@const days = weekDays(week)}
+						{@const trained = days.filter((day) => day.length > 0)}
+						{@const lead = trained[0]?.[0]}
+						<a
+							href={weekHref(week)}
+							aria-label={`Week ${week.week}, ${trained.length === 0 ? 'nothing planned' : `${trained.length} days planned`}`}
 							class={cn(
 								'flex h-5 w-full items-center gap-1.5 rounded-md px-1',
-								option?.tone.tint ?? 'hover:bg-secondary'
+								lead?.tone.tint ?? 'hover:bg-secondary'
 							)}
 						>
 							<span
 								class={cn(
 									'w-2 text-left text-[9px] font-semibold',
-									option?.tone.ink ?? 'text-border'
+									lead?.tone.ink ?? 'text-border'
 								)}
 							>
-								{option?.letter ?? '·'}
+								{lead?.letter ?? '·'}
 							</span>
 							<span class="flex flex-1 gap-0.5">
-								{#each WEEKDAYS as day, index (day)}
-									<span
-										class={cn(
-											'h-1 flex-1 rounded-xs',
-											option?.days.includes(index) ? option.tone.solid : 'bg-border'
-										)}
+								{#each days as day, index (index)}
+									<span class={cn('h-1 flex-1 rounded-xs', day[0]?.tone.solid ?? 'bg-border')}
 									></span>
 								{/each}
 							</span>
-						</button>
+						</a>
 					{/each}
 				</div>
 			</section>

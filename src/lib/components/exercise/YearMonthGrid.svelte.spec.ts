@@ -1,25 +1,29 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import { calendarWeeks } from '$lib/domain/training-plan';
-import type { PlannedWeek } from '$lib/domain/types';
+import type { PlannedDay } from '$lib/domain/types';
 import { routine } from '$lib/testing/fixtures';
 import { planOptions } from './plan-options';
 import YearMonthGrid from './YearMonthGrid.svelte';
 
 const OPTIONS = planOptions([routine('push', 'Chest & Shoulders')]);
 const WEEKS = calendarWeeks(2026);
-const PLAN: PlannedWeek[] = [{ year: 2026, week: 1, routineId: 'push' }];
+/** Week 1 of 2026 opens on Monday 5 January; two of its days are planned. */
+const PLAN: PlannedDay[] = [
+	{ date: '2026-01-05', routineIds: ['push'] },
+	{ date: '2026-01-08', routineIds: ['push'] }
+];
 
-function props(plan: PlannedWeek[] = [], onpick = vi.fn()) {
-	return { weeks: WEEKS, options: OPTIONS, plan, year: 2026, onpick };
+function props(plan: PlannedDay[] = []) {
+	return { weeks: WEEKS, options: OPTIONS, plan };
 }
 
 describe('YearMonthGrid', () => {
 	it('draws every week of the year', async () => {
 		await render(YearMonthGrid, { props: props() });
-		await expect.element(page.getByRole('button', { name: /Week 52/ })).toBeInTheDocument();
-		expect(document.querySelectorAll('button')).toHaveLength(WEEKS.length);
+		await expect.element(page.getByRole('link', { name: /Week 52/ })).toBeInTheDocument();
+		expect(document.querySelectorAll('a')).toHaveLength(WEEKS.length);
 	});
 
 	it('names each month', async () => {
@@ -28,29 +32,28 @@ describe('YearMonthGrid', () => {
 		await expect.element(page.getByText('Dec')).toBeInTheDocument();
 	});
 
-	it('explains the colors with a legend', async () => {
+	it('explains the colors with a legend of the rotation', async () => {
 		await render(YearMonthGrid, { props: props() });
-		await expect.element(page.getByText('Rest week')).toBeInTheDocument();
+		await expect.element(page.getByText('Chest & Shoulders')).toBeInTheDocument();
 	});
 
-	it('calls an unplanned week unassigned', async () => {
+	it('says a week nobody planned has nothing on it', async () => {
 		await render(YearMonthGrid, { props: props() });
 		await expect
-			.element(page.getByRole('button', { name: 'Week 1, unassigned' }))
+			.element(page.getByRole('link', { name: 'Week 1, nothing planned' }))
 			.toBeInTheDocument();
 	});
 
-	it('names the routine a planned week carries', async () => {
+	it('counts the days a planned week actually holds', async () => {
 		await render(YearMonthGrid, { props: props(PLAN) });
 		await expect
-			.element(page.getByRole('button', { name: 'Week 1, Chest & Shoulders' }))
+			.element(page.getByRole('link', { name: 'Week 1, 2 days planned' }))
 			.toBeInTheDocument();
 	});
 
-	it('reports the week that was tapped', async () => {
-		const onpick = vi.fn();
-		await render(YearMonthGrid, { props: props([], onpick) });
-		await page.getByRole('button', { name: 'Week 1, unassigned' }).click();
-		expect(onpick).toHaveBeenCalledWith(WEEKS[0]);
+	it('opens the week it names in the week view', async () => {
+		await render(YearMonthGrid, { props: props(PLAN) });
+		const week = page.getByRole('link', { name: 'Week 1, 2 days planned' });
+		await expect.element(week).toHaveAttribute('href', '/exercise/plan?from=2026-01-05');
 	});
 });

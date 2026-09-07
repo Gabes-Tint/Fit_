@@ -99,12 +99,14 @@ describe('readState', () => {
 		expect(response.status).toBe(401);
 	});
 
+	// The format of a household with nothing stored is this build's own, since
+	// there is no stored document to echo one back from.
 	it('reads version 0 and a null body when nothing is stored', async () => {
 		const response = readState(db, eventFor(authFor()));
 		expect(response.status).toBe(200);
 		expect(await bodyOf(response)).toEqual({
 			version: 0,
-			format: 'tend.v1',
+			format: 'tend.v2',
 			body: null,
 			updatedAt: null
 		});
@@ -150,7 +152,7 @@ describe('readState', () => {
 		const response = readState(db, eventFor(otherAuth));
 		expect(await bodyOf(response)).toEqual({
 			version: 0,
-			format: 'tend.v1',
+			format: 'tend.v2',
 			body: null,
 			updatedAt: null
 		});
@@ -239,7 +241,7 @@ describe('writeState', () => {
 		expect(await bodyOf(response)).toEqual({
 			error: { code: 'stale-version' },
 			version: 0,
-			format: 'tend.v1',
+			format: 'tend.v2',
 			body: null
 		});
 		expect(db.prepare('select count(*) as n from household_state').get()?.['n']).toBe(0);

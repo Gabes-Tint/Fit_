@@ -7,7 +7,7 @@ import {
 	emptyRoutine,
 	type BumpField
 } from '$lib/domain/exercises';
-import { seedTrainingPlan } from '$lib/domain/training-plan';
+import { toggleRoutineOn, withoutRoutine } from '$lib/domain/planned-days';
 import { SEED_FOOD_BY_ID, scaleFood } from '$lib/domain/foods';
 import { emptyProfile } from '$lib/domain/profile';
 import type {
@@ -377,13 +377,17 @@ export class TendStore {
 		return this.state.routines.find((r) => r.id === id);
 	}
 
-	// Seeds a training plan too, so the calendar is not empty the day someone starts.
+	/**
+	 * Takes the rotation, and the plan that pointed at the old one goes with it —
+	 * those routines no longer exist. Which days the new ones land on is the
+	 * person's to choose in the week view; the app used to guess it from a
+	 * frequency, and guessing is what this replaced.
+	 */
 	useTemplate(templateId: string) {
 		const template = ROUTINE_TEMPLATES.find((t) => t.id === templateId);
 		if (!template) return;
-		const routines = routinesFromTemplate(template);
-		this.state.routines = routines;
-		this.state.trainingPlan = seedTrainingPlan(routines.map((r) => r.id));
+		this.state.routines = routinesFromTemplate(template);
+		this.state.trainingPlan = [];
 		this.persist();
 	}
 
@@ -394,14 +398,14 @@ export class TendStore {
 		return routine;
 	}
 
-	updateRoutine(id: string, patch: Partial<Pick<Routine, 'name' | 'freq'>>) {
+	updateRoutine(id: string, patch: Partial<Pick<Routine, 'name'>>) {
 		this.state.routines = this.state.routines.map((r) => (r.id === id ? { ...r, ...patch } : r));
 		this.persist();
 	}
 
 	removeRoutine(id: string) {
 		this.state.routines = this.state.routines.filter((r) => r.id !== id);
-		this.state.trainingPlan = this.state.trainingPlan.filter((p) => p.routineId !== id);
+		this.state.trainingPlan = withoutRoutine(this.state.trainingPlan, id);
 		this.persist();
 	}
 
@@ -440,15 +444,9 @@ export class TendStore {
 
 	// -- training plan -------------------------------------------------------
 
-	planWeeks(year: number, weeks: number[], routineId: string) {
-		if (weeks.length === 0) return;
-		const untouched = this.state.trainingPlan.filter(
-			(p) => p.year !== year || !weeks.includes(p.week)
-		);
-		this.state.trainingPlan = [
-			...untouched,
-			...weeks.map((week) => ({ year, week, routineId }))
-		].sort((a, b) => a.year - b.year || a.week - b.week);
+	/** One tap in the week view: the routine goes on the day, or comes back off it. */
+	planDay(date: string, routineId: string) {
+		this.state.trainingPlan = toggleRoutineOn(this.state.trainingPlan, date, routineId);
 		this.persist();
 	}
 

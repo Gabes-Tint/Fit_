@@ -30,7 +30,7 @@
 					<span
 						class="bg-accent text-accent-foreground font-display flex size-11 shrink-0 items-center justify-center rounded-2xl text-lg"
 					>
-						{template.freq}
+						{template.badge}
 					</span>
 					<span class="min-w-0 flex-1">
 						<span class="font-display block text-lg tracking-tight">{template.name}</span>

@@ -11,7 +11,6 @@ function pushA(): Routine {
 	return {
 		id: 'r-1',
 		name: 'Push A',
-		freq: 3,
 		exercises: [
 			{ name: 'Bench Press', group: 'Chest', sets: 2, reps: 10, load: 60 },
 			{ name: 'Lateral Raise', group: 'Shoulders', sets: 1, reps: 12, load: 8 }

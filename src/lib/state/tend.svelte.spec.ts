@@ -12,7 +12,7 @@ import type {
 	Profile,
 	TendState
 } from '$lib/domain/types';
-import { DEFAULT_REST_SECONDS, PLANNED_MEALS, REST_WEEK, ZERO_MICROS } from '$lib/domain/types';
+import { DEFAULT_REST_SECONDS, PLANNED_MEALS, ZERO_MICROS } from '$lib/domain/types';
 import { todayISO } from '$lib/domain/utils';
 import { countsAsTraining } from '$lib/domain/workout';
 import { emptyState, SCHEMA_VERSION } from '$lib/domain/state-document';
@@ -786,20 +786,16 @@ describe('starting from a template', () => {
 		);
 	});
 
-	it('takes a plan with it, so the calendar is not empty on day one', () => {
-		const store = withRoutine();
-		expect(store.state.trainingPlan.length).toBeGreaterThan(0);
-		for (const week of store.state.trainingPlan) {
-			expect(['full-body', REST_WEEK]).toContain(week.routineId);
-		}
+	// The template says what a session is, not when it runs — the days are chosen
+	// in the week view rather than guessed from a frequency.
+	it('plans no days, because a template does not know which days you train', () => {
+		expect(withRoutine().state.trainingPlan).toEqual([]);
 	});
 
-	it('plans every routine of a rotation, not just the first', () => {
+	it('takes every routine of a rotation, not just the first', () => {
 		const store = freshStore();
 		store.useTemplate('ppl');
 		expect(store.state.routines.map((r) => r.id)).toEqual(['push', 'pull', 'legs']);
-		const planned = new Set(store.state.trainingPlan.map((p) => p.routineId));
-		expect(planned.has('pull')).toBe(true);
 	});
 
 	it('takes nothing from a template it has never heard of', () => {
@@ -813,9 +809,12 @@ describe('starting from a template', () => {
 	it('replaces an earlier choice rather than adding to it', () => {
 		const store = freshStore();
 		store.useTemplate('ppl');
+		store.planDay('2026-01-05', 'push');
 		store.useTemplate('fb');
 		expect(store.state.routines).toHaveLength(1);
-		expect(store.state.trainingPlan.every((p) => p.routineId !== 'push')).toBe(true);
+		// The days went with the routines they named; a plan pointing at a routine
+		// that no longer exists would draw a week nobody can train.
+		expect(store.state.trainingPlan).toEqual([]);
 	});
 
 	it('leaves the shipped template alone when the copy is edited', () => {
@@ -826,10 +825,10 @@ describe('starting from a template', () => {
 		expect(template('fb').routines[0]?.exercises[0]?.load).toBe(before);
 	});
 
-	it('saves the routines and the plan as it takes them', () => {
+	it('saves the routines as it takes them', () => {
 		withRoutine();
 		expect(stored().routines).toHaveLength(1);
-		expect(stored().trainingPlan.length).toBeGreaterThan(0);
+		expect(stored().trainingPlan).toEqual([]);
 	});
 });
 
@@ -847,11 +846,10 @@ describe('routines', () => {
 		expect(freshStore().routine('nope')).toBeUndefined();
 	});
 
-	it('renames a routine and changes how often it runs', () => {
+	it('renames a routine', () => {
 		const store = withRoutine();
-		store.updateRoutine('full-body', { name: 'Everything', freq: 4 });
+		store.updateRoutine('full-body', { name: 'Everything' });
 		expect(store.routine('full-body')?.name).toBe('Everything');
-		expect(store.routine('full-body')?.freq).toBe(4);
 	});
 
 	it('leaves the other routines alone when one is renamed', () => {
@@ -869,14 +867,14 @@ describe('routines', () => {
 		expect(store.state.routines.map((r) => r.id)).toEqual(['push', 'legs']);
 	});
 
-	it('clears the weeks that pointed at a routine it removed', () => {
+	it('clears the days that pointed at a routine it removed', () => {
 		const store = freshStore();
 		store.useTemplate('ppl');
-		store.planWeeks(2026, [1, 2], 'pull');
-		store.planWeeks(2026, [3], 'legs');
+		store.planDay('2026-01-05', 'pull');
+		store.planDay('2026-01-06', 'pull');
+		store.planDay('2026-01-06', 'legs');
 		store.removeRoutine('pull');
-		expect(store.state.trainingPlan.some((p) => p.routineId === 'pull')).toBe(false);
-		expect(store.state.trainingPlan).toContainEqual({ year: 2026, week: 3, routineId: 'legs' });
+		expect(store.state.trainingPlan).toEqual([{ date: '2026-01-06', routineIds: ['legs'] }]);
 	});
 
 	it('saves each change to the routine list as it is made', () => {
@@ -1021,68 +1019,59 @@ describe('the movements in a routine', () => {
 	});
 });
 
-describe('planning weeks', () => {
-	it('assigns a routine to every week it was given', () => {
+describe('planning days', () => {
+	it('puts a routine on the day it was given', () => {
 		const store = withRoutine();
-		store.planWeeks(2026, [3, 5], 'full-body');
-		expect(store.state.trainingPlan).toContainEqual({
-			year: 2026,
-			week: 3,
-			routineId: 'full-body'
-		});
-		expect(store.state.trainingPlan).toContainEqual({
-			year: 2026,
-			week: 5,
-			routineId: 'full-body'
-		});
+		store.planDay('2026-01-07', 'full-body');
+		expect(store.state.trainingPlan).toEqual([{ date: '2026-01-07', routineIds: ['full-body'] }]);
 	});
 
-	it('overwrites what a week was already carrying', () => {
+	it('lets a day hold a second routine, after the first', () => {
 		const store = freshStore();
-		store.planWeeks(2026, [3], 'push');
-		store.planWeeks(2026, [3], REST_WEEK);
-		const week3 = store.state.trainingPlan.filter((p) => p.year === 2026 && p.week === 3);
-		expect(week3).toHaveLength(1);
-		expect(week3[0]?.routineId).toBe(REST_WEEK);
+		store.planDay('2026-01-07', 'lift');
+		store.planDay('2026-01-07', 'run');
+		expect(store.state.trainingPlan).toEqual([{ date: '2026-01-07', routineIds: ['lift', 'run'] }]);
 	});
 
-	it('leaves the same week of another year alone', () => {
+	it('takes a routine back off the day when it is tapped again', () => {
 		const store = freshStore();
-		store.planWeeks(2025, [3], 'push');
-		store.planWeeks(2026, [3], 'legs');
-		expect(store.state.trainingPlan).toEqual([
-			{ year: 2025, week: 3, routineId: 'push' },
-			{ year: 2026, week: 3, routineId: 'legs' }
+		store.planDay('2026-01-07', 'lift');
+		store.planDay('2026-01-07', 'run');
+		store.planDay('2026-01-07', 'lift');
+		expect(store.state.trainingPlan).toEqual([{ date: '2026-01-07', routineIds: ['run'] }]);
+	});
+
+	// A day with nothing on it is the rest day, so it is stored as no day at all.
+	it('leaves no empty day behind when the last routine comes off', () => {
+		const store = freshStore();
+		store.planDay('2026-01-07', 'lift');
+		store.planDay('2026-01-07', 'lift');
+		expect(store.state.trainingPlan).toEqual([]);
+	});
+
+	it('leaves every other day alone', () => {
+		const store = freshStore();
+		store.planDay('2026-01-07', 'lift');
+		store.planDay('2026-01-08', 'run');
+		expect(store.state.trainingPlan).toHaveLength(2);
+	});
+
+	it('keeps the plan in date order', () => {
+		const store = freshStore();
+		store.planDay('2026-03-09', 'lift');
+		store.planDay('2026-01-07', 'lift');
+		store.planDay('2026-02-04', 'run');
+		expect(store.state.trainingPlan.map((day) => day.date)).toEqual([
+			'2026-01-07',
+			'2026-02-04',
+			'2026-03-09'
 		]);
-	});
-
-	it('keeps the plan in year and week order', () => {
-		const store = freshStore();
-		store.planWeeks(2026, [9, 2], 'push');
-		store.planWeeks(2026, [5], 'legs');
-		expect(store.state.trainingPlan.map((p) => p.week)).toEqual([2, 5, 9]);
-	});
-
-	it('treats an empty list of weeks as nothing to do, not as a wipe', () => {
-		const store = freshStore();
-		store.planWeeks(2026, [3], 'push');
-		store.planWeeks(2026, [], 'legs');
-		expect(store.state.trainingPlan).toEqual([{ year: 2026, week: 3, routineId: 'push' }]);
-	});
-
-	it('does not persist when no weeks were given', () => {
-		const store = freshStore();
-		store.planWeeks(2026, [3], 'push');
-		const spy = persistSpy();
-		store.planWeeks(2026, [], 'legs');
-		expect(spy).not.toHaveBeenCalled();
-		spy.mockRestore();
 	});
 
 	it('saves the plan as it is drawn', () => {
 		const store = freshStore();
-		store.planWeeks(2026, [3], 'push');
-		expect(stored().trainingPlan).toEqual([{ year: 2026, week: 3, routineId: 'push' }]);
+		store.planDay('2026-01-07', 'push');
+		expect(stored().trainingPlan).toEqual([{ date: '2026-01-07', routineIds: ['push'] }]);
 	});
 });
 
@@ -1450,15 +1439,14 @@ describe('training across a reload', () => {
 
 	it('comes back to the routines, the plan and the filed workouts', () => {
 		const store = inSession();
-		store.planWeeks(2026, [3], 'full-body');
+		store.planDay('2026-01-07', 'full-body');
 		store.toggleSet(0);
 		store.finishWorkout();
 		const next = reloaded();
 		expect(next.state.routines).toHaveLength(1);
 		expect(next.state.trainingPlan).toContainEqual({
-			year: 2026,
-			week: 3,
-			routineId: 'full-body'
+			date: '2026-01-07',
+			routineIds: ['full-body']
 		});
 		expect(next.state.workouts).toHaveLength(1);
 		expect(next.state.activeWorkout).toBeNull();

@@ -11,9 +11,6 @@
 	import { tend } from '$lib/state/tend.svelte';
 	import Input from '$lib/ui/Input.svelte';
 	import LinkButton from '$lib/ui/LinkButton.svelte';
-	import ToggleButton from '$lib/ui/ToggleButton.svelte';
-
-	const FREQUENCIES = [1, 2, 3, 4, 5, 6];
 
 	const id = $derived(page.params.id ?? '');
 	const routine = $derived(tend.routine(id));
@@ -52,25 +49,6 @@
 			/>
 			<p class="text-muted-foreground px-1 text-sm">
 				{totals.exercises} exercises · {totals.sets} sets · about {totals.minutes} min
-			</p>
-		</section>
-
-		<section class="flex flex-col gap-2">
-			<SectionLabel class="px-1">Days a week</SectionLabel>
-			<div class="flex gap-1.5">
-				{#each FREQUENCIES as freq (freq)}
-					<ToggleButton
-						pressed={routine.freq === freq}
-						onclick={() => tend.updateRoutine(id, { freq })}
-						resting="text-muted-foreground"
-						class="border-border h-11 flex-1 rounded-2xl border font-medium"
-					>
-						{freq}×
-					</ToggleButton>
-				{/each}
-			</div>
-			<p class="text-muted-foreground px-1 text-sm">
-				{routine.freq} sessions a week · roughly every {routine.freq >= 3 ? '2' : '3'} days
 			</p>
 		</section>
 

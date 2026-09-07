@@ -5,7 +5,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { todayISO, weekdayLong } from '$lib/domain/utils';
-	import { plannedRoutineId, weekOf } from '$lib/domain/training-plan';
+	import { routineIdsOn } from '$lib/domain/planned-days';
 	import { tend } from '$lib/state/tend.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import SectionLabel from '$lib/components/SectionLabel.svelte';
@@ -20,10 +20,8 @@
 
 	const routines = $derived(tend.state.routines);
 	const workouts = $derived(tend.state.workouts);
-	const currentRoutineId = $derived.by(() => {
-		const { year, week } = weekOf(today);
-		return plannedRoutineId(tend.state.trainingPlan, year, week);
-	});
+	/** Today's routines, so the rotation below marks what is on today. */
+	const todayIds = $derived(routineIdsOn(tend.state.trainingPlan, today));
 
 	/**
 	 * The shelf and the empty today-card are different states. A first-run app
@@ -98,7 +96,7 @@
 				<RoutineRow
 					{routine}
 					{index}
-					current={routine.id === currentRoutineId}
+					current={todayIds.includes(routine.id)}
 					onstart={startRoutine}
 				/>
 			{/each}
