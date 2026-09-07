@@ -87,7 +87,7 @@
 	{#if notice}
 		<p class="text-muted-foreground px-1 text-xs">{notice}</p>
 	{/if}
-	<ul class="flex max-h-80 flex-col gap-1 overflow-auto">
+	<ul class="flex flex-col gap-1">
 		{#each results as food (food.id)}
 			{@const summary = `${food.brand ? `${food.brand} · ` : ''}${food.servingLabel} · ${food.kcal} kcal · ${food.protein}g protein`}
 			<li>

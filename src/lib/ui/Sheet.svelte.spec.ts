@@ -45,6 +45,46 @@ describe('Sheet', () => {
 		await userEscape();
 		expect(props.open).toBe(false);
 	});
+
+	/**
+	 * `tall` takes 95% of the viewport height on a phone, staying anchored to
+	 * the bottom with rounded top corners — it still reads as a sheet with the
+	 * page visible above it, not an edge-to-edge screen — and reverts to the
+	 * normal bottom-sheet sizing at `sm:` and up. Asserted on the class string
+	 * rather than a real viewport: Tailwind's `sm:` prefix is CSS media-query
+	 * behavior a browser applies, not something jsdom or a fixed test viewport
+	 * proves either way — the class list is the contract.
+	 */
+	const TALL_BASE = [
+		'h-[95dvh]',
+		'max-h-[95dvh]',
+		'max-w-none',
+		'pb-[env(safe-area-inset-bottom)]'
+	] as const;
+	const TALL_REVERT = ['sm:h-auto', 'sm:max-h-[90dvh]', 'sm:max-w-lg', 'sm:pb-0'] as const;
+
+	describe('tall', () => {
+		it('takes 95% of the viewport height below `sm`, anchored to the bottom with rounded top corners', async () => {
+			await render(SheetHarness, { props: { open: true, body: 'Sheet body', tall: true } });
+			const panel = page.getByRole('dialog');
+			for (const cls of [...TALL_BASE, ...TALL_REVERT]) {
+				await expect.element(panel).toHaveClass(cls);
+			}
+			await expect.element(panel).toHaveClass('inset-x-0');
+			await expect.element(panel).toHaveClass('bottom-0');
+			await expect.element(panel).toHaveClass('rounded-t-3xl');
+		});
+
+		it('leaves the bottom-sheet sizing alone when unset', async () => {
+			await render(SheetHarness, { props: { open: true, body: 'Sheet body' } });
+			const panel = page.getByRole('dialog');
+			for (const cls of TALL_BASE) {
+				await expect.element(panel).not.toHaveClass(cls);
+			}
+			await expect.element(panel).toHaveClass('max-h-[92dvh]');
+			await expect.element(panel).toHaveClass('rounded-t-3xl');
+		});
+	});
 });
 
 async function userEscape() {

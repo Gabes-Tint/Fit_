@@ -177,7 +177,8 @@ describe('SessionExercise', () => {
 	});
 
 	it('renders nothing when no session is running', async () => {
-		tend.discardWorkout();
+		tend.state.activeWorkout = null;
+		tend.persist();
 		await renderPanel();
 		expect(page.getByText('Add set').elements()).toHaveLength(0);
 	});

@@ -69,7 +69,8 @@ function record(): SyncRecord | null {
 function journal(): TendStore {
 	const store = new TendStore();
 	store.hydrate();
-	store.addProfile(emptyProfile({ name: 'Alex' }));
+	store.state.profiles.push(emptyProfile({ name: 'Alex' }));
+	store.persist();
 	return store;
 }
 
