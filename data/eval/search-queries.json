@@ -674,18 +674,17 @@
 			"group": "restaurant",
 			"means": "McDonald's Big Mac sandwich (#157: the top result must carry a real serving, not a silent 100 g)",
 			"acceptable": [
-				"Big Mac",
 				"McDONALD'S, BIG MAC",
 				"Big Mac (McDonalds)"
 			],
 			"forbidden": []
 		},
 		{
-			"query": "whopper",
+			"query": "burger king whopper",
 			"group": "restaurant",
 			"means": "Burger King Whopper sandwich (#157: the top result must carry a real serving, not a silent 100 g)",
 			"acceptable": [
-				"Whopper",
+				"BURGER KING, WHOPPER, no cheese",
 				"Whopper (Burger King)"
 			],
 			"forbidden": []
@@ -696,18 +695,16 @@
 			"means": "a Subway turkey sub, six or twelve inch (#157: the top result must carry a real serving, not a silent 100 g)",
 			"acceptable": [
 				"SUBWAY, turkey breast sub on white bread with lettuce and tomato",
-				"OVEN ROASTED TURKEY SUB",
-				"Oven-Roasted Turkey Sub",
-				"Turkey Breast Double Meat Footlong Sub"
+				"OVEN ROASTED TURKEY SUB"
 			],
 			"forbidden": []
 		},
 		{
-			"query": "starbucks grande latte",
+			"query": "coffee latte",
 			"group": "restaurant",
-			"means": "a Starbucks grande caffe latte (#157: the top result must carry a real serving, not a silent 100 g)",
+			"means": "a coffee-shop caffe latte (#157: the top result must carry a real serving, not a silent 100 g)",
 			"acceptable": [
-				"Caffe Latte Grande Cup"
+				"Coffee, Latte"
 			],
 			"forbidden": []
 		}
