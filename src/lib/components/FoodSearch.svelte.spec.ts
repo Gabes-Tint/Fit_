@@ -84,7 +84,7 @@ describe('FoodSearch', () => {
 		const onpick = vi.fn();
 		await render(FoodSearch, { props: { onpick } });
 		await page.getByLabelText(SEARCH).fill('chicken breast');
-		const hit = page.getByRole('button', { name: /CATALOG CHICKEN BREAST/ });
+		const hit = page.getByRole('button', { name: /CATALOG CHICKEN BREAST/ }).first();
 		await expect.element(hit, ANSWERED).toBeInTheDocument();
 		await hit.click();
 		expect(onpick).toHaveBeenCalledWith(expect.objectContaining({ id: 'catalog-1' }));
