@@ -45,7 +45,10 @@ describe('NutritionFactsSheet', () => {
 	it('closes on Escape', async () => {
 		const props = $state({ open: true, name: 'Big Mac', servingLabel: '1 sandwich', rows: ROWS });
 		await render(NutritionFactsSheet, { props });
-		await page.getByRole('dialog').click();
+		// Click a specific text node, not the dialog's geometric centre — a
+		// container click can land on whatever future markup ends up centred,
+		// including a real link (see #196).
+		await page.getByText('Sodium', { exact: true }).click();
 		document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 		await vi.waitFor(() => expect(props.open).toBe(false));
 	});
