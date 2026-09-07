@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { resolve } from '$app/paths';
 	import { exportCsv, exportJson, mfpRowsToLogItems, parseMfpCsv } from '$lib/domain/export-data';
 	import { computeTargets } from '$lib/domain/tdee';
 	import type { Injection, LoadUnit, UnitSystem } from '$lib/domain/types';
@@ -286,12 +285,6 @@
 					</div>
 				{/each}
 			</dl>
-			<a
-				href={resolve('/foods')}
-				class="text-primary mt-4 inline-flex h-10 items-center text-sm font-medium"
-			>
-				Browse catalog with provenance
-			</a>
 		</section>
 
 		<section class="bg-card rounded-3xl p-4 shadow-border">
