@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SignedInSession } from '$lib/auth/api';
+import { jsonResponse } from '$lib/testing/fixtures';
 import { isSession, session, SESSION_STORAGE_KEY, SessionStore } from './session.svelte';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// Kept local rather than pointed at `$lib/testing/fixtures`' `signedInSession`: this one
+// needs two households (the drawer this module feeds has to pick among them), where the
+// shared fixture deliberately has one.
 function signedInSession(expiresAt: string): SignedInSession {
 	return {
 		account: { id: 'a-1', username: 'robin', displayName: 'Robin', createdAt: '2026-08-01' },
@@ -35,13 +39,6 @@ function stubFetch(response: Response | Error): void {
 	vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
 		response instanceof Error ? Promise.reject(response) : Promise.resolve(response)
 	);
-}
-
-function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
-	return new Response(JSON.stringify(body), {
-		...init,
-		headers: { 'content-type': 'application/json' }
-	});
 }
 
 describe('session', () => {

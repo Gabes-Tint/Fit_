@@ -11,13 +11,12 @@ import { openEmptyJournal, openLogSheet, signInThroughApi } from '../../tests/e2
  * leaves unproven.
  */
 
-/** Bundled offline (`src/lib/domain/food-catalog.ts`) — resolves with no network call at all. */
-const BUNDLED_BARCODE = '602652171032';
-const BUNDLED_NAME = 'Dark Chocolate Nuts & Sea Salt';
+const SINGLE_BARCODE = '602652171032';
 
 /**
- * Neither of these barcodes is bundled, so both fall through to
- * `/api/foods/barcode`. The real food catalog (a 365 MB file built by a
+ * Every barcode goes to `/api/foods/barcode` — #146 removed the two bundled
+ * packages that used to resolve with no network call at all. The real food
+ * catalog (a 365 MB file built by a
  * separate ETL step) is not present in this environment, and the endpoint
  * answers 503 "catalog-unavailable" without it — so the "not found" and
  * "more than one match" server responses below are stubbed with
@@ -93,17 +92,25 @@ test.describe('scanning a barcode', () => {
 	});
 
 	test('logs the single food a known barcode names', async ({ page }) => {
+		const only = catalogFood(3, 'Dark Chocolate Nuts & Sea Salt');
+		await page.route('**/api/foods/barcode*', (route) =>
+			route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({ barcode: SINGLE_BARCODE, ambiguous: false, foods: [only] })
+			})
+		);
 		await openScanTab(page);
-		await page.getByLabel('Barcode digits').fill(BUNDLED_BARCODE);
+		await page.getByLabel('Barcode digits').fill(SINGLE_BARCODE);
 		await page.getByRole('button', { name: 'Look it up' }).click();
 
 		// Resolves straight to a proposal — no "which one" question for a single match.
 		await expect(page.getByText('Proposed — tap to correct')).toBeVisible();
-		await expect(page.getByText(BUNDLED_NAME)).toBeVisible();
+		await expect(page.getByText(only.name)).toBeVisible();
 
 		await page.getByRole('button', { name: 'Add to today' }).click();
 		await expect(page.getByRole('dialog')).toBeHidden();
-		await expect(page.getByText(BUNDLED_NAME)).toBeVisible();
+		await expect(page.getByText(only.name)).toBeVisible();
 	});
 
 	test('gives a way forward for a barcode nothing recognizes', async ({ page }) => {

@@ -1,35 +1,33 @@
-import type { Food, Micros, Provenance } from './types';
+import type { Micros, Provenance, SeedFood } from './types';
 import { ZERO_MICROS } from './types';
 
-// `aliases` is required on every entry, so a food can't slip in findable only by its exact name.
-function f(partial: Omit<Food, 'micros'> & { micros?: Partial<Micros> }): Food {
+// Every micronutrient the app can show gets a number, so a row that says nothing
+// about iron reads as zero iron rather than as undefined arithmetic.
+function f(partial: Omit<SeedFood, 'micros'> & { micros?: Partial<Micros> }): SeedFood {
 	return { ...partial, micros: { ...ZERO_MICROS, ...partial.micros } };
 }
 
 /**
- * The foods this build ships.
+ * The nutrition the sample journal and the recipe book carry with them.
+ *
+ * Forty-nine rows, and they are exactly the foods `demo-seed.ts` and
+ * `recipe-book.ts` name -- the sample journal's entries and every recipe
+ * ingredient. Nothing searches this. Since #146 it is not a catalog at all: it
+ * has no aliases, no barcodes and no serving weights, because the only things
+ * that read it already know which food they want by id. Every food a person can
+ * find, scan or type comes from the server catalog (`/api/foods/*`), which is
+ * the single path #116 started and this finished.
  *
  * Each row carries a single provenance so the USDA and Open Food Facts licenses
  * never mix inside one entry.
- *
- * There are forty-nine of them, and they are exactly the foods `demo-seed.ts`
- * and `recipe-book.ts` need: the sample journal's entries and every recipe
- * ingredient. Until #116 there were ninety-six, because the typed-text parser
- * matched a food name against this table on the device; that now happens on the
- * server against 2.5 million rows (`POST /api/foods/resolve`), and the
- * forty-seven rows nothing else referenced went with it — 10.6 KB of the client
- * bundle. What is left still answers the search box and the catalog page with no
- * connection, which is the only thing that does.
  */
-export const FOODS: Food[] = [
+export const SEED_FOODS: SeedFood[] = [
 	f({
 		id: 'egg-large',
 		name: 'Egg, large',
-		aliases: ['eggs', 'egg', 'scrambled eggs', 'boiled egg', 'fried egg'],
 		category: 'protein',
 		provenance: 'usda',
 		servingLabel: '1 large',
-		grams: 50,
 		kcal: 72,
 		protein: 6.3,
 		carbs: 0.4,
@@ -51,11 +49,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'chicken-breast',
 		name: 'Chicken breast, grilled',
-		aliases: ['chicken', 'grilled chicken', 'chicken breast'],
 		category: 'protein',
 		provenance: 'usda',
 		servingLabel: '100 g',
-		grams: 100,
 		kcal: 165,
 		protein: 31,
 		carbs: 0,
@@ -73,11 +69,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'turkey-breast',
 		name: 'Turkey breast, roasted',
-		aliases: ['turkey', 'sliced turkey'],
 		category: 'protein',
 		provenance: 'usda',
 		servingLabel: '100 g',
-		grams: 100,
 		kcal: 135,
 		protein: 30,
 		carbs: 0,
@@ -87,11 +81,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'ground-turkey',
 		name: 'Ground turkey, 93%',
-		aliases: ['turkey mince'],
 		category: 'protein',
 		provenance: 'usda',
 		servingLabel: '100 g cooked',
-		grams: 100,
 		kcal: 176,
 		protein: 27,
 		carbs: 0,
@@ -101,11 +93,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'salmon',
 		name: 'Atlantic salmon, baked',
-		aliases: ['salmon', 'fish'],
 		category: 'protein',
 		provenance: 'usda',
 		servingLabel: '100 g',
-		grams: 100,
 		kcal: 206,
 		protein: 22,
 		carbs: 0,
@@ -121,11 +111,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'tuna-canned',
 		name: 'Tuna, canned in water',
-		aliases: ['tuna', 'canned tuna', 'tuna can'],
 		category: 'protein',
 		provenance: 'usda',
 		servingLabel: '1 can drained (142 g)',
-		grams: 142,
 		kcal: 191,
 		protein: 42,
 		carbs: 0,
@@ -135,11 +123,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'shrimp',
 		name: 'Shrimp, cooked',
-		aliases: ['prawns', 'shrimp'],
 		category: 'protein',
 		provenance: 'usda',
 		servingLabel: '100 g',
-		grams: 100,
 		kcal: 99,
 		protein: 24,
 		carbs: 0.2,
@@ -149,11 +135,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'tofu-firm',
 		name: 'Tofu, firm',
-		aliases: ['tofu'],
 		category: 'protein',
 		provenance: 'usda',
 		servingLabel: '100 g',
-		grams: 100,
 		kcal: 144,
 		protein: 17,
 		carbs: 3,
@@ -163,11 +147,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'tempeh',
 		name: 'Tempeh',
-		aliases: ['tempeh'],
 		category: 'protein',
 		provenance: 'usda',
 		servingLabel: '100 g',
-		grams: 100,
 		kcal: 192,
 		protein: 20,
 		carbs: 8,
@@ -177,11 +159,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'lentils',
 		name: 'Lentils, cooked',
-		aliases: ['lentil', 'lentils'],
 		category: 'protein',
 		provenance: 'usda',
 		servingLabel: '1 cup',
-		grams: 198,
 		kcal: 230,
 		protein: 18,
 		carbs: 40,
@@ -198,11 +178,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'chickpeas',
 		name: 'Chickpeas, cooked',
-		aliases: ['garbanzo', 'chickpea', 'chickpeas'],
 		category: 'protein',
 		provenance: 'usda',
 		servingLabel: '1 cup',
-		grams: 164,
 		kcal: 269,
 		protein: 14.5,
 		carbs: 45,
@@ -212,11 +190,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'black-beans',
 		name: 'Black beans, cooked',
-		aliases: ['black bean', 'beans'],
 		category: 'protein',
 		provenance: 'usda',
 		servingLabel: '1 cup',
-		grams: 172,
 		kcal: 227,
 		protein: 15,
 		carbs: 41,
@@ -226,11 +202,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'greek-yogurt',
 		name: 'Greek yogurt, plain nonfat',
-		aliases: ['yogurt', 'greek yogurt', 'nonfat yogurt'],
 		category: 'dairy',
 		provenance: 'usda',
 		servingLabel: '170 g cup',
-		grams: 170,
 		kcal: 100,
 		protein: 17,
 		carbs: 6,
@@ -246,11 +220,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'cottage-cheese',
 		name: 'Cottage cheese, 1%',
-		aliases: ['cottage', 'cottage cheese'],
 		category: 'dairy',
 		provenance: 'usda',
 		servingLabel: '1 cup',
-		grams: 226,
 		kcal: 163,
 		protein: 28,
 		carbs: 6,
@@ -260,11 +232,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'whey',
 		name: 'Whey protein isolate',
-		aliases: ['protein powder', 'whey', 'protein shake', 'scoop of protein'],
 		category: 'protein',
 		provenance: 'brand',
 		servingLabel: '1 scoop (30 g)',
-		grams: 30,
 		kcal: 110,
 		protein: 25,
 		carbs: 2,
@@ -274,11 +244,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'chia',
 		name: 'Chia seeds',
-		aliases: ['chia'],
 		category: 'fat',
 		provenance: 'usda',
 		servingLabel: '1 tbsp',
-		grams: 12,
 		kcal: 58,
 		protein: 2,
 		carbs: 5,
@@ -288,11 +256,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'oats',
 		name: 'Oats, dry',
-		aliases: ['oatmeal', 'oats', 'rolled oats', 'porridge'],
 		category: 'grain',
 		provenance: 'usda',
 		servingLabel: '1/2 cup dry',
-		grams: 40,
 		kcal: 154,
 		protein: 5.3,
 		carbs: 27,
@@ -302,11 +268,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'brown-rice',
 		name: 'Brown rice, cooked',
-		aliases: ['rice', 'brown rice'],
 		category: 'grain',
 		provenance: 'usda',
 		servingLabel: '1 cup',
-		grams: 195,
 		kcal: 216,
 		protein: 5,
 		carbs: 45,
@@ -316,11 +280,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'quinoa',
 		name: 'Quinoa, cooked',
-		aliases: ['quinoa'],
 		category: 'grain',
 		provenance: 'usda',
 		servingLabel: '1 cup',
-		grams: 185,
 		kcal: 222,
 		protein: 8,
 		carbs: 39,
@@ -330,11 +292,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'pasta',
 		name: 'Pasta, cooked',
-		aliases: ['spaghetti', 'noodles', 'pasta'],
 		category: 'grain',
 		provenance: 'usda',
 		servingLabel: '1 cup',
-		grams: 140,
 		kcal: 220,
 		protein: 8,
 		carbs: 43,
@@ -344,11 +304,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'sourdough',
 		name: 'Sourdough bread',
-		aliases: ['toast', 'bread', 'sourdough', 'slice of toast'],
 		category: 'grain',
 		provenance: 'usda',
 		servingLabel: '1 slice (40 g)',
-		grams: 40,
 		kcal: 105,
 		protein: 4,
 		carbs: 20,
@@ -358,11 +316,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'wheat-bread',
 		name: 'Whole wheat bread',
-		aliases: ['wheat toast', 'whole wheat', 'wheat bread'],
 		category: 'grain',
 		provenance: 'usda',
 		servingLabel: '1 slice',
-		grams: 32,
 		kcal: 81,
 		protein: 4,
 		carbs: 14,
@@ -372,11 +328,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'sweet-potato',
 		name: 'Sweet potato, baked',
-		aliases: ['sweet potato', 'yam'],
 		category: 'produce',
 		provenance: 'usda',
 		servingLabel: '1 medium',
-		grams: 114,
 		kcal: 103,
 		protein: 2.3,
 		carbs: 24,
@@ -392,11 +346,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'banana',
 		name: 'Banana',
-		aliases: ['banana', 'bananas'],
 		category: 'produce',
 		provenance: 'usda',
 		servingLabel: '1 medium',
-		grams: 118,
 		kcal: 105,
 		protein: 1.3,
 		carbs: 27,
@@ -406,11 +358,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'apple',
 		name: 'Apple',
-		aliases: ['apple', 'apples'],
 		category: 'produce',
 		provenance: 'usda',
 		servingLabel: '1 medium',
-		grams: 182,
 		kcal: 95,
 		protein: 0.5,
 		carbs: 25,
@@ -420,11 +370,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'blueberries',
 		name: 'Blueberries',
-		aliases: ['blueberries', 'berries'],
 		category: 'produce',
 		provenance: 'usda',
 		servingLabel: '1 cup',
-		grams: 148,
 		kcal: 84,
 		protein: 1.1,
 		carbs: 21,
@@ -434,11 +382,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'strawberries',
 		name: 'Strawberries',
-		aliases: ['strawberry', 'strawberries'],
 		category: 'produce',
 		provenance: 'usda',
 		servingLabel: '1 cup sliced',
-		grams: 166,
 		kcal: 53,
 		protein: 1.1,
 		carbs: 13,
@@ -448,11 +394,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'avocado',
 		name: 'Avocado',
-		aliases: ['avocado', 'avo', 'half avocado'],
 		category: 'produce',
 		provenance: 'usda',
 		servingLabel: '1/2 fruit',
-		grams: 68,
 		kcal: 114,
 		protein: 1.3,
 		carbs: 6,
@@ -462,11 +406,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'broccoli',
 		name: 'Broccoli, steamed',
-		aliases: ['broccoli'],
 		category: 'produce',
 		provenance: 'usda',
 		servingLabel: '1 cup',
-		grams: 156,
 		kcal: 55,
 		protein: 3.7,
 		carbs: 11,
@@ -483,11 +425,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'spinach',
 		name: 'Spinach, raw',
-		aliases: ['spinach'],
 		category: 'produce',
 		provenance: 'usda',
 		servingLabel: '2 cups',
-		grams: 60,
 		kcal: 14,
 		protein: 1.8,
 		carbs: 2.2,
@@ -505,11 +445,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'mixed-greens',
 		name: 'Mixed salad greens',
-		aliases: ['salad', 'greens', 'lettuce', 'spring mix'],
 		category: 'produce',
 		provenance: 'usda',
 		servingLabel: '2 cups',
-		grams: 70,
 		kcal: 14,
 		protein: 1.2,
 		carbs: 2.5,
@@ -519,11 +457,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'tomato',
 		name: 'Tomato',
-		aliases: ['tomato', 'tomatoes'],
 		category: 'produce',
 		provenance: 'usda',
 		servingLabel: '1 medium',
-		grams: 123,
 		kcal: 22,
 		protein: 1.1,
 		carbs: 4.8,
@@ -533,11 +469,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'cucumber',
 		name: 'Cucumber',
-		aliases: ['cucumber'],
 		category: 'produce',
 		provenance: 'usda',
 		servingLabel: '1 cup sliced',
-		grams: 104,
 		kcal: 16,
 		protein: 0.7,
 		carbs: 3.6,
@@ -547,11 +481,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'bell-pepper',
 		name: 'Bell pepper, red',
-		aliases: ['pepper', 'bell pepper', 'red pepper'],
 		category: 'produce',
 		provenance: 'usda',
 		servingLabel: '1 medium',
-		grams: 119,
 		kcal: 31,
 		protein: 1,
 		carbs: 6,
@@ -561,11 +493,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'carrot',
 		name: 'Carrots',
-		aliases: ['carrot', 'carrots'],
 		category: 'produce',
 		provenance: 'usda',
 		servingLabel: '1 cup chopped',
-		grams: 128,
 		kcal: 52,
 		protein: 1.2,
 		carbs: 12,
@@ -575,11 +505,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'zucchini',
 		name: 'Zucchini, cooked',
-		aliases: ['zucchini', 'courgette'],
 		category: 'produce',
 		provenance: 'usda',
 		servingLabel: '1 cup',
-		grams: 180,
 		kcal: 27,
 		protein: 2,
 		carbs: 5,
@@ -589,11 +517,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'asparagus',
 		name: 'Asparagus, cooked',
-		aliases: ['asparagus'],
 		category: 'produce',
 		provenance: 'usda',
 		servingLabel: '1 cup',
-		grams: 180,
 		kcal: 40,
 		protein: 4.3,
 		carbs: 7.4,
@@ -603,11 +529,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'milk-2',
 		name: '2% milk',
-		aliases: ['2% milk', 'reduced fat milk'],
 		category: 'dairy',
 		provenance: 'usda',
 		servingLabel: '1 cup',
-		grams: 244,
 		kcal: 122,
 		protein: 8,
 		carbs: 12,
@@ -618,12 +542,9 @@ export const FOODS: Food[] = [
 		id: 'oatly',
 		name: 'Oat milk, original',
 		brand: 'Oatly',
-		aliases: ['oat milk', 'oatly'],
-		barcode: '190646630018',
 		category: 'dairy',
 		provenance: 'off',
 		servingLabel: '1 cup',
-		grams: 240,
 		kcal: 120,
 		protein: 3,
 		carbs: 16,
@@ -633,11 +554,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'feta',
 		name: 'Feta cheese',
-		aliases: ['feta'],
 		category: 'dairy',
 		provenance: 'usda',
 		servingLabel: '1 oz',
-		grams: 28,
 		kcal: 75,
 		protein: 4,
 		carbs: 1.2,
@@ -647,11 +566,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'parmesan',
 		name: 'Parmesan, grated',
-		aliases: ['parmesan', 'parm'],
 		category: 'dairy',
 		provenance: 'usda',
 		servingLabel: '1 tbsp',
-		grams: 5,
 		kcal: 21,
 		protein: 1.4,
 		carbs: 0.2,
@@ -661,11 +578,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'olive-oil',
 		name: 'Olive oil',
-		aliases: ['olive oil', 'oil'],
 		category: 'fat',
 		provenance: 'usda',
 		servingLabel: '1 tbsp',
-		grams: 14,
 		kcal: 119,
 		protein: 0,
 		carbs: 0,
@@ -675,11 +590,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'coffee',
 		name: 'Black coffee',
-		aliases: ['coffee', 'black coffee', 'americano'],
 		category: 'drink',
 		provenance: 'usda',
 		servingLabel: '1 cup (8 oz)',
-		grams: 240,
 		kcal: 2,
 		protein: 0.3,
 		carbs: 0,
@@ -690,12 +603,9 @@ export const FOODS: Food[] = [
 		id: 'kind-bar',
 		name: 'Dark Chocolate Nuts & Sea Salt',
 		brand: 'KIND',
-		aliases: ['kind bar', 'kind'],
-		barcode: '602652171032',
 		category: 'packaged',
 		provenance: 'off',
 		servingLabel: '1 bar',
-		grams: 40,
 		kcal: 200,
 		protein: 6,
 		carbs: 16,
@@ -706,12 +616,9 @@ export const FOODS: Food[] = [
 		id: 'quest-bar',
 		name: 'Chocolate Chip Cookie Dough',
 		brand: 'Quest',
-		aliases: ['quest', 'quest bar', 'protein bar'],
-		barcode: '888849000445',
 		category: 'packaged',
 		provenance: 'off',
 		servingLabel: '1 bar',
-		grams: 60,
 		kcal: 200,
 		protein: 21,
 		carbs: 21,
@@ -721,11 +628,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'mayo',
 		name: 'Mayonnaise',
-		aliases: ['mayo', 'mayonnaise'],
 		category: 'condiment',
 		provenance: 'usda',
 		servingLabel: '1 tbsp',
-		grams: 14,
 		kcal: 94,
 		protein: 0.1,
 		carbs: 0.1,
@@ -735,11 +640,9 @@ export const FOODS: Food[] = [
 	f({
 		id: 'salsa',
 		name: 'Salsa',
-		aliases: ['salsa'],
 		category: 'condiment',
 		provenance: 'usda',
 		servingLabel: '2 tbsp',
-		grams: 32,
 		kcal: 10,
 		protein: 0.5,
 		carbs: 2,
@@ -750,11 +653,9 @@ export const FOODS: Food[] = [
 		id: 'egg-mcmuffin',
 		name: 'Egg McMuffin',
 		brand: "McDonald's",
-		aliases: ['mcmuffin', 'egg mcmuffin'],
 		category: 'prepared',
 		provenance: 'brand',
 		servingLabel: '1 sandwich',
-		grams: 132,
 		kcal: 310,
 		protein: 17,
 		carbs: 30,
@@ -765,11 +666,9 @@ export const FOODS: Food[] = [
 		id: 'chipotle-bowl',
 		name: 'Chicken burrito bowl',
 		brand: 'Chipotle',
-		aliases: ['chipotle', 'burrito bowl', 'chipotle bowl'],
 		category: 'prepared',
 		provenance: 'brand',
 		servingLabel: '1 bowl (chicken, rice, beans, salsa, lettuce)',
-		grams: 540,
 		kcal: 630,
 		protein: 47,
 		carbs: 71,
@@ -777,18 +676,6 @@ export const FOODS: Food[] = [
 		micros: { fiber: 14, sodium: 1540, potassium: 980, iron: 4.2 }
 	})
 ];
-
-export const CATEGORY_LABEL: Record<string, string> = {
-	protein: 'Protein',
-	dairy: 'Dairy',
-	grain: 'Grains',
-	produce: 'Produce',
-	fat: 'Fats & nuts',
-	drink: 'Drinks',
-	packaged: 'Packaged',
-	condiment: 'Condiments',
-	prepared: 'Prepared'
-};
 
 export const PROVENANCE_LABEL: Record<Provenance, { title: string; detail: string }> = {
 	usda: { title: 'USDA', detail: 'Lab-analyzed · public domain' },

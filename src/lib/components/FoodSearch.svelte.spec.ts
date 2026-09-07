@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import type { CatalogFoodPayload } from '$lib/domain/catalog-food';
-import { FOODS } from '$lib/domain/foods';
 import FoodSearch from './FoodSearch.svelte';
 
 const SEARCH = 'Search foods, brands, barcodes';
@@ -35,6 +34,8 @@ function row(id: number, name: string): CatalogFoodPayload {
 
 const THIGH = row(2, 'CATALOG CHICKEN THIGH');
 const BREAST = row(1, 'CATALOG CHICKEN BREAST');
+/** Long enough to make the name truncate beside a two-word provenance badge. */
+const BURRITO = row(3, 'CATALOG CHICKEN BURRITO BOWL, EXTRA LARGE');
 
 function jsonResponse(status: number, body?: unknown) {
 	return new Response(body === undefined ? null : JSON.stringify(body), {
@@ -64,37 +65,37 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('FoodSearch', () => {
-	it('offers a starter list before anything is typed', async () => {
+	it('says where every food comes from before anything is typed', async () => {
+		// #146 took the bundled table away, so the resting state has no rows to
+		// offer. Saying the catalog is the only source beats an empty box that
+		// looks broken -- and it is the honest answer on a plane.
 		await render(FoodSearch, { props: { onpick: vi.fn() } });
-		expect(document.querySelectorAll('li').length).toBeGreaterThan(0);
-	});
-
-	it('narrows the list as you type', async () => {
-		await render(FoodSearch, { props: { onpick: vi.fn() } });
-		const before = document.querySelectorAll('li').length;
-		await page.getByLabelText(SEARCH).fill('chicken breast');
-		expect(document.querySelectorAll('li').length).toBeLessThan(before);
-	});
-
-	it('finds a packaged food by its barcode', async () => {
-		const barcoded = FOODS.find((f) => f.barcode);
-		await render(FoodSearch, { props: { onpick: vi.fn() } });
-		await page.getByLabelText(SEARCH).fill(barcoded?.barcode ?? '');
-		await expect.element(page.getByText(barcoded?.name ?? '')).toBeInTheDocument();
+		expect(document.querySelectorAll('li').length).toBe(0);
+		await expect
+			.element(
+				page.getByText('Every food comes from the full catalog, so searching needs a connection.')
+			)
+			.toBeInTheDocument();
 	});
 
 	it('hands the chosen food to the caller', async () => {
+		catalogAnswers(200, { foods: [BREAST] });
 		const onpick = vi.fn();
 		await render(FoodSearch, { props: { onpick } });
 		await page.getByLabelText(SEARCH).fill('chicken breast');
-		await page.getByRole('button').first().click();
-		expect(onpick).toHaveBeenCalledWith(expect.objectContaining({ id: 'chicken-breast' }));
+		const hit = page.getByRole('button', { name: /CATALOG CHICKEN BREAST/ });
+		await expect.element(hit, ANSWERED).toBeInTheDocument();
+		await hit.click();
+		expect(onpick).toHaveBeenCalledWith(expect.objectContaining({ id: 'catalog-1' }));
 	});
 
 	it('explains itself rather than going blank when nothing matches', async () => {
+		catalogAnswers(200, { foods: [] });
 		await render(FoodSearch, { props: { onpick: vi.fn() } });
 		await page.getByLabelText(SEARCH).fill('qqqzzz');
-		await expect.element(page.getByText(/Nothing in the catalog/)).toBeInTheDocument();
+		await expect
+			.element(page.getByText(/Nothing in the full catalog matches that/), ANSWERED)
+			.toBeInTheDocument();
 	});
 
 	it('accepts a custom placeholder', async () => {
@@ -103,9 +104,10 @@ describe('FoodSearch', () => {
 	});
 
 	it('shows per-serving energy alongside each result', async () => {
+		catalogAnswers(200, { foods: [BREAST] });
 		await render(FoodSearch, { props: { onpick: vi.fn() } });
 		await page.getByLabelText(SEARCH).fill('chicken breast');
-		await expect.element(page.getByText(/kcal/).first()).toBeInTheDocument();
+		await expect.element(page.getByText(/kcal/).first(), ANSWERED).toBeInTheDocument();
 	});
 
 	it('keeps the provenance badge from wrapping when the name truncates', async () => {
@@ -113,8 +115,12 @@ describe('FoodSearch', () => {
 		// badge ("Brand published") shared a row with no min-w-0 on the name or
 		// shrink-0 on the badge, so the badge wrapped to two lines and made that
 		// row taller than its neighbors.
+		catalogAnswers(200, { foods: [BURRITO] });
 		await render(FoodSearch, { props: { onpick: vi.fn() } });
 		await page.getByLabelText(SEARCH).fill('burrito');
+		await expect
+			.element(page.getByText('CATALOG CHICKEN BURRITO BOWL, EXTRA LARGE'), ANSWERED)
+			.toBeInTheDocument();
 		const name = document.body.querySelector<HTMLElement>('p.truncate');
 		expect(name?.className).toMatch(/\bmin-w-0\b/);
 		const badge = page.getByText('Brand published');
@@ -123,24 +129,22 @@ describe('FoodSearch', () => {
 		expect(badgeWrapper).not.toBeNull();
 	});
 
-	it('shows the bundled foods immediately while the catalog is still answering', async () => {
+	it('says a request is out while the catalog is still answering', async () => {
 		catalogSilent();
 		await render(FoodSearch, { props: { onpick: vi.fn() } });
 		await page.getByLabelText(SEARCH).fill('chicken breast');
-		// No await on the network: the bundled row is on screen from the keystroke.
-		await expect.element(page.getByText('Chicken breast, grilled')).toBeInTheDocument();
 		await expect.element(page.getByText(/Searching the full catalog/)).toBeInTheDocument();
+		// Nothing is listed before the answer: there is no local table to show.
+		expect(document.querySelectorAll('li').length).toBe(0);
 	});
 
-	it('adds the catalog matches under the bundled ones once they land', async () => {
+	it('lists the catalog matches once they land', async () => {
 		catalogAnswers(200, { foods: [BREAST] });
 		await render(FoodSearch, { props: { onpick: vi.fn() } });
 		await page.getByLabelText(SEARCH).fill('chicken breast');
 		await expect.element(page.getByText('CATALOG CHICKEN BREAST'), ANSWERED).toBeInTheDocument();
-		// The hand-written row keeps its place at the top rather than being replaced.
 		const names = [...document.querySelectorAll('li p.font-medium')].map((p) => p.textContent);
-		expect(names[0]).toBe('Chicken breast, grilled');
-		expect(names).toContain('CATALOG CHICKEN BREAST');
+		expect(names).toEqual(['CATALOG CHICKEN BREAST']);
 	});
 
 	it('logs a catalog food the caller can use, scaled onto its serving', async () => {
@@ -176,14 +180,31 @@ describe('FoodSearch', () => {
 		expect(fetching.mock.calls[0]?.[0]).toBe('/api/foods?q=chicken');
 	});
 
-	it('says the catalog is out of reach, and still searches the bundled foods', async () => {
+	it('says search needs a connection when the catalog is out of reach', async () => {
+		// The regression #146 has to not introduce: with the bundled rows gone,
+		// an unreachable catalog leaves an empty list, and an empty list on its
+		// own reads as "no such food". It has to say what actually happened.
 		catalogAnswers(503);
 		await render(FoodSearch, { props: { onpick: vi.fn() } });
 		await page.getByLabelText(SEARCH).fill('chicken breast');
 		await expect
-			.element(page.getByText(/the full catalog is out of reach/), ANSWERED)
+			.element(
+				page.getByText(
+					'Search needs a connection, and the full catalog is out of reach right now. Try again in a moment.'
+				),
+				ANSWERED
+			)
 			.toBeVisible();
-		await expect.element(page.getByText('Chicken breast, grilled')).toBeInTheDocument();
+	});
+
+	it('never offers to log it as custom when the catalog was never read', async () => {
+		// "You can still log it as custom" is a claim the food is not in the
+		// catalog. Offline, nothing knows that.
+		catalogAnswers(503);
+		await render(FoodSearch, { props: { onpick: vi.fn() } });
+		await page.getByLabelText(SEARCH).fill('chicken breast');
+		await expect.element(page.getByText(/out of reach right now/), ANSWERED).toBeVisible();
+		expect(document.body.textContent).not.toContain('log it as custom');
 	});
 
 	it('says the same thing offline as it does when the catalog is missing', async () => {
@@ -192,9 +213,7 @@ describe('FoodSearch', () => {
 		);
 		await render(FoodSearch, { props: { onpick: vi.fn() } });
 		await page.getByLabelText(SEARCH).fill('chicken breast');
-		await expect
-			.element(page.getByText(/the full catalog is out of reach/), ANSWERED)
-			.toBeVisible();
+		await expect.element(page.getByText(/Search needs a connection/), ANSWERED).toBeVisible();
 	});
 
 	it('asks a signed-out person to sign in rather than saying there is no such food', async () => {
@@ -211,8 +230,10 @@ describe('FoodSearch', () => {
 		await render(FoodSearch, { props: { onpick: vi.fn() } });
 		await page.getByLabelText(SEARCH).fill('chicken breast');
 		await expect
-			.element(page.getByText(/Nothing else in the full catalog matches/), ANSWERED)
+			.element(page.getByText(/Nothing in the full catalog matches/), ANSWERED)
 			.toBeVisible();
+		// Read and empty is the one case where custom logging is the right offer.
+		await expect.element(page.getByText('You can still log it as custom from text.')).toBeVisible();
 	});
 
 	it('never lets a slower earlier query overwrite the results for what is typed now', async () => {

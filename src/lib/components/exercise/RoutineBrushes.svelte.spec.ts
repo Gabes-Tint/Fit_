@@ -1,13 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
-import { REST_WEEK, type Routine } from '$lib/domain/types';
+import { REST_WEEK } from '$lib/domain/types';
+import { routine } from '$lib/testing/fixtures';
 import { planOptions } from './plan-options';
 import RoutineBrushes from './RoutineBrushes.svelte';
-
-function routine(id: string, name: string, freq = 3): Routine {
-	return { id, name, freq, exercises: [] };
-}
 
 const ROUTINES = [routine('push', 'Chest & Shoulders'), routine('legs', 'Legs', 2)];
 

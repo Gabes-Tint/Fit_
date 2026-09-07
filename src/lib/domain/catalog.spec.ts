@@ -1,19 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import {
-	CATEGORY_LABEL,
-	FOOD_BY_BARCODE,
-	FOOD_BY_ID,
-	FOODS,
-	PROVENANCE_LABEL,
-	scaleFood
-} from './foods';
+import { PROVENANCE_LABEL, SEED_FOOD_BY_ID, SEED_FOODS, scaleFood } from './foods';
 import { buildGrocery, groceryAisle } from './grocery';
 import { RECIPE_BY_ID, RECIPES, recipeFits, recipeMacros, type Recipe } from './recipes';
-import type { Food, PlannedMeal } from './types';
+import type { PlannedMeal, SeedFood } from './types';
 
-/** Look a fixture up loudly, so a catalog rename fails the test it belongs to. */
-function food(id: string): Food {
-	const hit = FOOD_BY_ID[id];
+/** Look a fixture up loudly, so a seed-food rename fails the test it belongs to. */
+function food(id: string): SeedFood {
+	const hit = SEED_FOOD_BY_ID[id];
 	if (!hit) throw new Error(`test fixture references unknown food: ${id}`);
 	return hit;
 }
@@ -24,43 +17,53 @@ function firstRecipe(): Recipe {
 	return hit;
 }
 
-describe('the food catalog', () => {
+describe('the seeded foods', () => {
 	it('is not empty', () => {
-		expect(FOODS.length).toBeGreaterThan(0);
+		expect(SEED_FOODS.length).toBeGreaterThan(0);
 	});
 
 	it('has no duplicate ids', () => {
-		expect(new Set(FOODS.map((f) => f.id)).size).toBe(FOODS.length);
+		expect(new Set(SEED_FOODS.map((f) => f.id)).size).toBe(SEED_FOODS.length);
 	});
 
 	it('indexes every food by id', () => {
-		expect(Object.keys(FOOD_BY_ID).length).toBe(FOODS.length);
-	});
-
-	it('indexes only the foods that carry a barcode', () => {
-		expect(Object.keys(FOOD_BY_BARCODE).length).toBe(FOODS.filter((f) => f.barcode).length);
+		expect(Object.keys(SEED_FOOD_BY_ID).length).toBe(SEED_FOODS.length);
 	});
 
 	it('labels every provenance it uses', () => {
-		for (const food of FOODS) {
+		for (const food of SEED_FOODS) {
 			expect(PROVENANCE_LABEL[food.provenance]).toBeDefined();
 		}
 	});
 
-	it('gives every category a human label', () => {
-		for (const food of FOODS) {
-			expect(CATEGORY_LABEL[food.category] ?? food.category).toBeTruthy();
+	it('gives every recipe ingredient an aisle to be bought in', () => {
+		// The grocery list is the only thing that reads `category`, and an
+		// ingredient with no aisle lands in "Other" -- the list saying it gave up
+		// in front of someone standing in a shop. Only recipe ingredients get
+		// there: `egg-mcmuffin` and `chipotle-bowl` are meals bought whole and
+		// stay uncategorized on purpose.
+		for (const r of RECIPES) {
+			for (const ing of r.ingredients) {
+				const food = SEED_FOOD_BY_ID[ing.foodId];
+				expect(groceryAisle(food?.category ?? ''), `${r.id} -> ${ing.foodId}`).not.toBe('Other');
+			}
 		}
 	});
 
-	it('defaults aliases to an empty list when a food declares none', () => {
-		expect(FOODS.every((f) => Array.isArray(f.aliases))).toBe(true);
-	});
-
 	it('never leaves a food without energy and a serving label', () => {
-		for (const food of FOODS) {
+		for (const food of SEED_FOODS) {
 			expect(food.servingLabel.length).toBeGreaterThan(0);
 			expect(food.kcal).toBeGreaterThanOrEqual(0);
+		}
+	});
+
+	it('carries no field that would let it be searched', () => {
+		// #146: the seeded rows are nutrition the sample journal and the recipe
+		// book already know the ids of. An alias or a barcode creeping back in
+		// is a second, 49-row food catalog re-forming beside the server's.
+		for (const food of SEED_FOODS) {
+			expect(food).not.toHaveProperty('aliases');
+			expect(food).not.toHaveProperty('barcode');
 		}
 	});
 });
@@ -102,10 +105,10 @@ describe('the recipe book', () => {
 		expect(Object.keys(RECIPE_BY_ID).length).toBe(RECIPES.length);
 	});
 
-	it('only references foods that exist in the catalog', () => {
+	it('only references foods the seed table carries', () => {
 		for (const r of RECIPES) {
 			for (const ing of r.ingredients) {
-				expect(FOOD_BY_ID[ing.foodId], `${r.id} -> ${ing.foodId}`).toBeDefined();
+				expect(SEED_FOOD_BY_ID[ing.foodId], `${r.id} -> ${ing.foodId}`).toBeDefined();
 			}
 		}
 	});
@@ -149,7 +152,7 @@ describe('recipeMacros', () => {
 		expect(forTwo.kcal).toBe(100);
 	});
 
-	it('skips an ingredient the catalog no longer has, rather than counting it as zero-weight', () => {
+	it('skips an ingredient the seed table no longer has, rather than counting it as zero-weight', () => {
 		const recipe = firstRecipe();
 		const withGhost: Recipe = {
 			...recipe,

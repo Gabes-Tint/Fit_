@@ -82,6 +82,26 @@ export type Food = {
 	micros: Micros;
 };
 
+/**
+ * What the sample journal and the recipe book need to know about a food: enough
+ * to put a number on a plate, and nothing that would let it be searched. A
+ * catalog `Food` satisfies it, so `scaleFood` takes either.
+ */
+export type SeedFood = Pick<
+	Food,
+	| 'id'
+	| 'name'
+	| 'brand'
+	| 'category'
+	| 'provenance'
+	| 'servingLabel'
+	| 'kcal'
+	| 'protein'
+	| 'carbs'
+	| 'fat'
+	| 'micros'
+>;
+
 export type LogSource = 'manual' | 'text' | 'photo' | 'voice' | 'barcode' | 'plan';
 
 export type LogItem = {

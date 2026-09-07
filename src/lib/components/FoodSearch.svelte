@@ -2,8 +2,6 @@
 	import Search from '@lucide/svelte/icons/search';
 	import { onDestroy } from 'svelte';
 	import { createFoodSearch, MIN_QUERY_LENGTH } from '$lib/catalog/food-search.svelte';
-	import { findFoods } from '$lib/domain/food-match';
-	import { FOODS } from '$lib/domain/foods';
 	import type { Food } from '$lib/domain/types';
 	import Input from '$lib/ui/Input.svelte';
 	import ProvenanceBadge from './ProvenanceBadge.svelte';
@@ -20,52 +18,50 @@
 	const search = createFoodSearch();
 
 	/**
-	 * The bundled foods first, then the catalog's ranked rows.
+	 * The catalog's ranked rows, and nothing else.
 	 *
-	 * The bundled foods stay. They are hand-written, they carry stable ids that
-	 * log against `foodId`, and they are the only thing that answers with no
-	 * connection — the flow issue #34 asks for by name. Since #116 they are the
-	 * foods the sample journal and the recipe book are built from and nothing
-	 * else, because the typed parser that used to need the other forty-seven now
-	 * asks the server. Five of them rather than twenty, so a fuzzy local match
-	 * cannot push the catalog's ranking off the screen.
-	 *
-	 * The catalog's rows are appended rather than substituted, which is what
-	 * keeps the list from flashing: whatever was on screen when the request went
-	 * out is still there, in the same order, when the answer lands.
+	 * Until #146 a hand-written table of forty-nine foods was listed above them,
+	 * so the box always had something to show. It is gone: it was the last thing
+	 * in the app that answered a search without the server, it could only ever
+	 * answer for the sample journal's own ingredients, and a list that quietly
+	 * falls back to it is a list that hides being offline. What replaces it is
+	 * `notice` saying so in words.
 	 */
-	const results = $derived.by(() => {
-		if (!query.trim()) return FOODS.slice(0, 20);
-		// A barcode is an exact match; check it before falling back to fuzzy search.
-		const barcode = query.replace(/\s/g, '');
-		if (/^\d{8,14}$/.test(barcode)) {
-			const hit = FOODS.find((f) => f.barcode === barcode);
-			if (hit) return [hit];
-		}
-		const catalog = search.outcome?.kind === 'matched' ? search.outcome.foods : [];
-		return [...findFoods(query, 5).map((r) => r.food), ...catalog];
-	});
+	const results = $derived(search.outcome?.kind === 'matched' ? search.outcome.foods : []);
 
 	/**
-	 * One line about the catalog whenever there is something to say.
+	 * One line about the catalog. There is always something to say now.
 	 *
 	 * A search that could not run must never read like a search that found
 	 * nothing: no connection, no catalog on the server and no session are all
-	 * worth acting on, and none of them means the food does not exist. The
-	 * bundled rows are still listed underneath in every one of those cases, so
-	 * the box is never both empty and silent.
+	 * worth acting on, and none of them means the food does not exist. With no
+	 * bundled rows left to list underneath, this line is the only thing standing
+	 * between an unreachable catalog and an empty list that looks like an answer
+	 * — so it says plainly that searching needs the server, before it is asked
+	 * to as well as after.
 	 */
 	const notice = $derived.by(() => {
 		if (search.searching) return `Searching ${FULL}…`;
 		const kind = search.outcome?.kind;
-		if (kind === 'signed-out') return `Sign in to search ${FULL}. Only the bundled foods answer.`;
-		if (kind === 'unreachable') return `Only the bundled foods answer — ${FULL} is out of reach.`;
-		if (kind === 'none') return `Nothing else in ${FULL} matches that.`;
+		if (kind === 'signed-out') return `Sign in to search ${FULL}. Search has nothing else to ask.`;
+		if (kind === 'unreachable')
+			return `Search needs a connection, and ${FULL} is out of reach right now. Try again in a moment.`;
+		if (kind === 'none') return `Nothing in ${FULL} matches that.`;
 		const typedSoFar = query.trim().length;
-		if (typedSoFar > 0 && typedSoFar < MIN_QUERY_LENGTH)
+		if (typedSoFar === 0) return `Every food comes from ${FULL}, so searching needs a connection.`;
+		if (typedSoFar < MIN_QUERY_LENGTH)
 			return `Keep typing: ${FULL} is searched from three letters.`;
 		return '';
 	});
+
+	/**
+	 * The follow-on under an empty list, and only when the catalog actually
+	 * answered. Offering "log it as custom" to someone who is offline would be
+	 * telling them the food does not exist, which nothing here knows.
+	 */
+	const custom = $derived(
+		search.outcome?.kind === 'none' ? 'You can still log it as custom from text.' : ''
+	);
 
 	function typed(value: string) {
 		query = value;
@@ -107,10 +103,9 @@
 					</div>
 				</button>
 			</li>
-		{:else}
-			<li class="text-muted-foreground px-2 py-6 text-center text-sm">
-				Nothing in the catalog for that yet. You can still log it as custom from text.
-			</li>
 		{/each}
 	</ul>
+	{#if custom}
+		<p class="text-muted-foreground px-2 pb-2 text-center text-sm">{custom}</p>
+	{/if}
 </div>

@@ -1,19 +1,24 @@
-import { FOODS } from './food-catalog';
-import type { Food, Micros } from './types';
+import { SEED_FOODS } from './seed-foods';
+import type { Micros, SeedFood } from './types';
 import { round1 } from './utils';
 
-// Sample rows live in `./food-catalog`; re-exported here so mutation testing targets behavior, not data.
-export { CATEGORY_LABEL, FOODS, PROVENANCE_LABEL } from './food-catalog';
+// Seed rows live in `./seed-foods`; re-exported here so mutation testing targets behavior, not data.
+export { PROVENANCE_LABEL, SEED_FOODS } from './seed-foods';
 
-export const FOOD_BY_ID: Record<string, Food> = Object.fromEntries(
-	FOODS.map((food) => [food.id, food])
+/**
+ * The seeded foods by id.
+ *
+ * Only the sample journal, the recipe book and a seeded entry being re-portioned
+ * reach for this, and every one of them holds an id already. There is no
+ * by-name and no by-barcode index on purpose: since #146 finding a food is the
+ * server catalog's job alone, and a second table to search was the dual path
+ * that made "the app knows 49 foods" a thing anyone could observe.
+ */
+export const SEED_FOOD_BY_ID: Record<string, SeedFood> = Object.fromEntries(
+	SEED_FOODS.map((food) => [food.id, food])
 );
 
-export const FOOD_BY_BARCODE: Record<string, Food> = Object.fromEntries(
-	FOODS.flatMap((food) => (food.barcode ? [[food.barcode, food] as const] : []))
-);
-
-export function scaleFood(food: Food, servings: number) {
+export function scaleFood(food: SeedFood, servings: number) {
 	const s = servings;
 	const micros = Object.fromEntries(
 		Object.entries(food.micros).map(([k, v]) => [k, round1(v * s)])

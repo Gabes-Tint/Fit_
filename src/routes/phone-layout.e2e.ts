@@ -1,6 +1,7 @@
 import { expect } from '@playwright/test';
 import { test } from '../../tests/preview-server';
 import {
+	EGG_ROW,
 	OLIVE_OIL_ROW,
 	atNarrowPhone,
 	expectFitsViewport,
@@ -9,7 +10,8 @@ import {
 	openLogSheetAndType,
 	openSampleJournal,
 	signInThroughApi,
-	stubFoodResolve
+	stubFoodResolve,
+	stubFoodSearch
 } from '../../tests/e2e-support';
 
 /**
@@ -40,13 +42,44 @@ test.describe('at 360px', () => {
 
 	test('the log sheet Search results stay inside the viewport', async ({ page, baseURL }) => {
 		await signInThroughApi(page, baseURL ?? '');
+		// Since #146 every row in this list comes from the catalog endpoint, so
+		// the stub is what puts anything on screen to measure. A long branded
+		// name beside a two-word provenance badge is the row most likely to spill.
+		await stubFoodSearch(page, [
+			OLIVE_OIL_ROW,
+			{ ...EGG_ROW, id: 901, name: 'Chocolate Chip Cookie Dough Bar, Family Size', brand: 'KIND' }
+		]);
 		await atNarrowPhone(page);
 		await openEmptyJournal(page);
 
 		await openLogSheet(page);
 		await page.getByRole('button', { name: 'Search', exact: true }).click();
+		await page.getByLabel('Search foods, brands, barcodes').fill('cookie dough');
 		const results = page.getByRole('list').filter({ has: page.getByRole('listitem') });
 		await expect(results.first()).toBeVisible();
+		await expectFitsViewport(page, page.getByRole('dialog'));
+	});
+
+	test('the log sheet Search says it needs a connection without spilling', async ({
+		page,
+		baseURL
+	}) => {
+		// The other side of #146: with no catalog reachable there are no rows at
+		// all, and the sheet's whole answer is one long sentence. On a 360px
+		// phone that sentence is the thing that can overflow.
+		await signInThroughApi(page, baseURL ?? '');
+		await page.route('**/api/foods?*', (route) => route.fulfill({ status: 503, body: '' }));
+		await atNarrowPhone(page);
+		await openEmptyJournal(page);
+
+		await openLogSheet(page);
+		await page.getByRole('button', { name: 'Search', exact: true }).click();
+		await page.getByLabel('Search foods, brands, barcodes').fill('cookie dough');
+		await expect(
+			page.getByText(
+				'Search needs a connection, and the full catalog is out of reach right now. Try again in a moment.'
+			)
+		).toBeVisible();
 		await expectFitsViewport(page, page.getByRole('dialog'));
 	});
 
