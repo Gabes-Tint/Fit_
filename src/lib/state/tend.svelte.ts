@@ -8,7 +8,7 @@ import {
 	type BumpField
 } from '$lib/domain/exercises';
 import { seedTrainingPlan } from '$lib/domain/training-plan';
-import { FOOD_BY_ID, scaleFood } from '$lib/domain/foods';
+import { SEED_FOOD_BY_ID, scaleFood } from '$lib/domain/foods';
 import { emptyProfile } from '$lib/domain/profile';
 import type {
 	Injection,
@@ -58,7 +58,7 @@ function emptyState(): TendState {
 }
 
 function rescale(item: LogItem, servings: number): LogItem {
-	const source = item.foodId ? FOOD_BY_ID[item.foodId] : undefined;
+	const source = item.foodId ? SEED_FOOD_BY_ID[item.foodId] : undefined;
 	if (!source) {
 		const ratio = item.servings === 0 ? 1 : servings / item.servings;
 		return {

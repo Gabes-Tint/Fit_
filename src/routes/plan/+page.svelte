@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { FOOD_BY_ID } from '$lib/domain/foods';
+	import { SEED_FOOD_BY_ID } from '$lib/domain/foods';
 	import { buildGrocery, type GroceryItem } from '$lib/domain/grocery';
 	import { logFromFood } from '$lib/domain/log-entry';
 	import { RECIPE_BY_ID, recipeMacros } from '$lib/domain/recipes';
@@ -38,7 +38,7 @@
 		const recipe = RECIPE_BY_ID[recipeId];
 		if (!recipe) return;
 		const items = recipe.ingredients
-			.filter((ing) => FOOD_BY_ID[ing.foodId])
+			.filter((ing) => SEED_FOOD_BY_ID[ing.foodId])
 			.map((ing) =>
 				logFromFood({
 					foodId: ing.foodId,

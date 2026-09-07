@@ -18,9 +18,9 @@
 export const MUTATE_PATTERNS = [
 	'src/lib/**/*.ts',
 	'!src/**/*.{test,spec,e2e}.ts',
-	// Seed food rows and the two literal label lookup tables. Mutants here are
-	// food names, aliases and label strings.
-	'!src/lib/domain/food-catalog.ts',
+	// Seed food rows and the provenance label table. Mutants here are food names
+	// and label strings.
+	'!src/lib/domain/seed-foods.ts',
 	// Seed exercise rows, form cues and starter routines. Mutants here are
 	// movement names, cue wording and template loads — data, not logic. What
 	// reads it (the library index, the group filter, the template copy) is

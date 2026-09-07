@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { emptyProfile } from './profile';
-import { FOOD_BY_ID, scaleFood } from './foods';
+import { SEED_FOOD_BY_ID, scaleFood } from './foods';
 import {
 	adaptiveTdee,
 	calmWeeks,
@@ -21,7 +21,7 @@ import { addDaysISO, uid } from './utils';
 const END = '2026-06-30';
 
 function entry(date: string, foodId: string, servings: number, meal: Meal = 'lunch'): LogItem {
-	const food = FOOD_BY_ID[foodId];
+	const food = SEED_FOOD_BY_ID[foodId];
 	if (!food) throw new Error(`test fixture references unknown food: ${foodId}`);
 	const scaled = scaleFood(food, servings);
 	return {

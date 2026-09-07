@@ -2,12 +2,61 @@ import { describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import { catalogFoodToFood } from '$lib/domain/catalog-food';
-import { FOOD_BY_ID } from '$lib/domain/foods';
 import type { QuantifiedItem } from '$lib/domain/quantity';
 import ProposalRow from './ProposalRow.svelte';
 
+/**
+ * A catalog row, the way the sheet hands one down. Since #146 there is no
+ * device-side table behind a `foodId`, so a row only knows its food because the
+ * sheet passes the one it resolved -- which is what `resolved` is for.
+ */
+function catalogRow(
+	id: number,
+	name: string,
+	serving: { label: string; grams: number },
+	per100g: { kcal: number; protein: number; fat: number; carbs: number }
+) {
+	return catalogFoodToFood({
+		id,
+		name,
+		brand: null,
+		kind: 'generic',
+		category: 'Dairy and Egg Products',
+		barcode: null,
+		license: 'PDDL-1.0',
+		serving,
+		per100g: { ...per100g, sugar: 0, fiber: 0, sodium: 0, saturatedFat: 0 }
+	});
+}
+
+/** A large egg: 50 g a serving. */
+const egg = catalogRow(
+	101,
+	'Egg, large',
+	{ label: '1 large', grams: 50 },
+	{
+		kcal: 143,
+		protein: 12.6,
+		fat: 9.5,
+		carbs: 0.7
+	}
+);
+
+/** Olive oil, served by the tablespoon: 14 g, 119 kcal. */
+const oil = catalogRow(
+	102,
+	'Olive oil',
+	{ label: '1 tbsp', grams: 14 },
+	{
+		kcal: 884,
+		protein: 0,
+		fat: 100,
+		carbs: 0
+	}
+);
+
 const matched: QuantifiedItem = {
-	foodId: 'egg-large',
+	foodId: egg.id,
 	query: 'eggs',
 	name: 'Egg, large',
 	servings: 2,
@@ -17,7 +66,7 @@ const matched: QuantifiedItem = {
 
 const unmatched: QuantifiedItem = { ...matched, foodId: null, name: 'gruel', confidence: 0 };
 
-/** A scanned food from the server catalog: real, but not in `FOOD_BY_ID`. */
+/** A scanned food, arriving the same way every food does now. */
 const scanned: QuantifiedItem = {
 	...matched,
 	foodId: 'catalog-4213',
@@ -71,11 +120,9 @@ describe('ProposalRow', () => {
 
 	it('shows the catalog serving label for a matched item', async () => {
 		await render(ProposalRow, {
-			props: { item: matched, step: 0.5, matching: false, ...handlers }
+			props: { item: matched, step: 0.5, matching: false, resolved: egg, ...handlers }
 		});
-		await expect
-			.element(page.getByText(FOOD_BY_ID['egg-large']?.servingLabel ?? ''))
-			.toBeInTheDocument();
+		await expect.element(page.getByText(egg.servingLabel)).toBeInTheDocument();
 	});
 
 	it('offers to match an item that has no catalog food', async () => {
@@ -122,7 +169,7 @@ describe('ProposalRow', () => {
 
 	it('states what will be logged, in servings and in grams', async () => {
 		await render(ProposalRow, {
-			props: { item: matched, step: 0.5, matching: false, ...handlers }
+			props: { item: matched, step: 0.5, matching: false, resolved: egg, ...handlers }
 		});
 		// A large egg is 50 g a serving.
 		await expect.element(page.getByText('2 servings · 100 g')).toBeInTheDocument();
@@ -134,7 +181,9 @@ describe('ProposalRow', () => {
 			servings: 1,
 			quantity: { amount: 2, unit: 'cups', kind: 'volume' }
 		};
-		await render(ProposalRow, { props: { item, step: 0.5, matching: false, ...handlers } });
+		await render(ProposalRow, {
+			props: { item, step: 0.5, matching: false, resolved: egg, ...handlers }
+		});
 		await expect
 			.element(page.getByText('Couldn’t use “2 cups” — recorded as 1 serving · 50 g'))
 			.toBeInTheDocument();
@@ -146,8 +195,6 @@ describe('ProposalRow', () => {
 			servings: 2,
 			quantity: { amount: 2, unit: 'tbsp', kind: 'volume' }
 		};
-		// Olive oil is served by the tablespoon: 14 g, 119 kcal.
-		const oil = FOOD_BY_ID['olive-oil'];
 		await render(ProposalRow, {
 			props: { item, step: 0.5, matching: false, resolved: oil, ...handlers }
 		});
@@ -160,7 +207,9 @@ describe('ProposalRow', () => {
 			...matched,
 			quantity: { amount: 100, unit: 'g', kind: 'mass' }
 		};
-		await render(ProposalRow, { props: { item, step: 0.5, matching: false, ...handlers } });
+		await render(ProposalRow, {
+			props: { item, step: 0.5, matching: false, resolved: egg, ...handlers }
+		});
 		await expect.element(page.getByText('2 servings · 100 g')).toBeInTheDocument();
 	});
 
@@ -173,7 +222,7 @@ describe('ProposalRow', () => {
 		expect(onremove).toHaveBeenCalled();
 	});
 
-	it('shows the serving of a resolved food that is not in the bundled catalog', async () => {
+	it('shows the serving of the resolved food', async () => {
 		await render(ProposalRow, {
 			props: { item: scanned, step: 0.5, matching: false, resolved: cereal, ...handlers }
 		});

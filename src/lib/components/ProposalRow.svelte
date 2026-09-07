@@ -1,6 +1,5 @@
 <script lang="ts">
 	import X from '@lucide/svelte/icons/x';
-	import { FOOD_BY_ID } from '$lib/domain/foods';
 	import { withVolumeHint } from '$lib/domain/portions';
 	import { describeRecorded, resolveQuantity, type QuantifiedItem } from '$lib/domain/quantity';
 	import type { Food } from '$lib/domain/types';
@@ -21,7 +20,7 @@
 		item: QuantifiedItem;
 		step: number;
 		matching: boolean;
-		/** The food behind a proposal that is not in the bundled catalog, such as a scanned one. */
+		/** The catalog food behind this proposal, once one has been matched to it. */
 		resolved?: Food | undefined;
 		onmatch: () => void;
 		onpickmatch: (food: Food) => void;
@@ -29,7 +28,10 @@
 		onremove: () => void;
 	} = $props();
 
-	const food = $derived(resolved ?? (item.foodId ? FOOD_BY_ID[item.foodId] : undefined));
+	// Every food a proposal can name comes from the server catalog, so the one
+	// the sheet resolved is the only one there is -- there is no bundled table
+	// left to fall back to.
+	const food = $derived(resolved);
 	const summary = $derived(`${Math.round(item.confidence * 100)}% sure · ${item.meal}`);
 	const removeLabel = $derived(`Remove ${item.name}`);
 	// Re-read against the food rather than trusting a stored flag: matching an item

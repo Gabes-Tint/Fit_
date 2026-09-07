@@ -187,6 +187,26 @@ export async function stubFoodResolve(page: Page, rows: (ResolvedRow | null)[]):
 }
 
 /**
+ * Answer `GET /api/foods?q=` with these rows, so the search box has results
+ * without a catalog file.
+ *
+ * Needed since #146: the box used to list a bundled table of 49 foods whenever
+ * the server said nothing, so a test could open it and find rows with no stub
+ * at all. There is no such table now -- every row on screen came from this
+ * endpoint -- and a search with no stub shows the "needs a connection" notice
+ * instead, which is a real state worth asserting but not a list.
+ */
+export async function stubFoodSearch(page: Page, rows: ResolvedRow[]): Promise<void> {
+	await page.route('**/api/foods?*', async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ foods: rows })
+		});
+	});
+}
+
+/**
  * Open the log sheet and type into its box.
  *
  * The wait is the point. `Sheet` moves focus into itself a tick after the

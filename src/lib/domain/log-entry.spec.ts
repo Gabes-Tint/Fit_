@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FOOD_BY_ID } from './foods';
+import { SEED_FOOD_BY_ID } from './foods';
 import { catalogFoodToFood } from './catalog-food';
 import { logFromCatalogFood, logFromFood } from './log-entry';
 
@@ -12,7 +12,7 @@ describe('logFromFood', () => {
 			date: '2026-06-01',
 			source: 'manual'
 		});
-		expect(item.kcal).toBe((FOOD_BY_ID['egg-large']?.kcal ?? 0) * 2);
+		expect(item.kcal).toBe((SEED_FOOD_BY_ID['egg-large']?.kcal ?? 0) * 2);
 	});
 
 	it('carries the catalog food’s provenance onto the entry', () => {
@@ -23,7 +23,7 @@ describe('logFromFood', () => {
 			date: '2026-06-01',
 			source: 'manual'
 		});
-		expect(item.provenance).toBe(FOOD_BY_ID['egg-large']?.provenance);
+		expect(item.provenance).toBe(SEED_FOOD_BY_ID['egg-large']?.provenance);
 	});
 
 	it('keeps the note it was given', () => {

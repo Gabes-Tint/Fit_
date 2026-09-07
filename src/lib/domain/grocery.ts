@@ -1,4 +1,4 @@
-import { FOOD_BY_ID } from './foods';
+import { SEED_FOOD_BY_ID } from './foods';
 import { RECIPE_BY_ID } from './recipes';
 import type { PlannedMeal } from './types';
 
@@ -53,7 +53,7 @@ export function buildGrocery(plan: PlannedMeal[], pantry: string[]): GroceryItem
 	}
 	const items: GroceryItem[] = [];
 	for (const [foodId, servings] of map) {
-		const food = FOOD_BY_ID[foodId];
+		const food = SEED_FOOD_BY_ID[foodId];
 		if (!food) continue;
 		items.push({
 			foodId,

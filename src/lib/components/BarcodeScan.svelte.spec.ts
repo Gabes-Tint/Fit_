@@ -2,14 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import type { CatalogFoodPayload } from '$lib/domain/catalog-food';
-import { FOOD_BY_BARCODE } from '$lib/domain/foods';
 import { paintingStream, stopPainting, stubMediaDevices } from '$lib/testing/fixtures';
 import BarcodeScan from './BarcodeScan.svelte';
 
 /** Long enough for the viewfinder to receive a frame and the scan timer to fire. */
 const SCAN = { timeout: 5000 };
 
-const BUNDLED = '602652171032';
 const OFF_SHELF = '00016000275287';
 
 const CEREAL: CatalogFoodPayload = {
@@ -91,14 +89,6 @@ afterEach(() => {
 describe('BarcodeScan', () => {
 	it('reads a barcode off the camera and proposes the food it names', async () => {
 		cameraOpens();
-		detectorReading(BUNDLED);
-		const { onpick } = await mount();
-		await vi.waitFor(() => expect(onpick).toHaveBeenCalledOnce(), SCAN);
-		expect(onpick.mock.calls[0]?.[0]).toEqual(FOOD_BY_BARCODE[BUNDLED]);
-	});
-
-	it('logs a food the server catalog knows and the bundled foods do not', async () => {
-		cameraOpens();
 		detectorReading(OFF_SHELF);
 		serverAnswers(200, { barcode: OFF_SHELF, ambiguous: false, foods: [CEREAL] });
 		const { onpick } = await mount();
@@ -129,26 +119,28 @@ describe('BarcodeScan', () => {
 
 	it('offers the digits to type when this engine cannot read barcodes', async () => {
 		cameraOpens();
+		serverAnswers(200, { barcode: OFF_SHELF, ambiguous: false, foods: [CEREAL] });
 		const { onpick } = await mount();
 		await expect
 			.element(page.getByText('This device can’t read a barcode with its camera.'), SCAN)
 			.toBeInTheDocument();
-		await type(BUNDLED);
+		await type(OFF_SHELF);
 		await vi.waitFor(() => expect(onpick).toHaveBeenCalledOnce());
 	});
 
 	it('leaves typing available when camera access is declined', async () => {
 		cameraFails('NotAllowedError');
-		detectorReading(BUNDLED);
+		detectorReading(OFF_SHELF);
+		serverAnswers(200, { barcode: OFF_SHELF, ambiguous: false, foods: [CEREAL] });
 		const { onpick } = await mount();
 		await expect.element(page.getByText('Camera access was declined.'), SCAN).toBeInTheDocument();
-		await type(BUNDLED);
+		await type(OFF_SHELF);
 		await vi.waitFor(() => expect(onpick).toHaveBeenCalledOnce());
 	});
 
 	it('says so when there is no camera to open at all', async () => {
 		stubMediaDevices(undefined);
-		detectorReading(BUNDLED);
+		detectorReading(OFF_SHELF);
 		await mount();
 		await expect.element(page.getByText('No camera answered here.'), SCAN).toBeInTheDocument();
 	});
@@ -177,14 +169,16 @@ describe('BarcodeScan', () => {
 			.toBeInTheDocument();
 	});
 
-	it('says a signed-out device only reaches the bundled foods', async () => {
+	it('tells a signed-out device there is nothing to check the code against', async () => {
+		// #146 removed the two bundled packages that used to answer offline, so
+		// the old "only the foods bundled with the app answer" is no longer true.
 		cameraFails('NotAllowedError');
 		detectorReading(null);
 		serverAnswers(401);
 		await mount();
 		await type(OFF_SHELF);
 		await expect
-			.element(page.getByText('Sign in to reach the full food catalog.'), SCAN)
+			.element(page.getByText('Sign in to reach the food catalog.'), SCAN)
 			.toBeInTheDocument();
 	});
 
