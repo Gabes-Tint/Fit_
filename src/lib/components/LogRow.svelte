@@ -2,6 +2,7 @@
 	import { nutritionFactsForLogItem } from '$lib/domain/nutrition-facts';
 	import { withVolumeHint } from '$lib/domain/portions';
 	import type { LogItem } from '$lib/domain/types';
+	import { formatUnitCount } from '$lib/domain/unit-measure';
 	import { tend } from '$lib/state/tend.svelte';
 	import NutritionFactsButton from './NutritionFactsButton.svelte';
 	import NutritionFactsSheet from './NutritionFactsSheet.svelte';
@@ -20,7 +21,22 @@
 		tend.updateLog(item.id, { servings: n });
 	}
 
-	const portion = $derived(`${item.servings} × ${withVolumeHint(item.servingLabel)}`);
+	/**
+	 * "2 pieces", read off the same label the serving view shows — `null` for
+	 * everything the catalog could only weigh or measure by volume (#178).
+	 * Not persisted: the label already carries what is needed, so re-deriving
+	 * this from it needs no new field on `LogItem` and no migration.
+	 */
+	const unitCount = $derived(formatUnitCount(item.servings, item.servingLabel));
+
+	// Unit view whenever one exists (#178) — no per-food memory yet (#159), so
+	// this resets to the default on every mount rather than remembering a
+	// choice.
+	let showUnit = $state(true);
+	const unitView = $derived(unitCount !== null && showUnit ? unitCount : null);
+
+	const portion = $derived(unitView ?? `${item.servings} × ${withVolumeHint(item.servingLabel)}`);
+	const stepperStep = $derived(unitView !== null ? 1 : step);
 
 	let factsOpen = $state(false);
 </script>
@@ -45,15 +61,27 @@
 		<NutritionFactsButton name={item.name} onclick={() => (factsOpen = true)} />
 	</div>
 	{#if open}
-		<div class="border-border mt-3 flex items-center justify-between border-t pt-3">
-			<QuantityStepper bind:value={() => item.servings, setServings} {step} />
-			<button
-				type="button"
-				class="text-muted-foreground hover:bg-secondary h-10 rounded-xl px-3 text-sm"
-				onclick={() => tend.removeLog(item.id)}
-			>
-				Remove
-			</button>
+		<div class="border-border mt-3 flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+			<QuantityStepper bind:value={() => item.servings, setServings} step={stepperStep} />
+			<div class="flex items-center gap-1">
+				{#if unitCount !== null}
+					<button
+						type="button"
+						onclick={() => (showUnit = !showUnit)}
+						aria-label={showUnit ? 'Show weight' : 'Show unit count'}
+						class="text-muted-foreground hover:bg-secondary h-10 rounded-xl px-2 text-sm"
+					>
+						{showUnit ? 'Weight' : 'Unit'}
+					</button>
+				{/if}
+				<button
+					type="button"
+					class="text-muted-foreground hover:bg-secondary h-10 rounded-xl px-3 text-sm"
+					onclick={() => tend.removeLog(item.id)}
+				>
+					Remove
+				</button>
+			</div>
 		</div>
 	{/if}
 </li>

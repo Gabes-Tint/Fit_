@@ -29,6 +29,19 @@ import {
  * (`eslint-plugin-playwright/no-skipped-test`).
  */
 
+/** A genuine single-item measure (#178), the shape `/api/foods` sends it. */
+const SANDWICH_ROW = {
+	id: 9200,
+	name: 'Breakfast Sandwich',
+	brand: null,
+	kind: 'branded',
+	category: 'Fast Food',
+	barcode: null,
+	license: 'PDDL-1.0',
+	serving: { label: '1 sandwich (219 g)', grams: 219 },
+	per100g: { kcal: 250, protein: 12, fat: 14, carbs: 20, sugar: 4, fiber: 1.5, sodium: 460 }
+};
+
 test.describe('at 360px', () => {
 	test('the Today week strip stays inside the viewport', async ({ page, baseURL }) => {
 		await signInThroughApi(page, baseURL ?? '');
@@ -141,5 +154,37 @@ test.describe('at 360px', () => {
 		const modal = page.getByRole('dialog');
 		await expect(modal).toBeVisible();
 		await expectFitsViewport(page, modal);
+	});
+
+	test('a unit-toggled log row stays inside the viewport in both views (#178)', async ({
+		page,
+		baseURL
+	}) => {
+		await signInThroughApi(page, baseURL ?? '');
+		await stubFoodSearch(page, [SANDWICH_ROW]);
+		await openEmptyJournal(page);
+		await atNarrowPhone(page);
+
+		await openLogSheet(page);
+		await page.getByRole('button', { name: 'Search', exact: true }).click();
+		await page.getByLabel('Search foods, brands, barcodes').fill('breakfast sandwich');
+		await page.getByText('Breakfast Sandwich', { exact: true }).click();
+		await page.getByRole('button', { name: 'Add to today' }).click();
+		await expect(page.getByRole('dialog')).toBeHidden();
+
+		const row = page.getByRole('button', { name: /Breakfast Sandwich/ }).first();
+		await expect(row).toBeVisible();
+		// Defaults to the unit view (#178): "1 sandwich", not the weight label.
+		await expect(page.getByText('1 sandwich', { exact: true })).toBeVisible();
+		await row.click();
+
+		const weightToggle = page.getByLabel('Show weight');
+		await expect(weightToggle).toBeVisible();
+		await expectFitsViewport(page, row.locator('xpath=../..'));
+
+		await weightToggle.click();
+		await expect(page.getByText('1 × 1 sandwich (219 g)')).toBeVisible();
+		await expect(page.getByLabel('Show unit count')).toBeVisible();
+		await expectFitsViewport(page, row.locator('xpath=../..'));
 	});
 });
