@@ -4,17 +4,17 @@ import {
 	isCatalogFoodPayload,
 	normalizeBarcode
 } from '$lib/domain/catalog-food';
-import { FOOD_BY_BARCODE } from '$lib/domain/foods';
 import type { Food } from '$lib/domain/types';
 
 /**
  * What a scanned barcode turns out to be.
  *
- * The bundled foods answer first, so a code the app already knows resolves with
- * no network at all and works offline. Everything else asks
- * `/api/foods/barcode`, whose ambiguity, absence and refusal are all distinct
- * outcomes here: a barcode nobody has heard of and a catalog that is out of
- * reach need different words, and neither is a dead end.
+ * Every code asks `/api/foods/barcode`, whose ambiguity, absence and refusal are
+ * all distinct outcomes here: a barcode nobody has heard of and a catalog that
+ * is out of reach need different words, and neither is a dead end. Until #146
+ * two bundled packages answered before the request went out; that offline path
+ * covered two barcodes out of 2.5 million rows and made "the scanner works
+ * offline" a claim the app could not keep.
  */
 export type BarcodeOutcome =
 	/** Not a barcode. Nothing was sent. */
@@ -63,9 +63,5 @@ export async function lookupBarcode(
 ): Promise<BarcodeOutcome> {
 	const code = normalizeBarcode(raw);
 	if (code === null) return { kind: 'invalid' };
-	const bundled = FOOD_BY_BARCODE[code];
-	// Hand-written, offline and logged against a stable id: it wins over the
-	// catalog's row for the same package rather than being second-guessed.
-	if (bundled) return { kind: 'known', code, foods: [bundled], ambiguous: false };
 	return fromCatalog(code, doFetch);
 }

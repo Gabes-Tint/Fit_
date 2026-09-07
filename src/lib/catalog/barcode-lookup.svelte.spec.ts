@@ -1,10 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CatalogFoodPayload } from '$lib/domain/catalog-food';
-import { FOOD_BY_BARCODE } from '$lib/domain/foods';
 import { lookupBarcode } from './barcode-lookup';
 
-/** A barcode the bundled foods carry, and one they do not. */
-const BUNDLED = '602652171032';
+/** A barcode off a real package. Since #146 every code takes the same route. */
 const OFF_SHELF = '00016000275287';
 
 const CEREAL: CatalogFoodPayload = {
@@ -40,24 +38,16 @@ function answering(status: number, body?: unknown) {
 }
 
 describe('lookupBarcode', () => {
-	it('answers from the bundled foods without asking the server', async () => {
-		const fetching = answering(500);
-		const outcome = await lookupBarcode(BUNDLED, fetching);
-		expect(outcome).toEqual({
-			kind: 'known',
-			code: BUNDLED,
-			ambiguous: false,
-			foods: [FOOD_BY_BARCODE[BUNDLED]]
-		});
-		expect(fetching).not.toHaveBeenCalled();
+	it('normalizes what was typed before asking the catalog', async () => {
+		// #146: no code short-circuits on the device any more, so the spacing a
+		// person types has to be gone before the code reaches the query string.
+		const fetching = answering(200, { barcode: OFF_SHELF, ambiguous: false, foods: [CEREAL] });
+		const outcome = await lookupBarcode(' 0001 6000 275287 ', fetching);
+		expect(fetching.mock.calls[0]?.[0]).toBe(`/api/foods/barcode?code=${OFF_SHELF}`);
+		expect(outcome).toMatchObject({ kind: 'known', code: OFF_SHELF });
 	});
 
-	it('normalizes what was typed before matching a bundled food', async () => {
-		const outcome = await lookupBarcode(' 6026 5217 1032 ', answering(500));
-		expect(outcome).toMatchObject({ kind: 'known', code: BUNDLED });
-	});
-
-	it('asks the catalog endpoint for a barcode the bundled foods do not carry', async () => {
+	it('asks the catalog endpoint for every barcode, with none answered on the device', async () => {
 		const fetching = answering(200, { barcode: OFF_SHELF, ambiguous: false, foods: [CEREAL] });
 		const outcome = await lookupBarcode(OFF_SHELF, fetching);
 		expect(fetching.mock.calls[0]?.[0]).toBe(`/api/foods/barcode?code=${OFF_SHELF}`);

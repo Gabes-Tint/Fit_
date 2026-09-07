@@ -10,8 +10,7 @@
 	import { resolveFoodNames } from '$lib/catalog/food-resolve';
 	import { MAX_QUERIES } from '$lib/domain/resolve-limits';
 	import { foodProposal } from '$lib/domain/food-proposal';
-	import { FOOD_BY_ID } from '$lib/domain/foods';
-	import { logFromCatalogFood, logFromFood } from '$lib/domain/log-entry';
+	import { logFromCatalogFood } from '$lib/domain/log-entry';
 	import { guessMeal, parseLocalText, type ParsedChunk } from '$lib/domain/parse-text';
 	import { defaultServings, servingStep } from '$lib/domain/profile';
 	import { matchToFood, type QuantifiedItem } from '$lib/domain/quantity';
@@ -62,9 +61,9 @@
 	let dictation: Dictation | null = null;
 	/**
 	 * Foods the server catalog answered with, by the id `propose` put on the
-	 * proposal. They are not in `FOOD_BY_ID` and never will be, so `commit` has
-	 * to resolve them from here or it would drop what the person just chose --
-	 * which is every result search returns beyond the bundled foods.
+	 * proposal. The catalog's rows live on the server, so `commit` has to resolve
+	 * them from here or it would drop what the person just chose -- which, since
+	 * #146, is every result search returns.
 	 */
 	let fromCatalog = $state<Record<string, Food>>({});
 	/**
@@ -217,9 +216,13 @@
 		listening = true;
 	}
 
-	/** A bundled food keeps its own id; a catalog one is remembered here. */
+	/**
+	 * Every food a proposal can name comes from the server catalog, and its rows
+	 * are not on the device -- so the one that was matched is held here until the
+	 * sheet commits, or its nutrition is gone by the time it is needed.
+	 */
 	function remember(food: Food) {
-		if (!FOOD_BY_ID[food.id]) fromCatalog = { ...fromCatalog, [food.id]: food };
+		fromCatalog = { ...fromCatalog, [food.id]: food };
 	}
 
 	function pickFood(food: Food) {
@@ -278,7 +281,6 @@
 				source: fromPhoto.has(p.id) ? ('photo' as const) : ('text' as const),
 				note: p.note
 			};
-			if (FOOD_BY_ID[p.foodId]) return [logFromFood({ foodId: p.foodId, ...context })];
 			const catalogFood = fromCatalog[p.foodId];
 			return catalogFood ? [logFromCatalogFood(catalogFood, context)] : [];
 		});
@@ -405,8 +407,8 @@
 							resolved={p.foodId ? fromCatalog[p.foodId] : undefined}
 							onmatch={() => (matchId = matchId === p.id ? null : p.id)}
 							onpickmatch={(food: Food) => {
-								// Matching a proposal reaches the same search, so a catalog
-								// food arrives here too and has to be remembered the same way.
+								// Matching a proposal reaches the same search, so the food
+								// arrives here too and has to be remembered the same way.
 								remember(food);
 								proposals = proposals.map((x) =>
 									// The note is dropped: the only one anything sets is “not found in

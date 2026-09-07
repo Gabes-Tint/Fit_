@@ -125,7 +125,7 @@ describe('returnPath', () => {
 	it('minds where the value points, not what its query carries', () => {
 		// The query belongs to a destination on this origin. A rule that went
 		// looking for `//` anywhere in the string would refuse it.
-		const path = '/foods?source=https://example.com/list';
+		const path = '/plan?source=https://example.com/list';
 		expect(returnPath(path, ORIGIN)).toBe(path);
 	});
 

@@ -1,4 +1,4 @@
-import { FOOD_BY_ID } from './foods';
+import { SEED_FOOD_BY_ID } from './foods';
 import { RECIPES, type Recipe } from './recipe-book';
 import type { Restriction } from './types';
 
@@ -16,7 +16,7 @@ export function recipeMacros(recipe: Recipe) {
 	let fat = 0;
 	let fiber = 0;
 	for (const ing of recipe.ingredients) {
-		const food = FOOD_BY_ID[ing.foodId];
+		const food = SEED_FOOD_BY_ID[ing.foodId];
 		if (!food) continue;
 		const per = ing.servings / recipe.servings;
 		kcal += food.kcal * per;

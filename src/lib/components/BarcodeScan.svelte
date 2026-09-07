@@ -48,7 +48,7 @@
 		if (answer.kind === 'unknown')
 			return `Nothing in the catalog carries ${answer.code}. Search for it by name and log it that way.`;
 		if (answer.kind === 'signed-out')
-			return 'Sign in to reach the full food catalog. Without an account only the foods bundled with the app answer to a barcode.';
+			return 'Sign in to reach the food catalog. Looking a barcode up needs it, so there is nothing to check the code against without an account.';
 		if (answer.kind === 'unreachable')
 			return 'The full catalog is out of reach right now. Search by name, or try the scan again in a moment.';
 		return 'That isn’t a barcode. A barcode is 8 to 14 digits.';

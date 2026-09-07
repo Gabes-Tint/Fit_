@@ -14,13 +14,11 @@ vi.mock('svelte-sonner', () => ({
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import { emptyProfile } from '$lib/domain/profile';
-import { FOOD_BY_BARCODE } from '$lib/domain/foods';
 import { guessMeal } from '$lib/domain/parse-text';
 import { logUi } from '$lib/state/log-ui.svelte';
 import { tend } from '$lib/state/tend.svelte';
 import LogSheet from './LogSheet.svelte';
 
-const DEMO_BARCODE = '602652171032';
 const OFF_SHELF = '00016000275287';
 
 /** One catalog row in the shape `/api/foods/barcode` sends it. */
@@ -46,8 +44,9 @@ const CEREAL = {
 };
 
 /**
- * The rows `/api/foods/resolve` answers typed names with. They are catalog
- * rows, not bundled ones: since #116 nothing typed is matched on the device.
+ * The rows `/api/foods/resolve` answers typed names with. Since #116 nothing
+ * typed is matched on the device, and since #146 there is no device table left
+ * for it to be matched against.
  */
 const EGG = {
 	id: 101,
@@ -126,7 +125,7 @@ function queriesIn(init: RequestInit | undefined): string[] {
  * `/api/foods/resolve` answers with `rows`, one per name in the order they were
  * asked, and `null` for anything past the end of the list. Every other call —
  * the search box that a proposal row opens — answers with no catalog rows, so
- * the bundled foods are what it lists.
+ * that box lists nothing.
  */
 function resolvesTo(...rows: (object | null)[]) {
 	return vi
@@ -441,16 +440,6 @@ describe('LogSheet', () => {
 		await expect.element(page.getByRole('button', { name: 'Start listening' })).toBeInTheDocument();
 	});
 
-	it('proposes the bundled food a typed barcode names', async () => {
-		await openSheet();
-		await page.getByRole('button', { name: 'Scan' }).click();
-		await page.getByLabelText('Barcode digits').fill(DEMO_BARCODE);
-		await page.getByRole('button', { name: 'Look it up' }).click();
-		await expect
-			.element(page.getByText(FOOD_BY_BARCODE[DEMO_BARCODE]?.name ?? '').first())
-			.toBeInTheDocument();
-	});
-
 	it('no longer offers a hard-coded demo scan', async () => {
 		await openSheet();
 		await page.getByRole('button', { name: 'Scan' }).click();
@@ -458,7 +447,7 @@ describe('LogSheet', () => {
 		expect(document.body.textContent).not.toContain('Demo scan');
 	});
 
-	it('logs a scanned food the server catalog knows and the bundled foods do not', async () => {
+	it('proposes and logs the food a typed barcode names', async () => {
 		const add = vi.spyOn(tend, 'addLogItems').mockImplementation(() => undefined);
 		vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
 			jsonResponse({ barcode: OFF_SHELF, ambiguous: false, foods: [CEREAL] })
@@ -486,11 +475,11 @@ describe('LogSheet', () => {
 			.toBeInTheDocument();
 	});
 
-	it('logs a food search found only in the server catalog', async () => {
+	it('logs a food the search box found in the server catalog', async () => {
 		// Regression: search handed a catalog food straight to `propose`, which
-		// stores its id and nothing else. `commit` then found no bundled food
-		// behind that id and dropped the item, so nothing past the bundled foods
-		// could be logged at all, and the sheet said only "match it first".
+		// stores its id and nothing else. `commit` then found no food behind that
+		// id and dropped the item, so nothing the search box returned could be
+		// logged at all, and the sheet said only "match it first".
 		const add = vi.spyOn(tend, 'addLogItems').mockImplementation(() => undefined);
 		vi.spyOn(globalThis, 'fetch').mockImplementation(() => jsonResponse({ foods: [CEREAL] }));
 		await openSheet();
