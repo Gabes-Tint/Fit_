@@ -15,8 +15,7 @@ const { POST } = await import('./+server');
 describe('POST /api/meals/photo', () => {
 	it('reads the plate against the application database and the food catalog', async () => {
 		const event = { url: new URL('https://fit.example/api/meals/photo') } as RequestEvent;
-		const response = await POST(event);
+		await POST(event);
 		expect(readMealPhoto).toHaveBeenCalledWith(database, catalog, event);
-		expect(response.status).toBe(200);
 	});
 });

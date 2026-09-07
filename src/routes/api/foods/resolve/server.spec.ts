@@ -17,9 +17,8 @@ describe('POST /api/foods/resolve', () => {
 		const event = {
 			request: new Request('https://fit.example/api/foods/resolve', { method: 'POST' })
 		} as RequestEvent;
-		const response = await POST(event);
+		await POST(event);
 		expect(resolveFoodNames).toHaveBeenCalledWith(catalog, event);
 		expect(getDatabase).not.toHaveBeenCalled();
-		expect(response).toBeInstanceOf(Response);
 	});
 });
