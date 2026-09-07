@@ -992,3 +992,32 @@ describe('LogSheet reading a plate from a photo', () => {
 			.toBeInTheDocument();
 	});
 });
+
+/**
+ * The sheet takes 95% of the phone screen (#162): the search results are no
+ * longer capped to a short scrolling box of their own, and the "Add to
+ * today" button sits in its own footer rather than scrolling away with a
+ * long proposal list.
+ */
+describe('tall layout', () => {
+	it('does not cap the search results to a short box of their own', async () => {
+		await openSheet();
+		await page.getByRole('button', { name: 'Search' }).click();
+		const list = page.getByRole('list');
+		await expect.element(list).toBeInTheDocument();
+		await expect.element(list).not.toHaveClass(/max-h-/);
+	});
+
+	it('keeps the primary action reachable once the proposal list runs long', async () => {
+		resolvesTo(...Array.from({ length: 30 }, () => null));
+		await openSheet();
+		const many = Array.from({ length: 30 }, (_, i) => `food number ${i}`).join(', ');
+		await page.getByLabelText('What you ate').fill(many);
+		await page.getByRole('button', { name: 'Parse' }).click();
+		await expect.element(page.getByText('Proposed — tap to correct')).toBeInTheDocument();
+		expect(page.getByRole('listitem').elements().length).toBeGreaterThanOrEqual(30);
+		// Not conditionally hidden or dropped by a list this long: it is still
+		// in the render output and still clickable.
+		await expect.element(page.getByRole('button', { name: 'Add to today' })).toBeInTheDocument();
+	});
+});

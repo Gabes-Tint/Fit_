@@ -314,9 +314,10 @@
 	}
 	title="Log"
 	description="Tend proposes. You correct in one tap."
+	tall
 	onclose={close}
 >
-	<div class="flex gap-1 px-5 pt-4">
+	<div class="flex shrink-0 gap-1 px-5 pt-4">
 		{#each TABS as t (t.id)}
 			{@const Icon = t.icon}
 			<ToggleButton
@@ -331,7 +332,7 @@
 		{/each}
 	</div>
 
-	<div class="min-h-0 flex-1 overflow-auto px-5 py-4 pb-8">
+	<div data-testid="log-scroll" class="min-h-0 flex-1 overflow-y-auto px-5 py-4 pb-8">
 		<div class="mb-3 flex gap-1">
 			{#each MEALS as m (m)}
 				<ToggleButton
@@ -423,8 +424,16 @@
 						/>
 					{/each}
 				</ul>
-				<Button class="mt-4 w-full" size="lg" onclick={commit}>Add to today</Button>
 			</div>
 		{/if}
 	</div>
+
+	{#if proposals.length > 0}
+		<div
+			data-testid="log-footer"
+			class="border-border shrink-0 border-t px-5 pt-3 pb-3 sm:pb-[max(1rem,env(safe-area-inset-bottom))]"
+		>
+			<Button class="w-full" size="lg" onclick={commit}>Add to today</Button>
+		</div>
+	{/if}
 </Sheet>
