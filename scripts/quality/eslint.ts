@@ -1,9 +1,9 @@
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { availableParallelism } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { captureStatus } from '../security/shared';
+import { captureStatus, readJsonFile } from '../security/shared';
 
 interface LintMessage {
 	ruleId: string | null;
@@ -48,7 +48,7 @@ const { exitCode } = await captureStatus(
 
 let results: LintResult[];
 try {
-	results = JSON.parse(await readFile(reportPath, 'utf8')) as LintResult[];
+	results = await readJsonFile<LintResult[]>(reportPath);
 } catch {
 	// A configuration error (exit 2) leaves no parsable report behind.
 	process.exitCode = exitCode === 0 ? 1 : exitCode;

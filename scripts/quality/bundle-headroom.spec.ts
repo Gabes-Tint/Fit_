@@ -9,9 +9,10 @@ import {
 	metricDeltas,
 	stableChunkName
 } from './bundle-headroom';
-import type { Asset, Budgets } from './bundle-headroom';
+import type { Asset } from './bundle-headroom';
+import type { BundleBudgets } from './config-types';
 
-const budgets: Budgets = {
+const budgets: BundleBudgets = {
 	clientCssBytes: 100,
 	clientJavaScriptBytes: 1000,
 	largestAssetBytes: 500

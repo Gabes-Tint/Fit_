@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { containerImages } from './config';
 import {
@@ -7,6 +6,7 @@ import {
 	ensureDirectory,
 	hostUser,
 	projectRoot,
+	readJsonFile,
 	resetReportDirectory,
 	run
 } from './shared';
@@ -67,7 +67,7 @@ await run('docker', [
 	'/workspace'
 ]);
 
-const report = JSON.parse(await readFile(reportPath, 'utf8')) as TrivyReport;
+const report = await readJsonFile<TrivyReport>(reportPath);
 const findings = (report.Results ?? []).flatMap((result) => [
 	...(result.Vulnerabilities ?? []),
 	...(result.Misconfigurations ?? [])
