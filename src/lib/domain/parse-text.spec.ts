@@ -203,6 +203,20 @@ describe('parseLocalText', () => {
 		expect(chunks.map((chunk) => chunk.quantity.amount)).toEqual([0.5, 1, 1]);
 	});
 
+	it('splits a pasted list on its line breaks', () => {
+		expect(queries('two eggs\nblack coffee')).toEqual(['eggs', 'black coffee']);
+	});
+
+	// A Windows clipboard pastes `\r`, and Word and PDF paste the two Unicode
+	// separators. A list pasted from any of them is still a list.
+	it.each([
+		['a carriage return', '\r'],
+		['a line separator', '\u2028'],
+		['a paragraph separator', '\u2029']
+	])('splits a pasted list on %s too', (_name, br) => {
+		expect(queries(`two eggs${br}black coffee`)).toEqual(['eggs', 'black coffee']);
+	});
+
 	it('splits even when the separator has no space after it', () => {
 		expect(queries('eggs,toast')).toEqual(['eggs', 'toast']);
 	});

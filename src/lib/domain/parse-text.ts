@@ -182,8 +182,13 @@ export type ParsedChunk = {
 export function parseLocalText(text: string, meal: Meal = guessMeal()): ParsedChunk[] {
 	const chunks = text
 		// A slash separates items ("eggs / toast") unless between digits, where it
-		// is a fraction ("1/2 avocado") that must survive to parseQuantity.
-		.split(/\s*(?:,|;|\+|(?<!\d)\/(?!\d)|\band\b)\s*/i)
+		// is a fraction ("1/2 avocado") that must survive to parseQuantity. A line
+		// break separates too, so a pasted list reads as one food per line.
+		//
+		// The class is every line break, not just `\n`: a Windows clipboard brings
+		// `\r` and a Word or PDF paste brings U+2028 or U+2029, and a list pasted
+		// from one of those is a list all the same.
+		.split(/\s*(?:,|;|\+|[\n\r\u2028\u2029]|(?<!\d)\/(?!\d)|\band\b)\s*/i)
 		.map((c) => c.trim())
 		.filter((c) => c.length > 1);
 
