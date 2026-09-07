@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
+import { computeTargets } from '$lib/domain/tdee';
+import { logFromFood } from '$lib/domain/log-entry';
 import { emptyProfile } from '$lib/domain/profile';
 import { heightFromFeetInches, heightToFeetInches } from '$lib/domain/units';
+import { todayISO } from '$lib/domain/utils';
 import { tend } from '$lib/state/tend.svelte';
 import YouPage from './+page.svelte';
 
@@ -169,5 +172,96 @@ describe('the Privacy section', () => {
 	it('says the logs sync to the server for the account', async () => {
 		await render(YouPage);
 		await expect.element(page.getByText(/sync to the server/i)).toBeInTheDocument();
+	});
+});
+
+describe('the Energy target', () => {
+	it('is read-only until Edit is clicked', async () => {
+		await render(YouPage);
+		await expect.element(page.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+		await expect.element(page.getByLabelText('Energy target, kcal')).not.toBeInTheDocument();
+	});
+
+	it('writes calorieOverride and the displayed target follows it', async () => {
+		await render(YouPage);
+		await page.getByRole('button', { name: 'Edit' }).click();
+		await page.getByLabelText('Energy target, kcal').fill('1800');
+		await page.getByRole('button', { name: 'Save', exact: true }).click();
+		expect(tend.profile?.calorieOverride).toBe(1800);
+		await expect.element(page.getByText('1800 kcal')).toBeInTheDocument();
+		await expect.element(page.getByText(/steering these by hand/)).toBeInTheDocument();
+	});
+
+	it('clearing returns to the computed value and the blurb changes back', async () => {
+		tend.patchActive((p) => ({ ...p, calorieOverride: 1800 }));
+		await render(YouPage);
+		await expect.element(page.getByText(/steering these by hand/)).toBeInTheDocument();
+
+		await page.getByRole('button', { name: 'Use the automatic target' }).click();
+		expect(tend.profile?.calorieOverride).toBeNull();
+		const automatic = computeTargets(emptyProfile({ name: 'Alex' }));
+		await expect.element(page.getByText(`${automatic.kcal} kcal`)).toBeInTheDocument();
+		await expect.element(page.getByText(/steering these by hand/)).not.toBeInTheDocument();
+	});
+
+	it('rejects a value under 1200', async () => {
+		await render(YouPage);
+		await page.getByRole('button', { name: 'Edit' }).click();
+		await page.getByLabelText('Energy target, kcal').fill('1000');
+		await page.getByRole('button', { name: 'Save', exact: true }).click();
+		expect(tend.profile?.calorieOverride).toBeNull();
+		await expect.element(page.getByText(/can.t go below 1200/)).toBeInTheDocument();
+	});
+});
+
+describe('redoing setup', () => {
+	it('opens the setup questions when the link is clicked', async () => {
+		await render(YouPage);
+		await page.getByRole('button', { name: 'Answer the setup questions again' }).click();
+		await expect.element(page.getByText('A few quiet facts.')).toBeInTheDocument();
+	});
+
+	it('starts the fields empty rather than pre-filled with the current profile', async () => {
+		tend.patchActive((p) => ({ ...p, name: 'Priya', age: 51, heightCm: 190 }));
+		await render(YouPage);
+		await page.getByRole('button', { name: 'Answer the setup questions again' }).click();
+		await expect.element(page.getByLabelText('Name')).not.toHaveValue('Priya');
+		await expect.element(page.getByLabelText('Age')).not.toHaveValue('51');
+	});
+
+	it('saving preserves the log, weight history and injections', async () => {
+		const logItem = logFromFood({
+			foodId: 'egg-large',
+			servings: 2,
+			meal: 'breakfast',
+			date: todayISO(),
+			source: 'manual'
+		});
+		tend.addLogItems([logItem]);
+		tend.patchActive((p) => ({
+			...p,
+			weights: [...p.weights, { id: 'w-1', date: todayISO(), kg: 70 }]
+		}));
+		await render(YouPage);
+
+		await page.getByRole('button', { name: 'Answer the setup questions again' }).click();
+		await page.getByLabelText('Name').fill('Priya');
+		await page.getByRole('button', { name: 'Continue' }).click();
+		await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+		expect(tend.profile?.name).toBe('Priya');
+		expect(tend.profile?.log).toHaveLength(1);
+		expect(tend.profile?.log[0]?.id).toBe(logItem.id);
+		expect(tend.profile?.weights).toHaveLength(1);
+		expect(tend.profile?.weights[0]?.id).toBe('w-1');
+	});
+
+	it('cancelling leaves the profile untouched', async () => {
+		await render(YouPage);
+		await page.getByRole('button', { name: 'Answer the setup questions again' }).click();
+		await page.getByRole('button', { name: 'Continue' }).click();
+		await page.getByRole('button', { name: 'Cancel' }).click();
+		await expect.element(page.getByRole('heading', { name: 'You' })).toBeInTheDocument();
+		expect(tend.profile?.name).toBe('Alex');
 	});
 });
