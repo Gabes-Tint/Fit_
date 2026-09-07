@@ -142,6 +142,86 @@
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
 		},
 		{
+			"file": "src/lib/server/api.ts",
+			"mutatorName": "ConditionalExpression",
+			"replacement": "false",
+			"location": {
+				"end": {
+					"column": 18,
+					"line": 159
+				},
+				"start": {
+					"column": 6,
+					"line": 159
+				}
+			},
+			"sourceHash": "7fb024cf1c6cff6f6e9b5547e62f303c616fd93a397c19927726e1d339bf90a4",
+			"fingerprint": "b47ff36a2d65b7bd41bb0dcdc7bc3d7a1448380b03070a87d12d80ad124bb3e5",
+			"classification": "equivalent",
+			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null — it coerces to the string \"null\" and returns JS null — and the very next line, textFieldsOf's `parsed === null` check, refuses that the same way one step later. Both versions answer null for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away.",
+			"review": "https://github.com/gabepsilva/Fit_/pull/186"
+		},
+		{
+			"file": "src/lib/server/catalog/resolve-endpoint.ts",
+			"mutatorName": "ConditionalExpression",
+			"replacement": "false",
+			"location": {
+				"end": {
+					"column": 18,
+					"line": 61
+				},
+				"start": {
+					"column": 6,
+					"line": 61
+				}
+			},
+			"sourceHash": "7a415b94ca26620a10984920ec8b62a7c92479d2935a969df36e4c3ced8b81e9",
+			"fingerprint": "3d533881f870273edfe3918de53af2e8b50e14afd380e453753d36749109f023",
+			"classification": "equivalent",
+			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null — it coerces to the string \"null\" and returns JS null — and this function's own `parsed === null` refusal a few lines below catches that the same way one step later. Both versions answer REFUSED for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away.",
+			"review": "https://github.com/gabepsilva/Fit_/pull/186"
+		},
+		{
+			"file": "src/lib/server/photo/request.ts",
+			"mutatorName": "ConditionalExpression",
+			"replacement": "false",
+			"location": {
+				"end": {
+					"column": 18,
+					"line": 61
+				},
+				"start": {
+					"column": 6,
+					"line": 61
+				}
+			},
+			"sourceHash": "c56d1fbf23e9343b48df3cefda2a46fee75ff11bc48838aecbd87503cf7b6c51",
+			"fingerprint": "4417d0f35caaa3385c30c32e8fc45ea57e3090390aab0b93e6a5d17c3cd59dc8",
+			"classification": "equivalent",
+			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null — it coerces to the string \"null\" and returns JS null — and this function's own `parsed === null` refusal a few lines below catches that the same way one step later. Both versions answer REFUSED for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away.",
+			"review": "https://github.com/gabepsilva/Fit_/pull/186"
+		},
+		{
+			"file": "src/lib/server/state/endpoints.ts",
+			"mutatorName": "ConditionalExpression",
+			"replacement": "false",
+			"location": {
+				"end": {
+					"column": 18,
+					"line": 52
+				},
+				"start": {
+					"column": 6,
+					"line": 52
+				}
+			},
+			"sourceHash": "255b76b95516b55236afddd6325e8a17cacc87a9f3aca153bfe1c9b125499a03",
+			"fingerprint": "73fa5d2033b9fbbc408762c0a8c22c1341887394d0776dfe5d2ceb027441dbaf",
+			"classification": "equivalent",
+			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null — it coerces to the string \"null\" and returns JS null — and the isPlainObject check on the very next line refuses that the same way one step later. Both versions answer null for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away.",
+			"review": "https://github.com/gabepsilva/Fit_/pull/186"
+		},
+		{
 			"file": "src/lib/server/auth-endpoints.ts",
 			"mutatorName": "StringLiteral",
 			"replacement": "\"Stryker was here!\"",
