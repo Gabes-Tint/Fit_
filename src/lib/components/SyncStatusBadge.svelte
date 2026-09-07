@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { sync } from '$lib/state/sync.svelte';
+	import { tend } from '$lib/state/tend.svelte';
 	import { cn } from '$lib/ui/cn';
+	import { OUTDATED_MESSAGE } from '$lib/domain/state-document';
 
 	/**
 	 * How long a save or a background read may run before it is worth mentioning.
@@ -43,8 +45,22 @@
 		text = '';
 	}
 
+	/**
+	 * The one notice that outranks every other: data written by a newer build
+	 * than this one is here, and until the app is updated nothing on this device
+	 * will be sent or overwritten. Saying so is what stops it reading as "sync is
+	 * broken" — nothing is broken and nothing was lost.
+	 */
+	const halted = $derived(
+		tend.refusal?.message ?? (sync.status === 'outdated' ? OUTDATED_MESSAGE : null)
+	);
+
 	$effect(() => {
 		const status = sync.status;
+		if (halted !== null) {
+			show('error', halted);
+			return;
+		}
 		if (status === 'waiting') {
 			show(
 				'waiting',

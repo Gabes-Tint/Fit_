@@ -208,15 +208,15 @@
 			"location": {
 				"end": {
 					"column": 18,
-					"line": 52
+					"line": 53
 				},
 				"start": {
 					"column": 6,
-					"line": 52
+					"line": 53
 				}
 			},
-			"sourceHash": "255b76b95516b55236afddd6325e8a17cacc87a9f3aca153bfe1c9b125499a03",
-			"fingerprint": "73fa5d2033b9fbbc408762c0a8c22c1341887394d0776dfe5d2ceb027441dbaf",
+			"sourceHash": "1c1d0159300857a27ea636fe7093d1fc1a4de4159f33d1a61b9464958e9c4465",
+			"fingerprint": "5fff05600127abd27b5a62f90ad913b01f226add5c176719db2c2bc52e2fec40",
 			"classification": "equivalent",
 			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null — it coerces to the string \"null\" and returns JS null — and the isPlainObject check on the very next line refuses that the same way one step later. Both versions answer null for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/186"
@@ -468,15 +468,15 @@
 			"location": {
 				"end": {
 					"column": 30,
-					"line": 103
+					"line": 111
 				},
 				"start": {
 					"column": 9,
-					"line": 103
+					"line": 111
 				}
 			},
-			"sourceHash": "077f418fb83137c1dcb51447d69d49128e9012aa5ed7ec36026a6b9763676be7",
-			"fingerprint": "5899e54d66af30f3bf8ed23655ff454a68aa19de24f522bd40f95f5a0a4ea44e",
+			"sourceHash": "77e2a3deadcca09d20206cb8b2be16e0569e615264a3befa4db8b26e770d3fbe",
+			"fingerprint": "cc7a03c07acee845cbd2aa1d371b5bf4396a8cde542f430b021614bada7944d2",
 			"classification": "equivalent",
 			"rationale": "The subject is raw.slice(0, 10), so it is at most ten characters, and the pattern matches exactly ten. A ten-character pattern can only match a ≤10-character string at offset 0 running to the end, so ‘matches somewhere’ and ‘matches the whole string’ are the same proposition here, and dropping ^ cannot change the verdict. The anchor stays in the code because it documents intent and would start mattering the moment the slice changes.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/199"
@@ -488,15 +488,15 @@
 			"location": {
 				"end": {
 					"column": 30,
-					"line": 103
+					"line": 111
 				},
 				"start": {
 					"column": 9,
-					"line": 103
+					"line": 111
 				}
 			},
-			"sourceHash": "077f418fb83137c1dcb51447d69d49128e9012aa5ed7ec36026a6b9763676be7",
-			"fingerprint": "8139b57bf8563f793cdd0e363720d1f69c75188c708cfc079f31bbe6d192d06f",
+			"sourceHash": "77e2a3deadcca09d20206cb8b2be16e0569e615264a3befa4db8b26e770d3fbe",
+			"fingerprint": "29bf007b4f381d01c7fe7d83a027889efc7304736a6fb69190ee52e5349678f1",
 			"classification": "equivalent",
 			"rationale": "Same slice, the other anchor: raw.slice(0, 10) is at most ten characters and the pattern matches exactly ten, so a match at offset 0 already runs to the end of whatever there is to match. Dropping $ cannot separate ‘matches somewhere’ from ‘matches the whole string’ given that slice. The anchor stays in the code because it documents intent and would start mattering the moment the slice changes.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/199"
@@ -508,15 +508,15 @@
 			"location": {
 				"end": {
 					"column": 26,
-					"line": 114
+					"line": 122
 				},
 				"start": {
 					"column": 24,
-					"line": 114
+					"line": 122
 				}
 			},
-			"sourceHash": "077f418fb83137c1dcb51447d69d49128e9012aa5ed7ec36026a6b9763676be7",
-			"fingerprint": "2ac8747dfd64a12fb9875720642800748a2e8d7d780f5b2f01b17cad1fc12cb7",
+			"sourceHash": "77e2a3deadcca09d20206cb8b2be16e0569e615264a3befa4db8b26e770d3fbe",
+			"fingerprint": "8f49e67a169d9ec1e947ea6fb49cb5519244a7d6441261dfcd8c84a60d6579a0",
 			"classification": "equivalent",
 			"rationale": "splitCsv is private to the module — three references, all inside export-data.ts — and both the header line and every data row are split by the same function, so a constant prefix element shifts every column index by exactly one on both sides and the header-to-row alignment survives. A test pinning that alignment directly (a wide CSV, checking every field lands under its header, across every row) was tried first and still could not kill it: the junk cell is also the only new header cell, and ‘stryker was here’ contains none of the substrings idx() looks for (date, name/food/item, calor, protein, carb, fat, meal/folder), so it never captures a column and the shift stays symmetric. The call rests on today’s idx() keyword heuristics rather than a structural impossibility — a future keyword colliding with the junk string would invalidate it, and the source hash would not catch that because the change would land in a different function. See issue/145 for the full discussion.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/199"

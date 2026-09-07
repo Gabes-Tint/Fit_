@@ -1,6 +1,13 @@
 import { resolve } from '$app/paths';
 import { toast } from 'svelte-sonner';
-import type { TendState } from '$lib/domain/types';
+import {
+	documentIsFromTheFuture,
+	OUTDATED_MESSAGE,
+	SCHEMA_VERSION,
+	stateFormat,
+	storedDocument,
+	type StoredDocument
+} from '$lib/domain/state-document';
 import { STORAGE_KEY, tend } from './tend.svelte';
 import type { TendStore } from './tend.svelte';
 
@@ -28,8 +35,14 @@ import type { TendStore } from './tend.svelte';
 
 export const SYNC_STORAGE_KEY = 'tend.sync.v1';
 
-/** The one format the server is told about; it stores the body without reading it. */
-const STATE_FORMAT = 'tend.v1';
+/**
+ * The format this build writes: the schema version of the document inside. The
+ * server stores it without reading the body, so it neither needs nor is told
+ * anything more. Which copy a device may use, and which it must refuse, is
+ * decided here from the document's own `schemaVersion` rather than from this
+ * label — one source of truth, and the one that travels with the data.
+ */
+const STATE_FORMAT = stateFormat(SCHEMA_VERSION);
 
 /** A write refused because someone else's went first. */
 const STALE_STATUS = 409;
@@ -60,7 +73,15 @@ export type SyncRecord = {
 	dirty: boolean;
 };
 
-export type SyncStatus = 'idle' | 'loading' | 'saving' | 'waiting' | 'stale' | 'error';
+export type SyncStatus =
+	| 'idle'
+	| 'loading'
+	| 'saving'
+	| 'waiting'
+	| 'stale'
+	| 'error'
+	/** The account's document was written by a newer build than this one. */
+	| 'outdated';
 
 /** The document as both a read and a refused write hand it back. */
 type RemoteDocument = { version: number; body: Record<string, unknown> | null };
@@ -149,7 +170,7 @@ async function readRemote(): Promise<ReadOutcome> {
  * body names no version is treated as a refusal: the write may well have landed,
  * and the next attempt is told so by a refusal carrying exactly what it wrote.
  */
-async function writeRemote(version: number, body: TendState): Promise<WriteOutcome> {
+async function writeRemote(version: number, body: StoredDocument): Promise<WriteOutcome> {
 	const answer = await ask({
 		method: 'PUT',
 		headers: { 'content-type': 'application/json' },
@@ -368,8 +389,18 @@ export class SyncStore {
 		// so it is this rule that stops it rather than a coincidence of nulls.
 		if (this.pulledFor !== householdId) return;
 		// A device the read was refused for is not one a write will be accepted
-		// from either.
-		if (this.status === 'error') return;
+		// from either, and a household whose document was written by a newer build
+		// is one this device must not offer its own to. `'outdated'` is the latch
+		// as well as the notice: nothing clears it but starting another household,
+		// which is the only thing that could make it untrue.
+		if (this.status === 'error' || this.isOutdated()) return;
+		// A device that could not read its own document reads but never writes.
+		// The store is holding an empty state in place of data it did not
+		// understand, and sending that would put the empty one on the account —
+		// where every other device would then adopt it. Reading is still worth
+		// doing: a document this build can read replaces the one it could not, and
+		// that is what clears the refusal.
+		if (this.store.refusal !== null) return;
 		// One send, and one more only when that one was accepted and a change
 		// arrived while it was in the air. A refusal or a dropped connection
 		// waits for a trigger rather than being hammered.
@@ -412,7 +443,7 @@ export class SyncStore {
 	 * refuses cannot be talked into an unbounded exchange.
 	 */
 	private async push(householdId: string, again = true): Promise<boolean> {
-		const body = $state.snapshot(this.store.state);
+		const body = storedDocument($state.snapshot(this.store.state));
 		this.status = 'saving';
 		this.dirty = false;
 		const result = await writeRemote(this.version, body);
@@ -430,6 +461,9 @@ export class SyncStore {
 		}
 		if (result.stale) {
 			this.receive(result, true, householdId);
+			// The refusal carried a document written by a newer build. Nothing
+			// more is sent, and what this device is holding stays here.
+			if (this.isOutdated()) return false;
 			// Adopting leaves nothing to send, so this is the other case: a
 			// refusal carrying no document, meaning the version written from no
 			// longer exists. `receive` has recorded the one the server does hold,
@@ -462,6 +496,14 @@ export class SyncStore {
 			this.status = 'idle';
 			return;
 		}
+		// Before anything is adopted — and before this device's own document is
+		// ever offered in place of it. A newer build wrote this one; an older one
+		// cannot read it, and writing over it would destroy what it does not
+		// understand.
+		if (documentIsFromTheFuture(remote.body)) {
+			this.outdated(hadOwnWork);
+			return;
+		}
 		if (remote.version > this.version) {
 			this.adopt({ version: remote.version, body: remote.body, hadOwnWork, householdId });
 			return;
@@ -481,12 +523,42 @@ export class SyncStore {
 	 * straight out again.
 	 */
 	private adopt(taken: Adoption): void {
-		this.store.replace(taken.body);
+		if (!this.store.replace(taken.body)) {
+			// A document, but not one that matches the shape this build expects.
+			// It is not adopted, and this device's own is not sent over it: a
+			// document nobody can account for is worth more than the guess that
+			// would replace it.
+			this.dirty = taken.hadOwnWork;
+			this.status = 'error';
+			return;
+		}
 		this.version = taken.version;
 		this.dirty = false;
 		this.save(taken.householdId);
 		this.status = taken.hadOwnWork ? 'stale' : 'idle';
 		if (taken.hadOwnWork) toast(BEHIND_MESSAGE);
+	}
+
+	/** Whether the conversation has stopped; see `outdated()` below. */
+	private isOutdated(): boolean {
+		return this.status === 'outdated';
+	}
+
+	/**
+	 * The account's document was written by a newer build than this one. The
+	 * conversation stops: nothing is adopted, nothing is sent, and what this
+	 * device is holding is left exactly as it is and still counted as unsent.
+	 * Saying so is the whole point — the alternative is a phone that quietly
+	 * stops syncing, or one that overwrites data it cannot read.
+	 */
+	private outdated(hadOwnWork: boolean): void {
+		// The status is the latch: `drain` reads it, and nothing but starting
+		// another household sets it to anything else. The record on disk is not
+		// touched — the last one written already says whether this device is
+		// holding something, and it is never less dirty than the store.
+		this.dirty = hadOwnWork;
+		this.status = 'outdated';
+		toast(OUTDATED_MESSAGE);
 	}
 
 	/**

@@ -9,6 +9,7 @@ import {
 	mfpRowsToLogItems,
 	parseMfpCsv
 } from './export-data';
+import { SCHEMA_VERSION, stateFormat } from './state-document';
 import type { LogItem, Profile, TendState } from './types';
 import { DEFAULT_LOAD_UNIT, DEFAULT_REST_SECONDS, DEFAULT_UNITS, ZERO_MICROS } from './types';
 import { todayISO } from './utils';
@@ -80,8 +81,16 @@ describe('exportJson', () => {
 
 	it('stamps the format and export time', () => {
 		const parsed = JSON.parse(exportJson(state)) as { format: string; exportedAt: string };
-		expect(parsed.format).toBe('tend.v1');
+		expect(parsed.format).toBe(stateFormat(SCHEMA_VERSION));
 		expect(parsed.exportedAt).toBeTruthy();
+	});
+
+	// An export that says `tend.v1` while carrying a later shape describes itself
+	// wrongly, and whoever opens it next has no way to tell.
+	it('carries the schema version of the document it exported', () => {
+		const parsed = JSON.parse(exportJson(state)) as { schemaVersion: number; format: string };
+		expect(parsed.schemaVersion).toBe(SCHEMA_VERSION);
+		expect(parsed.format).toBe(`tend.v${parsed.schemaVersion}`);
 	});
 
 	it('carries the profiles through', () => {

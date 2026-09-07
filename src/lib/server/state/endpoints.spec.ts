@@ -316,16 +316,37 @@ describe('writeState', () => {
 		expect(response.status).toBe(400);
 	});
 
-	it('refuses an unknown format and stores nothing', async () => {
-		const response = await writeState(
+	it.each(['tend.v0', 'tend.v', 'tend.v01', 'tend.vX', 'tend.v1.1', 'other.v1', ''])(
+		'refuses a format that names no schema version and stores nothing: %s',
+		async (format) => {
+			const response = await writeState(
+				db,
+				eventFor(authFor(), putRequest({ body: { version: 0, format, body: {} } }))
+			);
+			expect(response.status).toBe(400);
+			expect(await bodyOf(response)).toEqual({
+				error: { code: 'invalid-input', field: 'format', reason: 'unsupported' }
+			});
+			expect(db.prepare('select count(*) as n from household_state').get()?.['n']).toBe(0);
+		}
+	);
+
+	// The body is stored opaquely and never read here, so a schema this build has
+	// never heard of costs the server nothing — while refusing it would lock a
+	// phone running a newer build out of its own account. Which copy may be used
+	// is the client's decision, taken from the document's own `schemaVersion`.
+	it('stores a document from a newer build and hands the format back unchanged', async () => {
+		const written = await writeState(
 			db,
-			eventFor(authFor(), putRequest({ body: { version: 0, format: 'tend.v2', body: {} } }))
+			eventFor(
+				authFor(),
+				putRequest({ body: { version: 0, format: 'tend.v9', body: { schemaVersion: 9 } } })
+			)
 		);
-		expect(response.status).toBe(400);
-		expect(await bodyOf(response)).toEqual({
-			error: { code: 'invalid-input', field: 'format', reason: 'unsupported' }
-		});
-		expect(db.prepare('select count(*) as n from household_state').get()?.['n']).toBe(0);
+		expect(written.status).toBe(200);
+
+		const read = await bodyOf(readState(db, eventFor(authFor())));
+		expect(read).toMatchObject({ format: 'tend.v9', body: { schemaVersion: 9 } });
 	});
 
 	it.each([-1, 1.5, '0', null])(
@@ -404,10 +425,35 @@ describe('readStateBody', () => {
 		});
 	});
 
-	it('reports the exact code for an unsupported format', async () => {
+	it('reports the exact code for a format that names no schema version', async () => {
 		const result = await readStateBody(
-			putRequest({ body: { version: 0, format: 'tend.v2', body: {} } })
+			putRequest({ body: { version: 0, format: 'tend.v2x', body: {} } })
 		);
+		expect(result).toEqual({
+			ok: false,
+			code: 'invalid-input',
+			field: 'format',
+			reason: 'unsupported'
+		});
+	});
+
+	// An array of one string is what a loose check would read as that string.
+	it.each([2, null, ['tend.v1'], { format: 'tend.v1' }])(
+		'reports a format that is not a string at all as unsupported: %s',
+		async (format) => {
+			const result = await readStateBody(putRequest({ body: { version: 0, format, body: {} } }));
+
+			expect(result).toEqual({
+				ok: false,
+				code: 'invalid-input',
+				field: 'format',
+				reason: 'unsupported'
+			});
+		}
+	);
+
+	it('reports a missing format as unsupported', async () => {
+		const result = await readStateBody(putRequest({ body: { version: 0, body: {} } }));
 		expect(result).toEqual({
 			ok: false,
 			code: 'invalid-input',

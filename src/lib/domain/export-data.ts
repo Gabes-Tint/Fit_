@@ -1,13 +1,21 @@
+import { SCHEMA_VERSION, stateFormat, storedDocument } from './state-document';
 import type { LogItem, Meal, Profile, TendState } from './types';
 import { MEALS, ZERO_MICROS } from './types';
 import { todayISO } from './utils';
 
+/**
+ * The whole state as a file someone can keep. It describes its own shape the
+ * way every other copy of the document does — the label and the version come
+ * from `state-document.ts` rather than being spelled out here, so an export
+ * taken after a shape change says which shape it is rather than the shape that
+ * happened to be current when this line was written.
+ */
 export function exportJson(state: TendState) {
 	return JSON.stringify(
 		{
 			exportedAt: new Date().toISOString(),
-			format: 'tend.v1',
-			...state
+			format: stateFormat(SCHEMA_VERSION),
+			...storedDocument(state)
 		},
 		null,
 		2

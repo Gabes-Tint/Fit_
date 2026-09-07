@@ -15,7 +15,8 @@ import type {
 import { DEFAULT_REST_SECONDS, PLANNED_MEALS, REST_WEEK, ZERO_MICROS } from '$lib/domain/types';
 import { todayISO } from '$lib/domain/utils';
 import { countsAsTraining } from '$lib/domain/workout';
-import { STORAGE_KEY, TendStore } from './tend.svelte';
+import { emptyState, SCHEMA_VERSION } from '$lib/domain/state-document';
+import { REFUSED_STORAGE_KEY, STORAGE_KEY, TendStore } from './tend.svelte';
 
 function freshStore() {
 	localStorage.clear();
@@ -140,13 +141,19 @@ describe('hydration', () => {
 		expect(store.state.profiles).toHaveLength(1);
 	});
 
-	it('starts clean rather than throwing on a corrupt payload', () => {
+	// Not "starts clean": starting clean means the next write puts an empty
+	// document where something unreadable was, and whatever that text was, it is
+	// the only copy this device has. Refusing keeps it.
+	it('refuses a corrupt payload rather than throwing, and keeps it', () => {
 		localStorage.setItem(STORAGE_KEY, '{not json');
 		const store = new TendStore();
-		store.state.profiles.push(emptyProfile({ name: 'Alex' }));
 		store.hydrate();
+		expect(store.hydrated).toBe(true);
+		expect(store.refusal?.reason).toBe('malformed');
 		expect(store.state.onboarded).toBe(false);
-		expect(store.state.profiles).toEqual([]);
+		store.togglePantry('oats');
+		store.persist();
+		expect(localStorage.getItem(STORAGE_KEY)).toBe('{not json');
 	});
 
 	it('fills in keys missing from an older payload', () => {
@@ -1722,5 +1729,175 @@ describe('what a synced device needs from the store', () => {
 		} finally {
 			if (real) Object.defineProperty(globalThis, 'localStorage', real);
 		}
+	});
+});
+
+describe('the version the stored document carries', () => {
+	function rawDocument(): Record<string, unknown> {
+		const raw = localStorage.getItem(STORAGE_KEY);
+		if (raw === null) throw new Error('nothing was written to localStorage');
+		return JSON.parse(raw) as Record<string, unknown>;
+	}
+
+	it('is written down, so whoever reads it next knows what shape it is', () => {
+		onboarded();
+		expect(rawDocument()['schemaVersion']).toBe(SCHEMA_VERSION);
+	});
+
+	it('comes back off the device as the state it was, with the version left behind', () => {
+		const store = onboarded();
+		store.togglePantry('oats');
+		store.persist();
+
+		const reread = new TendStore();
+		reread.hydrate();
+
+		expect(reread.state.pantry).toEqual(['oats']);
+		expect(reread.refusal).toBeNull();
+		expect(Object.keys(reread.state)).not.toContain('schemaVersion');
+	});
+
+	it('refuses a document written by a newer build, and does not write over it', () => {
+		const newer = JSON.stringify({ ...emptyState(), schemaVersion: SCHEMA_VERSION + 1 });
+		localStorage.setItem(STORAGE_KEY, newer);
+
+		const store = new TendStore();
+		store.hydrate();
+
+		expect(store.refusal?.reason).toBe('future');
+		expect(store.refusal?.message).toMatch(/update the app/i);
+		// The one thing that must not happen: this build saving over data it
+		// cannot read.
+		store.togglePantry('oats');
+		store.persist();
+		expect(localStorage.getItem(STORAGE_KEY)).toBe(newer);
+	});
+
+	it('takes a document it can read in place of one it could not, and writes again', () => {
+		localStorage.setItem(
+			STORAGE_KEY,
+			JSON.stringify({ ...emptyState(), schemaVersion: SCHEMA_VERSION + 1 })
+		);
+		const store = new TendStore();
+		store.hydrate();
+
+		expect(store.replace({ ...emptyState(), pantry: ['rice'] })).toBe(true);
+
+		expect(store.refusal).toBeNull();
+		expect(store.state.pantry).toEqual(['rice']);
+		expect(rawDocument()['pantry']).toEqual(['rice']);
+	});
+
+	// The rollback case: a newer build recorded something here, the app was
+	// downgraded, and the account's copy is the older one this build can read.
+	// Adopting it is right, and it is the only thing that gets the device working
+	// again — but what it replaces is the only copy of the newer work.
+	it('sets aside the document it could not read before writing over it', () => {
+		const newer = JSON.stringify({
+			...emptyState(),
+			pantry: ['recorded on the newer build'],
+			schemaVersion: SCHEMA_VERSION + 1
+		});
+		localStorage.setItem(STORAGE_KEY, newer);
+		const store = new TendStore();
+		store.hydrate();
+
+		store.replace({ ...emptyState(), pantry: ['rice'] });
+
+		expect(localStorage.getItem(REFUSED_STORAGE_KEY)).toBe(newer);
+	});
+
+	it('sets aside a document it could not read for any other reason, too', () => {
+		localStorage.setItem(STORAGE_KEY, '{not json');
+		const store = new TendStore();
+		store.hydrate();
+
+		store.replace({ ...emptyState(), pantry: ['rice'] });
+
+		expect(localStorage.getItem(REFUSED_STORAGE_KEY)).toBe('{not json');
+	});
+
+	it('sets nothing aside when there was nothing it could not read', () => {
+		const store = onboarded();
+
+		store.replace({ ...emptyState(), pantry: ['rice'] });
+
+		expect(localStorage.getItem(REFUSED_STORAGE_KEY)).toBeNull();
+	});
+
+	// The literal, not the constant: a renamed key would round-trip against itself
+	// and the document set aside by an older build would be invisible.
+	it('is set aside under the key the rest of the application knows', () => {
+		expect(REFUSED_STORAGE_KEY).toBe('tend.v1.refused');
+	});
+
+	it('sets nothing aside when the document it refused is no longer there', () => {
+		localStorage.setItem(STORAGE_KEY, '{not json');
+		const store = new TendStore();
+		store.hydrate();
+		// Another tab cleared the key between this device reading it and taking a
+		// document in its place.
+		localStorage.removeItem(STORAGE_KEY);
+
+		store.replace({ ...emptyState(), pantry: ['rice'] });
+
+		expect(localStorage.getItem(REFUSED_STORAGE_KEY)).toBeNull();
+	});
+
+	it('sets nothing aside where there is no localStorage at all', () => {
+		const real = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+		Object.defineProperty(globalThis, 'localStorage', { value: undefined, configurable: true });
+		try {
+			const store = new TendStore();
+			store.hydrate();
+			store.refusal = { ok: false, reason: 'future', message: 'newer than this build' };
+
+			expect(() => store.replace({ ...emptyState(), pantry: ['rice'] })).not.toThrow();
+		} finally {
+			if (real) Object.defineProperty(globalThis, 'localStorage', real);
+		}
+	});
+
+	it('signing out takes the document that was set aside with it', () => {
+		localStorage.setItem(
+			STORAGE_KEY,
+			JSON.stringify({ ...emptyState(), schemaVersion: SCHEMA_VERSION + 1 })
+		);
+		const store = new TendStore();
+		store.hydrate();
+		store.replace({ ...emptyState(), pantry: ['rice'] });
+		expect(localStorage.getItem(REFUSED_STORAGE_KEY)).not.toBeNull();
+
+		store.clear();
+
+		// It is this account's data; the next account signing in on this device
+		// must not find it.
+		expect(localStorage.getItem(REFUSED_STORAGE_KEY)).toBeNull();
+	});
+
+	it('refuses a document from elsewhere that it cannot read, and keeps its own', () => {
+		const store = onboarded();
+		store.togglePantry('oats');
+		store.persist();
+
+		expect(store.replace({ ...emptyState(), schemaVersion: SCHEMA_VERSION + 1 })).toBe(false);
+		expect(store.replace({ onboarded: true, restSeconds: 'ninety' })).toBe(false);
+
+		expect(store.state.pantry).toEqual(['oats']);
+		expect(rawDocument()['pantry']).toEqual(['oats']);
+	});
+
+	it('signing out clears a refusal along with everything else', () => {
+		localStorage.setItem(
+			STORAGE_KEY,
+			JSON.stringify({ ...emptyState(), schemaVersion: SCHEMA_VERSION + 1 })
+		);
+		const store = new TendStore();
+		store.hydrate();
+
+		store.clear();
+
+		expect(store.refusal).toBeNull();
+		expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
 	});
 });
