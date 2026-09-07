@@ -1,12 +1,14 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import process from 'node:process';
 import { summarizeLatencies } from './server-latency-metrics.ts';
 import type { EndpointLatency } from './server-latency-metrics.ts';
+import { readJsonFile } from '../security/shared';
+import type { SearchFixture } from '../quality/config-types';
 
 /**
  * Instrument 3: `GET /api/foods?q=` for every query `search:eval` uses, twice
@@ -102,8 +104,6 @@ async function timed(baseURL: string, path: string, cookie: string): Promise<num
 	return performance.now() - started;
 }
 
-type SearchFixture = { queries: { query: string }[] };
-
 /** A GTIN-14 this catalog actually carries, found by searching until one turns up. */
 async function findKnownBarcode(
 	baseURL: string,
@@ -139,9 +139,9 @@ export async function measureServerLatency(
 		};
 	}
 
-	const fixture = JSON.parse(
-		await readFile(path.join(root, 'data', 'eval', 'search-queries.json'), 'utf8')
-	) as SearchFixture;
+	const fixture = await readJsonFile<SearchFixture>(
+		path.join(root, 'data', 'eval', 'search-queries.json')
+	);
 	const queries = fixture.queries.map((entry) => entry.query);
 
 	const runtimeDirectory = await mkdtemp(path.join(tmpdir(), 'fit-perf-server-'));

@@ -13,13 +13,12 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import process from 'node:process';
-import { captureStatus } from '../security/shared';
-import { underGateSlice } from '../dev/gate-slice';
 import { gateLogDirectory, gateReportPath } from './gate-paths';
 import { tiers } from './gates';
 import { isServerSource, walk } from './mutation-scope';
 import { isExcludedFromMutation } from './mutation-globs';
-import { stepOutcome, summarizeOutcomes, summaryExitCode, type StepOutcome } from './run-outcome';
+import { summarizeOutcomes, summaryExitCode, type StepOutcome } from './run-outcome';
+import { runLoggedStep, type LoggedStepResult } from './step-runner';
 import { buildVerifyChangedPlan, type ChangedFile, type PlanStep } from './verify-changed-plan';
 import { DOM_FREE_CLIENT_SPECS } from '../../quality/dom-free-client-specs.mjs';
 
@@ -210,37 +209,6 @@ function vitestProjectArgs(project: 'server' | 'client', spec: string): string[]
 		: ['--project', 'client'];
 }
 
-async function runCommand(
-	name: string,
-	command: string,
-	args: string[],
-	logDirectory: string,
-	extraEnv: NodeJS.ProcessEnv = {},
-	logName: string = name
-): Promise<{
-	ok: boolean;
-	outcome: StepOutcome;
-	exitCode: number;
-	durationMs: number;
-	log: string;
-}> {
-	const logPath = path.join(logDirectory, `${logName.replace(/[/:]/g, '-')}.log`);
-	const startedAt = Date.now();
-	// Same launch decision the tiered gate makes: sliced locally, untouched in CI.
-	const launch = underGateSlice(command, args);
-	const { exitCode, output } = await captureStatus(launch.command, launch.args, {
-		env: { ...process.env, ...extraEnv, FORCE_COLOR: '0' }
-	});
-	await writeFile(logPath, output);
-	return {
-		ok: exitCode === 0,
-		outcome: stepOutcome(exitCode),
-		exitCode,
-		durationMs: Date.now() - startedAt,
-		log: path.relative(projectRoot, logPath)
-	};
-}
-
 function printPlan(steps: readonly PlanStep[], e2eProject: string): void {
 	const labels: Record<PlanStep['category'], string> = {
 		static: 'static',
@@ -318,7 +286,7 @@ async function main(): Promise<void> {
 
 	const startedAt = new Date();
 	const started = Date.now();
-	const results: {
+	interface CommandResult {
 		name: string;
 		ok: boolean;
 		outcome: StepOutcome;
@@ -326,12 +294,24 @@ async function main(): Promise<void> {
 		durationMs: number;
 		log: string;
 		command: string;
-	}[] = [];
+	}
+	const results: CommandResult[] = [];
+	function record(name: string, command: string, run: LoggedStepResult): void {
+		results.push({
+			name,
+			command,
+			ok: run.ok,
+			outcome: run.outcome,
+			exitCode: run.exitCode,
+			durationMs: run.durationMs,
+			log: run.log
+		});
+	}
 
 	for (const step of resolvedPlan.steps) {
 		if (step.category === 'static') {
-			const run = await runCommand(step.name, 'bun', ['run', step.name], logDirectory);
-			results.push({ name: step.name, command: `bun run ${step.name}`, ...run });
+			const run = await runLoggedStep(step.name, 'bun', ['run', step.name], logDirectory);
+			record(step.name, `bun run ${step.name}`, run);
 		}
 	}
 	const specSteps = resolvedPlan.steps.filter((step) => step.category === 'spec');
@@ -348,19 +328,14 @@ async function main(): Promise<void> {
 		for (const [projectArgsKey, files] of grouped) {
 			const projectArgs = projectArgsKey.split(' ');
 			const name = `spec: ${files.join(', ')}`;
-			const run = await runCommand(
+			const run = await runLoggedStep(
 				name,
 				'bunx',
 				['vitest', 'run', ...projectArgs, ...files],
 				logDirectory,
-				{},
-				logFileName('specs', files)
+				{ logName: logFileName('specs', files) }
 			);
-			results.push({
-				name,
-				command: `bunx vitest run ${projectArgs.join(' ')} ${files.join(' ')}`,
-				...run
-			});
+			record(name, `bunx vitest run ${projectArgs.join(' ')} ${files.join(' ')}`, run);
 		}
 	}
 	const e2eSteps = resolvedPlan.steps.filter((step) => step.category === 'e2e');
@@ -373,19 +348,22 @@ async function main(): Promise<void> {
 				: { E2E_PROJECT: 'mobile-chrome' };
 		const name =
 			e2eSteps[0]?.name === 'full suite' ? 'e2e: full suite' : `e2e: ${files.join(', ')}`;
-		const run = await runCommand(name, 'bunx', args, logDirectory, env, logFileName('e2e', files));
-		results.push({ name, command: `bunx ${args.join(' ')}`, ...run });
+		const run = await runLoggedStep(name, 'bunx', args, logDirectory, {
+			env,
+			logName: logFileName('e2e', files)
+		});
+		record(name, `bunx ${args.join(' ')}`, run);
 	}
 	for (const step of resolvedPlan.steps) {
 		if (step.category !== 'mutation') continue;
 		const scriptName = `test:mutation:${step.name === 'security' ? 'security' : step.name === 'changed-client' ? 'changed:client' : 'changed:node'}`;
-		const run = await runCommand(scriptName, 'bun', ['run', scriptName], logDirectory);
-		results.push({ name: scriptName, command: `bun run ${scriptName}`, ...run });
+		const run = await runLoggedStep(scriptName, 'bun', ['run', scriptName], logDirectory);
+		record(scriptName, `bun run ${scriptName}`, run);
 	}
 	for (const step of resolvedPlan.steps) {
 		if (step.category !== 'build') continue;
-		const run = await runCommand(step.name, 'bun', ['run', step.name], logDirectory);
-		results.push({ name: step.name, command: `bun run ${step.name}`, ...run });
+		const run = await runLoggedStep(step.name, 'bun', ['run', step.name], logDirectory);
+		record(step.name, `bun run ${step.name}`, run);
 	}
 
 	const summary = summarizeOutcomes(results);

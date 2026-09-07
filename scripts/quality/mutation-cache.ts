@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { MutationLane } from './mutation-types';
+import { readJsonFileOrNull } from '../security/shared';
 
 const COMPATIBILITY_INPUTS = [
 	'.tool-versions',
@@ -40,14 +41,9 @@ export async function prepareMutationCache(options: {
 	metadataPath: string;
 }): Promise<string> {
 	const digest = await mutationCompatibilityDigest(options.projectRoot, options.lane);
-	let recorded: string | null = null;
-	try {
-		recorded =
-			(JSON.parse(await readFile(options.metadataPath, 'utf8')) as { digest?: string }).digest ??
-			null;
-	} catch {
-		// Missing or malformed metadata means the incremental result is not trustworthy.
-	}
+	// Missing or malformed metadata means the incremental result is not trustworthy.
+	const metadata = await readJsonFileOrNull<{ digest?: string }>(options.metadataPath);
+	const recorded = metadata?.digest ?? null;
 	if (recorded !== digest) await rm(options.incrementalPath, { force: true });
 	// Consume the validity marker before Stryker runs, so a cancelled process
 	// leaves no metadata to bless a partially rewritten incremental file.

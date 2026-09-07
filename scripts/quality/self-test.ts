@@ -81,15 +81,6 @@ async function run(
 	return exitCode;
 }
 
-async function runCaptured(
-	cwd: string,
-	command: string,
-	args: string[],
-	env: NodeJS.ProcessEnv
-): Promise<{ exitCode: number; output: string }> {
-	return captureStatus(command, args, { cwd, env });
-}
-
 /**
  * Each fixture is an independent tree copy, so they run in parallel, but each
  * spawns nested test runners of its own, so the pool is half the cores rather
@@ -232,7 +223,10 @@ async function proveFixture(
 		}
 	}
 
-	const { exitCode, output } = await runCaptured(workspace, 'bun', ['run', fixture.gate], env);
+	const { exitCode, output } = await captureStatus('bun', ['run', fixture.gate], {
+		cwd: workspace,
+		env
+	});
 	await rm(workspace, { recursive: true, force: true });
 	const intendedFailure =
 		fixture.failureIncludes === undefined || output.includes(fixture.failureIncludes);

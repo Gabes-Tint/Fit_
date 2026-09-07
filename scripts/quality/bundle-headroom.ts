@@ -1,10 +1,11 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { run, captureStatus } from '../security/shared';
+import { run, captureStatus, readJsonFile } from '../security/shared';
 import { collectAssets, measure } from './bundle-assets';
 import type { Asset, Measurement } from './bundle-assets';
+import type { BundleBudgets } from './config-types';
 
 export type { Asset, Measurement };
 export { measure };
@@ -24,12 +25,6 @@ export { measure };
  * no longer be the thing that misleads the next agent.
  */
 
-export interface Budgets {
-	clientCssBytes: number;
-	clientJavaScriptBytes: number;
-	largestAssetBytes: number;
-}
-
 export interface BudgetRow {
 	metric: string;
 	bytes: number;
@@ -38,7 +33,7 @@ export interface BudgetRow {
 }
 
 /** Pure: one row per metric, headroom negative when the budget is already blown. */
-export function buildBudgetTable(measurement: Measurement, budgets: Budgets): BudgetRow[] {
+export function buildBudgetTable(measurement: Measurement, budgets: BundleBudgets): BudgetRow[] {
 	return [
 		{
 			metric: 'JS',
@@ -198,10 +193,8 @@ const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 const reportDirectory = path.join(projectRoot, 'reports', 'quality', 'bundle');
 const assetRootSegments = ['.svelte-kit', 'output', 'client', '_app', 'immutable'];
 
-async function readBudgets(root: string): Promise<Budgets> {
-	return JSON.parse(
-		await readFile(path.join(root, 'quality', 'bundle-budgets.json'), 'utf8')
-	) as Budgets;
+async function readBudgets(root: string): Promise<BundleBudgets> {
+	return readJsonFile<BundleBudgets>(path.join(root, 'quality', 'bundle-budgets.json'));
 }
 
 /**
@@ -257,14 +250,14 @@ async function removeRefWorktree(directory: string): Promise<void> {
 
 interface Report {
 	assets: Asset[];
-	budgets: Budgets;
+	budgets: BundleBudgets;
 	cssBytes: number;
 	javascriptBytes: number;
 	largestAsset: Asset;
 	violations: string[];
 }
 
-function violationsFor(measurement: Measurement, budgets: Budgets): string[] {
+function violationsFor(measurement: Measurement, budgets: BundleBudgets): string[] {
 	return [
 		measurement.javascriptBytes > budgets.clientJavaScriptBytes
 			? `Client JavaScript is ${measurement.javascriptBytes} bytes; budget is ${budgets.clientJavaScriptBytes}.`
@@ -283,7 +276,7 @@ function violationsFor(measurement: Measurement, budgets: Budgets): string[] {
  * this command rewrites it from what was just measured, so a stale report
  * left over from an old run can never again be read as today's number.
  */
-async function writeReport(measurement: Measurement, budgets: Budgets): Promise<void> {
+async function writeReport(measurement: Measurement, budgets: BundleBudgets): Promise<void> {
 	const report: Report = {
 		assets: measurement.assets,
 		budgets,

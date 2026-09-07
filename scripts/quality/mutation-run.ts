@@ -1,8 +1,8 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import process from 'node:process';
-import { captureStatus } from '../security/shared';
+import { captureStatus, readJsonFile } from '../security/shared';
 import { prepareMutationCache, recordMutationCache } from './mutation-cache';
 import { describeMutationCrash, formatMutationCrash, recordMutationCrash } from './mutation-crash';
 import { buildMutationScope } from './mutation-scope';
@@ -90,10 +90,8 @@ export async function runMutation(options: Arguments): Promise<number> {
 	const ledgerPath = path.join(projectRoot, 'quality', 'mutation-equivalents.json');
 	await clearStrykerSandboxes(projectRoot);
 	await resetMutationResultArtifacts(directory);
-	parseMutationPolicy(JSON.parse(await readFile(policyPath, 'utf8')) as unknown);
-	const ledgerFailures = mutationReviewLedgerFailures(
-		JSON.parse(await readFile(ledgerPath, 'utf8')) as unknown
-	);
+	parseMutationPolicy(await readJsonFile<unknown>(policyPath));
+	const ledgerFailures = mutationReviewLedgerFailures(await readJsonFile<unknown>(ledgerPath));
 	if (ledgerFailures.length > 0) {
 		for (const failure of ledgerFailures) console.error(failure);
 		return 1;

@@ -7,9 +7,9 @@ import type { GateStep } from './gates';
 import { ciJobs, isCiJobName, isTierName, tiers } from './gates';
 import { gateLogDirectory, gateReportPath } from './gate-paths';
 import { pooled } from './pool';
-import { stepOutcome, summarizeOutcomes, summaryExitCode, type StepOutcome } from './run-outcome';
+import { summarizeOutcomes, summaryExitCode, type StepOutcome } from './run-outcome';
+import { runLoggedStep } from './step-runner';
 import { captureStatus } from '../security/shared';
-import { underGateSlice } from '../dev/gate-slice';
 
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 const reportDirectory = path.join(projectRoot, 'reports', 'quality');
@@ -84,29 +84,22 @@ async function runStep(
 	logDirectory: string,
 	signal: AbortSignal
 ): Promise<StepRun> {
-	const logPath = path.join(logDirectory, `${step.name.replace(/:/g, '-')}.log`);
-	const startedAt = Date.now();
-	// Locally the step runs inside the shared memory slice; under CI, and
-	// wherever the slice is unavailable, this is `bun run <step>` untouched.
-	const launch = underGateSlice('bun', ['run', step.name]);
-	const { exitCode, output } = await captureStatus(launch.command, launch.args, {
+	const run = await runLoggedStep(step.name, 'bun', ['run', step.name], logDirectory, {
 		stream,
-		signal,
-		env: { ...process.env, FORCE_COLOR: '0' }
+		signal
 	});
-	await writeFile(logPath, output);
 
 	return {
-		output,
+		output: run.output,
 		result: {
 			name: step.name,
 			purpose: step.purpose,
 			command: `bun run ${step.name}`,
-			ok: exitCode === 0,
-			outcome: stepOutcome(exitCode),
-			exitCode,
-			durationMs: Date.now() - startedAt,
-			log: path.relative(projectRoot, logPath),
+			ok: run.ok,
+			outcome: run.outcome,
+			exitCode: run.exitCode,
+			durationMs: run.durationMs,
+			log: run.log,
 			artifacts: step.artifacts ?? []
 		}
 	};
