@@ -20,6 +20,12 @@
  * feature can show as "N of them".
  */
 
+// Re-exported: `default-serving.ts` and this module both describe the same
+// `food_serving` row, and the server side (`server/catalog/unit-measure.ts`)
+// reaches for it here rather than importing two domain modules for one type.
+export type { ServingRow } from './default-serving';
+import type { ServingRow } from './default-serving';
+
 /** The nouns a label must name to read as a single countable item. */
 const COUNTABLE_NOUNS = [
 	'item',
@@ -61,8 +67,6 @@ export function unitNoun(label: string): CountableNoun | null {
 	if (match === null) return null;
 	return String(match[1]).toLowerCase() as CountableNoun;
 }
-
-export type ServingRow = { label: string; grams: number };
 
 /**
  * Whether a row is a usable unit measure: a real weight, behind a label that
