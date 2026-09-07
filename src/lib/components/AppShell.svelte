@@ -71,7 +71,7 @@
 		!tend.state.onboarded && sync.status === 'loading' && !skipInitialSync
 	);
 
-	const pathname = $derived(page.url?.pathname ?? '/');
+	const pathname = $derived(page.url.pathname);
 	const onAuthRoute = $derived(AUTH_ROUTES.some((route) => resolve(route) === pathname));
 
 	/**
@@ -81,7 +81,7 @@
 	 * notice: a link to `/exercise/session#set-3` that came back without it
 	 * would look like it worked and land at the top of the page.
 	 */
-	const here = $derived(`${pathname}${page.url?.search ?? ''}${page.url?.hash ?? ''}`);
+	const here = $derived(`${pathname}${page.url.search}${page.url.hash}`);
 
 	/**
 	 * A clock the gate can see.

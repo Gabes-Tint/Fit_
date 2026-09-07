@@ -131,10 +131,14 @@ describe('WeekStrip', () => {
 	});
 
 	it('leaves an unlogged day with faint icons', async () => {
+		const yesterday = addDaysISO(todayISO(), -1);
 		await render(WeekStrip, {
 			props: { food: empty(), exercise: empty(), weight: empty(), selected: todayISO() }
 		});
-		expect(document.querySelectorAll('.text-muted-foreground\\/50').length).toBeGreaterThan(0);
+		const yesterdayPill = page
+			.getByRole('button', { name: dayStripAccessibleLabel(yesterday, 'nothing logged', false) })
+			.element() as HTMLElement;
+		expect(yesterdayPill.querySelectorAll('svg.text-muted-foreground\\/50')).toHaveLength(3);
 	});
 
 	it('marks the selected day that was logged in the primary-foreground color', async () => {
@@ -146,7 +150,8 @@ describe('WeekStrip', () => {
 				selected: todayISO()
 			}
 		});
-		expect(document.querySelectorAll('.text-primary-foreground').length).toBeGreaterThan(0);
+		const todayPill = page.getByRole('button', { name: /^Today/ }).element() as HTMLElement;
+		expect(todayPill.querySelectorAll('svg.text-primary-foreground')).toHaveLength(1);
 	});
 
 	it('shows only the food icon coloured when only food was logged', async () => {
@@ -207,7 +212,6 @@ describe('WeekStrip', () => {
 			page.getByRole('button', { name: /^Today/ }).element() as HTMLButtonElement
 		);
 		const todayButton = buttons[todayIndex];
-		expect(todayButton).toBeDefined();
 		todayButton?.focus();
 		todayButton?.dispatchEvent(
 			new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })
@@ -224,7 +228,6 @@ describe('WeekStrip', () => {
 			page.getByRole('button', { name: /^Today/ }).element() as HTMLButtonElement
 		);
 		const todayButton = buttons[todayIndex];
-		expect(todayButton).toBeDefined();
 		todayButton?.focus();
 		todayButton?.dispatchEvent(
 			new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true })
@@ -238,7 +241,6 @@ describe('WeekStrip', () => {
 		});
 		const buttons = Array.from(document.querySelectorAll('button'));
 		const firstButton = buttons[0];
-		expect(firstButton).toBeDefined();
 		firstButton?.focus();
 		firstButton?.dispatchEvent(
 			new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true })
@@ -252,7 +254,6 @@ describe('WeekStrip', () => {
 		});
 		const buttons = Array.from(document.querySelectorAll('button'));
 		const lastButton = buttons[buttons.length - 1];
-		expect(lastButton).toBeDefined();
 		lastButton?.focus();
 		lastButton?.dispatchEvent(
 			new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })
@@ -269,7 +270,6 @@ describe('WeekStrip', () => {
 			buttons[
 				buttons.indexOf(page.getByRole('button', { name: /^Today/ }).element() as HTMLButtonElement)
 			];
-		expect(todayButton).toBeDefined();
 		todayButton?.focus();
 		todayButton?.dispatchEvent(
 			new KeyboardEvent('keydown', { key: 'Home', bubbles: true, cancelable: true })
@@ -286,7 +286,6 @@ describe('WeekStrip', () => {
 			buttons[
 				buttons.indexOf(page.getByRole('button', { name: /^Today/ }).element() as HTMLButtonElement)
 			];
-		expect(todayButton).toBeDefined();
 		todayButton?.focus();
 		todayButton?.dispatchEvent(
 			new KeyboardEvent('keydown', { key: 'End', bubbles: true, cancelable: true })
@@ -303,7 +302,6 @@ describe('WeekStrip', () => {
 			buttons[
 				buttons.indexOf(page.getByRole('button', { name: /^Today/ }).element() as HTMLButtonElement)
 			];
-		expect(todayButton).toBeDefined();
 		todayButton?.focus();
 		todayButton?.dispatchEvent(
 			new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true })

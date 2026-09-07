@@ -13,7 +13,16 @@ describe('Checkbox', () => {
 
 	it('shows a tick when checked', async () => {
 		await render(Checkbox, { props: { checked: true, 'aria-label': 'Oats in pantry' } });
-		expect(document.querySelector('svg')).not.toBeNull();
+		expect(
+			page.getByRole('checkbox', { name: 'Oats in pantry' }).element().querySelector('svg')
+		).not.toBeNull();
+	});
+
+	it('shows no tick when unchecked', async () => {
+		await render(Checkbox, { props: { checked: false, 'aria-label': 'Oats in pantry' } });
+		expect(
+			page.getByRole('checkbox', { name: 'Oats in pantry' }).element().querySelector('svg')
+		).toBeNull();
 	});
 
 	it('writes a tick back to the caller', async () => {

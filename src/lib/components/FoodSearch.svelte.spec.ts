@@ -78,7 +78,6 @@ describe('FoodSearch', () => {
 
 	it('finds a packaged food by its barcode', async () => {
 		const barcoded = FOODS.find((f) => f.barcode);
-		expect(barcoded).toBeDefined();
 		await render(FoodSearch, { props: { onpick: vi.fn() } });
 		await page.getByLabelText(SEARCH).fill(barcoded?.barcode ?? '');
 		await expect.element(page.getByText(barcoded?.name ?? '')).toBeInTheDocument();

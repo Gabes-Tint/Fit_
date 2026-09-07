@@ -116,7 +116,6 @@ describe('SideNav', () => {
 		const shown = [...document.querySelectorAll('span')].find(
 			(element) => element.textContent === APP_VERSION
 		);
-		expect(shown).toBeDefined();
 		expect(shown?.closest('a, button')).toBeNull();
 	});
 

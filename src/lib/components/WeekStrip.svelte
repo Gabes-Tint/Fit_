@@ -31,7 +31,7 @@
 	let pillEls: (HTMLButtonElement | undefined)[] = [];
 
 	$effect(() => {
-		todayEl?.scrollIntoView?.({ inline: 'center', block: 'nearest', behavior: 'instant' });
+		todayEl?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'instant' });
 	});
 
 	/** Roving tabindex: arrow keys move focus among pills without changing selection. */
