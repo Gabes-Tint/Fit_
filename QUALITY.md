@@ -154,6 +154,27 @@ already allows, pin it in the `overrides` block of `package.json` and drop the o
 the tree resolves to a patched version by itself. Do not force an override across a major
 boundary a direct dependency declares against; record why here instead.
 
+## Duplication scope
+
+`.jscpd.json` ignores `**/*.{test,spec}.ts`, so `bun run duplicates` and its `maxClones: 0`
+threshold cover only production code — roughly 37k of the ~56k TS lines in `src` and
+`scripts` (measured 2026-09-07). Running the same `minLines`/`minTokens`/`mode` values
+without that ignore finds real clones in spec files: 38 clones / 563 duplicated lines, most
+of them repeated fixture objects in `mutation-verdict.spec.ts` and repeated setup blocks in
+`sync.svelte.spec.ts`. `check:mutation-oracle` and the mutation lanes already give spec
+fixtures their own strictness (a spec file that only restates the code it tests fails the
+"kills nothing new" check), so the clone ratchet staying narrow to production code is a
+scope choice, not a blind spot nobody noticed — but it is worth stating plainly rather than
+leaving `bun run duplicates` looking like a whole-tree number when it is not.
+
+Widening `.jscpd.json` to specs is deliberately deferred rather than done alongside this
+note: #169 (spec fixture deduplication) is mid-flight on the exact files carrying the worst
+of these 38 clones, and recording a baseline or fixing the clones here would either go stale
+the moment #169 lands or collide with it file-for-file. Once #169 merges, re-run the wider
+scan above, lift the ignore, and set `duplication.maxClones` back to `0` against whatever
+remains — the ratchet only moves after the clones are gone, never as the way to make it
+pass.
+
 ## Bundle budget
 
 `bun run bundle:headroom` builds the current tree the same way `check:bundle` does and
