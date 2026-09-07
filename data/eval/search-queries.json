@@ -668,6 +668,48 @@
 				"Pork, fresh, variety meats and by-products, brain, cooked, braised"
 			],
 			"forbidden": []
+		},
+		{
+			"query": "big mac",
+			"group": "restaurant",
+			"means": "McDonald's Big Mac sandwich (#157: the top result must carry a real serving, not a silent 100 g)",
+			"acceptable": [
+				"Big Mac",
+				"McDONALD'S, BIG MAC",
+				"Big Mac (McDonalds)"
+			],
+			"forbidden": []
+		},
+		{
+			"query": "whopper",
+			"group": "restaurant",
+			"means": "Burger King Whopper sandwich (#157: the top result must carry a real serving, not a silent 100 g)",
+			"acceptable": [
+				"Whopper",
+				"Whopper (Burger King)"
+			],
+			"forbidden": []
+		},
+		{
+			"query": "subway turkey",
+			"group": "restaurant",
+			"means": "a Subway turkey sub, six or twelve inch (#157: the top result must carry a real serving, not a silent 100 g)",
+			"acceptable": [
+				"SUBWAY, turkey breast sub on white bread with lettuce and tomato",
+				"OVEN ROASTED TURKEY SUB",
+				"Oven-Roasted Turkey Sub",
+				"Turkey Breast Double Meat Footlong Sub"
+			],
+			"forbidden": []
+		},
+		{
+			"query": "starbucks grande latte",
+			"group": "restaurant",
+			"means": "a Starbucks grande caffe latte (#157: the top result must carry a real serving, not a silent 100 g)",
+			"acceptable": [
+				"Caffe Latte Grande Cup"
+			],
+			"forbidden": []
 		}
 	]
 }

@@ -258,14 +258,26 @@ describe('catalogFoodToFood', () => {
 		);
 	});
 
-	it('falls back to 100 g when the catalog names no serving weight', () => {
+	it('falls back to 100 g, labelled explicitly, when the catalog names no serving weight', () => {
 		const food = catalogFoodToFood({
 			...CEREAL,
 			serving: { label: null, grams: null }
 		});
 		expect(food.grams).toBe(100);
-		expect(food.servingLabel).toBe('100 g');
+		expect(food.servingLabel).toBe('per 100 g');
 		expect(food.kcal).toBe(375);
+	});
+
+	it('shows the server’s own fallback label rather than inventing its own', () => {
+		// The server always sends an explicit label for the no-serving case
+		// (#157); this only exercises the client's own fallback for a payload
+		// that reached it without one.
+		const food = catalogFoodToFood({
+			...CEREAL,
+			serving: { label: 'per 100 g', grams: null }
+		});
+		expect(food.servingLabel).toBe('per 100 g');
+		expect(food.grams).toBe(100);
 	});
 
 	it('keeps a named serving even when its weight is unknown', () => {

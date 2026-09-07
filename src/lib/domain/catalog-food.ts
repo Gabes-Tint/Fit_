@@ -157,6 +157,17 @@ export function isCatalogFoodPayload(value: unknown): value is CatalogFoodPayloa
 const PER = 100;
 
 /**
+ * The label for a serving the catalog priced by weight alone.
+ *
+ * The server picks a household measure — a whole item, or the first serving
+ * the source gave — before it ever falls back to this, so reaching it here
+ * means the catalog truly named none. "100 g" would read as a real serving
+ * nobody reported; saying "per 100 g" instead is the label owning up to the
+ * fallback rather than passing a guess off as a fact (#157).
+ */
+const NO_SERVING_LABEL = 'per 100 g';
+
+/**
  * The badge the person sees.
  *
  * The wire names the source by license rather than by name. ODbL-1.0 is the
@@ -188,7 +199,8 @@ export function catalogFoodToFood(payload: CatalogFoodPayload): Food {
 		...(payload.barcode === null ? {} : { barcode: payload.barcode }),
 		category: payload.category ?? 'other',
 		provenance: provenanceOf(payload),
-		servingLabel: payload.serving.label ?? `${grams} g`,
+		servingLabel:
+			payload.serving.label ?? (payload.serving.grams === null ? NO_SERVING_LABEL : `${grams} g`),
 		grams,
 		// Dropped when empty rather than carried as an empty array: `undefined` is
 		// what every bundled food says, so a catalog food that named no measure
