@@ -1,12 +1,13 @@
 <script lang="ts">
 	import Play from '@lucide/svelte/icons/play';
 	import { browser } from '$app/environment';
-	import { formCues } from '$lib/domain/exercises';
+	import { demoFor, formCues } from '$lib/domain/exercises';
 	import Button from '$lib/ui/Button.svelte';
 	import Modal from '$lib/ui/Modal.svelte';
 
 	// The demo clip is a placeholder that says so: a fake player is worse than an honest gap.
-	// Push-up is the one movement with a real clip; every other name keeps the honest gap.
+	// Which movements have a real clip lives in the exercise catalog's DEMOS map, not here —
+	// a name with no entry there keeps the honest gap.
 	let {
 		open = $bindable(false),
 		name,
@@ -14,10 +15,9 @@
 	}: { open?: boolean; name: string; onclose: () => void } = $props();
 
 	const cues = $derived(formCues(name));
-	const hasDemo = $derived(name === 'Push-up');
-	const demoLabel =
-		'Demonstration: a push-up performed with hands under the shoulders, body in a straight line from head to heel, lowering the chest toward the floor, then pressing back up.';
-	const demoAriaLabel = `${demoLabel} Tap or press Enter to pause or play.`;
+	const demo = $derived(demoFor(name));
+	const hasDemo = $derived(demo !== undefined);
+	const demoAriaLabel = $derived(`${demo?.description ?? ''} Tap or press Enter to pause or play.`);
 
 	// WCAG 2.2.2: motion that starts on its own, runs past five seconds, and sits
 	// beside other content needs a way to stop it. Someone who has asked their
@@ -58,7 +58,7 @@
 		<video
 			bind:this={videoEl}
 			class="bg-secondary focus-visible:ring-ring ring-offset-background mt-4 aspect-square w-full rounded-2xl object-cover focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
-			src="/media/push-up-demo.mp4"
+			src={demo?.src}
 			preload="none"
 			playsinline
 			muted
@@ -70,7 +70,7 @@
 			onclick={toggleDemo}
 			onkeydown={onDemoKeydown}
 		>
-			<p>{demoLabel}</p>
+			<p>{demo?.description}</p>
 		</video>
 	{:else}
 		<div

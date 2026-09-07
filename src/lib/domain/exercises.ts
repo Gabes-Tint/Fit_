@@ -1,5 +1,6 @@
 import {
 	DEFAULT_FORM_CUES,
+	DEMOS,
 	EXERCISE_LIBRARY,
 	FORM_CUES,
 	type RoutineTemplate
@@ -41,6 +42,11 @@ export function alternativesTo(name: string): LibraryExercise[] {
 
 export function formCues(name: string): readonly string[] {
 	return FORM_CUES[name] ?? DEFAULT_FORM_CUES;
+}
+
+/** The real clip for a movement, or `undefined` when there is none yet. */
+export function demoFor(name: string): { src: string; description: string } | undefined {
+	return DEMOS[name];
 }
 
 function routineSets(routine: Routine): number {
