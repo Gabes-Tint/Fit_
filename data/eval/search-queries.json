@@ -1,5 +1,5 @@
 {
-	"catalog": "fit-food-full.sqlite, the file the VM serves at /var/lib/fit/catalog",
+	"catalog": "fit-food-core.sqlite, the file production opens by default (data/db/fit-food-core.sqlite); no Open Food Facts or CNF rows",
 	"limit": 10,
 	"note": "acceptable and forbidden names are what a person typing the query means, not what the ranking answers today. Every name is checked to exist in the catalog before a run is scored, so a typo fails the run rather than silently lowering the score.",
 	"queries": [
@@ -10,19 +10,18 @@
 			"acceptable": [
 				"Chicken",
 				"Chicken, ground, raw",
-				"Chicken, ground, lean, raw",
+				"Chicken, ground, with additives, raw",
 				"Chicken, breast, boneless, skinless, raw",
 				"Chicken breast",
-				"Chicken, stewing, meat only, raw",
-				"Chicken, roasting, meat only, raw",
-				"Chicken, canned, no broth"
+				"Chicken, stewing, light meat, meat only, raw",
+				"Chicken, roasting, light meat, meat only, raw",
+				"Chicken, canned, meat only"
 			],
 			"forbidden": [
-				"Chicken, feet, boiled",
-				"Chicken, stewing, giblets, raw",
-				"Chicken, roasting, giblets, raw",
-				"Chicken, broiler, gizzard, raw",
-				"Chicken, broiler, heart, raw",
+				"Chicken, stewing, giblets, cooked, simmered",
+				"Chicken, roasting, giblets, cooked, simmered",
+				"Chicken, gizzard, all classes, raw",
+				"Chicken, heart, all classes, raw",
 				"Chicken feet"
 			]
 		},
@@ -32,22 +31,22 @@
 			"means": "pork meat: ground pork, a loin or a chop",
 			"acceptable": [
 				"Pork, ground, raw",
-				"Pork, ground, lean, raw",
-				"Pork, ground, medium, raw",
+				"Pork, ground, 96% lean / 4% fat, raw",
+				"Pork, ground, 84% lean / 16% fat, raw",
 				"Pork, loin, boneless, raw",
 				"Pork, loin, tenderloin, boneless, raw"
 			],
 			"forbidden": [
-				"Pork, feet, raw",
-				"Pork, jowl, raw",
-				"Pork, tail, raw",
-				"Pork, heart, raw",
-				"Pork, liver, raw",
-				"Pork, lungs, raw",
-				"Pork, brains, raw",
-				"Pork, spleen, raw",
-				"Pork, pancreas, raw",
-				"Pork, tongue, raw"
+				"Pork, fresh, variety meats and by-products, feet, raw",
+				"Pork, fresh, variety meats and by-products, jowl, raw",
+				"Pork, fresh, variety meats and by-products, tail, raw",
+				"Pork, fresh, variety meats and by-products, heart, raw",
+				"Pork, fresh, variety meats and by-products, liver, raw",
+				"Pork, fresh, variety meats and by-products, lungs, raw",
+				"Pork, fresh, variety meats and by-products, brain, raw",
+				"Pork, fresh, variety meats and by-products, spleen, raw",
+				"Pork, fresh, variety meats and by-products, pancreas, raw",
+				"Pork, fresh, variety meats and by-products, tongue, raw"
 			]
 		},
 		{
@@ -57,19 +56,17 @@
 			"acceptable": [
 				"Lamb, ground, raw",
 				"Lamb, ground, cooked, broiled",
-				"Lamb, Canadian, composite cuts, lean, raw",
-				"Lamb, Canadian, composite cuts, lean and fat, 3mm (1/8), cooked",
-				"Lamb, Canadian, ground, raw",
-				"Lamb, Canadian, ground, cooked"
+				"Lamb, composite of trimmed retail cuts, separable lean and fat, trimmed to 1/8\" fat, choice, raw",
+				"Lamb, composite of trimmed retail cuts, separable lean and fat, trimmed to 1/8\" fat, choice, cooked"
 			],
 			"forbidden": [
-				"Lamb, brain, raw",
-				"Lamb, heart, raw",
-				"Lamb, liver, raw",
-				"Lamb, lungs, raw",
-				"Lamb, kidney, raw",
-				"Lamb, spleen, raw",
-				"Lamb, tongue, raw"
+				"Lamb, variety meats and by-products, brain, raw",
+				"Lamb, variety meats and by-products, heart, raw",
+				"Lamb, variety meats and by-products, liver, raw",
+				"Lamb, variety meats and by-products, lungs, raw",
+				"Lamb, variety meats and by-products, kidneys, raw",
+				"Lamb, variety meats and by-products, spleen, raw",
+				"Lamb, variety meats and by-products, tongue, raw"
 			]
 		},
 		{
@@ -84,13 +81,12 @@
 				"Beef, ground, 90% lean meat / 10% fat, raw"
 			],
 			"forbidden": [
-				"Beef, fat, raw",
-				"Beef, suet, raw",
-				"Beef, brain, raw",
-				"Beef, heart, raw",
-				"Beef, kidneys, raw",
-				"Beef, liver, raw",
-				"Beef, tripe, raw"
+				"Beef, variety meats and by-products, suet, raw",
+				"Beef, variety meats and by-products, brain, raw",
+				"Beef, variety meats and by-products, heart, raw",
+				"Beef, variety meats and by-products, kidneys, raw",
+				"Beef, variety meats and by-products, liver, raw",
+				"Beef, variety meats and by-products, tripe, raw"
 			]
 		},
 		{
@@ -98,21 +94,17 @@
 			"group": "failing",
 			"means": "veal meat: ground veal, a cutlet or a composite cut",
 			"acceptable": [
-				"Veal, ground, raw",
-				"Veal, composite cuts, lean, raw",
-				"Veal, composite cuts, lean and fat, raw",
-				"Veal, cubed for stew (leg and shoulder), lean, raw",
-				"Veal, ground, broiled",
-				"Veal, ground, pan-fried",
+				"Veal, composite of trimmed retail cuts, separable lean and fat, raw",
+				"Veal, cubed for stew (leg and shoulder), separable lean only, raw",
 				"Veal, ground"
 			],
 			"forbidden": [
-				"Veal, brain, raw",
-				"Veal, heart, raw",
-				"Veal, liver, raw",
-				"Veal, kidney, raw",
-				"Veal, thymus, raw",
-				"Veal, composite cuts, fat, raw"
+				"Veal, variety meats and by-products, brain, raw",
+				"Veal, variety meats and by-products, heart, raw",
+				"Veal, variety meats and by-products, liver, raw",
+				"Veal, variety meats and by-products, kidneys, raw",
+				"Veal, variety meats and by-products, thymus, raw",
+				"Veal, composite of trimmed retail cuts, separable fat, raw"
 			]
 		},
 		{
@@ -122,16 +114,15 @@
 			"acceptable": [
 				"Turkey, ground, 93% lean/ 7% fat, raw",
 				"Turkey, Ground, raw",
-				"Turkey, all classes, breast, meat and skin, raw",
-				"Turkey, all classes, leg, meat and skin, raw",
-				"Turkey, bacon, cooked"
+				"Turkey, retail parts, breast, meat and skin, raw",
+				"Turkey bacon, reduced sodium, cooked"
 			],
 			"forbidden": [
-				"Turkey, all classes, heart, raw",
-				"Turkey, all classes, liver, raw",
-				"Turkey, all classes, gizzard, raw",
-				"Turkey, all classes, giblets, raw",
-				"Turkey, all classes, neck, meat only, raw"
+				"Turkey, all classes, heart, cooked, simmered",
+				"Turkey, all classes, liver, cooked, simmered",
+				"Turkey, gizzard, all classes, raw",
+				"Turkey, whole, giblets, raw",
+				"Turkey, whole, neck, meat only, raw"
 			]
 		},
 		{
@@ -139,13 +130,12 @@
 			"group": "failing",
 			"means": "duck meat, not foie gras",
 			"acceptable": [
-				"Duck, domesticated, meat only, raw",
-				"Duck, domesticated, meat and skin, raw",
-				"Duck, domesticated, meat only, roasted",
+				"Duck, domesticated, meat and skin, cooked, roasted",
+				"Duck, domesticated, meat only, cooked, roasted",
 				"Duck, wild, breast, meat only, raw"
 			],
 			"forbidden": [
-				"Duck, domesticated, liver, raw"
+				"BLOCK OF DUCK FOIE GRAS"
 			]
 		},
 		{
@@ -153,13 +143,11 @@
 			"group": "failing",
 			"means": "goose meat, not foie gras",
 			"acceptable": [
-				"Goose, domesticated, meat only, raw",
-				"Goose, domesticated, meat and skin, raw",
-				"Goose, domesticated, meat only, roasted"
+				"Goose, domesticated, meat and skin, cooked, roasted",
+				"Goose, domesticated, meat only, cooked, roasted"
 			],
 			"forbidden": [
-				"Goose, liver, raw",
-				"Goose, domesticated, liver, raw"
+				"Goose, liver, raw"
 			]
 		},
 		{
@@ -175,10 +163,9 @@
 				"Eggs"
 			],
 			"forbidden": [
-				"Egg, duck, whole, fresh, raw",
-				"Egg, goose, whole, fresh, raw",
-				"Egg, quail, whole, fresh, raw",
-				"Egg, turkey, whole, fresh, raw"
+				"Duck egg, cooked",
+				"Goose egg, cooked",
+				"Quail egg, canned"
 			]
 		},
 		{
@@ -189,14 +176,11 @@
 				"Potatoes, russet, without skin, raw",
 				"Potatoes, red, without skin, raw",
 				"Potatoes, gold, without skin, raw",
-				"Potato, flesh and skin, raw",
-				"Potato, Russet, flesh and skin, raw",
-				"Potato, white, flesh and skin, raw"
+				"Potatoes, flesh and skin, raw"
 			],
 			"forbidden": [
-				"Potato, skin, raw",
-				"Potato, skin, baked",
-				"Potato, boiled with skin, skin only"
+				"Potatoes, baked, skin only, with salt",
+				"Potatoes, boiled, cooked in skin, skin, with salt"
 			]
 		},
 		{
@@ -205,13 +189,11 @@
 			"means": "salmon flesh, raw or cooked, ahead of smoked and canned",
 			"acceptable": [
 				"Salmon",
-				"Fish, salmon, atlantic, farmed, raw",
-				"Fish, salmon, atlantic, wild, raw",
-				"Fish, salmon, coho, wild, raw",
+				"Fish, salmon, coho (silver), raw (Alaska Native)",
 				"Fish, salmon, Atlantic, farm raised, raw"
 			],
 			"forbidden": [
-				"Salmonberry, raw",
+				"Salmonberries, raw (Alaska Native)",
 				"Salmon, sockeye, canned, total can contents",
 				"Salmon, red (sockeye), filets with skin, smoked (Alaska Native)"
 			]
@@ -222,9 +204,7 @@
 			"means": "tuna the fish: canned tuna or a raw fillet, not a sushi platter or a tuna casserole",
 			"acceptable": [
 				"Fish, tuna, light, canned in water, drained solids",
-				"Fish, tuna, bluefin, fresh, raw",
-				"Fish, tuna, light, canned in water, drained, salt added",
-				"Tuna, Drained, Brine"
+				"Fish, tuna, fresh, bluefin, raw"
 			],
 			"forbidden": [
 				"Tuna salad",
@@ -252,9 +232,9 @@
 			"acceptable": [
 				"Cheddar",
 				"Cheese, cheddar",
-				"Cheese, cheddar, medium",
-				"Cheese, cheddar, mild",
-				"Cheese, cheddar, extra old"
+				"Cheese, cheddar, sharp, sliced",
+				"Cheese, cheddar, reduced fat (Includes foods for USDA's Food Distribution Program)",
+				"Cheese, cheddar, nonfat or fat free"
 			],
 			"forbidden": [
 				"CHEDDAR, APPLE & CARROTS WITH RANCH DIP",
@@ -267,8 +247,7 @@
 			"means": "pork bacon, which is what 'bacon' means unqualified",
 			"acceptable": [
 				"Bacon",
-				"Bacon, pre-sliced, reduced/low sodium, unprepared",
-				"Pork, cured, bacon, cooked, baked"
+				"Bacon, pre-sliced, reduced/low sodium, unprepared"
 			],
 			"forbidden": [
 				"Bacon, turkey, low sodium",
@@ -283,13 +262,10 @@
 			"acceptable": [
 				"Broccoli",
 				"Broccoli, raw",
-				"Broccoli, boiled, drained",
-				"Broccoli, flower clusters, raw"
+				"Broccoli, cooked, boiled, drained, without salt",
+				"BROCCOLI FLORETS"
 			],
-			"forbidden": [
-				"Broccoli, leaves, raw",
-				"Broccoli, stalks, raw"
-			]
+			"forbidden": []
 		},
 		{
 			"query": "beans",
@@ -297,12 +273,12 @@
 			"means": "edible beans, dry or cooked",
 			"acceptable": [
 				"Beans, cannellini, dry",
-				"Beans, black, mature seeds, dry",
-				"Beans, black, mature seeds, boiled",
-				"Beans, lima, raw",
+				"Beans, black, mature seeds, raw",
+				"Beans, black, mature seeds, cooked, boiled, without salt",
+				"Lima beans, immature seeds, raw",
 				"Beans, snap, green, raw",
 				"Beans, kidney, red, mature seeds, raw",
-				"Beans, kidney, all types, mature seeds, dry",
+				"Beans, kidney, all types, mature seeds, raw",
 				"Beans, kidney, red, mature seeds, cooked, boiled, without salt"
 			],
 			"forbidden": []
@@ -319,7 +295,7 @@
 				"Milk, reduced fat, fluid, 2% milkfat, with added vitamin A and vitamin D"
 			],
 			"forbidden": [
-				"Milk, dry whole",
+				"Milk, dry, whole, without added vitamin D",
 				"Milk, dry, nonfat, regular, without added vitamin A and vitamin D"
 			]
 		},
@@ -328,13 +304,11 @@
 			"group": "failing",
 			"means": "a raw banana",
 			"acceptable": [
-				"Banana, raw",
 				"Bananas, raw",
 				"Bananas, ripe and slightly ripe, raw",
 				"Bananas, overripe, raw"
 			],
 			"forbidden": [
-				"Banana, dehydrated or banana powder",
 				"Bananas, dehydrated, or banana powder"
 			]
 		},
@@ -349,10 +323,10 @@
 				"Cheese, swiss",
 				"Cheese, feta, whole milk, crumbled",
 				"Cheese, parmesan, grated, refrigerated",
-				"Cheese, brie"
+				"Cheese, Gouda or Edam"
 			],
 			"forbidden": [
-				"Cheese, cheddar, imitation"
+				"Cheese, american cheddar, imitation"
 			]
 		},
 		{
@@ -387,8 +361,8 @@
 			"acceptable": [
 				"Peanut butter",
 				"Peanut butter, creamy",
-				"Peanut butter, natural",
-				"Peanut butter, chunk type, fat and sugar added",
+				"Peanut butter, chunk style, with salt",
+				"Peanut butter, chunky, vitamin and mineral fortified",
 				"PEANUT BUTTER"
 			],
 			"forbidden": []
@@ -407,7 +381,7 @@
 			"forbidden": [
 				"Rice, black, unenriched, raw",
 				"Rice, red, unenriched, dry, raw",
-				"Rice, spanish rice mix, unprepared"
+				"Spanish rice mix, dry mix, unprepared"
 			]
 		},
 		{
@@ -418,22 +392,16 @@
 				"PASTA",
 				"Pasta, dry, enriched",
 				"Pasta, dry, unenriched",
-				"Pasta (spaghetti, macaroni), enriched, dry",
-				"Pasta (spaghetti, macaroni), unenriched, dry",
-				"Pasta (macaroni, spaghetti), enriched, cooked",
-				"Pasta (spaghetti macaroni), unenriched, cooked",
-				"Pasta, corn, dry",
-				"Pasta, corn, cooked",
-				"Pasta, rice noodles, dry",
-				"Pasta, rice noodles, cooked",
-				"Pasta, fresh-refrigerated, plain, cooked",
-				"Pasta, fresh-refrigerated, plain, as purchased"
+				"Pasta, cooked, enriched, with added salt",
+				"Pasta, cooked, unenriched, without added salt",
+				"Pasta, gluten-free, corn, dry",
+				"Pasta, gluten-free, corn, cooked"
 			],
 			"forbidden": [
-				"Pasta salad with vegetables, prepared with Italian dressing, homemade",
+				"Pasta, whole grain, with cream sauce, and added vegetables, home recipe",
 				"Pasta with cream sauce, restaurant",
 				"Pasta mix, Italian lasagna, unprepared",
-				"Pasta sauce alla calabrese"
+				"Pasta with tomato sauce, no meat, canned"
 			]
 		},
 		{
@@ -443,7 +411,6 @@
 			"acceptable": [
 				"Spinach",
 				"Spinach, baby",
-				"Spinach, raw",
 				"Spinach, mature",
 				"SPINACH"
 			],
@@ -457,8 +424,7 @@
 				"BUTTER",
 				"Butter, salted",
 				"Butter, unsalted",
-				"Butter, regular",
-				"Butter, whipped"
+				"Butter, whipped, with salt"
 			],
 			"forbidden": []
 		},
@@ -468,10 +434,10 @@
 			"means": "a loaf bread",
 			"acceptable": [
 				"Bread",
-				"Bread, white, commercial",
+				"Bread, white, commercially prepared (includes soft bread crumbs)",
 				"Bread, wheat",
-				"Bread, rye",
-				"Bread, Italian"
+				"Bread, reduced-calorie, rye",
+				"Bread, Italian, Grecian, Armenian"
 			],
 			"forbidden": []
 		},
@@ -493,8 +459,7 @@
 			"means": "a raw avocado",
 			"acceptable": [
 				"AVOCADOS",
-				"Avocado, raw, california",
-				"Avocado, raw, florida",
+				"Avocados, raw, California",
 				"Avocados, raw, Florida",
 				"Avocado, Hass, peeled, raw"
 			],
@@ -517,7 +482,6 @@
 			"means": "orange juice",
 			"acceptable": [
 				"Orange Juice",
-				"Orange juice, raw",
 				"Orange juice, 100%, NFS",
 				"Orange juice, raw (Includes foods for USDA's Food Distribution Program)"
 			],
@@ -531,8 +495,7 @@
 				"LENTILS",
 				"Lentils, dry",
 				"Lentils, raw",
-				"Lentils, mature seeds, dry",
-				"Lentils, mature seeds, boiled"
+				"Lentils, mature seeds, cooked, boiled, with salt"
 			],
 			"forbidden": []
 		},
@@ -541,9 +504,7 @@
 			"group": "adversarial",
 			"means": "chicken feet, and the demotion must not hide them from someone who asks",
 			"acceptable": [
-				"Chicken feet",
-				"Chicken, feet, boiled",
-				"Boneless Chicken Feet"
+				"Chicken feet"
 			],
 			"forbidden": []
 		},
@@ -552,11 +513,11 @@
 			"group": "adversarial",
 			"means": "beef liver",
 			"acceptable": [
-				"Beef Liver",
-				"Beef, liver, raw",
-				"Beef, liver, braised",
+				"BEEF LIVER SLICED",
+				"Beef, variety meats and by-products, liver, raw",
+				"Beef, variety meats and by-products, liver, cooked, braised",
 				"Liver, beef",
-				"Beef, liver, pan-fried"
+				"Beef, variety meats and by-products, liver, cooked, pan-fried"
 			],
 			"forbidden": []
 		},
@@ -566,9 +527,9 @@
 			"means": "a gizzard",
 			"acceptable": [
 				"Gizzard",
-				"Chicken, broiler, gizzard, raw",
-				"Turkey, all classes, gizzard, raw",
-				"Chicken, broiler, gizzard, simmered"
+				"Chicken, gizzard, all classes, raw",
+				"Turkey, gizzard, all classes, raw",
+				"Chicken, gizzard, all classes, cooked, simmered"
 			],
 			"forbidden": [
 				"GIZZARDA"
@@ -579,10 +540,10 @@
 			"group": "adversarial",
 			"means": "chicken giblets",
 			"acceptable": [
-				"Chicken, stewing, giblets, raw",
-				"Chicken, roasting, giblets, raw",
-				"Chicken, broiler, giblets, raw",
-				"Chicken, capon, giblets, raw"
+				"Chicken, stewing, giblets, cooked, simmered",
+				"Chicken, roasting, giblets, cooked, simmered",
+				"Chicken, broilers or fryers, giblets, raw",
+				"Chicken, capons, giblets, raw"
 			],
 			"forbidden": []
 		},
@@ -591,9 +552,8 @@
 			"group": "adversarial",
 			"means": "beef heart",
 			"acceptable": [
-				"Beef, heart, raw",
-				"Beef, heart, simmered",
-				"Beef, variety meats and by-products, heart, raw"
+				"Beef, variety meats and by-products, heart, raw",
+				"Beef, variety meats and by-products, heart, cooked, simmered"
 			],
 			"forbidden": []
 		},
@@ -602,9 +562,8 @@
 			"group": "adversarial",
 			"means": "pork tongue",
 			"acceptable": [
-				"Pork, tongue, raw",
-				"Pork, tongue, braised",
-				"Pork, fresh, variety meats and by-products, tongue, raw"
+				"Pork, fresh, variety meats and by-products, tongue, raw",
+				"Pork, fresh, variety meats and by-products, tongue, cooked, braised"
 			],
 			"forbidden": []
 		},
@@ -613,9 +572,8 @@
 			"group": "adversarial",
 			"means": "turkey neck",
 			"acceptable": [
-				"Turkey, all classes, neck, meat only, raw",
-				"Turkey, all classes, neck, meat only, simmered",
 				"Turkey, whole, neck, meat only, raw",
+				"Turkey, whole, neck, meat only, cooked, simmered",
 				"Turkey, neck"
 			],
 			"forbidden": []
@@ -625,9 +583,8 @@
 			"group": "adversarial",
 			"means": "pig trotters",
 			"acceptable": [
-				"Pork, feet, raw",
-				"Pork, feet, simmered",
-				"Pork, fresh, variety meats and by-products, feet, raw"
+				"Pork, fresh, variety meats and by-products, feet, raw",
+				"Pork, fresh, variety meats and by-products, feet, cooked, simmered"
 			],
 			"forbidden": []
 		},
@@ -636,11 +593,11 @@
 			"group": "adversarial",
 			"means": "beef liver, asked for in the plural: a demotion must not survive the person naming the part",
 			"acceptable": [
-				"Beef, liver, raw",
-				"Beef, liver, braised",
-				"Beef, liver, pan-fried",
+				"Beef, variety meats and by-products, liver, raw",
+				"Beef, variety meats and by-products, liver, cooked, braised",
+				"Beef, variety meats and by-products, liver, cooked, pan-fried",
 				"Liver, beef",
-				"Beef Liver"
+				"BEEF LIVER SLICED"
 			],
 			"forbidden": []
 		},
@@ -649,9 +606,7 @@
 			"group": "adversarial",
 			"means": "chicken gizzards, asked for in the plural. The generic organ rows the catalog writes singular have to be reachable, not only the branded packets that happen to spell it plural.",
 			"acceptable": [
-				"Chicken Gizzards",
-				"Chicken, broiler, gizzard, raw",
-				"Chicken, broiler, gizzard, simmered",
+				"Tyson IF Unbreaded Chicken Gizzards",
 				"Chicken, gizzard, all classes, raw",
 				"Chicken, gizzard, all classes, cooked, simmered"
 			],
@@ -662,8 +617,6 @@
 			"group": "adversarial",
 			"means": "pork brain, typed singular against a catalog that writes it plural: naming the part must exempt it from the demotion",
 			"acceptable": [
-				"Pork, brains, raw",
-				"Pork, brains, braised",
 				"Pork, fresh, variety meats and by-products, brain, raw",
 				"Pork, fresh, variety meats and by-products, brain, cooked, braised"
 			],
