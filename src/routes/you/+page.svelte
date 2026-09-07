@@ -168,9 +168,6 @@
 
 		<section class="bg-card rounded-3xl p-4 shadow-border">
 			<h2 class="font-display text-xl tracking-tight">Preferences</h2>
-			<p class="text-muted-foreground mt-1 text-sm">
-				Changes how weight and height are read. Nothing already recorded is rewritten.
-			</p>
 			<div class="mt-3">
 				<p class="text-muted-foreground text-sm font-medium">Units</p>
 				<div class="mt-2 inline-flex gap-1" role="group" aria-label="Units: metric or imperial">
@@ -185,6 +182,9 @@
 						</ToggleButton>
 					{/each}
 				</div>
+				<p class="text-muted-foreground mt-2 text-xs">
+					Body weight and height. Food amounts stay in grams.
+				</p>
 			</div>
 			<div class="mt-4">
 				<p class="text-muted-foreground text-sm font-medium">Exercise load label</p>
@@ -201,7 +201,7 @@
 					{/each}
 				</div>
 				<p class="text-muted-foreground mt-2 text-xs">
-					Relabels the bar only — a load already logged keeps its number.
+					Exercise load. Relabels the bar only — a load already logged keeps its number.
 				</p>
 			</div>
 			<div class="mt-4">
