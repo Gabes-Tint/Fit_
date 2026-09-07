@@ -150,13 +150,14 @@ function topServingLabel(db: DatabaseSync, typed: string, limit: number): string
 		const label = top['serving_label'];
 		return typeof label === 'string' ? label : `${servingG} g`;
 	}
+	const foodId = Number(top['food_id']);
 	const servingRows: ServingRow[] = db
 		.prepare(
 			`select label, grams from food_serving
 			where food_id = ? and typeof(label) = 'text' and typeof(grams) in ('real', 'integer')
 			order by is_default desc, label`
 		)
-		.all(top['food_id'])
+		.all(foodId)
 		.map((row) => ({ label: String(row['label']), grams: Number(row['grams']) }));
 	return pickDefaultServing(servingRows)?.label ?? 'per 100 g';
 }

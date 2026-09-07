@@ -280,6 +280,16 @@ describe('catalogFoodToFood', () => {
 		expect(food.grams).toBe(100);
 	});
 
+	it('builds a "N g" label from the weight when the catalog named a weight but no label', () => {
+		// Distinct from the no-serving case: grams is not null here, so the
+		// bare weight is a real answer to "how much is this serving", not a
+		// guess standing in for one — the explicit "per 100 g" fallback would
+		// be the wrong label to reach for.
+		const food = catalogFoodToFood({ ...CEREAL, serving: { label: null, grams: 250 } });
+		expect(food.servingLabel).toBe('250 g');
+		expect(food.grams).toBe(250);
+	});
+
 	it('keeps a named serving even when its weight is unknown', () => {
 		const food = catalogFoodToFood({ ...CEREAL, serving: { label: '1 bar', grams: null } });
 		expect(food.servingLabel).toBe('1 bar');

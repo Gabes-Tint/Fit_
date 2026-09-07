@@ -45,3 +45,87 @@ describe('pickDefaultServing', () => {
 		).toEqual({ label: '1 slice', grams: 28 });
 	});
 });
+
+describe('pickDefaultServing — mutation-hardening cases', () => {
+	it('trims a plain-grams label before recognizing it as the catch-all row', () => {
+		// Untrimmed, the leading space would break the `^` anchor and the row
+		// would wrongly read as a named measure instead of the guaranteed 100 g
+		// catch-all.
+		expect(pickDefaultServing([{ label: ' 100 g', grams: 100 }])).toBeNull();
+	});
+
+	it('trims a whole-item label before matching it', () => {
+		// Untrimmed, the leading space would break the `^` anchor and the whole
+		// item would lose to the first-named-measure fallback instead of
+		// winning on its own merit.
+		expect(
+			pickDefaultServing([
+				{ label: ' 1 sandwich', grams: 200 },
+				{ label: '2 Tbsp', grams: 30 }
+			])
+		).toEqual({ label: ' 1 sandwich', grams: 200 });
+	});
+
+	it('does not treat a label that merely contains a weight as the catch-all row', () => {
+		// PLAIN_GRAMS is anchored at both ends: a label carrying more than a bare
+		// weight is a real, if odd, household measure and must survive the
+		// catch-all filter.
+		expect(pickDefaultServing([{ label: 'not 100 g', grams: 50 }])).toEqual({
+			label: 'not 100 g',
+			grams: 50
+		});
+		expect(pickDefaultServing([{ label: '100 g net', grams: 50 }])).toEqual({
+			label: '100 g net',
+			grams: 50
+		});
+	});
+
+	it('recognizes a fractional gram weight as the catch-all row', () => {
+		expect(pickDefaultServing([{ label: '100.25 g', grams: 100.25 }])).toBeNull();
+	});
+
+	it('recognizes a spaceless gram weight as the catch-all row', () => {
+		expect(pickDefaultServing([{ label: '100g', grams: 100 }])).toBeNull();
+	});
+
+	it('never reaches for a whole-item measure named only as part of a longer label', () => {
+		// WHOLE_ITEM is anchored at the start: a label that merely contains
+		// "1 sandwich" further in must not out-rank the first named measure.
+		expect(
+			pickDefaultServing([
+				{ label: '3 Tbsp', grams: 30 },
+				{ label: 'xyz 1 sandwich', grams: 40 }
+			])
+		).toEqual({ label: '3 Tbsp', grams: 30 });
+	});
+
+	it('recognizes "1.00 item", not only "1.0 item", as a whole-item measure', () => {
+		expect(
+			pickDefaultServing([
+				{ label: '2 Tbsp', grams: 30 },
+				{ label: '1.00 item', grams: 150 },
+				{ label: '100 g', grams: 100 }
+			])
+		).toEqual({ label: '1.00 item', grams: 150 });
+	});
+
+	it('recognizes a whole-item label with more than one space before the unit', () => {
+		expect(
+			pickDefaultServing([
+				{ label: '2 Tbsp', grams: 30 },
+				{ label: '1  sandwich', grams: 200 },
+				{ label: '100 g', grams: 100 }
+			])
+		).toEqual({ label: '1  sandwich', grams: 200 });
+	});
+
+	it('picks the whole-item measure over an earlier plain named measure, regardless of array order', () => {
+		expect(
+			pickDefaultServing([
+				{ label: '2 Tbsp', grams: 30 },
+				{ label: '1 sandwich', grams: 200 },
+				{ label: '100 g', grams: 100 }
+			])
+		).toEqual({ label: '1 sandwich', grams: 200 });
+	});
+});

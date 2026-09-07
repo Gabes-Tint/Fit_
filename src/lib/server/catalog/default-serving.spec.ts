@@ -1,5 +1,6 @@
-import { DatabaseSync } from 'node:sqlite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
+import * as defaultServingDomain from '$lib/domain/default-serving';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { withDefaultServing } from './default-serving';
 
 /** A catalog holding nothing but the serving rows a case needs. */
@@ -76,7 +77,9 @@ describe('withDefaultServing', () => {
 		const catalog = {
 			prepare: (sql: string) => {
 				const statement = db.prepare(sql);
-				return { all: (...values: unknown[]) => ((counted.reads += 1), statement.all(...values)) };
+				return {
+					all: (...values: SQLInputValue[]) => ((counted.reads += 1), statement.all(...values))
+				};
 			}
 		} as unknown as DatabaseSync;
 		const foods: Food[] = [
@@ -93,13 +96,26 @@ describe('withDefaultServing', () => {
 		const catalog = {
 			prepare: (sql: string) => {
 				const statement = db.prepare(sql);
-				return { all: (...values: unknown[]) => ((counted.reads += 1), statement.all(...values)) };
+				return {
+					all: (...values: SQLInputValue[]) => ((counted.reads += 1), statement.all(...values))
+				};
 			}
 		} as unknown as DatabaseSync;
 		expect(
 			withDefaultServing(catalog, [{ id: 1, serving: { label: '1 PACKET', grams: 32 } }])
 		).toEqual([{ id: 1, serving: { label: '1 PACKET', grams: 32 } }]);
 		expect(counted.reads).toBe(0);
+	});
+
+	it('asks the picker with a real empty array, not a non-empty placeholder, for a food with no rows', () => {
+		// Guards the `?? []` fallback itself: a food_id absent from the grouped
+		// map must reach `pickDefaultServing` with an actually empty array, not
+		// some non-empty stand-in that happens to filter down to the same
+		// answer.
+		const spy = vi.spyOn(defaultServingDomain, 'pickDefaultServing');
+		withDefaultServing(db, [{ id: 999, serving: { label: null, grams: null } }]);
+		expect(spy).toHaveBeenCalledWith([]);
+		spy.mockRestore();
 	});
 
 	it('answers for every food asked about, including one with no rows at all', () => {
