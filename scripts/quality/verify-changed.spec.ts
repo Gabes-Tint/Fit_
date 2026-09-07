@@ -38,9 +38,9 @@ describe('logFileName', () => {
 
 describe('importingSpecsOf (#154: one level of reverse imports)', () => {
 	it('selects the spec of a component that imports the changed file, in the real tree', async () => {
-		// WeekStrip.svelte has no spec of its own; TodayView.svelte imports it
-		// and TodayView.svelte.spec.ts never mentions WeekStrip — so only a
-		// reverse-import lookup through TodayView.svelte finds that spec.
+		// TodayView.svelte.spec.ts never mentions WeekStrip at all — it only
+		// imports TodayView.svelte — so only a reverse-import lookup through
+		// TodayView.svelte (which does import WeekStrip) finds that spec.
 		const allFiles = await allSourceFiles();
 		const specs = await importingSpecsOf('src/lib/components/WeekStrip.svelte', allFiles);
 		expect(specs).toContain('src/lib/components/TodayView.svelte.spec.ts');
@@ -52,8 +52,8 @@ describe('importingSpecsOf (#154: one level of reverse imports)', () => {
 		expect(specs).not.toContain('src/lib/components/TodayView.svelte.spec.ts');
 	});
 
-	const fixtureRoot = path.join(projectRoot, 'src/lib/__verify_changed_fixture_154__');
-	const fixtureFile = (name: string): string => `src/lib/__verify_changed_fixture_154__/${name}`;
+	const fixtureRoot = path.join(projectRoot, 'reports/tmp/verify-changed-154');
+	const fixtureFile = (name: string): string => `reports/tmp/verify-changed-154/${name}`;
 
 	afterEach(async () => {
 		await rm(fixtureRoot, { recursive: true, force: true });
@@ -68,7 +68,7 @@ describe('importingSpecsOf (#154: one level of reverse imports)', () => {
 		await writeFixture('Changed.svelte', '<script>\n</script>\n');
 		await writeFixture(
 			'AliasImporter.svelte',
-			"<script>\n\timport Changed from '$lib/__verify_changed_fixture_154__/Changed.svelte';\n</script>\n"
+			"<script>\n\timport Changed from '$lib/fixtures/Changed.svelte';\n</script>\n"
 		);
 		await writeFixture(
 			'AliasImporter.svelte.spec.ts',
