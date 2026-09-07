@@ -184,39 +184,14 @@ describe('resolveFoodNames', () => {
 	});
 
 	it('refuses a body that does not declare JSON', async () => {
+		// The full matrix of content types is `declaredMediaType`'s, tested once in
+		// `api.spec.ts`; this is resolveFoodNames's own refusal shape for the case
+		// it names.
 		const response = await resolveFoodNames(
 			catalog,
 			eventFor({ queries: ['milk'] }, SIGNED_IN, { 'content-type': 'text/plain' })
 		);
 		expect(response.status).toBe(400);
-	});
-
-	it('refuses a body that declares no content type at all', async () => {
-		// `Request` puts `text/plain` on a string body, so the header has to be
-		// taken off again to reach the "no content type" branch at all.
-		const event = eventFor({ queries: ['milk'] });
-		event.request.headers.delete('content-type');
-		expect((await resolveFoodNames(catalog, event)).status).toBe(400);
-	});
-
-	it('refuses a form-encoded body, which is what a cross-site form can produce', async () => {
-		const response = await resolveFoodNames(
-			catalog,
-			eventFor({ queries: ['milk'] }, SIGNED_IN, {
-				'content-type': 'application/x-www-form-urlencoded'
-			})
-		);
-		expect(response.status).toBe(400);
-	});
-
-	it('accepts JSON declared with a charset, in any case', async () => {
-		const response = await resolveFoodNames(
-			catalog,
-			eventFor({ queries: ['milk'] }, SIGNED_IN, {
-				'content-type': 'APPLICATION/JSON ; charset=utf-8'
-			})
-		);
-		expect(response.status).toBe(200);
 	});
 
 	it('refuses a body whose declared length is past the ceiling, before reading it', async () => {

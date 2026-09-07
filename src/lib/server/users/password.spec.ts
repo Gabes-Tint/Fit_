@@ -4,7 +4,6 @@ import {
 	hashPassword,
 	MAX_PASSWORD_VERIFICATION_DERIVATIONS,
 	OWASP_SCRYPT,
-	passwordHashNeedsUpgrade,
 	passwordProblem,
 	passwordVerificationWork,
 	verifyPassword,
@@ -303,31 +302,7 @@ describe('verifyPassword', () => {
 	});
 });
 
-describe('passwordHashNeedsUpgrade', () => {
-	it('compares every stored cost parameter with the target policy', async () => {
-		const stored = await hashPassword(PASSWORD, CHEAP);
-		expect(passwordHashNeedsUpgrade(stored, CHEAP)).toBe(false);
-		expect(passwordHashNeedsUpgrade(stored, { ...CHEAP, n: 2 ** 13 })).toBe(true);
-		expect(passwordHashNeedsUpgrade(stored, { ...CHEAP, p: 2 })).toBe(true);
-		expect(passwordHashNeedsUpgrade(stored, { ...CHEAP, r: 16 })).toBe(true);
-	});
-
-	it('never upgrades a hash that is stronger or incomparable with the target', async () => {
-		const stronger = await hashPassword(PASSWORD, { ...CHEAP, n: 2 ** 13 });
-		const incomparable = await hashPassword(PASSWORD, { ...CHEAP, r: 16 });
-		expect(passwordHashNeedsUpgrade(stronger, CHEAP)).toBe(false);
-		expect(passwordHashNeedsUpgrade(incomparable, { ...CHEAP, n: 2 ** 13 })).toBe(false);
-		const strongerParallelism = await hashPassword(PASSWORD, { ...CHEAP, p: 2 });
-		expect(passwordHashNeedsUpgrade(strongerParallelism, CHEAP)).toBe(false);
-	});
-
-	it('does not call an unreadable hash upgradeable and rejects an unsafe target', () => {
-		expect(passwordHashNeedsUpgrade('unreadable', CHEAP)).toBe(false);
-		expect(() => passwordHashNeedsUpgrade('unreadable', { n: 5000, r: 8, p: 1 })).toThrow(
-			RangeError
-		);
-	});
-
+describe('passwordVerificationWork', () => {
 	it('rejects unsafe targets before inspecting the stored hash', () => {
 		expect(() => passwordVerificationWork(null, { n: 5000, r: 8, p: 1 })).toThrow(
 			'scrypt cost is outside the supported bounds'
@@ -342,9 +317,32 @@ describe('passwordHashNeedsUpgrade', () => {
 			derivations: 1
 		});
 	});
-});
 
-describe('passwordVerificationWork', () => {
+	it('rejects a stored hash that is stronger than the target on one axis alone', async () => {
+		// Matches n and r but exceeds the target's p: neither the exact-match
+		// branch nor the ratchet can take it, so every axis has to be compared on
+		// its own rather than folded into one combined check.
+		const stored = await hashPassword(PASSWORD, { ...CHEAP, p: 2 });
+		expect(passwordVerificationWork(stored, CHEAP)).toEqual({
+			verifyStored: false,
+			deriveTarget: true,
+			upgradeStored: false,
+			derivations: 1
+		});
+	});
+
+	it('upgrades a stored hash that is weaker than the target on one axis alone', async () => {
+		// Matches n and p but is weaker than the target's r, so the exact-match
+		// branch must not fire and the ratchet must compare r on its own.
+		const stored = await hashPassword(PASSWORD, { ...CHEAP, r: 4 });
+		expect(passwordVerificationWork(stored, CHEAP)).toEqual({
+			verifyStored: true,
+			deriveTarget: true,
+			upgradeStored: true,
+			derivations: 2
+		});
+	});
+
 	it('accepts current policies with two-digit block-size and parallelism fields', async () => {
 		for (const cost of [
 			{ ...CHEAP, r: 16 },

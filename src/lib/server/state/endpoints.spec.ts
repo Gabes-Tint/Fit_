@@ -301,6 +301,8 @@ describe('writeState', () => {
 	});
 
 	it('refuses a request that does not declare a JSON content type', async () => {
+		// The full matrix of content types is `declaredMediaType`'s, tested once in
+		// `api.spec.ts`; this is writeState's own refusal shape for the case it names.
 		const response = await writeState(
 			db,
 			eventFor(
@@ -312,45 +314,6 @@ describe('writeState', () => {
 			)
 		);
 		expect(response.status).toBe(400);
-	});
-
-	it('refuses a request with no content-type header at all', async () => {
-		const response = await writeState(
-			db,
-			eventFor(
-				authFor(),
-				putRequest({ body: { version: 0, format: 'tend.v1', body: {} }, headers: {} })
-			)
-		);
-		expect(response.status).toBe(400);
-	});
-
-	it('accepts a content type padded with whitespace before its parameter', async () => {
-		const response = await writeState(
-			db,
-			eventFor(
-				authFor(),
-				putRequest({
-					body: { version: 0, format: 'tend.v1', body: { a: 1 } },
-					headers: { 'content-type': 'application/json ; charset=utf-8' }
-				})
-			)
-		);
-		expect(response.status).toBe(200);
-	});
-
-	it('accepts a content type declared in a different case, with a charset suffix', async () => {
-		const response = await writeState(
-			db,
-			eventFor(
-				authFor(),
-				putRequest({
-					body: { version: 0, format: 'tend.v1', body: { a: 1 } },
-					headers: { 'content-type': 'APPLICATION/JSON; charset=utf-8' }
-				})
-			)
-		);
-		expect(response.status).toBe(200);
 	});
 
 	it('refuses an unknown format and stores nothing', async () => {
