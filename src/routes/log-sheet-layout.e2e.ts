@@ -119,6 +119,23 @@ const BIG_MAC = {
 	}
 };
 
+/**
+ * Opens the ⓘ sheet on whichever row currently shows "Nutrition facts for
+ * Big Mac", asserts sodium and potassium, then closes it with Escape. Called
+ * once for the search result and once for the logged row below, so the two
+ * assertions read from one place instead of being copied.
+ */
+async function expectBigMacFacts(page: Page): Promise<void> {
+	await page.getByLabel('Nutrition facts for Big Mac').click();
+	await expect(page.getByRole('heading', { name: 'Big Mac' })).toBeVisible();
+	await expect(page.getByText('Sodium')).toBeVisible();
+	await expect(page.getByText('1007.4 mg')).toBeVisible();
+	await expect(page.getByText('Potassium')).toBeVisible();
+	await expect(page.getByText('416.1 mg')).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(page.getByRole('heading', { name: 'Big Mac' })).toBeHidden();
+}
+
 test.describe('the nutrition facts sheet', () => {
 	test.beforeEach(async ({ page, baseURL }) => {
 		await signInThroughApi(page, baseURL ?? '');
@@ -134,28 +151,12 @@ test.describe('the nutrition facts sheet', () => {
 		await page.getByLabel('Search foods, brands, barcodes').fill('big mac');
 		await expect(page.getByText('Big Mac')).toBeVisible();
 
-		await page.getByLabel('Nutrition facts for Big Mac').click();
-		await expect(page.getByRole('heading', { name: 'Big Mac' })).toBeVisible();
-		await expect(page.getByText('Sodium')).toBeVisible();
-		await expect(page.getByText('1007.4 mg')).toBeVisible();
-		await expect(page.getByText('Potassium')).toBeVisible();
-		await expect(page.getByText('416.1 mg')).toBeVisible();
-
-		await page.keyboard.press('Escape');
-		await expect(page.getByRole('heading', { name: 'Big Mac' })).toBeHidden();
+		await expectBigMacFacts(page);
 
 		await page.getByText('Big Mac', { exact: true }).click();
 		await page.getByRole('button', { name: 'Add to today' }).click();
 		await expect(page.getByRole('dialog')).toBeHidden();
 
-		await page.getByLabel('Nutrition facts for Big Mac').click();
-		await expect(page.getByRole('heading', { name: 'Big Mac' })).toBeVisible();
-		await expect(page.getByText('Sodium')).toBeVisible();
-		await expect(page.getByText('1007.4 mg')).toBeVisible();
-		await expect(page.getByText('Potassium')).toBeVisible();
-		await expect(page.getByText('416.1 mg')).toBeVisible();
-
-		await page.keyboard.press('Escape');
-		await expect(page.getByRole('heading', { name: 'Big Mac' })).toBeHidden();
+		await expectBigMacFacts(page);
 	});
 });
