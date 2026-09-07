@@ -113,6 +113,15 @@ export interface ReviewedMutant {
 	classification: 'equivalent' | 'host-specific-defense-in-depth';
 	rationale: string;
 	review: string;
+	/**
+	 * The Stryker status this entry excuses. Defaults to `'Survived'` when
+	 * absent, so every entry written before this field existed keeps meaning
+	 * exactly what it always meant. An entry for a mutant Stryker can only ever
+	 * time out (an unbounded-loop mutation, for example) declares
+	 * `'Timeout'` explicitly, so the excuse states which status it is for
+	 * rather than matching either one.
+	 */
+	status?: 'Survived' | 'Timeout';
 }
 
 export interface MutationReviewLedger {

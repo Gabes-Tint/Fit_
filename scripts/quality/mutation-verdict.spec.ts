@@ -758,6 +758,158 @@ describe('mutation verdict', () => {
 		);
 	});
 
+	it('matches a declared Timeout entry against a mutant Stryker can only ever time out', async () => {
+		const { root, scope } = await fixture();
+		const source = 'export function choose(value: boolean) { return value ? 1 : 2; }\n';
+		const looping = mutant('reviewed', 'Timeout');
+		const sourceHash = createHash('sha256').update(source).digest('hex');
+		const entry = {
+			file: 'src/a.ts',
+			mutatorName: looping.mutatorName,
+			replacement: looping.replacement,
+			location: looping.location,
+			sourceHash,
+			classification: 'equivalent' as const,
+			rationale:
+				'This mutation turns a countdown into a count-up, so the loop never terminates and Stryker can only ever time it out.',
+			review: 'https://github.com/gabepsilva/Fit_/pull/5',
+			status: 'Timeout' as const
+		};
+		const ledger: MutationReviewLedger = {
+			version: 1,
+			entries: [{ ...entry, fingerprint: mutantFingerprint(entry) }]
+		};
+		const verdict = await evaluateMutationReport({
+			projectRoot: root,
+			lane: 'security',
+			scope,
+			policy,
+			ledger,
+			report: {
+				files: {
+					'src/a.ts': {
+						source,
+						mutants: [
+							looping,
+							...Array.from({ length: 9 }, (_, index) => mutant(String(index), 'Killed'))
+						]
+					}
+				}
+			}
+		});
+		expect(verdict.reviewedSurvivors).toBe(1);
+		expect(verdict.failures).not.toEqual(
+			expect.arrayContaining([expect.stringContaining('stale or no longer survives')])
+		);
+	});
+
+	it('rejects a declared Timeout entry whose mutant actually survives', async () => {
+		const { root, scope } = await fixture();
+		const source = 'export function choose(value: boolean) { return value ? 1 : 2; }\n';
+		const survivor = mutant('reviewed', 'Survived');
+		const sourceHash = createHash('sha256').update(source).digest('hex');
+		const entry = {
+			file: 'src/a.ts',
+			mutatorName: survivor.mutatorName,
+			replacement: survivor.replacement,
+			location: survivor.location,
+			sourceHash,
+			classification: 'equivalent' as const,
+			rationale:
+				'A deliberately mis-declared status: this mutant actually survives, not times out, and the check must reject it.',
+			review: 'https://github.com/gabepsilva/Fit_/pull/5',
+			status: 'Timeout' as const
+		};
+		const ledger: MutationReviewLedger = {
+			version: 1,
+			entries: [{ ...entry, fingerprint: mutantFingerprint(entry) }]
+		};
+		const verdict = await evaluateMutationReport({
+			projectRoot: root,
+			lane: 'security',
+			scope,
+			policy,
+			ledger,
+			report: {
+				files: {
+					'src/a.ts': {
+						source,
+						mutants: [
+							survivor,
+							...Array.from({ length: 9 }, (_, index) => mutant(String(index), 'Killed'))
+						]
+					}
+				}
+			}
+		});
+		expect(verdict.reviewedSurvivors).toBe(0);
+		expect(verdict.failures).toEqual(
+			expect.arrayContaining([expect.stringContaining('stale or no longer survives')])
+		);
+	});
+
+	it('rejects a default (Survived) entry whose mutant actually times out', async () => {
+		const { root, scope } = await fixture();
+		const source = 'export function choose(value: boolean) { return value ? 1 : 2; }\n';
+		const looping = mutant('reviewed', 'Timeout');
+		const sourceHash = createHash('sha256').update(source).digest('hex');
+		const entry = {
+			file: 'src/a.ts',
+			mutatorName: looping.mutatorName,
+			replacement: looping.replacement,
+			location: looping.location,
+			sourceHash,
+			classification: 'equivalent' as const,
+			rationale:
+				'A default-status entry (no `status` field, so it excuses only Survived) pointed at a mutant that actually times out, which the check must reject rather than assume.'
+		};
+		const ledgerEntry = { ...entry, review: 'https://github.com/gabepsilva/Fit_/pull/5' };
+		const ledger: MutationReviewLedger = {
+			version: 1,
+			entries: [{ ...ledgerEntry, fingerprint: mutantFingerprint(ledgerEntry) }]
+		};
+		const verdict = await evaluateMutationReport({
+			projectRoot: root,
+			lane: 'security',
+			scope,
+			policy,
+			ledger,
+			report: {
+				files: {
+					'src/a.ts': {
+						source,
+						mutants: [
+							looping,
+							...Array.from({ length: 9 }, (_, index) => mutant(String(index), 'Killed'))
+						]
+					}
+				}
+			}
+		});
+		expect(verdict.reviewedSurvivors).toBe(0);
+		expect(verdict.failures).toEqual(
+			expect.arrayContaining([expect.stringContaining('stale or no longer survives')])
+		);
+	});
+
+	it('fingerprints a location the same way regardless of start/end key order', () => {
+		const stryker = {
+			file: 'src/a.ts',
+			mutatorName: 'UpdateOperator',
+			replacement: 'i++',
+			location: { end: { column: 3, line: 61 }, start: { column: 0, line: 61 } },
+			sourceHash: '0'.repeat(64)
+		};
+		const human = {
+			file: 'src/a.ts',
+			mutatorName: 'UpdateOperator',
+			replacement: 'i++',
+			location: { start: { line: 61, column: 0 }, end: { line: 61, column: 3 } },
+			sourceHash: '0'.repeat(64)
+		};
+		expect(mutantFingerprint(stryker)).toBe(mutantFingerprint(human));
+	});
+
 	it('preserves the historical Stryker score for the full-tree compatibility audit', async () => {
 		const { root, scope } = await fixture();
 		scope.lane = 'full';

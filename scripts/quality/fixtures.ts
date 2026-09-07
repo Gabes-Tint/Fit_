@@ -227,6 +227,19 @@ export const fixtures: GateFixture[] = [
 			)
 	},
 	{
+		// The queue's whole point is that the gates run on `main` plus the queued
+		// pull requests together, and that only happens if this workflow answers
+		// `merge_group`. Delete the trigger and nothing goes red -- the required
+		// check is simply never reported, and every merge blocks. That silence is
+		// what this fixture buys a failure for.
+		name: 'ci-without-merge-queue-trigger',
+		gate: 'check:ci-contract',
+		failureIncludes: 'no `merge_group:` trigger',
+		description: "The CI workflow no longer answers the merge queue's combined branch.",
+		apply: (root) =>
+			edit(root, '.github/workflows/ci.yml', (content) => content.replace('  merge_group:\n', ''))
+	},
+	{
 		// A composite action is read from the workspace, so a job that calls one
 		// without checking out first fails on "Can't find action" -- naming the
 		// action, not the missing checkout. Three comments and QUALITY.md say this
