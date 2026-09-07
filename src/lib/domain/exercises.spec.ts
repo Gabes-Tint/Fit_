@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { EXERCISE_LIBRARY, FORM_CUES, ROUTINE_TEMPLATES } from './exercise-catalog';
+import { DEMOS, EXERCISE_LIBRARY, FORM_CUES, ROUTINE_TEMPLATES } from './exercise-catalog';
 import {
 	alternativesTo,
 	bumpField,
+	demoFor,
 	emptyRoutine,
 	exercisesFromLibrary,
 	formatLoad,
@@ -71,6 +72,17 @@ describe('form cues', () => {
 			'Move through the full range under control.',
 			'Two seconds down, one second up.'
 		]);
+	});
+});
+
+describe('demo clips', () => {
+	it('gives the real clip for a movement that has one', () => {
+		expect(demoFor('Push-up')).toBe(DEMOS['Push-up']);
+		expect(demoFor('Squat')).toBe(DEMOS['Squat']);
+	});
+
+	it('has nothing for a movement with no clip yet', () => {
+		expect(demoFor('Bench Press')).toBeUndefined();
 	});
 });
 

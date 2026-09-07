@@ -26,7 +26,7 @@ describe('FormCheckModal', () => {
 
 	it('names the movement it is checking', async () => {
 		await render(FormCheckModal, { props: { open: true, name: 'Squat', onclose: vi.fn() } });
-		await expect.element(page.getByText('Squat')).toBeInTheDocument();
+		await expect.element(page.getByText('Squat', { exact: true })).toBeInTheDocument();
 		await expect.element(page.getByText('Form check')).toBeInTheDocument();
 	});
 
