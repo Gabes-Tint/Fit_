@@ -49,6 +49,15 @@ export type CatalogFoodPayload = {
 	 * a food the catalog gave no household measure for, simply sends none.
 	 */
 	portions?: readonly Portion[] | undefined;
+	/**
+	 * The usable unit measure the catalog's `food_serving` rows named for this
+	 * food, when one of them named a genuine single countable item rather than
+	 * a mass, a volume, or a per-serving piece count (#178). Absent — not
+	 * `null` — when none did, so a food like Oreo, which the core catalog
+	 * carries only as "100 g", sends no key rather than one that has to be
+	 * checked for `null` on every food.
+	 */
+	unit?: { label: string; grams: number } | undefined;
 	/** Per 100 g or 100 ml, which is how the catalog stores every nutrient. */
 	per100g: NutrientBasis;
 };
@@ -119,6 +128,16 @@ function namesAServing(serving: Record<string, unknown>): boolean {
 }
 
 /**
+ * The usable unit measure, when the payload carries one. Absent is valid —
+ * most foods name none — but present and malformed is not.
+ */
+function namesAUnit(value: unknown): boolean {
+	if (value === undefined) return true;
+	const unit = fieldsOf(value);
+	return typeof unit.label === 'string' && typeof unit.grams === 'number';
+}
+
+/**
  * The nutrients. `kcal` must be a number: a row without energy would log as a
  * zero-calorie line and quietly wrong the day's total, which is worse than
  * saying the catalog could not be read.
@@ -149,6 +168,7 @@ export function isCatalogFoodPayload(value: unknown): value is CatalogFoodPayloa
 		namesAFood(row) &&
 		namesAServing(fieldsOf(row.serving)) &&
 		namesPortions(row.portions) &&
+		namesAUnit(row.unit) &&
 		carriesNutrients(fieldsOf(row.per100g))
 	);
 }
@@ -210,6 +230,10 @@ export function catalogFoodToFood(payload: CatalogFoodPayload): Food {
 		// what every bundled food says, so a catalog food that named no measure
 		// reads the same as one that never could.
 		...(payload.portions?.length ? { portions: payload.portions } : {}),
+		// Dropped when absent, the same as `portions`: a bundled food never has
+		// one either, and the toggle this backs (#178) reads its absence as "no
+		// usable unit" either way.
+		...(payload.unit ? { unit: payload.unit } : {}),
 		kcal: Math.round(per.kcal * factor),
 		protein: scaled(per.protein),
 		carbs: scaled(per.carbs),

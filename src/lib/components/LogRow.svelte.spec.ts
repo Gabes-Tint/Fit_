@@ -97,6 +97,59 @@ describe('LogRow', () => {
 		expect(update).toHaveBeenCalledWith(expect.any(String), { servings: 2.5 });
 	});
 
+	describe('the unit toggle (#178)', () => {
+		function unitItem(servings = 2) {
+			return logFromFood({
+				foodId: 'egg-mcmuffin',
+				servings,
+				meal: 'breakfast',
+				date: '2026-06-01',
+				source: 'manual'
+			});
+		}
+
+		it('defaults to the unit count when the food names one', async () => {
+			const entry = unitItem();
+			await render(LogRow, { props: { item: entry, open: false, step: 0.5, ontoggle: vi.fn() } });
+			await expect.element(page.getByText('2 sandwiches')).toBeInTheDocument();
+		});
+
+		it('offers no toggle for a food that names no usable unit', async () => {
+			await render(LogRow, { props: { item: item(), open: true, step: 0.5, ontoggle: vi.fn() } });
+			expect(page.getByLabelText('Show weight').elements()).toHaveLength(0);
+			expect(page.getByLabelText('Show unit count').elements()).toHaveLength(0);
+		});
+
+		it('switches to the weight view without changing the logged grams or kcal', async () => {
+			const entry = unitItem();
+			const kcalBefore = entry.kcal;
+			await render(LogRow, { props: { item: entry, open: true, step: 0.5, ontoggle: vi.fn() } });
+			await page.getByLabelText('Show weight').click();
+			await expect.element(page.getByText(`2 × ${entry.servingLabel}`)).toBeInTheDocument();
+			expect(entry.kcal).toBe(kcalBefore);
+			expect(entry.servings).toBe(2);
+		});
+
+		it('steps by whole units in the unit view', async () => {
+			const update = vi.spyOn(tend, 'updateLog').mockImplementation(() => undefined);
+			await render(LogRow, {
+				props: { item: unitItem(), open: true, step: 0.5, ontoggle: vi.fn() }
+			});
+			await page.getByRole('button', { name: 'Increase' }).click();
+			expect(update).toHaveBeenCalledWith(expect.any(String), { servings: 3 });
+		});
+
+		it('steps by the passed serving step once switched to the weight view', async () => {
+			const update = vi.spyOn(tend, 'updateLog').mockImplementation(() => undefined);
+			await render(LogRow, {
+				props: { item: unitItem(), open: true, step: 0.5, ontoggle: vi.fn() }
+			});
+			await page.getByLabelText('Show weight').click();
+			await page.getByRole('button', { name: 'Increase' }).click();
+			expect(update).toHaveBeenCalledWith(expect.any(String), { servings: 2.5 });
+		});
+	});
+
 	it('removes the entry through the store', async () => {
 		const remove = vi.spyOn(tend, 'removeLog').mockImplementation(() => undefined);
 		const entry = item();

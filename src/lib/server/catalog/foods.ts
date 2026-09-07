@@ -3,6 +3,7 @@ import type { CatalogFoodPayload } from '$lib/domain/catalog-food';
 import { text } from '../users/rows';
 import { withDefaultServing } from './default-serving';
 import { withPortions } from './portions';
+import { withUnitMeasure } from './unit-measure';
 import { searchTerms, singular } from './query';
 import { searchSql } from './ranking';
 import { prepared } from './statements';
@@ -139,5 +140,9 @@ export function foodsByBarcode(db: DatabaseSync, barcode: string): CatalogFood[]
  * itself) can never see one without the other.
  */
 function finish(db: DatabaseSync, found: CatalogFood[]): CatalogFood[] {
-	return withDefaultServing(db, withPortions(db, found));
+	const served = withDefaultServing(db, withPortions(db, found));
+	// Dropped when null rather than carried as `unit: null`, the same as
+	// `portions` is dropped when empty: most foods (~87%, #178) name no usable
+	// unit, and sending the key anyway would be a null on every one of them.
+	return withUnitMeasure(db, served).map(({ unit, ...food }) => (unit ? { ...food, unit } : food));
 }

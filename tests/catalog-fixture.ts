@@ -148,7 +148,9 @@ const FIXTURE_FOODS: FixtureRow[] = [
 		alias: null,
 		servings: [
 			['2 Tbsp', 32],
-			['1 tsp', 5.3]
+			['1 tsp', 5.3],
+			// A genuine single-item measure (#178), beside the volume rows above.
+			['1 bar', 40]
 		]
 	},
 	{

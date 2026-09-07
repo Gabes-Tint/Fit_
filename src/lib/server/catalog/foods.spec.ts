@@ -200,6 +200,16 @@ describe('searchFoods', () => {
 		expect(found?.portions).toEqual([]);
 	});
 
+	it('carries the usable unit measure a food names, beside its volume portions (#178)', () => {
+		const [found] = foodsByBarcode(db, '00000000000103');
+		expect(found?.unit).toEqual({ label: '1 bar', grams: 40 });
+	});
+
+	it('names no usable unit at all for a food that names none', () => {
+		const [found] = foodsByBarcode(db, '00000000000035');
+		expect(found).not.toHaveProperty('unit');
+	});
+
 	it('reads a column whose type has changed as absent rather than guessing', () => {
 		// A brand arriving as a blob and a serving weight as text. The catalog is
 		// rebuilt by an ETL this module does not own, so a column that changes

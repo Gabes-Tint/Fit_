@@ -109,6 +109,12 @@ export type Food = {
 	 * is per food and never a constant; absent means the catalog did not say.
 	 */
 	portions?: readonly Portion[] | undefined;
+	/**
+	 * What one countable unit of this food weighs — a Big Mac, a cookie —
+	 * when the catalog named one (#178). Absent for anything the catalog
+	 * could only weigh or measure by volume, milk included.
+	 */
+	unit?: { label: string; grams: number } | undefined;
 	kcal: number;
 	protein: number;
 	carbs: number;

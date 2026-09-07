@@ -218,6 +218,22 @@ describe('isCatalogFoodPayload', () => {
 			false
 		);
 	});
+
+	it('accepts a row carrying a usable unit measure, and one carrying none', () => {
+		expect(isCatalogFoodPayload({ ...CEREAL, unit: { label: '1 sandwich', grams: 150 } })).toBe(
+			true
+		);
+		expect(isCatalogFoodPayload(CEREAL)).toBe(true);
+	});
+
+	it.each([
+		['a label that is not text', { label: 4, grams: 150 }],
+		['a weight that is not a number', { label: '1 sandwich', grams: '150' }],
+		['null instead of an object', null],
+		['a bare string instead of an object', '1 sandwich']
+	])('rejects a unit measure carrying %s', (_reason, unit) => {
+		expect(isCatalogFoodPayload({ ...CEREAL, unit })).toBe(false);
+	});
 });
 
 describe('catalogFoodToFood', () => {
@@ -246,6 +262,15 @@ describe('catalogFoodToFood', () => {
 		// catalog gave no measure for reads the same as one that never could.
 		expect(catalogFoodToFood(CEREAL).portions).toBeUndefined();
 		expect(catalogFoodToFood({ ...CEREAL, portions: [] }).portions).toBeUndefined();
+	});
+
+	it('carries the usable unit measure the catalog named', () => {
+		const unit = { label: '1 sandwich', grams: 150 };
+		expect(catalogFoodToFood({ ...CEREAL, unit }).unit).toEqual(unit);
+	});
+
+	it('names no usable unit at all when the catalog named none', () => {
+		expect(catalogFoodToFood(CEREAL).unit).toBeUndefined();
 	});
 
 	it('scales the micronutrients the catalog carries', () => {
