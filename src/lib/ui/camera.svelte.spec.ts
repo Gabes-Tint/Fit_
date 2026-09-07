@@ -1,12 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { stubMediaDevices } from '$lib/testing/fixtures';
 import { CAPTURE_MAX_EDGE, captureFrame, readImageFile, startCamera } from './camera';
 
 type GetUserMedia = (constraints: MediaStreamConstraints) => Promise<MediaStream>;
-
-// `mediaDevices` is a prototype getter, so an own property shadows it until deleted.
-function stubMediaDevices(value: unknown) {
-	Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value });
-}
 
 /** A stream with real frames: a canvas can produce one without a camera. */
 function fakeStream(width = 640, height = 480) {

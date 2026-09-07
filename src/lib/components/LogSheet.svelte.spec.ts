@@ -98,6 +98,8 @@ const CHICKEN = {
 	per100g: { ...EGG.per100g, kcal: 165 }
 };
 
+// Local, not `$lib/testing/fixtures`' `jsonResponse`: every caller here wants a resolved
+// promise of a 200, never a status or header override, so the narrower signature stays.
 function jsonResponse(body: unknown) {
 	return Promise.resolve(
 		new Response(JSON.stringify(body), {
@@ -459,12 +461,7 @@ describe('LogSheet', () => {
 	it('logs a scanned food the server catalog knows and the bundled foods do not', async () => {
 		const add = vi.spyOn(tend, 'addLogItems').mockImplementation(() => undefined);
 		vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
-			Promise.resolve(
-				new Response(JSON.stringify({ barcode: OFF_SHELF, ambiguous: false, foods: [CEREAL] }), {
-					status: 200,
-					headers: { 'content-type': 'application/json' }
-				})
-			)
+			jsonResponse({ barcode: OFF_SHELF, ambiguous: false, foods: [CEREAL] })
 		);
 		await openSheet();
 		await page.getByRole('button', { name: 'Scan' }).click();
@@ -495,14 +492,7 @@ describe('LogSheet', () => {
 		// behind that id and dropped the item, so nothing past the bundled foods
 		// could be logged at all, and the sheet said only "match it first".
 		const add = vi.spyOn(tend, 'addLogItems').mockImplementation(() => undefined);
-		vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
-			Promise.resolve(
-				new Response(JSON.stringify({ foods: [CEREAL] }), {
-					status: 200,
-					headers: { 'content-type': 'application/json' }
-				})
-			)
-		);
+		vi.spyOn(globalThis, 'fetch').mockImplementation(() => jsonResponse({ foods: [CEREAL] }));
 		await openSheet();
 		await page.getByRole('button', { name: 'Search' }).click();
 		await page.getByLabelText('Search foods, brands, barcodes').fill('kumquat');
@@ -852,14 +842,7 @@ describe('LogSheet on GLP-1', () => {
 describe('LogSheet reading a plate from a photo', () => {
 	/** What `/api/meals/photo` answers with: one food the catalog matched, one it did not. */
 	function plateAnswers(items: unknown) {
-		return vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
-			Promise.resolve(
-				new Response(JSON.stringify({ items }), {
-					status: 200,
-					headers: { 'content-type': 'application/json' }
-				})
-			)
-		);
+		return vi.spyOn(globalThis, 'fetch').mockImplementation(() => jsonResponse({ items }));
 	}
 
 	/** Hand the already-open picker a real picture, and wait for the still. */

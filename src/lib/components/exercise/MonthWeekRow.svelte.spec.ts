@@ -2,13 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import type { CalendarWeek } from '$lib/domain/training-plan';
-import type { PlannedWeek, Routine } from '$lib/domain/types';
+import type { PlannedWeek } from '$lib/domain/types';
+import { routine } from '$lib/testing/fixtures';
 import MonthWeekRow from './MonthWeekRow.svelte';
 import { planOptions } from './plan-options';
-
-function routine(id: string, name: string, freq = 3): Routine {
-	return { id, name, freq, exercises: [] };
-}
 
 const OPTIONS = planOptions([routine('push', 'Chest & Shoulders')]);
 

@@ -20,6 +20,8 @@ type Sent = {
 	body: Record<string, unknown> | null;
 };
 
+// Local, not `$lib/testing/fixtures`' `jsonResponse`: every call site below passes `status`
+// as a bare second argument (`jsonResponse(body, 409)`), not an `init` bag, so this stays.
 function jsonResponse(body: unknown, status = 200): Response {
 	return new Response(JSON.stringify(body), {
 		status,

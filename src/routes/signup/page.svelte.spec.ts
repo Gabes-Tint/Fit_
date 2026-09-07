@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
-import type { SignedInSession } from '$lib/auth/api';
 import { session } from '$lib/state/session.svelte';
+import { signedInSession } from '$lib/testing/fixtures';
 import SignUpPage from './+page.svelte';
 
 // goto is mocked: the harness renders only this page, and the redirect target is under test.
@@ -33,11 +33,7 @@ function answer(body: unknown, status: number): Sent[] {
 	return sent;
 }
 
-const CREATED: SignedInSession = {
-	account: { id: 'a-1', username: 'robin', displayName: 'Robin', createdAt: '2026-08-01' },
-	households: [{ householdId: 'h-1', name: 'Home', role: 'owner' }],
-	expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString()
-};
+const CREATED = signedInSession();
 
 async function open() {
 	await render(SignUpPage);

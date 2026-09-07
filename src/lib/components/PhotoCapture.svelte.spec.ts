@@ -1,37 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
+import { paintingStream, stopPainting, stubMediaDevices } from '$lib/testing/fixtures';
 import PhotoCapture from './PhotoCapture.svelte';
 
 /** Long enough for a real video element to receive its first frame. */
 const FRAME = { timeout: 5000 };
-
-const painters: number[] = [];
-
-/**
- * `navigator.mediaDevices` is a prototype getter, so an own property shadows it
- * for the length of a test and `delete` puts the real one back.
- */
-function stubMediaDevices(value: unknown) {
-	Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value });
-}
-
-/** A still canvas emits no frames, so it repaints on a timer. */
-function paintingStream() {
-	const canvas = document.createElement('canvas');
-	canvas.width = 320;
-	canvas.height = 240;
-	const context = canvas.getContext('2d');
-	let tick = 0;
-	painters.push(
-		setInterval(() => {
-			if (!context) return;
-			context.fillStyle = tick++ % 2 ? '#3f5a48' : '#f3eee4';
-			context.fillRect(0, 0, canvas.width, canvas.height);
-		}, 30) as unknown as number
-	);
-	return canvas.captureStream(30);
-}
 
 function openable() {
 	const stream = paintingStream();
@@ -106,7 +80,7 @@ function choose(file: File) {
 }
 
 afterEach(() => {
-	for (const painter of painters.splice(0)) clearInterval(painter);
+	stopPainting();
 	delete (navigator as { mediaDevices?: MediaDevices }).mediaDevices;
 	vi.restoreAllMocks();
 });
