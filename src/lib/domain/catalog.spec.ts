@@ -36,11 +36,17 @@ describe('the seeded foods', () => {
 		}
 	});
 
-	it('gives every food an aisle to be bought in', () => {
-		// The grocery list is the only thing that reads `category`, and a food
-		// with none lands in "Other" -- which is the list saying it gave up.
-		for (const food of SEED_FOODS) {
-			expect(groceryAisle(food.category)).not.toBe('Other');
+	it('gives every recipe ingredient an aisle to be bought in', () => {
+		// The grocery list is the only thing that reads `category`, and an
+		// ingredient with no aisle lands in "Other" -- the list saying it gave up
+		// in front of someone standing in a shop. Only recipe ingredients get
+		// there: `egg-mcmuffin` and `chipotle-bowl` are meals bought whole and
+		// stay uncategorized on purpose.
+		for (const r of RECIPES) {
+			for (const ing of r.ingredients) {
+				const food = SEED_FOOD_BY_ID[ing.foodId];
+				expect(groceryAisle(food?.category ?? ''), `${r.id} -> ${ing.foodId}`).not.toBe('Other');
+			}
 		}
 	});
 

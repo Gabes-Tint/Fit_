@@ -143,6 +143,22 @@ function resolvesTo(...rows: (object | null)[]) {
 		});
 }
 
+/**
+ * The search box finding one catalog row, with `/api/foods/resolve` matching
+ * nothing. Since #146 the box has no device-side table behind it, so a test that
+ * clicks a search result has to say what the server returned.
+ */
+function searchFinds(row: object) {
+	return vi
+		.spyOn(globalThis, 'fetch')
+		.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+			if (!urlOf(input).includes('/api/foods/resolve')) return jsonResponse({ foods: [row] });
+			return jsonResponse({
+				items: queriesIn(init).map((query) => ({ query, food: null, alternatives: [] }))
+			});
+		});
+}
+
 /** The resolve endpoint refusing, with everything else answering as usual. */
 function resolveRefuses(status: number) {
 	return vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) => {
@@ -498,6 +514,7 @@ describe('LogSheet', () => {
 	});
 
 	it('proposes a food chosen from search', async () => {
+		searchFinds(CEREAL);
 		await openSheet();
 		await page.getByRole('button', { name: 'Search' }).click();
 		await page.getByLabelText('Search foods, brands, barcodes').fill('chicken breast');
@@ -610,7 +627,7 @@ describe('LogSheet', () => {
 	});
 
 	it('matches a proposal to a catalog food', async () => {
-		resolvesTo(null);
+		searchFinds(CEREAL);
 		await openSheet();
 		await page.getByLabelText('What you ate').fill('xyzzy nonexistent gruel');
 		await page.getByRole('button', { name: 'Parse' }).click();
