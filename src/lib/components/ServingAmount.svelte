@@ -9,8 +9,10 @@
 		roundAmount,
 		stepAmount
 	} from '$lib/domain/serving-amount';
+	import { describePortion } from '$lib/domain/serving-display';
 	import type { Food } from '$lib/domain/types';
 	import { formatServingMass } from '$lib/domain/units';
+	import { readsAsServings } from '$lib/domain/usual-portion';
 	import { wholePackGrams } from '$lib/domain/whole-pack';
 	import { tend } from '$lib/state/tend.svelte';
 	import Stepper from '$lib/ui/Stepper.svelte';
@@ -29,6 +31,7 @@
 		food,
 		servings,
 		step,
+		usual = null,
 		onchange
 	}: {
 		/** The catalog food behind the amount, once one has been matched to it. */
@@ -36,6 +39,13 @@
 		servings: number;
 		/** Half a serving, or a quarter for someone eating in quarters (`profile.ts`). */
 		step: number;
+		/**
+		 * What this person last logged of this food, in servings, or `null` for a
+		 * food they have never logged (#159). The caller opens the amount at it;
+		 * this control is what says so, so that a card sitting at 1.607 servings
+		 * is explained rather than merely odd.
+		 */
+		usual?: number | null;
 		onchange: (servings: number) => void;
 	} = $props();
 
@@ -51,16 +61,29 @@
 		food === undefined || packGrams === null ? null : amountFromGrams(food, packGrams)
 	);
 
+	/** The remembered amount as the app words every other portion (#74). */
+	const usualPortion = $derived(
+		food === undefined || usual === null ? '' : describePortion(food, usual, units)
+	);
+
 	/**
-	 * Which unit the field is typed in. Component state, deliberately: it is a
-	 * way of entering a number, not a property of what was eaten, so it is not
-	 * on the proposal, not in the state document, and gone when the sheet
-	 * closes. A food with no serving weight has nothing to convert against, so
-	 * the toggle is not offered and `grams === null` keeps the field in
-	 * servings even if this is somehow left true.
+	 * Which unit the field is typed in, once the person has said — `null` until
+	 * then. Component state, deliberately: it is a way of entering a number, not
+	 * a property of what was eaten, so it is not on the proposal, not in the
+	 * state document, and gone when the sheet closes. A food with no serving
+	 * weight has nothing to convert against, so the toggle is not offered and
+	 * `grams === null` keeps the field in servings whatever this holds.
 	 */
-	let inGrams = $state(false);
-	const editingGrams = $derived(inGrams && grams !== null);
+	let inGrams = $state<boolean | null>(null);
+
+	/**
+	 * Which unit the field opens in when nobody has picked one: weight, when the
+	 * card was opened at a remembered amount that only reads as a weight. 45 g of
+	 * a 28 g serving is 1.607 servings, and a field showing "1.607" would be
+	 * showing a number the person never chose (#159).
+	 */
+	const opensInGrams = $derived(usual !== null && !readsAsServings(usual));
+	const editingGrams = $derived((inGrams ?? opensInGrams) && grams !== null);
 
 	/**
 	 * What is part-way through being typed, or `null` when the field is showing
@@ -70,7 +93,9 @@
 	let draft = $state<string | null>(null);
 
 	const shown = $derived(
-		grams !== null && inGrams ? String(massInUnits(grams, units)) : String(roundAmount(servings))
+		grams !== null && editingGrams
+			? String(massInUnits(grams, units))
+			: String(roundAmount(servings))
 	);
 	const text = $derived(draft ?? shown);
 	// A weight is read and typed in the person's own system, the same as every
@@ -107,24 +132,37 @@
 	}
 
 	function switchUnit() {
-		inGrams = !inGrams;
+		inGrams = !editingGrams;
 		draft = null;
 	}
 
+	/**
+	 * Take one of the chips. The field goes back to servings: a chip is a count
+	 * of the food's own serving, and the person taking one has picked an amount
+	 * outright, so the unit a remembered amount opened in no longer governs.
+	 */
 	function choose(amount: number) {
 		draft = null;
+		inGrams = false;
 		onchange(amount);
 	}
 
 	const CHIP = 'bg-secondary text-muted-foreground h-8 shrink-0 rounded-full px-3 text-xs';
 </script>
 
-{#if food !== undefined && pack !== null && packGrams !== null}
+{#if food !== undefined && usual !== null}
+	<p class="text-muted-foreground mt-2 text-xs">Your usual · {usualPortion}</p>
+{/if}
+
+{#if food !== undefined && (pack !== null || usual !== null)}
 	<div class="mt-2 flex flex-wrap gap-1.5">
+		<!-- The label serving, which is the one tap back to it (#159). -->
 		<button type="button" class={CHIP} onclick={() => choose(1)}>{food.servingLabel}</button>
-		<button type="button" class={CHIP} onclick={() => choose(pack)}>
-			Whole pack · {formatServingMass(packGrams, units)}
-		</button>
+		{#if pack !== null && packGrams !== null}
+			<button type="button" class={CHIP} onclick={() => choose(pack)}>
+				Whole pack · {formatServingMass(packGrams, units)}
+			</button>
+		{/if}
 	</div>
 {/if}
 
