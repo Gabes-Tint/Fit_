@@ -40,6 +40,17 @@ describe('logFromFood', () => {
 		expect(item.note).toBe('soft boiled');
 	});
 
+	it('has no grams, because a seed food never records a serving weight', () => {
+		const item = logFromFood({
+			foodId: 'egg-large',
+			servings: 1,
+			meal: 'breakfast',
+			date: '2026-06-01',
+			source: 'manual'
+		});
+		expect(item.grams).toBeUndefined();
+	});
+
 	it('refuses to invent an entry for an unknown food, and names it', () => {
 		expect(
 			() =>
@@ -129,6 +140,23 @@ describe('logFromCatalogFood', () => {
 			source: 'barcode',
 			note: 'half a bowl'
 		});
+	});
+
+	it('carries the serving’s own mass, unscaled by servings (#232)', () => {
+		const one = logFromCatalogFood(CEREAL, {
+			servings: 1,
+			meal: 'breakfast',
+			date: '2026-09-04',
+			source: 'barcode'
+		});
+		const two = logFromCatalogFood(CEREAL, {
+			servings: 2,
+			meal: 'breakfast',
+			date: '2026-09-04',
+			source: 'barcode'
+		});
+		expect(one.grams).toBe(37);
+		expect(two.grams).toBe(37);
 	});
 });
 

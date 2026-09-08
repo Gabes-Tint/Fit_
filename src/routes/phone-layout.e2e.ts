@@ -204,7 +204,7 @@ test.describe('at 360px', () => {
 		await page.getByRole('button', { name: 'Add to today' }).click();
 		await expect(page.getByRole('dialog')).toBeHidden();
 
-		const row = page.getByRole('button', { name: 'Olive oil USDA 2 × 1 tbsp (15 ml) 238' });
+		const row = page.getByRole('button', { name: 'Olive oil USDA 2 × 1 tbsp (15 ml) · 28 g 238' });
 		await expect(row).toBeVisible();
 		await expectFitsViewport(page, row);
 	});

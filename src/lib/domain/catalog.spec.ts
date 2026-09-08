@@ -90,6 +90,20 @@ describe('scaleFood', () => {
 	it('carries the provenance through', () => {
 		expect(scaleFood(food('egg-large'), 1.5).provenance).toBe(food('egg-large').provenance);
 	});
+
+	it('leaves a plain seed food with no grams', () => {
+		expect(scaleFood(food('egg-large'), 1).grams).toBeUndefined();
+	});
+
+	it('carries a catalog food’s serving grams through unscaled, at one serving', () => {
+		const withGrams = { ...food('egg-large'), grams: 50 };
+		expect(scaleFood(withGrams, 1).grams).toBe(50);
+	});
+
+	it('carries a catalog food’s serving grams through unscaled, at two servings', () => {
+		const withGrams = { ...food('egg-large'), grams: 50 };
+		expect(scaleFood(withGrams, 2).grams).toBe(50);
+	});
 });
 
 describe('the recipe book', () => {
