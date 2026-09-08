@@ -157,6 +157,25 @@ describe('amountFromGrams', () => {
 	});
 });
 
+describe('the mass a logged entry keeps (#251)', () => {
+	/**
+	 * `LogItem.grams` holds the mass of one serving, the same quantity
+	 * `Food.grams` and `PortionSource.grams` hold — not the logged total. These
+	 * read it through `servingMassGrams` rather than keeping a serving weight
+	 * of their own, so there is one answer to "what does one serving weigh" and
+	 * an entry logged from this sheet reads back the mass it was logged at.
+	 */
+	const LOGGED = { servingLabel: '1 sandwich', grams: 219, servings: 2 };
+
+	it('multiplies the entry’s own serving mass, the way describePortion does', () => {
+		expect(amountGrams(LOGGED, LOGGED.servings)).toBe(438);
+	});
+
+	it('reads the same amount back out of that mass', () => {
+		expect(amountFromGrams(LOGGED, 438)).toBe(LOGGED.servings);
+	});
+});
+
 describe('switching to grams and back', () => {
 	it('gives back the amount that went in, halves and eighths included', () => {
 		for (const servings of [0.125, 0.5, 1, 1.5, 2, 2.625]) {
