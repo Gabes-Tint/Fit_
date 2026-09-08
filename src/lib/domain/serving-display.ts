@@ -87,8 +87,9 @@ export function statedMass(label: string): { grams: number; system: UnitSystem }
 /**
  * The mass of one serving: the food's own `grams` first, then whatever the
  * label states, and `null` when neither says. The food's number wins because it
- * is the one the calories were scaled from; the label's is what a logged entry
- * still has, since `LogItem` keeps no weight of its own.
+ * is the one the calories were scaled from, and a logged entry now carries that
+ * same number rather than falling back to the label, so a log row and a search
+ * result are answering from one figure instead of two that happen to agree.
  */
 export function servingMassGrams(source: PortionSource): number | null {
 	// `Number(undefined)` is `NaN`, which `isWeight` refuses, so a source that
