@@ -21,7 +21,6 @@
  * that mass before anything is logged, so it is visible rather than silent.
  */
 
-import { groupKey, loggedLater } from './recent-foods';
 import { EIGHTH, roundAmount } from './serving-amount';
 import type { Food, LogItem } from './types';
 
@@ -32,16 +31,27 @@ import type { Food, LogItem } from './types';
 export type RememberedFood = Pick<Food, 'name' | 'brand'>;
 
 /**
+ * Whether this entry is one of that food's.
+ *
+ * Two halves, and both are needed. `foodId === null` is what a catalog food
+ * logs as, on purpose: the ETL rebuilds the catalog wholesale and its ids are
+ * not promised to survive (`logFromCatalogFood`), so an entry that kept an id
+ * came from the seeded table instead and is a different, precisely identified
+ * food — which is how the History list treats it too. What is left is the name
+ * and the brand, and they are compared exactly, because both sides are the same
+ * catalog string: `scaleFood` copies them onto the entry at log time. Folding
+ * case or padding the way `recent-foods.ts` does would be guessing that two
+ * differently written names are one food, which is a guess this has no need to
+ * make.
+ */
+function sameFood(item: LogItem, food: RememberedFood): boolean {
+	return item.foodId === null && item.name === food.name && item.brand === food.brand;
+}
+
+/**
  * The amount last logged of this food, or `null` for one never logged.
  *
- * Which entries are this food is `recent-foods.ts`'s question, not a second
- * answer to it: a catalog food logs with no `foodId` on purpose, because the
- * ETL rebuilds the catalog wholesale and its ids are not promised to survive
- * (`logFromCatalogFood`), so name and brand are the identity afterwards. The
- * History list already groups by exactly that, and the card's default has to
- * agree with it — the same food cannot have two different last portions.
- *
- * No window, unlike that list. The History list ranks foods a person is
+ * No window, unlike the History list. That list ranks foods a person is
  * browsing, so forgetting one they abandoned in the spring keeps it useful;
  * this is one food they have just named themselves, and the last amount is
  * still the best guess however long ago it was.
@@ -51,11 +61,14 @@ export function usualServings(
 	food: RememberedFood | undefined
 ): number | null {
 	if (food === undefined) return null;
-	const key = groupKey({ foodId: null, name: food.name, brand: food.brand });
 	let latest: LogItem | null = null;
 	for (const item of log) {
-		if (groupKey(item) !== key) continue;
-		if (latest === null || loggedLater(item, latest)) latest = item;
+		if (!sameFood(item, food)) continue;
+		// The whole log, not its tail: an import can land older entries after
+		// newer ones. `>=` because a calendar day cannot separate two entries
+		// logged within it, and the log is appended to, so the later of two on
+		// one day is the one further along.
+		if (latest === null || item.date >= latest.date) latest = item;
 	}
 	return latest === null ? null : latest.servings;
 }

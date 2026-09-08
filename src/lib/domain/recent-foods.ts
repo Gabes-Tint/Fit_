@@ -58,25 +58,11 @@ export type RecentFood = {
  * food across ten rows ("Egg" vs "egg " vs "EGG") or merges two unrelated
  * ones into one.
  */
-export function groupKey(item: Pick<LogItem, 'foodId' | 'name' | 'brand'>): string {
+function groupKey(item: LogItem): string {
 	if (item.foodId) return `id:${item.foodId}`;
 	const name = item.name.trim().toLowerCase();
 	const brand = (item.brand ?? '').trim().toLowerCase();
 	return `name:${name}|${brand}`;
-}
-
-/**
- * Which of two entries for the same food was logged later.
- *
- * `date` is a calendar day, so it cannot separate two entries within one day;
- * `id` breaks that tie because `uid()` derives it from `Date.now()` and it is
- * therefore chronological to the millisecond. Exported because "the last one
- * logged" is asked in two places now — this list, and the amount the log card
- * opens at (`usual-portion.ts`) — and two orderings of the same entries would
- * eventually disagree about which portion was the last one.
- */
-export function loggedLater(item: LogItem, than: LogItem): boolean {
-	return item.date > than.date || (item.date === than.date && item.id > than.id);
 }
 
 type Group = {
@@ -90,9 +76,12 @@ type Group = {
  * window and tracking each group's most recently logged entry and how many
  * qualifying entries it has.
  *
- * "Most recent" is `loggedLater`, not position in `log`: imported history can
- * land in the array out of chronological order, and trusting array order would
- * let an old import silently win over something logged yesterday.
+ * "Most recent" is decided by `date`, not by position in `log`: imported
+ * history can land in the array out of chronological order, and trusting
+ * array order would let an old import silently win over something logged
+ * yesterday. A same-day tie falls back to `id`, which `uid()` derives from
+ * `Date.now()` and is therefore itself chronological to the millisecond --
+ * good enough to break a tie no calendar date can.
  */
 function groupsWithinWindow(log: readonly LogItem[], today: string): Group[] {
 	const cutoff = addDaysISO(today, -RECENT_WINDOW_DAYS);
@@ -109,7 +98,10 @@ function groupsWithinWindow(log: readonly LogItem[], today: string): Group[] {
 			continue;
 		}
 		existing.count += 1;
-		if (loggedLater(item, existing.latest)) existing.latest = item;
+		const isNewer =
+			item.date > existing.latest.date ||
+			(item.date === existing.latest.date && item.id > existing.latest.id);
+		if (isNewer) existing.latest = item;
 	}
 	return [...groups.values()];
 }
