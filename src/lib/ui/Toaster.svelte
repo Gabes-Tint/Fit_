@@ -25,11 +25,14 @@
 	Above `Sheet`'s `z-50`, and not by accident: the log sheet raises six of these
 	from inside an open dialog, and a dialog that portals to the end of the body
 	wins a tie on stacking order.
+
+	`style={...}` rather than `style="top: {offset}"`: the quoted form compiles to
+	`offset ?? ''`, and the empty half of that is a branch no caller can reach.
 -->
 <div
 	aria-live="polite"
 	class="pointer-events-none fixed inset-x-0 z-[60] flex flex-col items-center gap-2 px-5"
-	style="top: {offset}"
+	style={`top: ${offset}`}
 >
 	{#each toasts.items as item (item)}
 		<!--
