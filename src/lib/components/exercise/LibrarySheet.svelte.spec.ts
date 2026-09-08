@@ -92,4 +92,37 @@ describe('LibrarySheet', () => {
 		await page.getByRole('button', { name: 'Biceps' }).click();
 		await expect.element(page.getByText(/already on the routine/)).toBeInTheDocument();
 	});
+
+	it('narrows the list by typing a name', async () => {
+		await renderSheet();
+		await page.getByLabelText('Search exercises').fill('squat');
+		await expect.element(page.getByRole('checkbox', { name: 'Select Squat' })).toBeVisible();
+		expect(document.body.textContent).not.toContain('Bench Press');
+	});
+
+	it('still hides what the routine already prescribes while searching', async () => {
+		await renderSheet(['Bench Press']);
+		await page.getByLabelText('Search exercises').fill('press');
+		await expect.element(page.getByRole('checkbox', { name: 'Select Leg Press' })).toBeVisible();
+		expect(page.getByRole('checkbox', { name: 'Select Bench Press' }).elements()).toHaveLength(0);
+	});
+
+	it('says so in words when a search matches nothing', async () => {
+		await renderSheet();
+		await page.getByLabelText('Search exercises').fill('tyre flip');
+		await expect
+			.element(page.getByText('Nothing in the library matches "tyre flip".'))
+			.toBeInTheDocument();
+	});
+
+	it('keeps a pick that a later query hides', async () => {
+		const { onadd } = await renderSheet();
+		await page.getByRole('checkbox', { name: 'Select Squat' }).click();
+		await page.getByLabelText('Search exercises').fill('bench');
+		await expect
+			.element(page.getByRole('button', { name: 'Add 1 to the routine' }))
+			.toBeInTheDocument();
+		await page.getByRole('button', { name: 'Add 1 to the routine' }).click();
+		expect(onadd).toHaveBeenCalledWith(['Squat']);
+	});
 });
