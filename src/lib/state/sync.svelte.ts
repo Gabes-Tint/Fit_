@@ -588,33 +588,34 @@ export class SyncStore {
 			this.status = 'idle';
 			return;
 		}
+		// Named once the null is behind us, so what follows reads as the document
+		// it now is rather than as something that might not be there.
+		const body = remote.body;
 		// Before anything is adopted — and before this device's own document is
 		// ever offered in place of it. A newer build wrote this one; an older one
 		// cannot read it, and writing over it would destroy what it does not
 		// understand.
-		if (documentIsFromTheFuture(remote.body)) {
+		if (documentIsFromTheFuture(body)) {
 			this.outdated(hadOwnWork);
 			return;
 		}
-		if (remote.version > this.version) {
-			// Not another device's work: this device's own write, come back as a
-			// version it never heard about. What is on the device contains that
-			// document plus everything recorded after it left, so it is the later
-			// copy and adopting would throw the newer half away. The version is
-			// taken, nothing else is, and `dirty` is left as it stands so the
-			// document here goes out from where the server actually is.
-			if (isOwnWrite(outstanding, { version: remote.version, body: remote.body })) {
-				this.version = remote.version;
-				this.save(householdId);
-				this.status = 'idle';
-				return;
-			}
-			this.adopt({ version: remote.version, body: remote.body, hadOwnWork, householdId });
+		// A version above this device's is another device's work, and adopting it
+		// is what this module is for — unless it is this device's own unanswered
+		// write, come back as a version it never heard about. What is on the
+		// device contains that document plus everything recorded after it left,
+		// so adopting there would throw the newer half away (#247).
+		if (
+			remote.version > this.version &&
+			!isOwnWrite(outstanding, { version: remote.version, body })
+		) {
+			this.adopt({ version: remote.version, body, hadOwnWork, householdId });
 			return;
 		}
-		// The server is at or behind the version this device recorded, so what is
-		// here is the later document and belongs on the server rather than the
-		// other way round.
+		// Everything else leaves the document on the device as the later copy,
+		// which belongs on the server rather than the other way round: the server
+		// is at or behind the version this device recorded, or ahead of it only
+		// because of that write. `dirty` is left as it stands, so what is here
+		// goes out from where the server actually is.
 		if (remote.version < this.version) this.dirty = true;
 		this.version = remote.version;
 		this.save(householdId);

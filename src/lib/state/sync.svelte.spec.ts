@@ -535,6 +535,30 @@ describe('a device that is behind', () => {
 		expect(store.state.profiles).toHaveLength(1);
 	});
 
+	/**
+	 * A device with nothing of its own sends nothing, so the version it is left
+	 * claiming is whatever this read wrote down. Claiming one the account no
+	 * longer has would have every write from here refused as stale.
+	 */
+	it('stops claiming a version the account has lost, with nothing of its own to send', async () => {
+		localStorage.setItem(
+			SYNC_STORAGE_KEY,
+			JSON.stringify({ householdId: HOUSEHOLD, version: 5, dirty: false })
+		);
+		const sent = server([documentAnswer(0, null)]);
+		const sync = syncFor(blankDevice());
+
+		await sync.start(HOUSEHOLD);
+
+		expect(sent.map((call) => call.method)).toEqual(['GET']);
+		expect(record()).toEqual({
+			householdId: HOUSEHOLD,
+			version: 0,
+			dirty: false,
+			outstanding: null
+		});
+	});
+
 	it('records the version the server does hold when it has fallen behind', async () => {
 		const store = journal();
 		localStorage.setItem(
@@ -1094,6 +1118,9 @@ describe('writes while sync is running', () => {
 		});
 
 		store.togglePantry('oats');
+		// Before the exchange it triggers has had a microtask to begin in: the
+		// record is what a tab closed this instant would leave behind.
+		expect(record()?.dirty).toBe(true);
 		await vi.waitFor(() => expect(puts).toBe(1));
 
 		expect(record()).toEqual({
@@ -1706,6 +1733,28 @@ describe('the retry listeners', () => {
 		} finally {
 			vi.unstubAllGlobals();
 		}
+	});
+
+	/**
+	 * The pair to the one below, and the reason it is worth having both: a device
+	 * that could not reach the server is very often a phone that was put away, so
+	 * coming back into view is the moment it is most likely to succeed.
+	 */
+	it('try again for a page that has come back into view', async () => {
+		const store = journal();
+		const sent = server([documentAnswer(0, null), DROPPED, stored(1)]);
+		const sync = syncFor(store);
+		await sync.start(HOUSEHOLD);
+		expect(sync.status).toBe('waiting');
+
+		Object.defineProperty(globalThis.document, 'visibilityState', {
+			value: 'visible',
+			configurable: true
+		});
+		globalThis.dispatchEvent(new Event('visibilitychange'));
+
+		await vi.waitFor(() => expect(sync.version).toBe(1));
+		expect(sent.map((call) => call.method)).toEqual(['GET', 'PUT', 'PUT']);
 	});
 
 	it('do not try again for a page that went out of view rather than into it', async () => {
