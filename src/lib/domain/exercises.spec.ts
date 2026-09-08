@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DEMOS, EXERCISE_LIBRARY, FORM_CUES, ROUTINE_TEMPLATES } from './exercise-catalog';
 import {
 	alternativesTo,
@@ -31,6 +31,19 @@ function routine(exercises: RoutineExercise[]): Routine {
 describe('the exercise library', () => {
 	it('finds a movement by name', () => {
 		expect(libraryExercise('Bench Press')).toEqual({ name: 'Bench Press', group: 'Chest' });
+	});
+
+	/**
+	 * The name index is built once, while the module loads, so every test above
+	 * reads an index that some earlier import already built. Re-importing into a
+	 * reset registry builds it here instead, which is the only way a test can
+	 * observe the index being built at all.
+	 */
+	it('builds its name index as the module loads', async () => {
+		vi.resetModules();
+		const { libraryExercise: freshLookup } = await import('./exercises');
+		expect(freshLookup('Bench Press')).toEqual({ name: 'Bench Press', group: 'Chest' });
+		expect(freshLookup('Squat')?.group).toBe('Legs');
 	});
 
 	it('does not invent a movement it has never heard of', () => {

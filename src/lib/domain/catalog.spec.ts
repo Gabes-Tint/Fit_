@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { PROVENANCE_LABEL, SEED_FOOD_BY_ID, SEED_FOODS, scaleFood } from './foods';
 import { buildGrocery, groceryAisle } from './grocery';
 import { RECIPE_BY_ID, RECIPES, recipeFits, recipeMacros, type Recipe } from './recipes';
@@ -9,6 +9,11 @@ function food(id: string): SeedFood {
 	const hit = SEED_FOOD_BY_ID[id];
 	if (!hit) throw new Error(`test fixture references unknown food: ${id}`);
 	return hit;
+}
+
+/** One planned meal, since a slot's date and eaters do not change a grocery list. */
+function slot(recipeId: string): PlannedMeal {
+	return { date: '2026-06-01', meal: 'dinner', recipeId, forProfileIds: ['p1'] };
 }
 
 function firstRecipe(): Recipe {
@@ -119,6 +124,18 @@ describe('the recipe book', () => {
 		expect(Object.keys(RECIPE_BY_ID).length).toBe(RECIPES.length);
 	});
 
+	/**
+	 * The index is built once, while the module loads, so every test that reads
+	 * the binding this file imported is reading an index some earlier import
+	 * already built. Re-importing into a reset registry builds it here instead.
+	 */
+	it('builds its id index as the module loads', async () => {
+		vi.resetModules();
+		const { RECIPES: freshRecipes, RECIPE_BY_ID: freshIndex } = await import('./recipes');
+		expect(Object.keys(freshIndex)).toEqual(freshRecipes.map((r) => r.id));
+		expect(freshIndex['yogurt-bowl']?.name).toBe('Greek yogurt, berries, chia');
+	});
+
 	it('only references foods the seed table carries', () => {
 		for (const r of RECIPES) {
 			for (const ing of r.ingredients) {
@@ -162,8 +179,12 @@ describe('recipeMacros', () => {
 		const recipe = RECIPE_BY_ID['yogurt-bowl'];
 		if (!recipe) throw new Error('test fixture references an unknown recipe');
 		const forTwo = recipeMacros({ ...recipe, servings: 2 });
-		expect(forTwo.protein).toBe(10);
-		expect(forTwo.kcal).toBe(100);
+		// Every macro, not only the two that survive a mistaken operator. This
+		// recipe's ingredient portions are 1, 0.5 and 1, so at one serving
+		// dividing by the portion instead of multiplying by it lands on the same
+		// rounded numbers; at two servings the portions are 0.5, 0.25 and 0.5 and
+		// the two arithmetics are nowhere near each other.
+		expect(forTwo).toMatchObject({ kcal: 100, protein: 10, carbs: 11, fat: 2 });
 	});
 
 	it('skips an ingredient the seed table no longer has, rather than counting it as zero-weight', () => {
@@ -194,6 +215,16 @@ describe('recipeFits', () => {
 describe('groceryAisle', () => {
 	it('maps a known category to its aisle', () => {
 		expect(groceryAisle('produce')).toBe('Produce');
+	});
+
+	// The aisle is a heading someone reads while standing in a shop, so the
+	// wording is the contract, not just the grouping it produces.
+	it('sends protein to the meat and fish counter', () => {
+		expect(groceryAisle('protein')).toBe('Meat, fish & alternatives');
+	});
+
+	it('sends grains to the bakery aisle', () => {
+		expect(groceryAisle('grain')).toBe('Grains & bakery');
 	});
 
 	it('falls back to Other for an unknown category', () => {
@@ -273,5 +304,46 @@ describe('buildGrocery', () => {
 			{ date: '2026-06-01', meal: 'dinner', recipeId: 'gone', forProfileIds: ['p1'] }
 		];
 		expect(buildGrocery(stale, [])).toEqual([]);
+	});
+
+	// A planned slot is one plate, not one pot: the soup serves two, so a single
+	// dinner buys half of each ingredient. Buying the whole pot for one meal is
+	// the mistake this pins.
+	it('buys one serving of a recipe that serves two, not the whole pot', () => {
+		expect(buildGrocery([slot('lentil-soup')], []).map((i) => [i.name, i.servings])).toEqual([
+			['Carrots', 0.5],
+			['Spinach, raw', 0.5],
+			['Lentils, cooked', 0.75],
+			['Olive oil', 0.5]
+		]);
+	});
+
+	// Aisles are walked in store order; inside one aisle the names read down the
+	// shelf alphabetically, whatever order the meals were planned in.
+	it('sorts the foods of one aisle by name', () => {
+		const planned = [slot('veggie-omelette'), slot('yogurt-bowl')];
+		const produce = buildGrocery(planned, []).filter((i) => i.aisle === 'Produce');
+		expect(produce.map((i) => i.name)).toEqual(['Blueberries', 'Spinach, raw', 'Tomato']);
+	});
+
+	// `buildGrocery` reads the recipe book itself rather than taking it as an
+	// argument, so a recipe naming a food the seed table dropped can only be
+	// asked about by putting one in the book and taking it out again.
+	it('leaves out an ingredient whose food the seed table no longer carries', () => {
+		RECIPE_BY_ID['ghost-recipe'] = {
+			...firstRecipe(),
+			id: 'ghost-recipe',
+			ingredients: [
+				{ foodId: 'greek-yogurt', servings: 1 },
+				{ foodId: 'not-a-food', servings: 1 }
+			]
+		};
+		try {
+			expect(buildGrocery([slot('ghost-recipe')], []).map((i) => i.foodId)).toEqual([
+				'greek-yogurt'
+			]);
+		} finally {
+			delete RECIPE_BY_ID['ghost-recipe'];
+		}
 	});
 });
