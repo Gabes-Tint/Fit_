@@ -1,12 +1,7 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import { relogItem } from '$lib/domain/log-entry';
-	import {
-		mostFrequentFoods,
-		mostRecentFoods,
-		recentFoodSources,
-		type RecentFood
-	} from '$lib/domain/recent-foods';
+	import { mostFrequentFoods, mostRecentFoods, type RecentFood } from '$lib/domain/recent-foods';
 	import type { Meal } from '$lib/domain/types';
 	import { todayISO } from '$lib/domain/utils';
 	import { tend } from '$lib/state/tend.svelte';
@@ -23,20 +18,15 @@
 	// connection, and a prop would still have to come from the same place.
 	const log = $derived(tend.profile?.log ?? []);
 	const foods = $derived(order === 'recent' ? mostRecentFoods(log) : mostFrequentFoods(log));
-	// Keyed by the same `key` `foods` uses, so a tap can find the real entry
-	// behind the summary row without re-deriving "which one was that" -- see
-	// `recentFoodSources`'s own doc comment for why that would be a mistake.
-	const sources = $derived(recentFoodSources(log));
 
 	function logRecent(food: RecentFood) {
-		const source = sources.get(food.key);
-		// Can't happen in practice: `food` was built from the same `log` this
-		// just re-grouped, so its key is always in `sources` too. Guarded anyway
-		// rather than logging nothing useful if that ever stops being true.
-		if (!source) return;
-		const item = relogItem(source, { date: todayISO(), meal, servings: food.lastServings });
+		const item = relogItem(food.source, {
+			date: todayISO(),
+			meal,
+			servings: food.source.servings
+		});
 		tend.addLogItems([item]);
-		toast(`Logged ${food.name} to ${meal}.`, {
+		toast(`Logged ${food.source.name} to ${meal}.`, {
 			action: { label: 'Undo', onClick: () => tend.removeLog(item.id) }
 		});
 	}
@@ -71,7 +61,7 @@
 	{:else}
 		<ul class="flex flex-col gap-1">
 			{#each foods as food (food.key)}
-				{@const summary = `${food.brand ? `${food.brand} · ` : ''}${food.servingLabel} · ${food.kcalPerServing} kcal`}
+				{@const summary = `${food.source.brand ? `${food.source.brand} · ` : ''}${food.source.servingLabel} · ${food.kcalPerServing} kcal`}
 				<li>
 					<button
 						type="button"
@@ -79,7 +69,7 @@
 						class="bg-background hover:bg-secondary flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left"
 					>
 						<div class="min-w-0 flex-1">
-							<p class="min-w-0 truncate font-medium">{food.name}</p>
+							<p class="min-w-0 truncate font-medium">{food.source.name}</p>
 							<p class="text-muted-foreground truncate text-xs">{summary}</p>
 						</div>
 					</button>

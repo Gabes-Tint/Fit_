@@ -20,19 +20,24 @@ export const RECENT_WINDOW_DAYS = 60;
  * -- enough to cover breakfast, lunch and a couple of regulars -- without the
  * "recent" list turning into a second, slower search box.
  */
-export const MAX_RECENT_FOODS = 12;
+const MAX_RECENT_FOODS = 12;
 
 /** One distinct food, ready to render as a re-loggable row. */
 export type RecentFood = {
 	/** The grouping key this food was found under -- see `groupKey` below. */
 	key: string;
-	name: string;
-	brand: string | undefined;
-	servingLabel: string;
+	/**
+	 * The real `LogItem` this row was built from -- the group's own most
+	 * recent entry. A one-tap re-log (`relogItem`, log-entry.ts) needs a whole
+	 * entry to rescale -- `foodId`, `micros`, `provenance` -- none of which the
+	 * summary fields below carry, so the row keeps the source itself instead
+	 * of asking the caller to look it back up by `key`. `name`, `brand` and
+	 * `servingLabel` all live on `source` already; this type does not repeat
+	 * them.
+	 */
+	source: LogItem;
 	/** kcal for one serving, derived from the most recently logged entry. */
 	kcalPerServing: number;
-	/** The servings this food was last logged at -- re-logging defaults to this. */
-	lastServings: number;
 	lastDate: string;
 	/** How many qualifying entries this food has, within the window. */
 	count: number;
@@ -46,7 +51,7 @@ export type RecentFood = {
  * promise to keep, since it rebuilds the file wholesale, and a stored id that
  * later points at a different food -- or at nothing -- is worse than storing
  * none. That means most of a real journal cannot be grouped by `foodId` at
- * all, so the key here is the entry's own name and brand, normalised by
+ * all, so the key here is the entry's own name and brand, normalized by
  * trimming and case-folding, and `foodId` is used only where it exists and is
  * stable: seeded foods and recipes logged off the plan. This is the crux of
  * the whole module -- get the key wrong and "recent" either fractures one
@@ -113,11 +118,8 @@ function toRecentFood(group: Group): RecentFood {
 		latest.servings > 0 ? Math.round(latest.kcal / latest.servings) : latest.kcal;
 	return {
 		key: group.key,
-		name: latest.name,
-		brand: latest.brand,
-		servingLabel: latest.servingLabel,
+		source: latest,
 		kcalPerServing,
-		lastServings: latest.servings,
 		lastDate: latest.date,
 		count: group.count
 	};
@@ -163,22 +165,4 @@ export function mostFrequentFoods(
 		return byKey(a, b);
 	});
 	return groups.slice(0, MAX_RECENT_FOODS).map(toRecentFood);
-}
-
-/**
- * The real `LogItem` each `RecentFood.key` was built from.
- *
- * A one-tap re-log (`relogItem`, log-entry.ts) needs a whole entry to rescale
- * -- `foodId`, `micros`, `provenance` -- none of which `RecentFood` carries,
- * since it exists to be shown on screen, not to be logged from directly. This
- * hands the UI the group's own most-recent entry instead of asking it to
- * re-derive "which one was that" itself, which is exactly the fracture/merge
- * mistake `groupKey`'s doc comment above warns about if it were done twice.
- */
-export function recentFoodSources(
-	log: readonly LogItem[],
-	today: string = todayISO()
-): Map<string, LogItem> {
-	const groups = groupsWithinWindow(log, today);
-	return new Map(groups.map((group) => [group.key, group.latest]));
 }

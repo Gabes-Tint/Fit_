@@ -70,7 +70,11 @@ describe('mostRecentFoods', () => {
 			item({ id: 'l-2', name: 'Eggs', date: addDaysISO(TODAY, -1) }),
 			item({ id: 'l-3', name: 'Coffee', date: TODAY })
 		];
-		expect(mostRecentFoods(log, TODAY).map((f) => f.name)).toEqual(['Coffee', 'Eggs', 'Toast']);
+		expect(mostRecentFoods(log, TODAY).map((f) => f.source.name)).toEqual([
+			'Coffee',
+			'Eggs',
+			'Toast'
+		]);
 	});
 
 	it('breaks a tie on last-logged date the same way on every call', () => {
@@ -78,8 +82,8 @@ describe('mostRecentFoods', () => {
 			item({ id: 'l-1', name: 'Zebra Cake', date: TODAY }),
 			item({ id: 'l-2', name: 'Apple', date: TODAY })
 		];
-		const first = mostRecentFoods(log, TODAY).map((f) => f.name);
-		const second = mostRecentFoods(log, TODAY).map((f) => f.name);
+		const first = mostRecentFoods(log, TODAY).map((f) => f.source.name);
+		const second = mostRecentFoods(log, TODAY).map((f) => f.source.name);
 		expect(first).toEqual(second);
 	});
 
@@ -109,7 +113,7 @@ describe('mostRecentFoods', () => {
 			item({ id: 'l-1', name: 'Rice', servings: 0.5, date: addDaysISO(TODAY, -3) }),
 			item({ id: 'l-2', name: 'Rice', servings: 2, date: TODAY })
 		];
-		expect(mostRecentFoods(log, TODAY)[0]?.lastServings).toBe(2);
+		expect(mostRecentFoods(log, TODAY)[0]?.source.servings).toBe(2);
 	});
 
 	it('derives kcal for one serving from the most recent entry', () => {
@@ -125,6 +129,16 @@ describe('mostRecentFoods', () => {
 	it('returns nothing for an empty log', () => {
 		expect(mostRecentFoods([], TODAY)).toEqual([]);
 	});
+
+	it('carries the whole most-recent entry as `source`, not just its display fields', () => {
+		// `relogItem` (log-entry.ts) rescales off `foodId` and `micros`, neither
+		// of which a summary row shows -- a tap has to hand back the real entry,
+		// not re-derive it from a key a second data structure would have to
+		// agree with.
+		const log = [item({ id: 'l-1', foodId: 'egg-large', name: 'Egg, large', servings: 2 })];
+		const source = mostRecentFoods(log, TODAY)[0]?.source;
+		expect(source).toEqual(log[0]);
+	});
 });
 
 describe('mostFrequentFoods', () => {
@@ -134,7 +148,7 @@ describe('mostFrequentFoods', () => {
 			item({ id: 'l-2', name: 'Banana', date: TODAY }),
 			item({ id: 'l-3', name: 'Steak', date: TODAY })
 		];
-		expect(mostFrequentFoods(log, TODAY).map((f) => f.name)).toEqual(['Banana', 'Steak']);
+		expect(mostFrequentFoods(log, TODAY).map((f) => f.source.name)).toEqual(['Banana', 'Steak']);
 	});
 
 	it('breaks an equal-count tie by whichever food was logged more recently', () => {
@@ -142,7 +156,7 @@ describe('mostFrequentFoods', () => {
 			item({ id: 'l-1', name: 'Toast', date: addDaysISO(TODAY, -2) }),
 			item({ id: 'l-2', name: 'Bagel', date: TODAY })
 		];
-		expect(mostFrequentFoods(log, TODAY).map((f) => f.name)).toEqual(['Bagel', 'Toast']);
+		expect(mostFrequentFoods(log, TODAY).map((f) => f.source.name)).toEqual(['Bagel', 'Toast']);
 	});
 
 	it('breaks an equal-count, equal-date tie the same way on every call', () => {
@@ -150,8 +164,8 @@ describe('mostFrequentFoods', () => {
 			item({ id: 'l-1', name: 'Zebra Cake', date: TODAY }),
 			item({ id: 'l-2', name: 'Apple', date: TODAY })
 		];
-		const first = mostFrequentFoods(log, TODAY).map((f) => f.name);
-		const second = mostFrequentFoods(log, TODAY).map((f) => f.name);
+		const first = mostFrequentFoods(log, TODAY).map((f) => f.source.name);
+		const second = mostFrequentFoods(log, TODAY).map((f) => f.source.name);
 		expect(first).toEqual(second);
 	});
 });
