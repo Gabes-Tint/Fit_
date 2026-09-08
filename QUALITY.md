@@ -126,7 +126,7 @@ the shape that can hollow a workflow check out: a job with no toolchain in it re
 like a job with one. So the guarantee is asserted in halves that only hold together — every
 job running Bun calls the setup action; that action still pins Node and Bun to
 `.tool-versions`, restores the Bun cache and installs `--frozen-lockfile`; the upload action
-still names each artifact after the run and attempt and keeps it fourteen days; and every
+still names each artifact after the run and attempt and keeps it three days; and every
 upload is still gated on `if: always()` at the call site, because a condition inside a
 composite action cannot resurrect a step the job already skipped, and a gate that failed
 would otherwise upload no evidence at all. And every job that calls a local action still

@@ -8,6 +8,16 @@ describe('emptyProfile', () => {
 		expect(p.weights).toEqual([]);
 	});
 
+	it('starts with no injection recorded', () => {
+		expect(emptyProfile({ name: 'New' }).injections).toEqual([]);
+	});
+
+	// Ids are read by hand in an exported document and in a sync payload, where
+	// `p-` is what says which list a row belongs to.
+	it('gives the id a prefix naming what it identifies', () => {
+		expect(emptyProfile({ name: 'New' }).id).toMatch(/^p-/);
+	});
+
 	it('applies the given name', () => {
 		expect(emptyProfile({ name: 'Sam' }).name).toBe('Sam');
 	});
