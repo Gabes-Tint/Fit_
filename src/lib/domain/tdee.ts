@@ -78,10 +78,10 @@ function dayTotals(log: LogItem[], date: string): DayNutrition | null {
  * today only ever reaches it with at least four points already, so those
  * edges are otherwise unreachable through the public API.
  *
- * Zero for fewer than two points, and for a non-finite x or y (a NaN
- * anywhere in `points` propagates to NaN rather than 0, since no caller
- * today can produce one — weightTrend's x is a day offset derived from a
- * parsed date, and y is a logged kg).
+ * Zero for fewer than two points. A NaN anywhere in `points` propagates
+ * rather than falling back to zero: no caller today can produce one, since
+ * weightTrend's x is a day offset derived from a parsed date and its y is a
+ * logged kg, so guarding it would be dead code answering a question nobody asks.
  */
 export function linearSlope(points: { x: number; y: number }[]) {
 	const n = points.length;
