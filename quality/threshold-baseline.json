@@ -22,7 +22,7 @@
 	"mutationPolicy.changed.maxErrors": 0,
 	"bundle.alwaysLoadedJavaScriptBytes": 270000,
 	"bundle.clientCssBytes": 40000,
-	"bundle.clientJavaScriptBytes": 410000,
+	"bundle.clientJavaScriptBytes": 421000,
 	"bundle.largestAssetBytes": 57000,
 	"duplication.threshold": 5,
 	"duplication.maxClones": 0,

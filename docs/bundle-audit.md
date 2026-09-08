@@ -431,6 +431,30 @@ gate, rather than the twelve bytes of build noise documented above, and enough t
 actually land. `check:bundle` now prints that eight-byte and four-byte noise with every failure,
 so the next person to miss by a hair does not go looking for it in the diff.
 
+### `clientJavaScriptBytes` raised once more, on 2026-09-08, to buy the split above
+
+Opportunity 6 stopped being hypothetical: #158 needed 3,540 bytes of a closure that had
+126 left, so `AppShell` now fetches the log sheet after the shell instead of inside it.
+Measured on that branch against `main` at `5da6cc3`, both with a clean `bun run build`:
+
+| Metric                        | `main`  | With the split | Budget            |
+| ----------------------------- | ------- | -------------- | ----------------- |
+| `alwaysLoadedJavaScriptBytes` | 269,896 | **224,389**    | 270,000           |
+| `clientJavaScriptBytes`       | 405,768 | **411,980**    | 410,000 → 421,000 |
+| `clientCssBytes`              | 38,888  | 38,888         | 40,000            |
+| `largestAssetBytes`           | 55,535  | 56,038         | 57,000            |
+
+What every page downloads falls 45,507 bytes, 16.9%, and the root layout node with it,
+from 55,535 to 19,485. The tree total rises 6,212 — 3,956 of feature and 2,256 of the
+chunk-boundary cost section 6 measured at 2,109 — which is what put it over.
+
+Only `clientJavaScriptBytes` moved, and by the calibration this section already used
+rather than by enough to clear the build: the measured 411,980 plus the smallest
+proportional headroom the other three carry, which is `alwaysLoadedJavaScriptBytes`'s
+2.17% (the mean of the three is 2.85%, and would have given 424,000). That is 420,915,
+rounded up to **421,000** — 9,020 of headroom, 2.19%. The other three budgets were left
+where they were calibrated, because the same build comes in under all of them.
+
 `largestAssetBytes` moved on the same principle rather than being left as a follow-up. Dropping
 svelte-sonner took the biggest file from 75,036 to 55,250 while the budget stayed at 83,120, and
 a budget that cannot fire is the same defect as one that fires on noise — which is the whole

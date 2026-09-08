@@ -37,10 +37,12 @@
 
 	/**
 	 * The label, plus the mass in the person's system when the label does not
-	 * already state one (#74). A `LogItem` kept no `grams`, so the mass here is
-	 * whatever its own label states — enough to turn "100 g" into ounces for an
-	 * imperial reader, and nothing at all for "1 cup", whose weight the entry
-	 * never recorded.
+	 * already state one (#74). A logged entry carries its own `grams` when it
+	 * was scaled from a food that had one (#232), so a catalog result like
+	 * "1 cup" gets its mass back here too; an entry with no `grams` — logged
+	 * before that field existed, or scaled from a seed food that never
+	 * recorded a serving weight — falls back to whatever its own label
+	 * states, same as before.
 	 */
 	const portion = $derived(unitView ?? describePortion(item, item.servings, tend.state.units));
 	const stepperStep = $derived(unitView !== null ? 1 : step);

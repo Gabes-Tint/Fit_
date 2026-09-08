@@ -45,6 +45,28 @@ const SANDWICH_ROW = {
 };
 
 /**
+ * A packaged food whose source named the bag as well as the label serving
+ * (#158), so the log sheet offers "whole pack" beside "1 oz". The widest the
+ * quantity control gets: two choice chips over a stepper, a unit word and a
+ * toggle, with an energy and macro line under all of it.
+ */
+const CHIPS_ROW = {
+	id: 9300,
+	name: 'Nacho Cheese Tortilla Chips',
+	brand: 'DORITOS',
+	kind: 'branded',
+	category: 'Snacks',
+	barcode: null,
+	license: 'PDDL-1.0',
+	serving: { label: '1 oz', grams: 28 },
+	servingOptions: [
+		{ label: '1 oz', grams: 28 },
+		{ label: '1 bag', grams: 155 }
+	],
+	per100g: { kcal: 500, protein: 7, fat: 26, carbs: 61, sugar: 3, fiber: 4, sodium: 590 }
+};
+
+/**
  * The Plan screen with the three-routine starter loaded. Its routine names are
  * the longest the app ships, so two of them sharing one day is the widest a
  * planned day can get — the shape #152 exists to catch.
@@ -204,7 +226,7 @@ test.describe('at 360px', () => {
 		await page.getByRole('button', { name: 'Add to today' }).click();
 		await expect(page.getByRole('dialog')).toBeHidden();
 
-		const row = page.getByRole('button', { name: 'Olive oil USDA 2 × 1 tbsp (15 ml) 238' });
+		const row = page.getByRole('button', { name: 'Olive oil USDA 2 × 1 tbsp (15 ml) · 28 g 238' });
 		await expect(row).toBeVisible();
 		await expectFitsViewport(page, row);
 	});
@@ -324,6 +346,38 @@ test.describe('at 360px', () => {
 		const volume = page.getByText('1058 lb', { exact: true });
 		await expect(volume).toBeVisible();
 		await expectFitsViewport(page, volume);
+	});
+
+	test('the log sheet quantity control stays inside the viewport (#158)', async ({
+		page,
+		baseURL
+	}) => {
+		await signInThroughApi(page, baseURL ?? '');
+		await stubFoodSearch(page, [CHIPS_ROW]);
+		await openEmptyJournal(page);
+		await atNarrowPhone(page);
+
+		await openLogSheet(page);
+		await page.getByRole('button', { name: 'Search', exact: true }).click();
+		await page.getByLabel('Search foods, brands, barcodes').fill('tortilla chips');
+		await page.getByText('Nacho Cheese Tortilla Chips', { exact: true }).click();
+
+		// The label serving the source gave, in servings — not 100 g, and not a
+		// bare weight (#157).
+		const dialog = page.getByRole('dialog');
+		await expect(page.getByLabel('Amount in servings')).toHaveValue('1');
+		await expectFitsViewport(page, dialog);
+
+		// The whole pack, which is the widest reading the row can carry.
+		await page.getByRole('button', { name: 'Whole pack · 155 g' }).click();
+		await expect(page.getByText(/^775 kcal/)).toBeVisible();
+		await expectFitsViewport(page, dialog);
+
+		// And the same amount read as a weight, where the toggle names servings
+		// and the field carries three digits.
+		await page.getByLabel('Enter the amount in grams').click();
+		await expect(page.getByLabel('Amount in grams')).toHaveValue('155');
+		await expectFitsViewport(page, dialog);
 	});
 
 	test('a unit-toggled log row stays inside the viewport in both views (#178)', async ({

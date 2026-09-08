@@ -34,6 +34,7 @@
 		"mutation:repin": "bun scripts/quality/mutation-repin.ts",
 		"check:workflows": "bun scripts/quality/actionlint.ts",
 		"check:ci-contract": "bun scripts/quality/ci-contract.ts",
+		"check:stale-revert": "bun scripts/quality/stale-revert-check.ts",
 		"check:schedules": "bun scripts/quality/schedule-contract.ts",
 		"check:bundle": "bun scripts/quality/bundle-budget.ts",
 		"bundle:headroom": "bun scripts/quality/bundle-headroom.ts",
