@@ -116,9 +116,10 @@ export type Food = {
 	 */
 	unit?: { label: string; grams: number } | undefined;
 	/**
-	 * The serving choices the catalog named for this food, carried but not yet
-	 * acted on — a later slice does the arithmetic that turns a choice plus a
-	 * multiplier into a weight. Absent for a bundled food, which never has one.
+	 * The serving choices the catalog named for this food — the list a person
+	 * picks from, which `foodAtPortion` then re-bases this food onto. Absent for
+	 * a bundled food, which never has one, and which has no `per100g` to
+	 * re-base from either.
 	 */
 	servingOptions?: readonly { label: string; grams: number }[] | undefined;
 	kcal: number;
@@ -172,6 +173,22 @@ export type LogItem = {
 	micros: Micros;
 	provenance?: Provenance | undefined;
 	servingLabel: string;
+	/**
+	 * What one serving of this entry weighed, when the person chose the portion
+	 * rather than taking the food's default (`logFromPortionedFood`). Optional,
+	 * and deliberately so: every entry written before this field existed has
+	 * none, and `state-document.ts` validates top-level state fields rather than
+	 * nested optional ones, so an older document loads unchanged with no
+	 * migration and no schema bump.
+	 *
+	 * It is here because a label alone cannot always recover a weight.
+	 * `servingMassGrams` (#74) falls back to whatever mass the label states, but
+	 * "1.0 medium breast" states none, so an entry logged against that portion
+	 * would have nothing to show the person in their own units — and nothing to
+	 * re-portion from later. An entry with no weight reads exactly as it does
+	 * today: the fallback is already the behavior, not a new branch.
+	 */
+	grams?: number | undefined;
 	brand?: string | undefined;
 };
 

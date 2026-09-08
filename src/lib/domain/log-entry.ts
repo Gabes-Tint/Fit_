@@ -1,4 +1,6 @@
+import type { ServingRow } from './default-serving';
 import { SEED_FOOD_BY_ID, scaleFood } from './foods';
+import { foodAtPortion, type PortionedFood } from './serving-choice';
 import type { Food, LogItem, LogSource, Meal, SeedFood } from './types';
 import { uid } from './utils';
 
@@ -55,4 +57,30 @@ export function logFromFood({ foodId, ...context }: LogFromFood): LogItem {
  */
 export function logFromCatalogFood(food: Food, context: LogEntryContext): LogItem {
 	return entry(food, null, context);
+}
+
+/**
+ * Build a log entry from a food logged against a serving the person picked,
+ * rather than the one the catalog happened to name first.
+ *
+ * The choice is spent before the entry is built: `foodAtPortion` returns an
+ * ordinary `Food` carrying the chosen label, the chosen weight and nutrients
+ * recomputed at it, so this goes through `logFromCatalogFood` like every other
+ * catalog entry and inherits the null `foodId` for the same reason.
+ *
+ * The one thing it adds is the weight. `LogItem` has never kept one, and
+ * `servingMassGrams` (#74) has had to read whatever mass the label states
+ * instead — which works for "100 g" and fails for "1.0 medium breast". Reading
+ * it off the re-based food rather than off `portion` is deliberate: a portion
+ * naming no usable weight is one `foodAtPortion` declined to act on, and the
+ * entry has to record the serving it was actually built from, not the one that
+ * was asked for and refused.
+ */
+export function logFromPortionedFood(
+	food: PortionedFood,
+	portion: ServingRow,
+	context: LogEntryContext
+): LogItem {
+	const chosen = foodAtPortion(food, portion);
+	return { ...logFromCatalogFood(chosen, context), grams: chosen.grams };
 }

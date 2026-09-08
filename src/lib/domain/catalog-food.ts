@@ -1,7 +1,6 @@
 import { UNIT_ML, type Portion } from './portions';
+import { BASIS_GRAMS, nutrientsAtGrams } from './serving-choice';
 import type { Food, NutrientBasis, Provenance } from './types';
-import { ZERO_MICROS } from './types';
-import { round1 } from './utils';
 
 /**
  * The server catalog's side of a scanned barcode, and how it becomes a `Food`
@@ -204,11 +203,11 @@ export function isCatalogFoodPayload(value: unknown): value is CatalogFoodPayloa
 }
 
 /**
- * A serving weight the catalog does not name is taken as 100 g, which is the
- * basis the nutrients are already on, so the numbers shown are the catalog's
- * own rather than a guess scaled by one.
+ * A serving weight the catalog does not name is taken as the basis the
+ * nutrients are already on, so the numbers shown are the catalog's own rather
+ * than a guess scaled by one. `BASIS_GRAMS` rather than a literal 100: the
+ * fallback and the conversion have to mean the same thing by construction.
  */
-const PER = 100;
 
 /**
  * The label for a serving the catalog priced by weight alone.
@@ -258,20 +257,17 @@ function optionalFields(payload: CatalogFoodPayload) {
 		// one either, and the toggle this backs (#178) reads its absence as "no
 		// usable unit" either way.
 		...(payload.unit ? { unit: payload.unit } : {}),
-		// Carried, not yet acted on: this slice only moves the wire field onto
-		// the domain type. Dropped when empty, the same as `portions` and
-		// `unit`, so a bundled food and a catalog food naming no choices read
-		// the same.
+		// What `foodAtPortion` re-bases this food onto when a person picks one.
+		// Dropped when empty, the same as `portions` and `unit`, so a bundled
+		// food and a catalog food naming no choices read the same.
 		...(payload.servingOptions?.length ? { servingOptions: payload.servingOptions } : {})
 	};
 }
 
 /** A catalog row as a `Food`: per-100 g nutrients scaled onto one serving. */
 export function catalogFoodToFood(payload: CatalogFoodPayload): Food {
-	const grams = payload.serving.grams ?? PER;
+	const grams = payload.serving.grams ?? BASIS_GRAMS;
 	const per = payload.per100g;
-	const factor = grams / PER;
-	const scaled = (value: number | null | undefined) => round1((value ?? 0) * factor);
 	return {
 		// Prefixed because it is not a bundled food id and must never resolve as
 		// one. The catalog's own number is a hint the ETL does not promise to
@@ -286,25 +282,11 @@ export function catalogFoodToFood(payload: CatalogFoodPayload): Food {
 			payload.serving.label ?? (payload.serving.grams === null ? NO_SERVING_LABEL : `${grams} g`),
 		grams,
 		...optionalFields(payload),
-		kcal: Math.round(per.kcal * factor),
-		protein: scaled(per.protein),
-		carbs: scaled(per.carbs),
-		fat: scaled(per.fat),
-		micros: {
-			...ZERO_MICROS,
-			fiber: scaled(per.fiber),
-			sugar: scaled(per.sugar),
-			sodium: scaled(per.sodium),
-			potassium: scaled(per.potassium),
-			iron: scaled(per.iron),
-			calcium: scaled(per.calcium),
-			magnesium: scaled(per.magnesium),
-			zinc: scaled(per.zinc),
-			vitaminA: scaled(per.vitaminA),
-			vitaminC: scaled(per.vitaminC),
-			vitaminD: scaled(per.vitaminD),
-			vitaminB12: scaled(per.vitaminB12)
-		},
+		// The conversion itself lives in `serving-choice.ts`, which is where a
+		// serving the person picks is converted too: the default portion and a
+		// chosen one have to round identically, or switching between them would
+		// change the numbers for no reason a person could name.
+		...nutrientsAtGrams(per, grams),
 		// Unscaled and nulls kept as `null`: `nutritionFactsRows` (#175) is the
 		// one reader that needs the catalog's own gaps rather than this food's
 		// zeroed convenience numbers.
