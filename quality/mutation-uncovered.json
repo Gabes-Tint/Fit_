@@ -163,6 +163,7 @@
 			"scripts/quality/coverage-abort.ts",
 			"scripts/quality/debt-pay.ts",
 			"scripts/quality/duplication.ts",
+			"scripts/quality/e2e-memory.ts",
 			"scripts/quality/e2e-projects.ts",
 			"scripts/quality/eslint.ts",
 			"scripts/quality/fixtures.ts",
