@@ -550,7 +550,7 @@ export class SyncStore {
 			// This write was refused, so what it carried was not stored and is
 			// still unsent — whatever `receive` goes on to make of the document
 			// that came back with the refusal. Adopting sets this straight back to
-			// false; recognising the document as this device's own leaves it
+			// false; recognizing the document as this device's own leaves it
 			// standing, and the send below is what then carries it.
 			this.dirty = true;
 			this.receive(result, true, householdId);
