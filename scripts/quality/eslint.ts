@@ -4,6 +4,7 @@ import { availableParallelism } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { captureStatus, readJsonFile } from '../security/shared';
+import { lintNodeOptions, lintWorkerCount } from './lint-memory';
 
 interface LintMessage {
 	ruleId: string | null;
@@ -25,14 +26,13 @@ const reportPath = path.join(projectRoot, 'reports', 'quality', 'eslint.json');
 await mkdir(path.dirname(reportPath), { recursive: true });
 
 // ESLint takes one formatter per run, so emit the machine-readable one and
-// render it for humans here. eslint.config.js's projectService gives each
-// worker its own full TypeScript program (~1.1 GB) — separate processes
-// can't share it, so peak memory grows with worker count, though not quite
-// linearly (measured via cgroup accounting on a 32-core box: 8 workers
-// ~8.9 GB, 4 workers ~5.4-5.7 GB — not half, since some memory is shared
-// fixed overhead). Concurrency is half the host's cores, capped at four to
-// bound memory, floored at one.
-const concurrency = Math.min(4, Math.max(1, Math.floor(availableParallelism() / 2)));
+// render it for humans here.
+//
+// Worker count and heap ceiling both come from `lint-memory.ts`, which has the
+// measurements: this step is type-aware, so each worker holds its own
+// TypeScript program, and the run's peak decides how many gates this machine
+// can run at once.
+const concurrency = lintWorkerCount(availableParallelism());
 
 const { exitCode } = await captureStatus(
 	path.join(projectRoot, 'node_modules', '.bin', 'eslint'),
@@ -47,7 +47,12 @@ const { exitCode } = await captureStatus(
 		'--output-file',
 		reportPath
 	],
-	{ stream: true }
+	{
+		stream: true,
+		// Reaches the worker threads too: they inherit the process's V8 flags,
+		// and uncapped each would grow its program to fill the machine.
+		env: { ...process.env, NODE_OPTIONS: lintNodeOptions(process.env['NODE_OPTIONS']) }
+	}
 );
 
 let results: LintResult[];
