@@ -3,6 +3,7 @@ import type { CatalogFoodPayload } from '$lib/domain/catalog-food';
 import { text } from '../users/rows';
 import { withDefaultServing } from './default-serving';
 import { withPortions } from './portions';
+import { withServingOptions } from './serving-options';
 import { withUnitMeasure } from './unit-measure';
 import { searchTerms, singular } from './query';
 import { searchSql } from './ranking';
@@ -133,16 +134,25 @@ export function foodsByBarcode(db: DatabaseSync, barcode: string): CatalogFood[]
 }
 
 /**
- * The two reads every found row still needs before it can travel: its
- * household measures, and — for the rows the source gave no serving of its
- * own — the default this catalog picks in its place. One place to call both,
- * so search results and `/api/foods/resolve` (which calls `searchFoods`
- * itself) can never see one without the other.
+ * The reads every found row still needs before it can travel: its household
+ * measures, the default this catalog picks when the source gave none of its
+ * own, the usable unit measure one of its rows may name, and the full list of
+ * serving choices a picker can offer. One place to call all four, so search
+ * results and `/api/foods/resolve` (which calls `searchFoods` itself) can
+ * never see one without the others.
  */
 function finish(db: DatabaseSync, found: CatalogFood[]): CatalogFood[] {
 	const served = withDefaultServing(db, withPortions(db, found));
 	// Dropped when null rather than carried as `unit: null`, the same as
 	// `portions` is dropped when empty: most foods (~87%, #178) name no usable
 	// unit, and sending the key anyway would be a null on every one of them.
-	return withUnitMeasure(db, served).map(({ unit, ...food }) => (unit ? { ...food, unit } : food));
+	const withUnit = withUnitMeasure(db, served).map(({ unit, ...food }) =>
+		unit ? { ...food, unit } : food
+	);
+	// Dropped when empty for the same reason: a food with no rows at all, or
+	// none plausible enough to survive `servingOptionsOf`, would otherwise
+	// send an empty `servingOptions: []` on every single one of them.
+	return withServingOptions(db, withUnit).map(({ servingOptions, ...food }) =>
+		servingOptions.length ? { ...food, servingOptions } : food
+	);
 }
