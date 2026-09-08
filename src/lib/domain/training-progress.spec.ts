@@ -295,6 +295,24 @@ describe('volume by muscle group', () => {
 		).toEqual([]);
 		expect(volumeByGroup([], WEEK_1)).toEqual([]);
 	});
+
+	// The bar beside each group is its share of the busiest one, so the card
+	// reads top to bottom in order of how much was trained — not in the order
+	// the exercises happened to be logged in.
+	it('puts the busiest group first, whatever order the sets were logged in', () => {
+		const ascending = [
+			done(WEEK_1, [
+				ex('Bench Press', 'Chest', [set(40)]),
+				ex('Row', 'Back', [set(50), set(50)]),
+				ex('Squat', 'Legs', [set(60), set(60), set(60)])
+			])
+		];
+		expect(volumeByGroup(ascending, WEEK_1)).toEqual([
+			{ group: 'Legs', sets: 3, pct: 100 },
+			{ group: 'Back', sets: 2, pct: 67 },
+			{ group: 'Chest', sets: 1, pct: 33 }
+		]);
+	});
 });
 
 describe('weekly adherence', () => {
@@ -434,6 +452,17 @@ describe('personal records', () => {
 		expect(personalRecords([empty(WEEK_1, [ex('Bench', 'Chest', [set(100)])])])).toEqual([]);
 	});
 
+	// A record stands until it is beaten. Lifting the same weight again later is
+	// not a new record, so the card keeps naming the day it first went up and
+	// the reps it went up for.
+	it('keeps the day a record was set when the same weight comes up again', () => {
+		const twice = [
+			done(WEEK_1, [ex('Squat', 'Legs', [set(100, 5)])]),
+			done(WEEK_2, [ex('Squat', 'Legs', [set(100, 3)])])
+		];
+		expect(personalRecords(twice)).toEqual([{ name: 'Squat', load: 100, reps: 5, date: WEEK_1 }]);
+	});
+
 	it('shows three records when nobody said how many', () => {
 		const many = [
 			done(WEEK_1, [
@@ -556,5 +585,29 @@ describe('the summary note', () => {
 
 	it('has nothing to say about a session where nothing was ticked', () => {
 		expect(note([empty(WEEK_1, [ex('Bench Press', 'Chest', [set(40)])])])).toBe('');
+	});
+
+	// The sentence compares the two ends of the chart. Reading a week in the
+	// middle as the latest one would report a smaller gain than the chart draws.
+	it('measures the change against the newest week, not one in the middle', () => {
+		const threeWeeks = [
+			done(WEEK_1, [ex('Bench Press', 'Chest', [set(40)])]),
+			done(WEEK_2, [ex('Bench Press', 'Chest', [set(45)])]),
+			done(WEEK_3, [ex('Bench Press', 'Chest', [set(50)])])
+		];
+		expect(note(threeWeeks)).toBe('Bench Press is 10 kg heavier than 2 weeks ago.');
+	});
+
+	// The thin part is the group at the bottom of the volume card, which is the
+	// last of however many are on it rather than the second.
+	it('names the group at the bottom of the volume card, not the one above it', () => {
+		const threeGroups = [
+			done(WEEK_1, [
+				ex('Bench Press', 'Chest', [set(40)]),
+				ex('Row', 'Back', [set(50), set(50)]),
+				ex('Squat', 'Legs', [set(60), set(60), set(60)])
+			])
+		];
+		expect(note(threeGroups)).toBe('Chest is still the thin part of the plan.');
 	});
 });

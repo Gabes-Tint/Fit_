@@ -35,6 +35,22 @@ describe('parseISODate', () => {
 	it('falls back when the string has too few parts', () => {
 		expect(Number.isNaN(parseISODate('2026').getTime())).toBe(false);
 	});
+
+	// Every position is checked, not just a string that is nonsense throughout:
+	// a document hand-edited or imported with one bad field must still land on
+	// the epoch, because an Invalid Date spreads NaN through every date derived
+	// from it.
+	it('falls back when only the year is not a number', () => {
+		expect(todayISO(parseISODate('x-01-05'))).toBe('1970-01-01');
+	});
+
+	it('falls back when only the month is not a number', () => {
+		expect(todayISO(parseISODate('2026-x-05'))).toBe('1970-01-01');
+	});
+
+	it('falls back when only the day is not a number', () => {
+		expect(todayISO(parseISODate('2026-01-x'))).toBe('1970-01-01');
+	});
 });
 
 describe('addDaysISO', () => {
@@ -97,6 +113,14 @@ describe('weekday and month formatting', () => {
 	it('renders a short month and day', () => {
 		expect(monthDay('2026-01-05')).toMatch(/Jan/);
 	});
+
+	// A year past the range a Date can hold leaves getDay() as NaN, so the
+	// weekday lookup misses. The strip and the page kicker show a blank rather
+	// than the word "undefined".
+	it('names no weekday for a date the calendar cannot hold', () => {
+		expect(weekdayShort('999999-01-01')).toBe('');
+		expect(weekdayLong('999999-01-01')).toBe('');
+	});
 });
 
 describe('round1', () => {
@@ -117,5 +141,14 @@ describe('uid', () => {
 	it('does not repeat within a batch', () => {
 		const ids = new Set(Array.from({ length: 200 }, () => uid()));
 		expect(ids.size).toBe(200);
+	});
+
+	// An id is stored in the state document, synced between devices and compared
+	// as a string to break a same-day tie in `recent-foods.ts`, so its shape is
+	// fixed: a base36 timestamp, a dash, and six random characters. Left
+	// unprefixed it is those two parts and nothing else, and the tail is a slice
+	// of the random number rather than the whole "0.xxxxxxxx" of it.
+	it('with no prefix is a base36 timestamp and a six-character tail', () => {
+		expect(uid()).toMatch(/^[0-9a-z]+-[0-9a-z]{6}$/);
 	});
 });
