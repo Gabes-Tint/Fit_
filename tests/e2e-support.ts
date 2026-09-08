@@ -127,6 +127,12 @@ export type ResolvedRow = {
 	barcode: string | null;
 	license: string;
 	serving: { label: string; grams: number };
+	/**
+	 * The serving choices the catalog named for this food (#246). Optional, the
+	 * same as on the wire: most rows send none, and the ones that do are what
+	 * put "whole pack" in front of a person (#158).
+	 */
+	servingOptions?: { label: string; grams: number }[];
 	per100g: Record<string, number>;
 };
 
