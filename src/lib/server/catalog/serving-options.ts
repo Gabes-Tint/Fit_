@@ -9,12 +9,13 @@ import { servingRowsByFood } from './serving-rows';
  * arithmetic that turns a choice plus a multiplier into a weight.
  *
  * A fourth question over the rows `servingRowsByFood` fetches, alongside
- * `default-serving.ts`'s, `unit-measure.ts`'s and `portions.ts`'s own query:
- * where those three each collapse a food's rows to the single row their own
- * purpose needs, this one is the odd member out — it keeps every row, because
- * showing the person their catalog-given choices is the whole point of it. It
- * still shares the fetch rather than adding a fifth statement against the same
- * table, for the reason `serving-rows.ts` gives.
+ * `default-serving.ts`'s, `unit-measure.ts`'s and `portions.ts`'s: where those
+ * three each collapse a food's rows to the single row their own purpose needs,
+ * this one is the odd member out — it keeps every row, because showing the
+ * person their catalog-given choices is the whole point of it. It shares the
+ * fetch rather than adding a second statement against the same table, for the
+ * reason `serving-rows.ts` gives — as `portions.ts` shares the statement even
+ * though it keeps its own grouping pass.
  */
 
 export type ServingOption = { label: string; grams: number };
