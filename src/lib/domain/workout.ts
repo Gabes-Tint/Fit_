@@ -83,14 +83,19 @@ export function formatDuration(seconds: number): string {
 /**
  * What this movement went at last time, so the first set is not a guess.
  * The newest finished workout that logged it wins.
+ *
+ * Scanned over a reversed copy rather than a descending index: `workouts[i]`
+ * is `Workout | undefined` under `noUncheckedIndexedAccess`, so the index form
+ * needed an `?.` that could never fire, and that dead guard swallowed a
+ * walk-off-the-end start and turned a flipped `i--` into a hang instead of a
+ * failure. The copy is what keeps the caller's history in the order it filed it.
  */
 export function lastPerformance(
 	workouts: Workout[],
 	name: string
 ): { reps: number; load: number } | null {
-	for (let i = workouts.length - 1; i >= 0; i--) {
-		const exercise = workouts[i]?.exercises.find((e) => e.name === name);
-		const set = exercise?.sets.find((s) => s.done);
+	for (const workout of [...workouts].reverse()) {
+		const set = workout.exercises.find((e) => e.name === name)?.sets.find((s) => s.done);
 		if (set) return { reps: set.reps, load: set.load };
 	}
 	return null;
