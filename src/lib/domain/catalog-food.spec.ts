@@ -234,6 +234,40 @@ describe('isCatalogFoodPayload', () => {
 	])('rejects a unit measure carrying %s', (_reason, unit) => {
 		expect(isCatalogFoodPayload({ ...CEREAL, unit })).toBe(false);
 	});
+
+	it('accepts a row carrying serving options, and one carrying none', () => {
+		expect(
+			isCatalogFoodPayload({
+				...CEREAL,
+				servingOptions: [
+					{ label: '3/4 cup', grams: 37 },
+					{ label: '100 g', grams: 100 }
+				]
+			})
+		).toBe(true);
+		expect(isCatalogFoodPayload({ ...CEREAL, servingOptions: [] })).toBe(true);
+		expect(isCatalogFoodPayload(CEREAL)).toBe(true);
+	});
+
+	it.each([
+		['a label that is not text', [{ label: 4, grams: 37 }]],
+		['a weight that is not a number', [{ label: '3/4 cup', grams: '37' }]],
+		['an option that is not a pair of columns', ['3/4 cup']],
+		['a list that is not a list', { label: '3/4 cup', grams: 37 }],
+		['one bad option among good ones', [{ label: '3/4 cup', grams: 37 }, { label: 400 }]]
+	])('rejects serving options carrying %s', (_reason, servingOptions) => {
+		expect(isCatalogFoodPayload({ ...CEREAL, servingOptions })).toBe(false);
+	});
+
+	it('reads an option through fieldsOf, so an inherited property name cannot answer for a missing column', () => {
+		// `Object.prototype` carries a `toString` method; `fieldsOf` is what
+		// keeps `typeof option.label === 'string'` from matching that inherited
+		// function when the payload's own `label` was never set. Passing a
+		// genuine `__proto__` key here would be reinterpreted as prototype
+		// mutation by the JS object literal itself, so the case is exercised
+		// through a value with no own `label` at all instead.
+		expect(isCatalogFoodPayload({ ...CEREAL, servingOptions: [{ grams: 37 }] })).toBe(false);
+	});
 });
 
 describe('catalogFoodToFood', () => {
@@ -271,6 +305,24 @@ describe('catalogFoodToFood', () => {
 
 	it('names no usable unit at all when the catalog named none', () => {
 		expect(catalogFoodToFood(CEREAL).unit).toBeUndefined();
+	});
+
+	it('carries the serving options the catalog named, unread by the nutrient math', () => {
+		const servingOptions = [
+			{ label: '3/4 cup', grams: 37 },
+			{ label: '100 g', grams: 100 }
+		];
+		const food = catalogFoodToFood({ ...CEREAL, servingOptions });
+		expect(food.servingOptions).toEqual(servingOptions);
+		// The field travels but changes nothing: kcal is still scaled from
+		// `serving.grams`, exactly as the test above without `servingOptions`
+		// shows. This slice only carries the wire field; a later one acts on it.
+		expect(food.kcal).toBe(139);
+	});
+
+	it('names no serving options at all rather than an empty list of them', () => {
+		expect(catalogFoodToFood(CEREAL).servingOptions).toBeUndefined();
+		expect(catalogFoodToFood({ ...CEREAL, servingOptions: [] }).servingOptions).toBeUndefined();
 	});
 
 	it('scales the micronutrients the catalog carries', () => {

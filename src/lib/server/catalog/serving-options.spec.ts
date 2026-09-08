@@ -1,0 +1,152 @@
+import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { withServingOptions } from './serving-options';
+
+/** A catalog holding nothing but the serving rows a case needs. */
+function catalogOf(rows: [id: number, label: unknown, grams: unknown, isDefault: number][]) {
+	const db = new DatabaseSync(':memory:');
+	db.exec(
+		`create table food_serving (food_id bigint, label varchar, grams double, is_default bigint);
+		create index idx_serving_food on food_serving (food_id);`
+	);
+	const insert = db.prepare(
+		'insert into food_serving (food_id, label, grams, is_default) values (?, ?, ?, ?)'
+	);
+	for (const [id, label, grams, isDefault] of rows)
+		insert.run(id, label as string, grams as number, isDefault);
+	return db;
+}
+
+type Food = { id: number };
+
+describe('withServingOptions', () => {
+	let db: DatabaseSync;
+
+	beforeEach(() => {
+		db = catalogOf([
+			// A branded food with a named default and a plain-weight catch-all.
+			[1, '4.0 oz', 113, 1],
+			[1, '1.0 medium breast', 172, 0],
+			[1, '100 g', 100, 0]
+		]);
+	});
+
+	it('reports a food’s serving rows verbatim, not reinterpreted', () => {
+		const foods: Food[] = [{ id: 1 }];
+		expect(withServingOptions(db, foods)).toEqual([
+			{
+				id: 1,
+				servingOptions: [
+					{ label: '4.0 oz', grams: 113 },
+					{ label: '1.0 medium breast', grams: 172 },
+					{ label: '100 g', grams: 100 }
+				]
+			}
+		]);
+	});
+
+	it('preserves the catalog’s own order: default first, then label text', () => {
+		// `servingRowsByFood` orders `is_default desc, label` — this module must
+		// not re-sort what it was handed.
+		db.exec(
+			`insert into food_serving (food_id, label, grams, is_default) values
+				(2, 'b label', 50, 0), (2, 'a label', 60, 0), (2, 'z default', 70, 1)`
+		);
+		const foods: Food[] = [{ id: 2 }];
+		expect(withServingOptions(db, foods)[0]?.servingOptions.map((o) => o.label)).toEqual([
+			'z default',
+			'a label',
+			'b label'
+		]);
+	});
+
+	it('collapses rows naming the same portion, keeping the first', () => {
+		db.exec(
+			`insert into food_serving (food_id, label, grams, is_default) values
+				(3, '1 Cup', 240, 1), (3, '1 cup', 244, 0), (3, ' 1 CUP ', 250, 0)`
+		);
+		const foods: Food[] = [{ id: 3 }];
+		expect(withServingOptions(db, foods)).toEqual([
+			{ id: 3, servingOptions: [{ label: '1 Cup', grams: 240 }] }
+		]);
+	});
+
+	it('rejects a row whose weight is not a plausible single serving', () => {
+		// The #157/#178 catalog defect: a row claiming a weight orders of
+		// magnitude off (here, ten times the cap) rather than a real serving.
+		db.exec(
+			`insert into food_serving (food_id, label, grams, is_default) values
+				(4, '1 tsp', 100000, 0), (4, '1 tbsp', 15, 0)`
+		);
+		const foods: Food[] = [{ id: 4 }];
+		expect(withServingOptions(db, foods)).toEqual([
+			{ id: 4, servingOptions: [{ label: '1 tbsp', grams: 15 }] }
+		]);
+	});
+
+	it('rejects a zero, negative, or non-finite weight', () => {
+		db.exec(
+			`insert into food_serving (food_id, label, grams, is_default) values
+				(5, 'zero', 0, 0), (5, 'negative', -10, 0), (5, 'real one', 30, 0)`
+		);
+		const foods: Food[] = [{ id: 5 }];
+		expect(withServingOptions(db, foods)).toEqual([
+			{ id: 5, servingOptions: [{ label: 'real one', grams: 30 }] }
+		]);
+	});
+
+	it('caps the options returned per food', () => {
+		for (let i = 0; i < 15; i += 1)
+			db.exec(
+				`insert into food_serving (food_id, label, grams, is_default) values
+					(6, 'label ${i}', ${10 + i}, 0)`
+			);
+		const foods: Food[] = [{ id: 6 }];
+		expect(withServingOptions(db, foods)[0]?.servingOptions).toHaveLength(10);
+	});
+
+	it('answers an empty list for a food with no serving rows at all', () => {
+		const foods: Food[] = [{ id: 999 }];
+		expect(withServingOptions(db, foods)).toEqual([{ id: 999, servingOptions: [] }]);
+	});
+
+	it('asks the catalog nothing for an empty page of foods', () => {
+		const counted = { reads: 0 };
+		const catalog = {
+			prepare: (sql: string) => {
+				const statement = db.prepare(sql);
+				return {
+					all: (...values: SQLInputValue[]) => ((counted.reads += 1), statement.all(...values))
+				};
+			}
+		} as unknown as DatabaseSync;
+		expect(withServingOptions(catalog, [])).toEqual([]);
+		expect(counted.reads).toBe(0);
+	});
+
+	it('answers every food asked about in one statement, including one with no rows', () => {
+		const counted = { reads: 0 };
+		const catalog = {
+			prepare: (sql: string) => {
+				const statement = db.prepare(sql);
+				return {
+					all: (...values: SQLInputValue[]) => ((counted.reads += 1), statement.all(...values))
+				};
+			}
+		} as unknown as DatabaseSync;
+		const foods: Food[] = [{ id: 1 }, { id: 999 }];
+		const found = withServingOptions(catalog, foods);
+		expect(counted.reads).toBe(1);
+		expect(found).toEqual([
+			{
+				id: 1,
+				servingOptions: [
+					{ label: '4.0 oz', grams: 113 },
+					{ label: '1.0 medium breast', grams: 172 },
+					{ label: '100 g', grams: 100 }
+				]
+			},
+			{ id: 999, servingOptions: [] }
+		]);
+	});
+});
