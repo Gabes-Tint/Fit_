@@ -1,6 +1,8 @@
 import { createServer, type Server } from 'node:http';
 import { connect, type Socket } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
+import type { Plugin } from 'vite';
+import viteConfig from '../../vite.config';
 import { holdKeepAliveConnections, previewKeepAlive } from './preview-keep-alive';
 
 /**
@@ -99,6 +101,21 @@ describe('the preview server and the connections its client pools', () => {
 		await hook.call({} as never, { httpServer: server } as never);
 
 		expect(server.keepAliveTimeout).toBe(0);
+	});
+
+	/**
+	 * The two cases above prove the plugin holds a connection when it runs. What
+	 * makes it run is one line in `vite.config.ts`, and nothing else in the suite
+	 * reads it: delete `previewKeepAlive()` from the plugins array and every other
+	 * assertion here still passes, while the end-to-end suite goes back to losing
+	 * an account-setup POST to a socket the server closed underneath it. That
+	 * failure is a flake on the slowest shard once a night, which is how #125 cost
+	 * five sightings before anyone could name it. So the wiring is asserted too.
+	 */
+	it('is wired into the config vite preview actually loads', () => {
+		const plugins = (viteConfig.plugins ?? []).flat(Infinity) as Plugin[];
+
+		expect(plugins.map((plugin) => plugin?.name)).toContain('fit-preview-keep-alive');
 	});
 
 	it('leaves the headers timeout in place, since it does not close idle connections', () => {
