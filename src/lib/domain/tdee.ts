@@ -19,7 +19,8 @@ export function mifflinStJeor(p: Pick<Profile, 'sex' | 'age' | 'heightCm'>, kg: 
 }
 
 export function latestWeight(weights: WeightEntry[], fallbackKg = 70) {
-	if (!weights.length) return fallbackKg;
+	// No separate empty-array guard: sorting an empty array is a no-op, and
+	// the optional chain plus `?? fallbackKg` already answer the same way.
 	return [...weights].sort((a, b) => a.date.localeCompare(b.date)).at(-1)?.kg ?? fallbackKg;
 }
 
@@ -79,13 +80,18 @@ function dayTotals(log: LogItem[], date: string): DayNutrition | null {
  */
 export function linearSlope(points: { x: number; y: number }[]) {
 	const n = points.length;
-	if (n < 2) return 0;
+	// No separate n < 2 guard: with fewer than two points the deviations from
+	// the mean are all zero, so `den` stays 0 and the fallback below already
+	// answers 0 the same way a guard would.
 	const meanX = points.reduce((s, p) => s + p.x, 0) / n;
-	const meanY = points.reduce((s, p) => s + p.y, 0) / n;
 	let num = 0;
 	let den = 0;
 	for (const p of points) {
-		num += (p.x - meanX) * (p.y - meanY);
+		// Only x needs centering here: subtracting any constant from y — meanY
+		// included — leaves this sum unchanged, because the (p.x - meanX)
+		// terms it is multiplied against already sum to zero across every
+		// point once meanX is the true mean.
+		num += (p.x - meanX) * p.y;
 		den += (p.x - meanX) ** 2;
 	}
 	return den === 0 ? 0 : num / den;
@@ -237,6 +243,11 @@ const WEEK_OFFSETS = [0, 1, 2, 3, 4, 5, 6] as const;
  * pre-sized array instead means every mutation to the loop body still
  * terminates in a fixed number of steps, so it fails fast on a wrong answer
  * instead of hanging.
+ *
+ * No separate guard for a negative span (an `end` before the earliest
+ * logged date): `totalWeeks` is then zero or negative, and `Array.from`
+ * already treats a negative `length` as zero, so the loop below simply
+ * does not run.
  */
 export function calmWeeks(log: LogItem[], minDays = 4, end = todayISO()) {
 	const dates = new Set(log.map((i) => i.date));
@@ -245,7 +256,6 @@ export function calmWeeks(log: LogItem[], minDays = 4, end = todayISO()) {
 	const spanDays = Math.round(
 		(parseISODate(end).getTime() - parseISODate(firstWeek).getTime()) / 86400000
 	);
-	if (spanDays < 0) return 0;
 	const totalWeeks = Math.floor(spanDays / 7) + 1;
 	let count = 0;
 	for (const week of Array.from({ length: totalWeeks }, (_, w) => w)) {

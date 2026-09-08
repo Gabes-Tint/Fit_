@@ -514,6 +514,19 @@ describe('calmWeeks', () => {
 		expect(calmWeeks(log, 4, '2026-06-14')).toBe(0);
 	});
 
+	it('counts exactly the weeks spanned when every week clears the minimum', () => {
+		// A minimum of zero means every week in range counts, so this pins the
+		// week count itself rather than which weeks clear a bar.
+		const log = [entry('2026-06-01', 'coffee', 1)];
+		expect(calmWeeks(log, 0, '2026-06-07')).toBe(1);
+		expect(calmWeeks(log, 0, '2026-06-14')).toBe(2);
+	});
+
+	it('counts zero weeks when end is before the earliest logged date', () => {
+		const log = [entry('2026-06-15', 'coffee', 1)];
+		expect(calmWeeks(log, 0, '2026-06-01')).toBe(0);
+	});
+
 	it('is zero for an empty log', () => {
 		expect(calmWeeks([], 4, END)).toBe(0);
 		// Even with no minimum to clear there is no week to count.
