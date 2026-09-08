@@ -292,6 +292,36 @@ Never copy an incremental file between lanes or publish one from a failed or can
 The scheduled audit forces a cold run and shares its cache with nobody, so it can neither
 duplicate nor race a pull-request lane.
 
+### What the mutation lanes do not reach
+
+Decided and recorded 2026-09-07 (#76). The lanes mutate production TypeScript under `src/`
+that no `!` pattern in `quality/mutate-patterns.mjs` removes. That is wider than the
+`src/lib/**/*.ts` include glob suggests: every lane hands Stryker an explicit file list built
+by walking all of `src/`, so the include glob applies only to a bare `stryker run`, and just
+the `!` patterns survive into a lane. All nine `+server.ts` route handlers are mutated that
+way, most of them by the blocking security lane. What is genuinely outside every lane is
+`.svelte`, `scripts/`, `tests/`, and the ten files a `!` pattern names.
+
+| Outside the lanes                        | Files | What covers it instead                                                                                                                                                                                                      |
+| ---------------------------------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Svelte components under `src/lib/`       | 76    | 88 component specs in the vitest browser project, and the per-file 80 percent coverage floor — `test:coverage:client` includes `src/lib/**/*.{ts,svelte}`.                                                                  |
+| Svelte components under `src/routes/`    | 15    | 16 Playwright `*.e2e.ts` specs across the browser matrix, and 6 page specs. No coverage floor reaches them: both coverage includes name `src/lib` only.                                                                     |
+| `scripts/**`                             | 88    | 47 unit specs, run by the vitest `server` project. `scripts/security/` (7 modules) and `scripts/eval/` (1) have none. No coverage floor and no mutation, so a deploy script's only test is the one somebody chose to write. |
+| `tests/**`, the end-to-end harness       | 5     | `tests/e2e-workspace.spec.ts` covers the workspace builder; the other four are exercised only by running the end-to-end suite.                                                                                              |
+| `.ts` under `src/` a `!` pattern removes | 10    | Each exclusion carries its own reason at the pattern in `quality/mutate-patterns.mjs`.                                                                                                                                      |
+
+Widening the glob is a gate policy decision and is not taken here. What is settled is that
+the boundary stops being invisible. `check:mutation-scope`
+(`scripts/quality/mutation-scope-ledger.ts`) enumerates the source files outside the lanes by
+asking the same two modules the lanes ask — `mutation-scope.ts` and `mutation-globs.ts` — so
+it cannot drift from what Stryker is actually handed, and compares the result against
+`quality/mutation-uncovered.json`. A new component, a new deploy script, or a newly excluded
+module fails the static tier until its path is recorded there deliberately;
+`bun scripts/quality/mutation-scope-ledger.ts --write` regenerates the file and the diff is
+what gets reviewed. A recorded path that leaves the tree, or that a lane starts reaching,
+fails the same way, so the record cannot quietly go stale. The fixture
+`unrecorded-blind-spot` proves it rejects an unrecorded component.
+
 ### Where the mutation lanes run
 
 Decided 2026-09-04 by Gabriel, the product owner, to cut runner minutes — not wall clock,

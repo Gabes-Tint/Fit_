@@ -15,6 +15,21 @@
 // exact contents, which pins wording and sample numbers that are free to change.
 // Everything that reads the data — indexes, scaling, macros, the parser, the
 // adaptive TDEE model — is still mutated.
+// What this glob leaves out is a decision, recorded rather than inherited
+// (#76). `.svelte` components, everything under `scripts/` and the end-to-end
+// harness under `tests/` are outside every mutation lane, and QUALITY.md, "What
+// the mutation lanes do not reach", names what covers each of them instead and
+// how thin that cover is in places. `scripts/quality/mutation-scope-ledger.ts`
+// keeps the list of those files honest, so a new one cannot join them unnoticed;
+// widening this glob is a separate call for the product owner and neither that
+// check nor this comment makes it.
+//
+// Note this include glob is narrower than what actually gets mutated. Every lane
+// hands Stryker an explicit file list from `buildMutationScope`, which walks all
+// of `src/` and applies only the `!` patterns below -- so `src/routes/**/*.ts`,
+// including all nine `+server.ts` handlers, is mutated, and this line governs
+// only a bare `stryker run` with no `FIT_MUTATION_SCOPE`. That is why
+// `!src/routes/+layout.ts` below is load-bearing and not dead.
 export const MUTATE_PATTERNS = [
 	'src/lib/**/*.ts',
 	'!src/**/*.{test,spec,e2e}.ts',
