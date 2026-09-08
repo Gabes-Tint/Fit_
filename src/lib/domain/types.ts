@@ -172,6 +172,16 @@ export type LogItem = {
 	micros: Micros;
 	provenance?: Provenance | undefined;
 	servingLabel: string;
+	/**
+	 * The mass of one serving, in grams — the same quantity `Food.grams` and
+	 * `PortionSource.grams` hold, not the logged total, so `describePortion`'s
+	 * multiplication by `servings` needs no special case for a log entry.
+	 * Undefined on an entry logged before this field existed, or scaled from a
+	 * seed food that never recorded a serving weight (`SeedFood` carries none) —
+	 * either way nothing is invented, and the portion falls back to the label
+	 * alone exactly as it did before.
+	 */
+	grams?: number | undefined;
 	brand?: string | undefined;
 };
 

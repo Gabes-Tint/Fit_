@@ -1,5 +1,5 @@
 import { SEED_FOODS } from './seed-foods';
-import type { Micros, SeedFood } from './types';
+import type { Food, Micros, SeedFood } from './types';
 import { round1 } from './utils';
 
 // Seed rows live in `./seed-foods`; re-exported here so mutation testing targets behavior, not data.
@@ -18,7 +18,7 @@ export const SEED_FOOD_BY_ID: Record<string, SeedFood> = Object.fromEntries(
 	SEED_FOODS.map((food) => [food.id, food])
 );
 
-export function scaleFood(food: SeedFood, servings: number) {
+export function scaleFood(food: SeedFood & Partial<Pick<Food, 'grams'>>, servings: number) {
 	const s = servings;
 	const micros = Object.fromEntries(
 		Object.entries(food.micros).map(([k, v]) => [k, round1(v * s)])
@@ -33,6 +33,7 @@ export function scaleFood(food: SeedFood, servings: number) {
 		micros,
 		provenance: food.provenance,
 		servingLabel: food.servingLabel,
+		grams: food.grams,
 		foodId: food.id
 	};
 }
