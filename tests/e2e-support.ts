@@ -171,6 +171,33 @@ export const EGG_ROW = catalogRow(101, 'Egg, large', { label: '1 large', grams: 
 export const OLIVE_OIL_ROW = catalogRow(103, 'Olive oil', { label: '1 tbsp', grams: 14 }, 850);
 
 /**
+ * A packaged food whose source named the bag as well as the label serving
+ * (#158), so the log sheet offers "whole pack" beside "1 oz". The widest the
+ * quantity control gets: two choice chips over a stepper, a unit word and a
+ * toggle, with an energy and macro line under all of it — and, once it has
+ * been logged once, a usual-portion sentence above all of that (#159). Its
+ * 28 g serving is also what makes 45 g an amount nobody could tap their way to.
+ */
+export const CHIPS_ROW: ResolvedRow = {
+	id: 9300,
+	name: 'Nacho Cheese Tortilla Chips',
+	brand: 'DORITOS',
+	kind: 'branded',
+	category: 'Snacks',
+	barcode: null,
+	license: 'PDDL-1.0',
+	serving: { label: '1 oz', grams: 28 },
+	servingOptions: [
+		{ label: '1 oz', grams: 28 },
+		{ label: '1 bag', grams: 155 }
+	],
+	per100g: { kcal: 500, protein: 7, fat: 26, carbs: 61, sugar: 3, fiber: 4, sodium: 590 }
+};
+
+/** The name `CHIPS_ROW` is searched for and picked by. */
+export const CHIPS_NAME = 'Nacho Cheese Tortilla Chips';
+
+/**
  * Answer `POST /api/foods/resolve` with these rows, one per name asked about
  * and in that order, so a typed sentence resolves without a catalog file.
  */
@@ -247,6 +274,19 @@ export async function openLogSheet(page: Page): Promise<void> {
 	await page.getByRole('button', { name: 'Log food' }).click();
 	const sheet = page.getByRole('dialog');
 	await expect(sheet.getByRole('button', { name: 'Close' })).toBeFocused();
+}
+
+/**
+ * Open the log sheet, search for a food, and take its row — which is what puts
+ * the quantity card in front of the person. Shared because the same four steps
+ * are how every test of that card reaches it, and doing them again with the
+ * same food is how a test proves what the card remembers (#159).
+ */
+export async function openLogCardFor(page: Page, name: string, query = name): Promise<void> {
+	await openLogSheet(page);
+	await page.getByRole('button', { name: 'Search', exact: true }).click();
+	await page.getByLabel('Search foods, brands, barcodes').fill(query);
+	await page.getByText(name, { exact: true }).click();
 }
 
 /**

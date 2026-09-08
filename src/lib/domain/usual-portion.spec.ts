@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { LogItem } from './types';
+import { ZERO_MICROS, type LogItem } from './types';
 import { readsAsServings, usualServings } from './usual-portion';
 
 /** A logged entry, with only the three fields this module reads varied. */
@@ -16,7 +16,7 @@ function logged(foodId: string | null, date: string, servings: number): LogItem 
 		protein: 2,
 		carbs: 17,
 		fat: 7,
-		micros: {},
+		micros: ZERO_MICROS,
 		servingLabel: '1 oz',
 		grams: 28
 	};
