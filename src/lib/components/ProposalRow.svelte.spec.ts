@@ -407,5 +407,26 @@ describe('ProposalRow', () => {
 				.element(page.getByRole('button', { name: '1 medium' }))
 				.toHaveAttribute('aria-pressed', 'false');
 		});
+
+		it('reads every option through describePortion (#74), appending grams only where the label states none', async () => {
+			await render(ProposalRow, {
+				props: {
+					item: matched,
+					step: 0.5,
+					matching: false,
+					resolved: eggWithOptions,
+					...handlers
+				}
+			});
+			await page.getByLabelText(`Serving size for ${eggWithOptions.name}`).click();
+			// "1 medium" states no mass of its own, so the canonical grams are
+			// appended -- the whole reason the sheet exists is to compare options
+			// that would otherwise read as bare, incomparable words.
+			await expect.element(page.getByText('1 medium · 44 g')).toBeInTheDocument();
+			// "100 g" already states a mass in the metric system the row reads in,
+			// so it must not be doubled into "100 g · 100 g".
+			await expect.element(page.getByText('100 g', { exact: true })).toBeInTheDocument();
+			expect(document.body.textContent).not.toContain('100 g · 100 g');
+		});
 	});
 });

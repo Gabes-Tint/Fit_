@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { canRePortion, foodAtPortion } from '$lib/domain/serving-choice';
+	import { describePortion } from '$lib/domain/serving-display';
 	import type { Food } from '$lib/domain/types';
+	import { tend } from '$lib/state/tend.svelte';
 	import Sheet from '$lib/ui/Sheet.svelte';
 
 	/**
@@ -33,6 +35,27 @@
 
 	let open = $state(false);
 
+	const units = $derived(tend.state.units);
+
+	// Every portion this app shows a person goes through `describePortion`
+	// (#74): the source label alone, "1 medium breast", states no mass at all,
+	// which is exactly the number this sheet exists to let two options be
+	// compared by. `foodAtPortion` is what turns an `{ label, grams }` option
+	// into the `Food` `describePortion` reads its mass off, so a row's text is
+	// derived from the same re-based food `pick` would hand upward, not from
+	// the raw label. `food.servingOptions` is at most ten rows
+	// (`serving-options.ts`'s `MAX_OPTIONS`) recomputed only when the food or
+	// the unit system changes, cheap enough not to need caching beyond what
+	// `$derived` already gives for free.
+	const rows = $derived(
+		canRePortion(food) && food.servingOptions
+			? food.servingOptions.map((option) => ({
+					option,
+					text: describePortion(foodAtPortion(food, option), 1, units)
+				}))
+			: []
+	);
+
 	function isCurrent(option: { label: string; grams: number }): boolean {
 		return option.label === food.servingLabel && option.grams === food.grams;
 	}
@@ -48,19 +71,19 @@
 	}
 </script>
 
-{#if canRePortion(food) && food.servingOptions && food.servingOptions.length > 0}
+{#if rows.length > 0}
 	<button
 		type="button"
 		onclick={() => (open = true)}
 		aria-label={`Serving size for ${food.name}`}
 		class="border-border text-muted-foreground hover:bg-secondary h-7 shrink-0 rounded-full border px-2.5 text-xs"
 	>
-		{food.servingLabel}
+		{describePortion(food, 1, units)}
 	</button>
 
 	<Sheet bind:open title={`Serving size for ${food.name}`} onclose={() => (open = false)}>
 		<ul class="flex flex-col gap-1 overflow-y-auto px-5 pt-2 pb-5">
-			{#each food.servingOptions as option (option.label + option.grams)}
+			{#each rows as { option, text } (option.label + option.grams)}
 				<li>
 					<button
 						type="button"
@@ -71,7 +94,7 @@
 							isCurrent(option) && 'bg-secondary font-medium'
 						]}
 					>
-						{option.label}
+						{text}
 					</button>
 				</li>
 			{/each}
