@@ -21,6 +21,10 @@ file whose name ends in `.js` or `.css`, takes `stat().size`. Then:
 - `clientCssBytes` — the sum of every `.css` file. There is exactly one.
 - `largestAssetBytes` — the single biggest file of either kind.
 
+> Since this audit the gate also polices `alwaysLoadedJavaScriptBytes`, the closure argued for
+> under "What this says about the budget itself" below. Everything in this section still
+> describes `clientJavaScriptBytes`, which is unchanged.
+
 So the JS number is precisely this:
 
 - **Raw bytes on disk.** Not gzip, not brotli. The wire cost is a little over a third of it.
@@ -386,17 +390,54 @@ second one as a regression. The two most useful things anyone could do to this a
 lazily loading the log sheet, lazily loading onboarding — both make the number worse. Meanwhile
 68.4% of the budget loads on every page and the metric is indifferent to that.
 
-Two ways to fix the instrument, neither implemented here and both a decision rather than a fix:
+Two ways to fix the instrument, both a decision rather than a fix:
 
 - Budget the **always-loaded closure** (the SvelteKit entry plus the root layout node and their
-  static imports: 290,363 today) instead of the tree total. That number goes down when code is
-  split and up when code is added, which is the direction it should point.
+  static imports: 290,363 at the time of this audit) instead of the tree total. That number goes
+  down when code is split and up when code is added, which is the direction it should point.
 - Or keep the tree total as a coarse ceiling and add a second, tighter budget on that closure,
   so splitting is rewarded by one metric and total growth is still caught by the other.
 
 Either way the budget should be a round headroom above where the tree sits, not 315 bytes above
 it: at 315 bytes of headroom, against a metric with a ten-byte resolution and an eight-byte
 penalty on every branch, the gate is measuring the build as often as it is measuring the code.
+
+### What was done about it
+
+The second one, on 2026-09-08. `scripts/quality/bundle-closure.ts` resolves the closure from the
+client build's own Vite manifest — the shell entries plus the `nodes/0` root layout, then static
+`imports` transitively, never `dynamicImports` and never a chunk name, which is content-hashed
+and changes every build — and `check:bundle` budgets it as `alwaysLoadedJavaScriptBytes`
+alongside the tree total. Splitting `LogSheet` out of the root layout now shows up as the large
+improvement it is on one metric while the other still catches the 2,109 bytes it adds to the
+tree.
+
+Every budget was re-cut off a fresh measurement at the same time, because opportunities 1 and 2
+— the in-house toast and the static favicon — had both landed by then and the old numbers no
+longer described anything. Measured on this branch with a clean `bun run build`: tree total
+**399,373**, closure **264,268** across 32 of 66 chunks (66%), CSS **38,750**, largest asset
+**55,250**.
+
+| Budget                        | Was     | Now     | Measured | Headroom      |
+| ----------------------------- | ------- | ------- | -------- | ------------- |
+| `clientJavaScriptBytes`       | 425,000 | 410,000 | 399,373  | 10,627 (2.7%) |
+| `alwaysLoadedJavaScriptBytes` | —       | 270,000 | 264,268  | 5,732 (2.2%)  |
+| `clientCssBytes`              | 53,200  | 40,000  | 38,750   | 1,250 (3.2%)  |
+| `largestAssetBytes`           | 83,120  | 57,000  | 55,250   | 1,750 (3.2%)  |
+
+A couple of percent is the principle: enough that a change worth arguing about is what trips the
+gate, rather than the twelve bytes of build noise documented above, and enough that the
+`LogSheet` split — which adds 2,109 bytes to the tree while cutting the closure hard — can
+actually land. `check:bundle` now prints that eight-byte and four-byte noise with every failure,
+so the next person to miss by a hair does not go looking for it in the diff.
+
+`largestAssetBytes` moved on the same principle rather than being left as a follow-up. Dropping
+svelte-sonner took the biggest file from 75,036 to 55,250 while the budget stayed at 83,120, and
+a budget that cannot fire is the same defect as one that fires on noise — which is the whole
+subject of this section. The first reservation was that the largest file's _identity_ is decided
+by chunk boundaries, which move in kilobytes; measurement answers it. The largest asset is a
+shared chunk at 55,250 and the runner-up is `nodes/0` at 51,294, a 3,956-byte gap, so a
+byte-level budget on it is not sitting on a coin flip.
 
 ## Reproducing this
 
