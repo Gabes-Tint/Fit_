@@ -102,7 +102,7 @@ describe('what the catalog has', () => {
 	});
 
 	it('answers nothing for a query the catalog has no food for', () => {
-		expect(available('kombucha', 50)).toBe(0);
+		expect(available('gravel', 50)).toBe(0);
 	});
 
 	it('scans enough names to fill a page even where every one has a plural twin', () => {

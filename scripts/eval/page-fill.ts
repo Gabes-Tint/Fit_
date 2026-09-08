@@ -24,10 +24,10 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { singular } from '../../src/lib/server/catalog/query.ts';
 
-/** One broad query, and what a person typing it is owed. */
-export type PageFillCase = { query: string; means: string };
-
-export type PageFillMeasurement = PageFillCase & {
+/** One broad query, what a person typing it is owed, and how the run answered it. */
+export type PageFillMeasurement = {
+	query: string;
+	means: string;
 	/** Distinct foods the catalog holds for this query, capped at the page size. */
 	available: number;
 	/** Distinct foods the ranked search answered with. */
@@ -41,8 +41,9 @@ export type PageFillMeasurement = PageFillCase & {
  *
  * SQLite's `lower` and `trim` fold ASCII only, while JavaScript's fold more. So
  * this key can merge two names SQLite would keep apart, never the reverse —
- * which makes `availableFoods` an undercount at worst. An undercount weakens
- * the guard; it cannot invent a failure.
+ * which means `availableFoods` can only report fewer foods than the catalog
+ * really holds, never more. Reporting fewer weakens the guard; it cannot
+ * invent a failure.
  */
 export function collapseKey(name: string): string {
 	return singular(name.trim().toLowerCase());
@@ -60,10 +61,10 @@ export const NAME_SCAN_FACTOR = 4;
 /**
  * Candidate names for one FTS expression, distinct and bounded.
  *
- * Deliberately unranked: this asks what the catalog holds, and the whole point
- * is to compare that against what the ranking returns.
+ * Deliberately not ranked: this asks what the catalog holds, and the whole
+ * point is to compare that against what the ranking returns.
  */
-export const candidateNamesSql = `
+const candidateNamesSql = `
 select distinct lower(trim(f.name)) as name
 from food_fts join food f on f.food_id = food_fts.rowid
 where food_fts match :match

@@ -48,7 +48,7 @@ export interface SearchFixtureQuery {
  * each one is owed is counted out of the catalog on the run rather than
  * written down here.
  */
-export interface SearchFixturePageFill {
+interface SearchFixturePageFill {
 	/** The largest page `/api/foods` serves — `MAX_LIMIT` in `foods.ts`. */
 	limit: number;
 	note: string;
