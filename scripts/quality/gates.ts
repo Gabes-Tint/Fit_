@@ -49,6 +49,11 @@ const staticSteps: GateStep[] = [
 	},
 	{ name: 'check:ci-contract', purpose: 'Local and hosted CI job parity', concurrent: true },
 	{
+		name: 'check:stale-revert',
+		purpose: 'Branch does not revert recently merged work',
+		concurrent: true
+	},
+	{
 		name: 'check:schedules',
 		purpose: 'Non-blocking tiers still run on a schedule',
 		concurrent: true

@@ -146,6 +146,34 @@ the workflow declaring `Quality and security` also declares a `merge_group` trig
 fixture `ci-without-merge-queue-trigger` proves it rejects the one-line deletion that would
 look like tidying an event list.
 
+`check:stale-revert` asks the one question no other gate can: not whether this branch is
+sound, but whether it is _older than main_. Twice on the same day a branch cut before another
+pull request merged carried that pull request's files at their earlier content, and merging it
+took the work back out — #230 removed #223 and put a smoke test that registers an account
+against production back on every deploy, green before and after its rebase, live on `main` for
+an hour and found by accident. A rebase is what hides it: there is no conflict to resolve, and
+the reverted lines arrive at review as deliberate deletions.
+
+So for every file the branch changes, and every one of the last 40 commits on `main` that also
+changed it, `scripts/quality/stale-revert.ts` asks whether the branch's copy is simply what
+main had before that commit: the commit's additions are still intact at the merge base, not
+one of them survives in the branch's copy, and the branch has written nothing into that file
+that the older copy did not already have. That last condition is what keeps it quiet — a pull
+request genuinely reworking those lines writes something new and is never reported. Over the
+sixty merges before it was written the rule fired twice: on #230, and on #240, the pull
+request that undid #230 on purpose. That second one is the cost, and the way past it is a
+`Reverts: <sha>` trailer in one of the branch's own commit messages, which clears findings
+against that commit and nothing else — a claim about one named commit, in the history where
+review reads it, not a switch that turns the check off. The fixture
+`branch-reverting-merged-work` builds the three-commit history that reproduces #230's shape,
+and `stale-revert.spec.ts` reconstructs the real branch from this repository's own history and
+proves all nine files are named.
+
+Branch protection could close the whole class instead, by requiring a branch to be up to date
+with `main` before it merges. That is configuration and Gabriel's call, and it costs a rebase
+and a CI cycle per merge against a queue that is already the bottleneck; this check costs a
+second and catches the same thing after the fact.
+
 `check:schedules` is the same proof for the lanes that deliberately do not gate a merge. A
 tier taken off the pull request only exists if a schedule still runs it, so this proves the
 `audit` and `nightly` tiers are each invoked by a workflow with a `cron`, and that the
