@@ -3,6 +3,7 @@
 	import { describeRecorded, resolveQuantity, type QuantifiedItem } from '$lib/domain/quantity';
 	import { describePortion } from '$lib/domain/serving-display';
 	import type { Food } from '$lib/domain/types';
+	import { usualServings } from '$lib/domain/usual-portion';
 	import { tend } from '$lib/state/tend.svelte';
 	import FoodSearch from './FoodSearch.svelte';
 	import ProvenanceBadge from './ProvenanceBadge.svelte';
@@ -55,6 +56,10 @@
 	const serving = $derived(
 		describePortion(food ?? { servingLabel: 'serving' }, 1, tend.state.units)
 	);
+	// What this person last logged of this food (#159), read out of the log they
+	// already have rather than out of a per-food table the document would have to
+	// carry and prune. `LogSheet` opens the row at it; this is what says so.
+	const usual = $derived(usualServings(tend.profile?.log ?? [], food));
 </script>
 
 <li class="bg-background rounded-2xl p-3">
@@ -91,6 +96,7 @@
 		{food}
 		servings={item.servings}
 		{step}
+		{usual}
 		onchange={(n: number) => onchange({ ...item, servings: n })}
 	/>
 	<p class="text-muted-foreground mt-1.5 text-xs">{recorded}</p>

@@ -222,6 +222,56 @@ describe('ServingAmount', () => {
 		});
 	});
 
+	describe('the portion this person usually logs (#159)', () => {
+		/** 45 g of a 28 g serving: what somebody typed as a weight, in servings. */
+		const FORTY_FIVE_GRAMS = 1.607;
+
+		it('opens at the remembered amount, read back as the weight it was typed as', async () => {
+			await render(ServingAmountHarness, {
+				props: { food: CHIPS, servings: FORTY_FIVE_GRAMS, step: 0.5, usual: FORTY_FIVE_GRAMS }
+			});
+			// The weight field, not "1.607 servings": nobody taps their way to
+			// 1.607, so showing it as a count would show a number never chosen.
+			await expect.element(gramsField()).toHaveValue('45');
+		});
+
+		it('says the card was opened at a usual, and what that usual is', async () => {
+			await render(ServingAmountHarness, {
+				props: { food: CHIPS, servings: FORTY_FIVE_GRAMS, step: 0.5, usual: FORTY_FIVE_GRAMS }
+			});
+			await expect.element(page.getByText('Your usual · 1.61 × 1 oz · 45 g')).toBeInTheDocument();
+		});
+
+		it('goes back to the label serving in one tap, said in servings again', async () => {
+			await render(ServingAmountHarness, {
+				props: { food: CHIPS, servings: FORTY_FIVE_GRAMS, step: 0.5, usual: FORTY_FIVE_GRAMS }
+			});
+			await page.getByRole('button', { name: '1 oz' }).click();
+			await expect.element(amount()).toHaveTextContent('1');
+			await expect.element(field()).toHaveValue('1');
+		});
+
+		it('opens a remembered count of servings as a count of servings', async () => {
+			// A serving and a half is on the grid the stepper works in, so it is
+			// what the person chose and it is what they are shown.
+			await render(ServingAmountHarness, {
+				props: { food: BIG_MAC, servings: 1.5, step: 0.5, usual: 1.5 }
+			});
+			await expect.element(field()).toHaveValue('1.5');
+			await expect
+				.element(page.getByText('Your usual · 1.5 × 1 sandwich · 329 g'))
+				.toBeInTheDocument();
+		});
+
+		it('says nothing at all about a usual for a food never logged before', async () => {
+			await render(ServingAmountHarness, { props: { food: BIG_MAC, servings: 1, step: 0.5 } });
+			await expect.element(field()).toHaveValue('1');
+			expect(document.body.textContent).not.toContain('Your usual');
+			// And no label-serving chip either, since there is nothing to go back from.
+			expect(page.getByRole('button', { name: '1 sandwich' }).elements()).toHaveLength(0);
+		});
+	});
+
 	describe('the energy line', () => {
 		it('states what one serving comes to', async () => {
 			await render(ServingAmountHarness, { props: { food: BIG_MAC, servings: 1, step: 0.5 } });

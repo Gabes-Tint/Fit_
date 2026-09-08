@@ -8,13 +8,23 @@
 	 * what a person would actually be looking at afterwards. A props-only
 	 * render would answer every tap from the first value.
 	 */
-	let { food, servings, step }: { food?: Food | undefined; servings: number; step: number } =
-		$props();
+	let {
+		food,
+		servings,
+		step,
+		usual = null
+	}: { food?: Food | undefined; servings: number; step: number; usual?: number | null } = $props();
 
 	/** Nothing until the control reports a change; the prop is the amount until then. */
 	let changed = $state<number | null>(null);
 	const current = $derived(changed ?? servings);
 </script>
 
-<ServingAmount {food} servings={current} {step} onchange={(next: number) => (changed = next)} />
+<ServingAmount
+	{food}
+	servings={current}
+	{step}
+	{usual}
+	onchange={(next: number) => (changed = next)}
+/>
 <p data-testid="amount">{current}</p>

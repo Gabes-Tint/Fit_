@@ -1,11 +1,14 @@
 import { expect, type Page } from '@playwright/test';
 import { test } from '../../tests/preview-server';
 import {
+	CHIPS_NAME,
+	CHIPS_ROW,
 	EGG_ROW,
 	OLIVE_OIL_ROW,
 	atNarrowPhone,
 	expectFitsViewport,
 	openEmptyJournal,
+	openLogCardFor,
 	openLogSheet,
 	openExerciseTabEmpty,
 	openLogSheetAndType,
@@ -42,28 +45,6 @@ const SANDWICH_ROW = {
 	license: 'PDDL-1.0',
 	serving: { label: '1 sandwich (219 g)', grams: 219 },
 	per100g: { kcal: 250, protein: 12, fat: 14, carbs: 20, sugar: 4, fiber: 1.5, sodium: 460 }
-};
-
-/**
- * A packaged food whose source named the bag as well as the label serving
- * (#158), so the log sheet offers "whole pack" beside "1 oz". The widest the
- * quantity control gets: two choice chips over a stepper, a unit word and a
- * toggle, with an energy and macro line under all of it.
- */
-const CHIPS_ROW = {
-	id: 9300,
-	name: 'Nacho Cheese Tortilla Chips',
-	brand: 'DORITOS',
-	kind: 'branded',
-	category: 'Snacks',
-	barcode: null,
-	license: 'PDDL-1.0',
-	serving: { label: '1 oz', grams: 28 },
-	servingOptions: [
-		{ label: '1 oz', grams: 28 },
-		{ label: '1 bag', grams: 155 }
-	],
-	per100g: { kcal: 500, protein: 7, fat: 26, carbs: 61, sugar: 3, fiber: 4, sodium: 590 }
 };
 
 /**
@@ -357,10 +338,7 @@ test.describe('at 360px', () => {
 		await openEmptyJournal(page);
 		await atNarrowPhone(page);
 
-		await openLogSheet(page);
-		await page.getByRole('button', { name: 'Search', exact: true }).click();
-		await page.getByLabel('Search foods, brands, barcodes').fill('tortilla chips');
-		await page.getByText('Nacho Cheese Tortilla Chips', { exact: true }).click();
+		await openLogCardFor(page, CHIPS_NAME, 'tortilla chips');
 
 		// The label serving the source gave, in servings — not 100 g, and not a
 		// bare weight (#157).
@@ -377,6 +355,37 @@ test.describe('at 360px', () => {
 		// and the field carries three digits.
 		await page.getByLabel('Enter the amount in grams').click();
 		await expect(page.getByLabel('Amount in grams')).toHaveValue('155');
+		await expectFitsViewport(page, dialog);
+	});
+
+	test('the usual-portion hint and its reset chip stay inside the viewport (#159)', async ({
+		page,
+		baseURL
+	}) => {
+		// #159 puts a whole sentence above the quantity control, and a chip row
+		// under it that a packaged food gives two entries. Metric is the wide
+		// reading of the sentence: the "1 oz" label already states an imperial
+		// mass, so only a metric reader gets the "· 45 g" appended to it (#74).
+		await signInThroughApi(page, baseURL ?? '');
+		await stubFoodSearch(page, [CHIPS_ROW]);
+		await openEmptyJournal(page);
+
+		await openLogCardFor(page, CHIPS_NAME, 'tortilla chips');
+		await page.getByLabel('Enter the amount in grams').click();
+		await page.getByLabel('Amount in grams').fill('45');
+		await page.getByRole('button', { name: 'Add to today' }).click();
+		await expect(page.getByRole('dialog')).toBeHidden();
+
+		await atNarrowPhone(page);
+		await openLogCardFor(page, CHIPS_NAME, 'tortilla chips');
+
+		const dialog = page.getByRole('dialog');
+		await expect(page.getByText('Your usual · 1.61 × 1 oz · 45 g')).toBeVisible();
+		await expectFitsViewport(page, dialog);
+
+		// And with the reset taken, where the chip row is still two chips wide.
+		await page.getByRole('button', { name: '1 oz', exact: true }).click();
+		await expect(page.getByLabel('Amount in servings')).toHaveValue('1');
 		await expectFitsViewport(page, dialog);
 	});
 
