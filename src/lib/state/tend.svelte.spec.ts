@@ -325,6 +325,15 @@ describe('the log', () => {
 		expect(after?.micros.fiber).toBe(6);
 	});
 
+	it('leaves a catalog-sourced entry’s grams unchanged when servings change (#232)', () => {
+		const store = onboarded();
+		store.addLogItems([customEntry({ grams: 37 })]);
+		store.updateLog('custom', { servings: 3 });
+		const after = store.profile?.log[0];
+		expect(after?.servings).toBe(3);
+		expect(after?.grams).toBe(37);
+	});
+
 	it('leaves a custom entry logged at zero servings where it is', () => {
 		const store = onboarded();
 		store.addLogItems([customEntry({ servings: 0 })]);

@@ -39,7 +39,7 @@ test.describe('a typed unit spelling matches its abbreviation', () => {
 		// portion, and the calories together, so this also proves the entry was
 		// recorded as 2 tablespoons rather than as 2 bare servings.
 		await expect(
-			page.getByRole('button', { name: 'Olive oil USDA 2 × 1 tbsp (15 ml) 238' })
+			page.getByRole('button', { name: 'Olive oil USDA 2 × 1 tbsp (15 ml) · 28 g 238' })
 		).toBeVisible();
 	});
 });
