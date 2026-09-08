@@ -74,6 +74,19 @@
 	 * would drop anything it does not know about.
 	 */
 	let fromPhoto = $state<Set<string>>(new Set());
+	/**
+	 * A portion chosen for one proposal, by the proposal's own id rather than
+	 * its `foodId`. Two proposals can point at the same catalog food -- eggs
+	 * added twice in one sentence -- and each has to be free to pick its own
+	 * serving without the other silently changing underneath it, which keying
+	 * this by `foodId` the way `fromCatalog` does would not give.
+	 */
+	let portioned = $state<Record<string, Food>>({});
+
+	/** `portioned` with one proposal's chosen serving forgotten. */
+	function forgetProposal(record: Record<string, Food>, id: string): Record<string, Food> {
+		return Object.fromEntries(Object.entries(record).filter(([entryId]) => entryId !== id));
+	}
 
 	const step = $derived(servingStep(tend.profile));
 	const servings = $derived(defaultServings(tend.profile));
@@ -89,6 +102,7 @@
 		textRun += 1;
 		fromCatalog = {};
 		fromPhoto = new Set();
+		portioned = {};
 		logUi.tab = 'type';
 	}
 
@@ -297,7 +311,11 @@
 				source: fromPhoto.has(p.id) ? ('photo' as const) : ('text' as const),
 				note: p.note
 			};
-			const catalogFood = fromCatalog[p.foodId];
+			// A chosen portion, when there is one, is what got resolved on screen
+			// and is what must be logged -- falling back to `fromCatalog` here
+			// would commit the food's default serving after the person picked
+			// a different one.
+			const catalogFood = portioned[p.id] ?? fromCatalog[p.foodId];
 			return catalogFood ? [logFromCatalogFood(catalogFood, context)] : [];
 		});
 		if (!items.length) {
@@ -421,7 +439,7 @@
 							item={p}
 							{step}
 							matching={matchId === p.id}
-							resolved={p.foodId ? fromCatalog[p.foodId] : undefined}
+							resolved={portioned[p.id] ?? (p.foodId ? fromCatalog[p.foodId] : undefined)}
 							onmatch={() => (matchId = matchId === p.id ? null : p.id)}
 							onpickmatch={(food: Food) => {
 								// Matching a proposal reaches the same search, so the food
@@ -432,12 +450,18 @@
 									// the catalog”, which this tap has just made untrue.
 									x.id === p.id ? { ...matchToFood(x, food), id: x.id, note: undefined } : x
 								);
+								// A new match points this row at a different food than whatever
+								// portion was chosen before -- carrying that choice forward
+								// would log a weight that belongs to a food that is no longer here.
+								portioned = forgetProposal(portioned, p.id);
 								matchId = null;
 							}}
 							onchange={(next: QuantifiedItem) =>
 								(proposals = proposals.map((x) => (x.id === p.id ? { ...next, id: x.id } : x)))}
+							onportion={(food: Food) => (portioned = { ...portioned, [p.id]: food })}
 							onremove={() => {
 								proposals = proposals.filter((x) => x.id !== p.id);
+								portioned = forgetProposal(portioned, p.id);
 								if (matchId === p.id) matchId = null;
 							}}
 						/>

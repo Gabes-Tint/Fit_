@@ -3,6 +3,7 @@ import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import { catalogFoodToFood } from '$lib/domain/catalog-food';
 import type { QuantifiedItem } from '$lib/domain/quantity';
+import type { Food } from '$lib/domain/types';
 import { tend } from '$lib/state/tend.svelte';
 import ProposalRow from './ProposalRow.svelte';
 
@@ -15,7 +16,8 @@ function catalogRow(
 	id: number,
 	name: string,
 	serving: { label: string; grams: number },
-	per100g: { kcal: number; protein: number; fat: number; carbs: number }
+	per100g: { kcal: number; protein: number; fat: number; carbs: number },
+	servingOptions?: readonly { label: string; grams: number }[]
 ) {
 	return catalogFoodToFood({
 		id,
@@ -26,6 +28,7 @@ function catalogRow(
 		barcode: null,
 		license: 'PDDL-1.0',
 		serving,
+		servingOptions,
 		per100g: { ...per100g, sugar: 0, fiber: 0, sodium: 0, saturatedFat: 0 }
 	});
 }
@@ -41,6 +44,24 @@ const egg = catalogRow(
 		fat: 9.5,
 		carbs: 0.7
 	}
+);
+
+/** A large egg with the catalog's own alternate portions -- what a picker needs to appear. */
+const eggWithOptions = catalogRow(
+	103,
+	'Egg, large',
+	{ label: '1 large', grams: 50 },
+	{
+		kcal: 143,
+		protein: 12.6,
+		fat: 9.5,
+		carbs: 0.7
+	},
+	[
+		{ label: '1 large', grams: 50 },
+		{ label: '1 medium', grams: 44 },
+		{ label: '100 g', grams: 100 }
+	]
 );
 
 /** Olive oil, served by the tablespoon: 14 g, 119 kcal. */
@@ -101,6 +122,7 @@ const handlers = {
 	onmatch: vi.fn(),
 	onpickmatch: vi.fn(),
 	onchange: vi.fn(),
+	onportion: vi.fn(),
 	onremove: vi.fn()
 };
 
@@ -311,5 +333,79 @@ describe('ProposalRow', () => {
 		await expect
 			.element(page.getByRole('button', { name: 'Match to catalog' }))
 			.toBeInTheDocument();
+	});
+
+	describe('choosing a serving size (#74 follow-up)', () => {
+		it('offers no serving-size control for a food with no catalog options', async () => {
+			await render(ProposalRow, {
+				props: { item: matched, step: 0.5, matching: false, resolved: egg, ...handlers }
+			});
+			expect(page.getByLabelText(`Serving size for ${egg.name}`).elements()).toHaveLength(0);
+		});
+
+		it('offers no serving-size control for an unmatched row', async () => {
+			await render(ProposalRow, {
+				props: { item: unmatched, step: 0.5, matching: false, ...handlers }
+			});
+			expect(page.getByRole('button', { name: /Serving size for/ }).elements()).toHaveLength(0);
+		});
+
+		it('names the food in the serving-size control, distinct from nutrition facts', async () => {
+			await render(ProposalRow, {
+				props: {
+					item: matched,
+					step: 0.5,
+					matching: false,
+					resolved: eggWithOptions,
+					...handlers
+				}
+			});
+			await expect
+				.element(page.getByLabelText(`Serving size for ${eggWithOptions.name}`))
+				.toBeInTheDocument();
+		});
+
+		it('picks a portion by keyboard and rebases the food without touching servings', async () => {
+			const onportion = vi.fn<(food: Food) => void>();
+			await render(ProposalRow, {
+				props: {
+					item: matched,
+					step: 0.5,
+					matching: false,
+					resolved: eggWithOptions,
+					...handlers,
+					onportion
+				}
+			});
+			await page.getByLabelText(`Serving size for ${eggWithOptions.name}`).click();
+			await page.getByRole('button', { name: '1 medium' }).click();
+			expect(onportion).toHaveBeenCalledTimes(1);
+			const [rebased] = onportion.mock.calls[0] ?? [];
+			if (!rebased) throw new Error('onportion was not called with a food');
+			expect(rebased.servingLabel).toBe('1 medium');
+			expect(rebased.grams).toBe(44);
+			// The person's own count of 2 servings is untouched by the re-base --
+			// only the food each of those servings means has changed.
+			expect(handlers.onchange).not.toHaveBeenCalled();
+		});
+
+		it('marks the food’s current portion as the one already selected', async () => {
+			await render(ProposalRow, {
+				props: {
+					item: matched,
+					step: 0.5,
+					matching: false,
+					resolved: eggWithOptions,
+					...handlers
+				}
+			});
+			await page.getByLabelText(`Serving size for ${eggWithOptions.name}`).click();
+			await expect
+				.element(page.getByRole('button', { name: '1 large' }))
+				.toHaveAttribute('aria-pressed', 'true');
+			await expect
+				.element(page.getByRole('button', { name: '1 medium' }))
+				.toHaveAttribute('aria-pressed', 'false');
+		});
 	});
 });
