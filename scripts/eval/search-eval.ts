@@ -24,6 +24,13 @@ import { catalogPath } from '../../src/lib/server/catalog/connection.ts';
 import { searchTerms, singular } from '../../src/lib/server/catalog/query.ts';
 import { searchSql } from '../../src/lib/server/catalog/ranking.ts';
 import { prepared } from '../../src/lib/server/catalog/statements.ts';
+import {
+	availableFoods,
+	pageFillFailure,
+	pageFillRows,
+	pageFillViolations,
+	type PageFillMeasurement
+} from './page-fill.ts';
 import { readJsonFile } from '../security/shared.ts';
 import type { SearchFixture, SearchFixtureQuery } from '../quality/config-types';
 
@@ -68,6 +75,7 @@ type Report = {
 	groups: Record<string, GroupMetrics>;
 	latency: { coldP50: number; coldP95: number; warmP50: number; warmP95: number };
 	queries: QueryResult[];
+	pageFill: PageFillMeasurement[];
 };
 
 /** `--label x --baseline y`, with the flags this runner understands and nothing else. */
@@ -323,6 +331,24 @@ if (servingViolations.length > 0) {
 	);
 }
 
+/**
+ * The page-fill pass, at the largest page a caller may ask for.
+ *
+ * A second precision pass at `limit` 50 was the other candidate and is not
+ * worth its runtime: P@3 reads the first three rows, so it returns the same
+ * number at 50 as at 10 — which is exactly why it could not see #275. The
+ * collapse empties the tail of a page, so the tail is what gets measured.
+ */
+const pageFill: PageFillMeasurement[] = fixture.pageFill.queries.map((entry) => {
+	const terms = searchTerms(entry.query);
+	const limit = fixture.pageFill.limit;
+	return {
+		...entry,
+		available: terms === null ? 0 : availableFoods(db, terms.match, limit),
+		returned: ranked(db, entry.query, limit).length
+	};
+});
+
 db.close();
 
 const warmSamples = results.flatMap((result) => result.warmMs);
@@ -344,7 +370,8 @@ const report: Report = {
 		warmP50: percentile(warmSamples, 0.5),
 		warmP95: percentile(warmSamples, 0.95)
 	},
-	queries: results
+	queries: results,
+	pageFill
 };
 
 const baseline = baselinePath === null ? null : await readJsonFile<Report>(baselinePath);
@@ -357,7 +384,17 @@ const latency = report.latency;
 process.stdout.write(
 	`${label} — ${fixture.queries.length} queries against ${file}\n\n` +
 		`${table(metricRows(report, baseline))}\n\n` +
+		`page fill at limit ${fixture.pageFill.limit}\n\n` +
+		`${table(pageFillRows(pageFill))}\n\n` +
 		`latency ms: cold p50 ${latency.coldP50.toFixed(1)}, cold p95 ${latency.coldP95.toFixed(1)}, ` +
 		`warm p50 ${latency.warmP50.toFixed(1)}, warm p95 ${latency.warmP95.toFixed(1)}\n` +
 		`report: ${path.relative(projectRoot, output)}\n`
 );
+
+// Last, so the numbers above and the written report are there to read when it
+// fires. The other two hard failures come before the run because they make its
+// numbers meaningless; this one is a number, and the run is its evidence.
+const collapsed = pageFillViolations(pageFill);
+if (collapsed.length > 0) {
+	throw new Error(pageFillFailure(collapsed, fixture.pageFill.limit));
+}
