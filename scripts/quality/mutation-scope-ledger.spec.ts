@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
 	areaOf,
 	classify,
-	isMutated,
 	isSourceFile,
 	ledgerFailures,
 	ledgerShapeFailures,
@@ -53,29 +52,6 @@ describe('isSourceFile', () => {
 		]) {
 			expect(isSourceFile(file), file).toBe(false);
 		}
-	});
-});
-
-describe('isMutated', () => {
-	it('is true for production TypeScript under src/ that no exclusion removes', () => {
-		expect(isMutated('src/lib/domain/tdee.ts')).toBe(true);
-		expect(isMutated('src/lib/server/users/session.ts')).toBe(true);
-		// Every lane hands Stryker a file list built by walking all of `src`, so a
-		// route handler is mutated even though the default glob says `src/lib/**`.
-		expect(isMutated('src/routes/api/sessions/+server.ts')).toBe(true);
-	});
-
-	it('is false for a file an exclusion in quality/mutate-patterns.mjs removes', () => {
-		expect(isMutated('src/lib/domain/seed-foods.ts')).toBe(false);
-		expect(isMutated('src/lib/ui/camera.ts')).toBe(false);
-		expect(isMutated('src/routes/+layout.ts')).toBe(false);
-	});
-
-	it('is false for components, tests and anything outside src/', () => {
-		expect(isMutated('src/lib/components/AppShell.svelte')).toBe(false);
-		expect(isMutated('src/lib/domain/tdee.spec.ts')).toBe(false);
-		expect(isMutated('scripts/deploy/deploy.ts')).toBe(false);
-		expect(isMutated('tests/preview-server.ts')).toBe(false);
 	});
 });
 

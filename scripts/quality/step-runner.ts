@@ -31,7 +31,7 @@ export interface RunLoggedStepOptions {
  * untouched in CI), capture output with color forced off, write the log, and
  * translate the exit code into a `StepOutcome`. Tier/CI-job decoration
  * (`purpose`, `command`, `artifacts`) stays in `gate.ts`; `verify:changed`'s
- * per-run `extraEnv` and hashed log names stay explicit at the call site via
+ * per-run `env` and hashed log names stay explicit at the call site via
  * `options`.
  */
 export async function runLoggedStep(

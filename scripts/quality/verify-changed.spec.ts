@@ -2,9 +2,52 @@ import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { isMutated } from './mutation-scope';
+import { buildVerifyChangedPlan } from './verify-changed-plan';
 import { allSourceFiles, importingSpecsOf, logFileName } from './verify-changed';
 
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
+
+/**
+ * The plan `verify-changed.ts` builds, with the real mutation rule wired in.
+ * `verify-changed-plan.spec.ts` stubs `isMutated`, which is how the runner came
+ * to pass a rule that disagreed with the lanes (#129): the planner was right
+ * about `+server.ts` and never got asked.
+ */
+function planFor(file: string): ReturnType<typeof buildVerifyChangedPlan> {
+	return buildVerifyChangedPlan({
+		changed: [{ path: file, status: 'M' }],
+		staticSteps: [],
+		siblingSpecs: () => [],
+		importingSpecs: () => [],
+		exists: () => false,
+		projectFor: () => 'server',
+		isMutated,
+		allBrowsers: false
+	});
+}
+
+describe('the mutation rule verify:changed plans with', () => {
+	it('schedules the security lane when an API route handler changes (#129)', () => {
+		expect(planFor('src/routes/api/state/+server.ts').steps).toContainEqual(
+			expect.objectContaining({ category: 'mutation', name: 'security' })
+		);
+	});
+
+	it('schedules the security lane when the request hooks change (#129)', () => {
+		expect(planFor('src/hooks.server.ts').steps).toContainEqual(
+			expect.objectContaining({ category: 'mutation', name: 'security' })
+		);
+	});
+
+	it('still leaves an excluded file out of every lane', () => {
+		// The rule has to stay a filter, not become "anything under src/": a seed
+		// table promoted into a lane would report survivors nobody should kill.
+		expect(planFor('src/lib/domain/seed-foods.ts').steps).not.toContainEqual(
+			expect.objectContaining({ category: 'mutation' })
+		);
+	});
+});
 
 describe('logFileName', () => {
 	it('stays short even for a diff that touches many spec files (#141)', () => {

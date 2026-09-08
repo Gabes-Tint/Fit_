@@ -59,6 +59,21 @@ export function isProductionTypeScript(file: string): boolean {
 	return file.endsWith('.ts') && !file.endsWith('.d.ts') && !TEST_FILE.test(file);
 }
 
+/**
+ * Whether a lane mutates this repository-relative path: exactly what
+ * `fullSources` below selects, and the one place that rule is written down.
+ *
+ * Every caller that decides "would mutation testing touch this file?" asks
+ * here. Restating it is how `verify:changed` came to plan with `src/lib/**`
+ * while the security lane mutated nine `+server.ts` handlers and
+ * `src/hooks.server.ts` besides (#129) — the include glob in
+ * `quality/mutate-patterns.mjs` describes only a bare `stryker run`, and every
+ * lane walks all of `src/` instead.
+ */
+export function isMutated(file: string): boolean {
+	return file.startsWith('src/') && isProductionTypeScript(file) && !isExcludedFromMutation(file);
+}
+
 export async function discoverSecurityRoots(projectRoot: string): Promise<string[]> {
 	const sourceRoot = path.join(projectRoot, 'src');
 	const candidates = await walk(sourceRoot);
@@ -245,9 +260,8 @@ async function fullSources(
 	project: 'server' | 'client' | 'all'
 ): Promise<string[]> {
 	const files = (await walk(path.join(projectRoot, 'src')))
-		.filter(isProductionTypeScript)
 		.map((file) => normalize(projectRoot, file))
-		.filter((file) => !isExcludedFromMutation(file));
+		.filter(isMutated);
 	if (project === 'server') return files.filter(isServerSource).sort();
 	if (project === 'client') return files.filter((file) => !isServerSource(file)).sort();
 	return files.sort();
