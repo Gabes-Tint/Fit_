@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest';
 import {
 	cmToIn,
 	displayWeight,
+	formatServingMass,
 	formatWeight,
+	gToOz,
 	heightFromFeetInches,
 	heightToFeetInches,
 	inToCm,
 	kgToLb,
 	lbToKg,
+	ozToG,
 	weightToKg,
 	weightUnitAbbr,
 	weightUnitName
@@ -84,5 +87,33 @@ describe('height conversion', () => {
 
 	it('round-trips feet and inches typed in, back out, with no drift', () => {
 		expect(heightToFeetInches(heightFromFeetInches(5, 9))).toEqual({ feet: 5, inches: 9 });
+	});
+});
+
+describe('serving mass (#74)', () => {
+	it('reads grams as ounces by the same pound the weights use', () => {
+		expect(gToOz(453.59237)).toBeCloseTo(16, 9);
+		expect(ozToG(16)).toBeCloseTo(453.59237, 9);
+	});
+
+	it('round-trips g -> oz -> g with no drift', () => {
+		for (const grams of [1, 28.349523125, 50, 100, 244, 1000]) {
+			expect(ozToG(gToOz(grams))).toBeCloseTo(grams, 9);
+		}
+	});
+
+	it('prints a portion in whole grams for metric', () => {
+		expect(formatServingMass(244, 'metric')).toBe('244 g');
+		expect(formatServingMass(244.4, 'metric')).toBe('244 g');
+		expect(formatServingMass(0.4, 'metric')).toBe('0 g');
+	});
+
+	it('prints a portion to a tenth of an ounce for imperial', () => {
+		expect(formatServingMass(244, 'imperial')).toBe('8.6 oz');
+		expect(formatServingMass(100, 'imperial')).toBe('3.5 oz');
+	});
+
+	it('drops a trailing zero a portion does not need', () => {
+		expect(formatServingMass(453.59237, 'imperial')).toBe('16 oz');
 	});
 });

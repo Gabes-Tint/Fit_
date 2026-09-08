@@ -108,6 +108,38 @@ test.describe('at 360px', () => {
 		await expectFitsViewport(page, page.getByRole('dialog'));
 	});
 
+	test('a search result carrying an appended mass stays inside the viewport', async ({
+		page,
+		baseURL
+	}) => {
+		// #74 lengthened every row in this list: the serving label now carries the
+		// mass beside it. Imperial is the longer of the two readings ("3.5 oz"
+		// against "100 g"), and a long branded name in front of it is the widest
+		// this row gets.
+		await signInThroughApi(page, baseURL ?? '');
+		await stubFoodSearch(page, [
+			{
+				...EGG_ROW,
+				id: 902,
+				name: 'Chocolate Chip Cookie Dough Bar, Family Size',
+				brand: 'KIND',
+				serving: { label: '100 g', grams: 100 }
+			}
+		]);
+		await openEmptyJournal(page);
+		await page.getByRole('button', { name: 'Open menu' }).click();
+		await page.getByRole('link', { name: 'You' }).click();
+		await page.getByRole('button', { name: 'Imperial' }).click();
+		await page.goto('/');
+		await atNarrowPhone(page);
+
+		await openLogSheet(page);
+		await page.getByRole('button', { name: 'Search', exact: true }).click();
+		await page.getByLabel('Search foods, brands, barcodes').fill('cookie dough');
+		await expect(page.getByText('100 g · 3.5 oz')).toBeVisible();
+		await expectFitsViewport(page, page.getByRole('dialog'));
+	});
+
 	test('the log sheet Search says it needs a connection without spilling', async ({
 		page,
 		baseURL
@@ -278,7 +310,9 @@ test.describe('at 360px', () => {
 		await expectFitsViewport(page, row.locator('xpath=../..'));
 
 		await weightToggle.click();
-		await expect(page.getByText('1 × 1 sandwich (219 g)')).toBeVisible();
+		// One serving leads with the label rather than "1 × " (#74), and the label
+		// already states its mass in metric, so nothing is appended to it.
+		await expect(page.getByText('1 sandwich (219 g)')).toBeVisible();
 		await expect(page.getByLabel('Show unit count')).toBeVisible();
 		await expectFitsViewport(page, row.locator('xpath=../..'));
 	});

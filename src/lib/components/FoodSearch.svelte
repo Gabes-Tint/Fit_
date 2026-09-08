@@ -3,7 +3,9 @@
 	import { onDestroy } from 'svelte';
 	import { createFoodSearch, MIN_QUERY_LENGTH } from '$lib/catalog/food-search.svelte';
 	import { nutritionFactsForFood } from '$lib/domain/nutrition-facts';
+	import { describePortion } from '$lib/domain/serving-display';
 	import type { Food } from '$lib/domain/types';
+	import { tend } from '$lib/state/tend.svelte';
 	import Input from '$lib/ui/Input.svelte';
 	import NutritionFactsButton from './NutritionFactsButton.svelte';
 	import NutritionFactsSheet from './NutritionFactsSheet.svelte';
@@ -97,7 +99,8 @@
 	{/if}
 	<ul class="flex flex-col gap-1">
 		{#each results as food (food.id)}
-			{@const summary = `${food.brand ? `${food.brand} · ` : ''}${food.servingLabel} · ${food.kcal} kcal · ${food.protein}g protein`}
+			{@const serving = describePortion(food, 1, tend.state.units)}
+			{@const summary = `${food.brand ? `${food.brand} · ` : ''}${serving} · ${food.kcal} kcal · ${food.protein}g protein`}
 			<li
 				class="bg-background hover:bg-secondary flex items-center gap-1 rounded-2xl pr-1 transition-colors"
 			>
@@ -129,7 +132,7 @@
 	<NutritionFactsSheet
 		bind:open={factsOpen}
 		name={factsFor.name}
-		servingLabel={factsFor.servingLabel}
+		servingLabel={describePortion(factsFor, 1, tend.state.units)}
 		rows={nutritionFactsForFood(factsFor)}
 	/>
 {/if}

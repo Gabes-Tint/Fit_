@@ -28,6 +28,35 @@ export function inToCm(inches: number): number {
 	return inches * CM_PER_IN;
 }
 
+/**
+ * Grams in one ounce, derived from the pound rather than written out a second
+ * time: an ounce is a sixteenth of the international pound by the same
+ * agreement `KG_PER_LB` states, so the two constants can never drift apart.
+ */
+const G_PER_OZ = (KG_PER_LB * 1000) / 16;
+
+export function gToOz(grams: number): number {
+	return grams / G_PER_OZ;
+}
+
+export function ozToG(ounces: number): number {
+	return ounces * G_PER_OZ;
+}
+
+/**
+ * A serving mass read in the chosen system, with its unit: "244 g", "8.6 oz".
+ *
+ * Whole grams and one decimal ounce, because that is the precision a portion is
+ * read at — a gram either way is inside the error of any household measure,
+ * while a whole ounce would round a 14 g tablespoon of oil to nothing worth
+ * printing. Unlike `formatWeight` this drops a trailing zero: a body weight is
+ * read against yesterday's and needs its decimal place to line up, whereas a
+ * portion is read on its own and "8.0 oz" only spends a character.
+ */
+export function formatServingMass(grams: number, units: UnitSystem): string {
+	return units === 'imperial' ? `${round1(gToOz(grams))} oz` : `${Math.round(grams)} g`;
+}
+
 /** The word a screen reader should announce — never the abbreviation alone. */
 export function weightUnitName(units: UnitSystem): string {
 	return units === 'imperial' ? 'pounds' : 'kilograms';

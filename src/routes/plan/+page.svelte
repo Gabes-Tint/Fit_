@@ -3,6 +3,7 @@
 	import { buildGrocery, type GroceryItem } from '$lib/domain/grocery';
 	import { logFromFood } from '$lib/domain/log-entry';
 	import { RECIPE_BY_ID, recipeMacros } from '$lib/domain/recipes';
+	import { describePortion } from '$lib/domain/serving-display';
 	import type { PlannedMealSlot } from '$lib/domain/types';
 	import { PLANNED_MEALS } from '$lib/domain/types';
 	import { addDaysISO, startOfWeek, todayISO, weekdayShort } from '$lib/domain/utils';
@@ -140,7 +141,7 @@
 								<div class="min-w-0 flex-1 {item.inPantry ? 'opacity-50' : ''}">
 									<p class="font-medium">{item.name}</p>
 									<p class="text-muted-foreground text-xs">
-										{item.servings} × {item.servingLabel}
+										{describePortion(item, item.servings, tend.state.units)}
 									</p>
 								</div>
 							</li>

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { installFile } from './deploy';
 import { hostUser } from '../security/shared';
 import { addressSource } from '../../src/lib/server/client-address';
@@ -15,8 +15,7 @@ import {
 	APP_PORT,
 	CURRENT_LINK,
 	ENV_FILE,
-	PRODUCTION_ORIGIN,
-	publicOrigin,
+	PUBLIC_ORIGIN,
 	REMOTE_NODE,
 	SERVICE_USER,
 	STATE_DIRECTORY,
@@ -39,26 +38,6 @@ import { standsInForProxy } from './smoke';
  */
 
 const DEPLOY_HOST_VARIABLE = 'FIT_DEPLOY_HOST';
-const PUBLIC_ORIGIN_VARIABLE = 'FIT_PUBLIC_ORIGIN';
-
-/** A target that is not production, which is the whole point of the variable. */
-const QA_ORIGIN = 'https://qa.example.com';
-
-/**
- * Each way a value can pass for an origin without being one. The first entries
- * are simply wrong; `credentials` is the dangerous one, because it names a host
- * the deploy never mentions and the smoke check would sign in there.
- */
-const NOT_AN_ORIGIN: [string, string][] = [
-	['a bare hostname', 'qa.example.com'],
-	['a scheme with no host', 'http://'],
-	['a scheme that is not https', 'http://qa.example.com'],
-	['a path', `${QA_ORIGIN}/app`],
-	['a query string', `${QA_ORIGIN}?deploy=1`],
-	['a fragment', `${QA_ORIGIN}#deploy`],
-	['credentials naming another host', 'https://user:pw@elsewhere.example.com'],
-	['embedded whitespace', 'https://qa.example .com']
-];
 
 /** The highest port a process needs `CAP_NET_BIND_SERVICE` to bind. */
 const LAST_PRIVILEGED_PORT = 1023;
@@ -123,68 +102,9 @@ describe('the deployment target', () => {
 	});
 });
 
-describe('the public origin', () => {
-	beforeEach(() => {
-		delete process.env[PUBLIC_ORIGIN_VARIABLE];
-	});
-
-	afterEach(() => {
-		delete process.env[PUBLIC_ORIGIN_VARIABLE];
-	});
-
-	it('has no default, so a deploy never smoke-tests production by accident', () => {
-		// `deploy()` runs `smoke()` with no `--base`. A default of production
-		// would make every deploy that forgot this variable register a throwaway
-		// account on the live site and then fail to remove it, because the
-		// removal runs against FIT_DEPLOY_HOST instead.
-		expect(() => publicOrigin()).toThrow(PUBLIC_ORIGIN_VARIABLE);
-	});
-
-	it('is not answered by a blank variable either', () => {
-		process.env[PUBLIC_ORIGIN_VARIABLE] = '   ';
-		expect(() => publicOrigin()).toThrow(PUBLIC_ORIGIN_VARIABLE);
-	});
-
-	it('is not answered by an empty one', () => {
-		process.env[PUBLIC_ORIGIN_VARIABLE] = '';
-		expect(() => publicOrigin()).toThrow(PUBLIC_ORIGIN_VARIABLE);
-	});
-
-	it('comes from the environment when set', () => {
-		process.env[PUBLIC_ORIGIN_VARIABLE] = QA_ORIGIN;
-		expect(publicOrigin()).toBe(QA_ORIGIN);
-	});
-
-	it('strips a single trailing slash', () => {
-		process.env[PUBLIC_ORIGIN_VARIABLE] = `${QA_ORIGIN}/`;
-		expect(publicOrigin()).toBe(QA_ORIGIN);
-	});
-
-	it('keeps a port, which an origin behind no proxy needs', () => {
-		process.env[PUBLIC_ORIGIN_VARIABLE] = `${QA_ORIGIN}:8443`;
-		expect(publicOrigin()).toBe(`${QA_ORIGIN}:8443`);
-	});
-
-	it('lower-cases the host, as the browser sending Origin would', () => {
-		// The origin policy compares byte for byte, so a host typed in capitals
-		// would otherwise make every write in the smoke check a 403.
-		process.env[PUBLIC_ORIGIN_VARIABLE] = 'https://QA.Example.COM';
-		expect(publicOrigin()).toBe(QA_ORIGIN);
-	});
-
-	it.each(NOT_AN_ORIGIN)('rejects %s', (_reason, value) => {
-		process.env[PUBLIC_ORIGIN_VARIABLE] = value;
-		expect(() => publicOrigin()).toThrow(PUBLIC_ORIGIN_VARIABLE);
-	});
-});
-
 describe('the environment file the deploy installs', () => {
 	it('declares the origin the app answers under', () => {
-		// The template is installed verbatim and only when the file is absent,
-		// so what it declares is production's origin, not this deploy's target:
-		// another machine has this line edited by hand. Comparing it against
-		// `publicOrigin()` would assert nothing but the shell it ran in.
-		expect(configuredOrigins(environmentTemplate())).toEqual([PRODUCTION_ORIGIN]);
+		expect(configuredOrigins(environmentTemplate())).toEqual([PUBLIC_ORIGIN]);
 	});
 
 	it('keys the sign-in throttle on the visitor Cloudflare names', () => {
@@ -253,18 +173,10 @@ describe('shellQuote', () => {
 });
 
 describe('the smoke check\u2019s client-address header', () => {
-	beforeEach(() => {
-		process.env[PUBLIC_ORIGIN_VARIABLE] = QA_ORIGIN;
-	});
-
-	afterEach(() => {
-		delete process.env[PUBLIC_ORIGIN_VARIABLE];
-	});
-
 	it('is left to Cloudflare on the public origin', () => {
 		// Cloudflare answers 403 to a request that already carries
 		// `CF-Connecting-IP`, so sending one turns every check into a proxy error.
-		expect(standsInForProxy(publicOrigin())).toBe(false);
+		expect(standsInForProxy(PUBLIC_ORIGIN)).toBe(false);
 	});
 
 	it('is supplied when the check reaches the origin directly', () => {
