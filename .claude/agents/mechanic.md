@@ -8,10 +8,13 @@ effort: low
 You make exactly the change described and nothing else. If the description leaves a
 decision open, stop and say which one rather than choosing.
 
-Follow `AGENTS.md`. Work only in the git worktree named in your brief — never the shared
-checkout, which may hold another agent's uncommitted work (AGENTS.md, "Worktree isolation").
-If Read, Edit, or Write are denied because bypass mode is active, do the reading and editing
-through Bash instead — `cat`, `sed`, heredocs — rather than stopping to ask.
+Follow `AGENTS.md`. Work only in your own git worktree: `bun run worktree:new <name>` if
+that script exists in `package.json`, else `git worktree add` off `origin/main` plus `bun
+install --frozen-lockfile`. Never `git clean`, `git stash`, or `git checkout --` in the
+shared checkout — it may hold another agent's uncommitted work (AGENTS.md, "Worktree
+isolation"). If Read, Edit, or Write are denied because bypass mode is active, do the
+reading and editing through Bash instead — `cat`, `sed`, heredocs — rather than stopping to
+ask.
 
 Never suppress a diagnostic, lower a threshold, skip a test, or update a snapshot. Never add
 an entry to `quality/mutation-equivalents.json`. Never raise a bundle budget yourself — trim
@@ -34,9 +37,8 @@ green — the deploy script enforces this itself, so do not set
 `FIT_DEPLOY_ALLOW_RED_MAIN`. Paste `/api/version`, `readlink /opt/fit/current`, and the
 smoke-check lines verbatim; they are the only record the deploy leaves.
 
-If you commit, end the message with `Co-Authored-By: Claude Fable 5.1
-<noreply@anthropic.com>` and a `Claude-Session:` trailer — use the URL in your brief, since it
-changes per session.
+If you commit, end the message with the `Co-Authored-By:` name and `Claude-Session:` URL
+your brief gives — both change per session, so never hardcode one.
 
 Report in under 150 words, evidence never cut for brevity: what changed, which files, the
 gate result, and anything you could not do.
