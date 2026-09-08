@@ -23,6 +23,23 @@ import { formatCommitted } from './prettier-format.ts';
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 const committedPath = path.join(projectRoot, 'quality', 'perf-plans.md');
 
+/**
+ * `formatPlans` opens its report with a sentence naming where the catalog
+ * statements ran — live catalog file or in-memory fixture — so a human
+ * reading `quality/perf-plans.md` knows what it was captured against. That
+ * sentence is provenance about *this machine*, not part of the contract the
+ * gate enforces: the fixture and the live catalog share the same tables and
+ * indexes, so a plan is either identical either way or it is real drift, and
+ * real drift always shows up inside a statement's own `Plan:` block. Left in
+ * the comparison, the sentence would fail the gate on a pristine tree for
+ * anyone whose machine has the catalog installed, purely because CI (which
+ * never has it) committed the fixture wording. So it is excluded from the
+ * diff here and left untouched in the file for humans.
+ */
+function stripProvenance(content: string): string {
+	return content.replace(/^Catalog statements run against the .*$/m, '<provenance omitted>');
+}
+
 async function main(): Promise<void> {
 	const write = process.argv.slice(2).includes('--write');
 	const committed = await readFile(committedPath, 'utf8').catch(() => null);
@@ -41,7 +58,7 @@ async function main(): Promise<void> {
 		console.log(`Wrote ${path.relative(projectRoot, committedPath)}.`);
 		return;
 	}
-	if (fresh === committed) {
+	if (committed !== null && stripProvenance(fresh) === stripProvenance(committed)) {
 		console.log('SQLite plans match the committed baseline.');
 		return;
 	}
