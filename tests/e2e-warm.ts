@@ -35,20 +35,20 @@ import { e2eProjects, isE2eProjectName } from '../scripts/quality/e2e-projects';
  */
 
 /** Just the part of Playwright's browser API the warm-up touches. */
-interface WarmablePage {
+interface WarmPage {
 	close(): Promise<void>;
 }
-interface WarmableBrowser {
-	newPage(): Promise<WarmablePage>;
+interface WarmBrowser {
+	newPage(): Promise<WarmPage>;
 	close(): Promise<void>;
 }
-interface WarmableBrowserType {
-	launch(): Promise<WarmableBrowser>;
+interface WarmLauncher {
+	launch(): Promise<WarmBrowser>;
 }
 
 type E2eEngine = (typeof e2eProjects)[keyof typeof e2eProjects]['browser'];
 
-const installedEngines: Record<E2eEngine, WarmableBrowserType> = { chromium, firefox, webkit };
+const installedEngines: Record<E2eEngine, WarmLauncher> = { chromium, firefox, webkit };
 
 /**
  * The distinct engines these projects need, in the order first asked for.
@@ -76,7 +76,7 @@ function enginesFor(projectNames: readonly string[]): E2eEngine[] {
  */
 export async function warmBrowsers(
 	projectNames: readonly string[],
-	engines: Record<E2eEngine, WarmableBrowserType> = installedEngines
+	engines: Record<E2eEngine, WarmLauncher> = installedEngines
 ): Promise<void> {
 	for (const engine of enginesFor(projectNames)) {
 		const browser = await engines[engine].launch();
