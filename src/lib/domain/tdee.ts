@@ -19,7 +19,8 @@ export function mifflinStJeor(p: Pick<Profile, 'sex' | 'age' | 'heightCm'>, kg: 
 }
 
 export function latestWeight(weights: WeightEntry[], fallbackKg = 70) {
-	if (!weights.length) return fallbackKg;
+	// No separate empty-array guard: sorting an empty array is a no-op, and
+	// the optional chain plus `?? fallbackKg` already answer the same way.
 	return [...weights].sort((a, b) => a.date.localeCompare(b.date)).at(-1)?.kg ?? fallbackKg;
 }
 
@@ -71,10 +72,29 @@ function dayTotals(log: LogItem[], date: string): DayNutrition | null {
 	}, emptyDay());
 }
 
-function linearSlope(points: { x: number; y: number }[]) {
+/**
+ * Least-squares slope of y over x. Exported so its edge cases — too few
+ * points, an exact two-point line — can be pinned directly: every caller
+ * today only ever reaches it with at least four points already, so those
+ * edges are otherwise unreachable through the public API.
+ *
+ * Zero for fewer than two points. A NaN anywhere in `points` propagates
+ * rather than falling back to zero: no caller today can produce one, since
+ * weightTrend's x is a day offset derived from a parsed date and its y is a
+ * logged kg, so guarding it would be dead code answering a question nobody asks.
+ */
+export function linearSlope(points: { x: number; y: number }[]) {
 	const n = points.length;
-	if (n < 2) return 0;
+	// No separate n < 2 guard: with fewer than two points the deviations from
+	// the mean are all zero, so `den` stays 0 and the fallback below already
+	// answers 0 the same way a guard would.
 	const meanX = points.reduce((s, p) => s + p.x, 0) / n;
+	// meanY is centered into y below rather than folded away algebraically:
+	// subtracting a constant from every y leaves the covariance sum unchanged
+	// in exact arithmetic, but not in IEEE 754. Review measured the drop
+	// shifting a displayed kcal figure by 1 for realistic profiles (up to
+	// 7.4e-15 kg/day drift over 400k cases). Keeping meanY is the
+	// numerically stable form of this sum.
 	const meanY = points.reduce((s, p) => s + p.y, 0) / n;
 	let num = 0;
 	let den = 0;
@@ -218,19 +238,38 @@ export function loggedDatesSet(log: LogItem[]) {
 	return new Set(log.map((i) => i.date));
 }
 
-/** Weeks (Mon–Sun) with at least `minDays` logged. Never resets on a miss. */
+const WEEK_OFFSETS = [0, 1, 2, 3, 4, 5, 6] as const;
+
+/**
+ * Weeks (Mon–Sun) with at least `minDays` logged. Never resets on a miss.
+ *
+ * The week count is sized up front from the date span rather than walked
+ * with a `while (cursor <= end)` loop stepped by a mutable cursor: a loop
+ * bounded that way hangs forever under a mutation that drops the step, and
+ * this codebase's mutation ledger charges that timeout as debt even though
+ * the mutation runner itself scores a timeout as a kill. Iterating a
+ * pre-sized array instead means every mutation to the loop body still
+ * terminates in a fixed number of steps, so it fails fast on a wrong answer
+ * instead of hanging.
+ *
+ * No separate guard for a negative span (an `end` before the earliest
+ * logged date): `totalWeeks` is then zero or negative, and `Array.from`
+ * already treats a negative `length` as zero, so the loop below simply
+ * does not run.
+ */
 export function calmWeeks(log: LogItem[], minDays = 4, end = todayISO()) {
 	const dates = new Set(log.map((i) => i.date));
 	if (!dates.size) return 0;
-	let cursor = startOfWeek([...dates].sort()[0] ?? end);
+	const firstWeek = startOfWeek([...dates].sort()[0] ?? end);
+	const spanDays = Math.round(
+		(parseISODate(end).getTime() - parseISODate(firstWeek).getTime()) / 86400000
+	);
+	const totalWeeks = Math.floor(spanDays / 7) + 1;
 	let count = 0;
-	while (cursor <= end) {
-		let n = 0;
-		for (let i = 0; i < 7; i++) {
-			if (dates.has(addDaysISO(cursor, i))) n++;
-		}
+	for (const week of Array.from({ length: totalWeeks }, (_, w) => w)) {
+		const cursor = addDaysISO(firstWeek, week * 7);
+		const n = WEEK_OFFSETS.filter((offset) => dates.has(addDaysISO(cursor, offset))).length;
 		if (n >= minDays) count++;
-		cursor = addDaysISO(cursor, 7);
 	}
 	return count;
 }

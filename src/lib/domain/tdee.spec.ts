@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { emptyProfile } from './profile';
 import { SEED_FOOD_BY_ID, scaleFood } from './foods';
 import {
@@ -8,6 +8,7 @@ import {
 	estimatedTdee,
 	goalDelta,
 	latestWeight,
+	linearSlope,
 	loggedDatesSet,
 	microTargets,
 	mifflinStJeor,
@@ -16,7 +17,7 @@ import {
 } from './tdee';
 import type { LogItem, Meal, Profile, WeightEntry } from './types';
 import { ZERO_MICROS } from './types';
-import { addDaysISO, uid } from './utils';
+import { addDaysISO, todayISO, uid } from './utils';
 
 const END = '2026-06-30';
 
@@ -140,6 +141,57 @@ describe('latestWeight', () => {
 
 	it('falls back when there are no readings', () => {
 		expect(latestWeight([], 66)).toBe(66);
+	});
+
+	it('sorts before picking the latest, when the array-last entry is not the chronological last', () => {
+		// The array's last element is the earliest reading; skipping the sort
+		// (or a comparator that leaves order unspecified) would answer with
+		// that one instead of the one actually logged most recently.
+		expect(
+			latestWeight([
+				{ id: 'a', date: '2026-03-01', kg: 60 },
+				{ id: 'b', date: '2026-01-01', kg: 75 }
+			])
+		).toBe(60);
+	});
+});
+
+describe('linearSlope', () => {
+	// linearSlope is only ever called through weightTrend with at least four
+	// points, so it is exported here to pin its own edge cases directly.
+
+	it('is zero with fewer than two points', () => {
+		expect(linearSlope([])).toBe(0);
+		expect(linearSlope([{ x: 0, y: 5 }])).toBe(0);
+	});
+
+	it('fits the exact line through two points', () => {
+		// A rising line of slope 2: y = 2x.
+		expect(
+			linearSlope([
+				{ x: 0, y: 0 },
+				{ x: 2, y: 4 }
+			])
+		).toBe(2);
+	});
+
+	it('reads a falling trend as a negative slope, not a positive one', () => {
+		// A losing streak must read as negative kg/day, never as gaining.
+		const points = [
+			{ x: 0, y: 10 },
+			{ x: 1, y: 8 },
+			{ x: 2, y: 6 }
+		];
+		expect(linearSlope(points)).toBe(-2);
+	});
+
+	it('fits a rising trend across more than two points', () => {
+		const points = [
+			{ x: 0, y: 0 },
+			{ x: 1, y: 2 },
+			{ x: 2, y: 4 }
+		];
+		expect(linearSlope(points)).toBe(2);
 	});
 });
 
@@ -394,6 +446,28 @@ describe('computeTargets', () => {
 		expect(computeTargets(profileWith()).source).toBe('formula');
 	});
 
+	it('reports the adaptive source once there is enough history', () => {
+		// computeTargets always calls adaptiveTdee against the real "today", so
+		// the clock is pinned rather than read once here and again inside the
+		// code under test — otherwise a midnight tick between the two reads
+		// could put the fixtures and the code one day apart.
+		vi.setSystemTime(new Date('2026-06-30T12:00:00'));
+		try {
+			const end = todayISO();
+			const log = Array.from({ length: 14 }, (_, i) => portions(addDaysISO(end, -(13 - i)), 5));
+			const weights = [15, 10, 5, 0].map((daysBefore) => ({
+				id: uid('w-'),
+				date: addDaysISO(end, -daysBefore),
+				kg: 80 - (15 - daysBefore) * 0.1
+			}));
+			const targets = computeTargets(profileWith({ log, weights }));
+			expect(targets.tdee.usingAdaptive).toBe(true);
+			expect(targets.source).toBe('adaptive');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it('asks for more protein on GLP-1', () => {
 		const kg = [{ id: 'w', date: END, kg: 80 }];
 		const plain = computeTargets(profileWith({ weights: kg }));
@@ -444,6 +518,19 @@ describe('calmWeeks', () => {
 			entry('2026-06-08', 'coffee', 1)
 		];
 		expect(calmWeeks(log, 4, '2026-06-14')).toBe(0);
+	});
+
+	it('counts exactly the weeks spanned when every week clears the minimum', () => {
+		// A minimum of zero means every week in range counts, so this pins the
+		// week count itself rather than which weeks clear a bar.
+		const log = [entry('2026-06-01', 'coffee', 1)];
+		expect(calmWeeks(log, 0, '2026-06-07')).toBe(1);
+		expect(calmWeeks(log, 0, '2026-06-14')).toBe(2);
+	});
+
+	it('counts zero weeks when end is before the earliest logged date', () => {
+		const log = [entry('2026-06-15', 'coffee', 1)];
+		expect(calmWeeks(log, 0, '2026-06-01')).toBe(0);
 	});
 
 	it('is zero for an empty log', () => {
