@@ -1,5 +1,7 @@
+import { execFile } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { CRASH_EXIT_CODE } from './run-outcome';
 
 /**
@@ -29,6 +31,28 @@ export interface GateFixture {
 	/** The exact status this failure mode must report, where the gate has more than one. */
 	expectedExitCode?: number;
 	apply: (root: string) => Promise<void>;
+}
+
+const run = promisify(execFile);
+
+/**
+ * Git inside a fixture workspace. Only `branch-reverting-merged-work` needs it:
+ * that gate reads history rather than files, so its defect is a shape two
+ * commits and a branch make, not a line in a file.
+ */
+async function git(root: string, args: string[]): Promise<void> {
+	await run(
+		'git',
+		['-c', 'user.name=Fit gate fixture', '-c', 'user.email=fixture@example.test', ...args],
+		{
+			cwd: root
+		}
+	);
+}
+
+async function commit(root: string, message: string): Promise<void> {
+	await git(root, ['add', '-A']);
+	await git(root, ['commit', '-m', message]);
 }
 
 async function write(root: string, relativePath: string, content: string): Promise<void> {
@@ -250,6 +274,34 @@ export const fixtures: GateFixture[] = [
 		description: 'A declared CI job omitted from the hosted workflow.',
 		apply: (root) =>
 			edit(root, '.github/workflows/ci.yml', '            job: mutation-security\n', '')
+	},
+	{
+		// #230's shape, in three commits. A branch cut before another pull request
+		// merged carries that pull request's files at their older content; the
+		// rebase leaves no conflict, so the revert reads as a deliberate deletion
+		// and every other gate passes it. Nothing here is a bad *file* -- the
+		// defect only exists relative to main, which is why this fixture builds a
+		// history instead of writing one.
+		name: 'branch-reverting-merged-work',
+		gate: 'check:stale-revert',
+		failureIncludes: 'restores the copy main had before',
+		description: 'A branch carrying an older copy of a file main has since changed.',
+		apply: async (root) => {
+			const target = 'scripts/quality/fixture-origin.ts';
+			const older = 'export const origin = "https://example.test";\nexport const port = 3000;\n';
+			const newer =
+				'export const origin = requiredEnvironment("FIT_PUBLIC_ORIGIN");\nexport const port = 3000;\n';
+			await git(root, ['checkout', '-B', 'main']);
+			await write(root, target, older);
+			await commit(root, 'fixture: the file as main had it');
+			await write(root, target, newer);
+			await commit(root, 'fixture: main makes the origin required');
+			await git(root, ['checkout', '-b', 'stale-copy']);
+			// The branch's own work, and beside it the copy it never meant to touch.
+			await write(root, 'scripts/quality/fixture-label.ts', 'export const label = "serving";\n');
+			await write(root, target, older);
+			await commit(root, 'fixture: unrelated work, carrying a stale copy');
+		}
 	},
 	{
 		// The queue's whole point is that the gates run on `main` plus the queued

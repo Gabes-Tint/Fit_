@@ -61,7 +61,7 @@ export const revertWindowCommits = 40;
  * `);` and blank lines recur everywhere, so a file that shares only those with
  * an older copy shares nothing.
  */
-export const significantLineLength = 4;
+const significantLineLength = 4;
 
 /** Blob contents of one path at the merge base and at the branch tip. */
 export interface FileVersions {
@@ -232,7 +232,7 @@ export async function scanForStaleReverts(
  * `git log --first-parent --name-only --format=%x00%H%x00%s` output: each commit
  * is a NUL, its hash, a NUL, its subject, then the paths it changed, one per
  * line. A NUL delimiter is used because a subject can hold anything a line can.
- * A commit with no listed paths -- a true merge, which `--name-only` summarises
+ * A commit with no listed paths -- a true merge, which `--name-only` lists
  * as nothing -- yields an empty path list and matches no file.
  */
 export function parseWindowLog(log: string): WindowCommit[] {
