@@ -116,9 +116,10 @@ export type Food = {
 	 */
 	unit?: { label: string; grams: number } | undefined;
 	/**
-	 * The serving choices the catalog named for this food, carried but not yet
-	 * acted on — a later slice does the arithmetic that turns a choice plus a
-	 * multiplier into a weight. Absent for a bundled food, which never has one.
+	 * The serving choices the catalog named for this food — the list a person
+	 * picks from, which `foodAtPortion` then re-bases this food onto. Absent for
+	 * a bundled food, which never has one, and which has no `per100g` to
+	 * re-base from either.
 	 */
 	servingOptions?: readonly { label: string; grams: number }[] | undefined;
 	kcal: number;
