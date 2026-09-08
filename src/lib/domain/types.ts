@@ -115,6 +115,12 @@ export type Food = {
 	 * could only weigh or measure by volume, milk included.
 	 */
 	unit?: { label: string; grams: number } | undefined;
+	/**
+	 * The serving choices the catalog named for this food, carried but not yet
+	 * acted on — a later slice does the arithmetic that turns a choice plus a
+	 * multiplier into a weight. Absent for a bundled food, which never has one.
+	 */
+	servingOptions?: readonly { label: string; grams: number }[] | undefined;
 	kcal: number;
 	protein: number;
 	carbs: number;
