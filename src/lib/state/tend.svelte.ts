@@ -8,7 +8,7 @@ import {
 	type BumpField
 } from '$lib/domain/exercises';
 import { toggleRoutineOn, withoutRoutineFrom } from '$lib/domain/planned-days';
-import { SEED_FOOD_BY_ID, scaleFood } from '$lib/domain/foods';
+import { rescaleLogItem } from '$lib/domain/log-entry';
 import { emptyProfile } from '$lib/domain/profile';
 import type {
 	Injection,
@@ -32,7 +32,7 @@ import {
 	storedDocument,
 	type LoadRefusal
 } from '$lib/domain/state-document';
-import { round1, todayISO, uid } from '$lib/domain/utils';
+import { todayISO, uid } from '$lib/domain/utils';
 import { currentExercise, workoutFromRoutine } from '$lib/domain/workout';
 import { buildWeekPlan, mealPool } from '$lib/domain/week-plan';
 
@@ -57,25 +57,6 @@ export const REFUSED_STORAGE_KEY = 'tend.v1.refused';
 
 // A held stepper shares one save; a tab closed a moment later still makes it.
 const PERSIST_WINDOW_MS = 200;
-
-function rescale(item: LogItem, servings: number): LogItem {
-	const source = item.foodId ? SEED_FOOD_BY_ID[item.foodId] : undefined;
-	if (!source) {
-		const ratio = item.servings === 0 ? 1 : servings / item.servings;
-		return {
-			...item,
-			servings,
-			kcal: Math.round(item.kcal * ratio),
-			protein: round1(item.protein * ratio),
-			carbs: round1(item.carbs * ratio),
-			fat: round1(item.fat * ratio),
-			micros: Object.fromEntries(
-				Object.entries(item.micros).map(([k, v]) => [k, round1(v * ratio)])
-			) as LogItem['micros']
-		};
-	}
-	return { ...item, servings, ...scaleFood(source, servings) };
-}
 
 /**
  * The whole application state, as a rune-backed singleton. `hydrate()` is
@@ -310,7 +291,7 @@ export class TendStore {
 			const current: LogItem = $state.snapshot(item);
 			// Rescale from the current entry: patching first would make the ratio 1 and a custom entry would never move.
 			if (patch.servings != null && patch.servings !== current.servings) {
-				return { ...rescale(current, patch.servings), ...patch };
+				return { ...rescaleLogItem(current, patch.servings), ...patch };
 			}
 			return { ...current, ...patch };
 		});
