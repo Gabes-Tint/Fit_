@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { installFile } from './deploy';
 import { hostUser } from '../security/shared';
 import { addressSource } from '../../src/lib/server/client-address';
@@ -15,7 +15,7 @@ import {
 	APP_PORT,
 	CURRENT_LINK,
 	ENV_FILE,
-	PUBLIC_ORIGIN,
+	publicOrigin,
 	REMOTE_NODE,
 	SERVICE_USER,
 	STATE_DIRECTORY,
@@ -38,6 +38,7 @@ import { standsInForProxy } from './smoke';
  */
 
 const DEPLOY_HOST_VARIABLE = 'FIT_DEPLOY_HOST';
+const PUBLIC_ORIGIN_VARIABLE = 'FIT_PUBLIC_ORIGIN';
 
 /** The highest port a process needs `CAP_NET_BIND_SERVICE` to bind. */
 const LAST_PRIVILEGED_PORT = 1023;
@@ -102,9 +103,43 @@ describe('the deployment target', () => {
 	});
 });
 
+describe('the public origin', () => {
+	beforeEach(() => {
+		delete process.env[PUBLIC_ORIGIN_VARIABLE];
+	});
+
+	afterEach(() => {
+		delete process.env[PUBLIC_ORIGIN_VARIABLE];
+	});
+
+	it('defaults to production when unset', () => {
+		expect(publicOrigin()).toBe('https://fit.psilva.org');
+	});
+
+	it('comes from the environment when set', () => {
+		process.env[PUBLIC_ORIGIN_VARIABLE] = 'https://qa.example.com';
+		expect(publicOrigin()).toBe('https://qa.example.com');
+	});
+
+	it('strips a single trailing slash', () => {
+		process.env[PUBLIC_ORIGIN_VARIABLE] = 'https://qa.example.com/';
+		expect(publicOrigin()).toBe('https://qa.example.com');
+	});
+
+	it('rejects a value that is not an absolute https origin', () => {
+		process.env[PUBLIC_ORIGIN_VARIABLE] = 'qa.example.com';
+		expect(() => publicOrigin()).toThrow(PUBLIC_ORIGIN_VARIABLE);
+	});
+
+	it('rejects a value carrying a path', () => {
+		process.env[PUBLIC_ORIGIN_VARIABLE] = 'https://qa.example.com/app';
+		expect(() => publicOrigin()).toThrow(PUBLIC_ORIGIN_VARIABLE);
+	});
+});
+
 describe('the environment file the deploy installs', () => {
 	it('declares the origin the app answers under', () => {
-		expect(configuredOrigins(environmentTemplate())).toEqual([PUBLIC_ORIGIN]);
+		expect(configuredOrigins(environmentTemplate())).toEqual([publicOrigin()]);
 	});
 
 	it('keys the sign-in throttle on the visitor Cloudflare names', () => {
@@ -176,7 +211,7 @@ describe('the smoke check\u2019s client-address header', () => {
 	it('is left to Cloudflare on the public origin', () => {
 		// Cloudflare answers 403 to a request that already carries
 		// `CF-Connecting-IP`, so sending one turns every check into a proxy error.
-		expect(standsInForProxy(PUBLIC_ORIGIN)).toBe(false);
+		expect(standsInForProxy(publicOrigin())).toBe(false);
 	});
 
 	it('is supplied when the check reaches the origin directly', () => {

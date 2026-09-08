@@ -15,8 +15,11 @@ import { capture, projectRoot } from '../security/shared';
 /** Names the machine to deploy to. No default: guessing a target is worse than stopping. */
 const DEPLOY_HOST_VARIABLE = 'FIT_DEPLOY_HOST';
 
-/** The public origin the app answers under, and the only origin it accepts writes from. */
-export const PUBLIC_ORIGIN = 'https://fit.psilva.org';
+/** Names the public origin the app answers under. Defaults to production, unlike the host. */
+const PUBLIC_ORIGIN_VARIABLE = 'FIT_PUBLIC_ORIGIN';
+
+/** Production, used whenever `FIT_PUBLIC_ORIGIN` is unset. */
+const DEFAULT_PUBLIC_ORIGIN = 'https://fit.psilva.org';
 
 export const SERVICE_NAME = 'fit';
 export const SERVICE_USER = 'fit';
@@ -54,6 +57,26 @@ export function deployHost(): string {
 		);
 	}
 	return host.trim();
+}
+
+/**
+ * The public origin the app answers under, and the only origin it accepts
+ * writes from.
+ *
+ * Unlike `deployHost()` this has a default: an absent value means production,
+ * which is the common case, and is safe because deploying somewhere else
+ * already requires setting `FIT_DEPLOY_HOST` deliberately. A wrong value here
+ * silently breaks sign-in via the origin policy, so a malformed one throws
+ * rather than being taken at face value.
+ */
+export function publicOrigin(): string {
+	const raw = process.env[PUBLIC_ORIGIN_VARIABLE];
+	if (raw === undefined || raw.trim() === '') return DEFAULT_PUBLIC_ORIGIN;
+	const value = raw.trim();
+	if (!/^https:\/\/[^/]+$/.test(value.replace(/\/$/, ''))) {
+		throw new Error(`${PUBLIC_ORIGIN_VARIABLE} must be an absolute https:// origin, got ${raw}`);
+	}
+	return value.replace(/\/$/, '');
 }
 
 /** The Node version both ends run, read from the one file that pins it. */

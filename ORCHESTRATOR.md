@@ -346,6 +346,10 @@ The host is Gabriel's VM. It is not written down in this repository, in an issue
 anything the deploy installs on the machine, and the script refuses to run without it, so
 the only place it lives is the shell that runs the deploy.
 
+`FIT_PUBLIC_ORIGIN` names the origin `smoke.ts` checks against and the deploy logs. It
+defaults to production, `https://fit.psilva.org`, so it is only set deliberately, alongside
+`FIT_DEPLOY_HOST`, when deploying to another environment.
+
 Cloudflare terminates TLS and forwards plain HTTP to the origin's port 80. There is no
 proxy on the VM and no certificate on it: the unit binds 80 itself, as the unprivileged
 `fit` user, with `AmbientCapabilities=CAP_NET_BIND_SERVICE` and nothing else in its

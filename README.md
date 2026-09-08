@@ -97,6 +97,9 @@ in `/opt/fit/releases/<commit>/`, switches `/opt/fit/current`, restarts `fit.ser
 runs the smoke check. The tree must be clean: a release is named for its commit.
 
 The host is deliberately not in this repository. Without `FIT_DEPLOY_HOST` the script stops.
+`FIT_PUBLIC_ORIGIN` names the origin the deployed app answers under and defaults to
+production, `https://fit.psilva.org`, so it only needs setting when deploying somewhere
+else, such as a QA environment.
 
 On the machine, all of it installed by the deploy:
 
