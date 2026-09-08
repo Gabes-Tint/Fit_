@@ -86,11 +86,12 @@ describe('paintingStream / stopPainting', () => {
 });
 
 describe('routine', () => {
-	it('builds a routine with a name and no exercises', () => {
+	it('builds a routine with a name, no exercises, and nothing deleted', () => {
 		expect(routine('push', 'Chest & Shoulders')).toEqual({
 			id: 'push',
 			name: 'Chest & Shoulders',
-			exercises: []
+			exercises: [],
+			deletedAt: null
 		});
 	});
 });
