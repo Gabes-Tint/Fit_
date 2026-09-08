@@ -316,6 +316,18 @@ it needs the 1.4 GB catalog, which is neither in the repository nor in CI, and i
 is a judgement about food rather than a threshold. Run it either side of a ranking change
 and put the table in the pull request.
 
+Precision is a judgement; page fill is not. Alongside the ranked queries the fixture holds a
+short `pageFill` block of broad queries — "ice cream", "salsa", "pasta", "peanut butter",
+"milk" — run at 50, the largest page `/api/foods` will serve, and the run **fails** when one
+of them comes back with fewer distinct foods than the catalog actually holds for it. That is
+the failure `DEDUP_DEPTH` in `ranking.ts` exists to prevent (issue #106, where "pasta"
+answered with a single food), and precision@3 is blind to it: measured at depths 2000, 1000,
+500 and 200, P@3 stayed at 0.670 while "ice cream" fell to one row (#275).
+
+What each query is owed is counted out of the catalog on every run rather than written into
+the fixture, so a rebuilt catalog moves the expectation with it. The fixture pins no row
+counts and nothing to update when the ETL runs again.
+
 ### Performance instruments
 
 `perf:measure` runs the four instruments of issue #130 — client bundle, phone-profile paint,

@@ -42,10 +42,24 @@ export interface SearchFixtureQuery {
 	forbidden: string[];
 }
 
+/**
+ * The page-fill block: broad queries that must come back with a full page of
+ * distinct foods. They carry no acceptable or forbidden names, because what
+ * each one is owed is counted out of the catalog on the run rather than
+ * written down here.
+ */
+export interface SearchFixturePageFill {
+	/** The largest page `/api/foods` serves — `MAX_LIMIT` in `foods.ts`. */
+	limit: number;
+	note: string;
+	queries: { query: string; means: string }[];
+}
+
 /** `data/eval/search-queries.json` — read by `search-eval.ts` and `server-latency.ts`. */
 export interface SearchFixture {
 	catalog: string;
 	limit: number;
+	pageFill: SearchFixturePageFill;
 	note: string;
 	queries: SearchFixtureQuery[];
 }

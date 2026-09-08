@@ -1,6 +1,32 @@
 {
 	"catalog": "fit-food-core.sqlite, the file production opens by default (data/db/fit-food-core.sqlite); no Open Food Facts or CNF rows",
 	"limit": 10,
+	"pageFill": {
+		"limit": 50,
+		"note": "the largest page /api/foods will serve (MAX_LIMIT in src/lib/server/catalog/foods.ts), because the duplicate-name collapse empties the tail of a page rather than its first rows. These queries carry no acceptable or forbidden names: what each is owed is read out of the catalog on the run, so a rebuilt catalog moves the expectation with it instead of failing the fixture.",
+		"queries": [
+			{
+				"query": "ice cream",
+				"means": "the deepest collapse in the catalog: several hundred branded rows are all named ICE CREAM, and the generic ice cream family sits below them"
+			},
+			{
+				"query": "salsa",
+				"means": "a jarred staple whose branded rows share a handful of names, and the second-deepest collapse measured"
+			},
+			{
+				"query": "pasta",
+				"means": "the query #106 was reported on: it answered with one food when the collapse ran after the page was cut"
+			},
+			{
+				"query": "peanut butter",
+				"means": "724 rows carry its top name, the deepest need DEDUP_DEPTH was originally measured against"
+			},
+			{
+				"query": "milk",
+				"means": "the collapse's own example: five dairies' rows all named MILK must read as one food and leave room for the rest"
+			}
+		]
+	},
 	"note": "acceptable and forbidden names are what a person typing the query means, not what the ranking answers today. Every name is checked to exist in the catalog before a run is scored, so a typo fails the run rather than silently lowering the score.",
 	"queries": [
 		{
