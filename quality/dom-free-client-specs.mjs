@@ -40,5 +40,6 @@ export const DOM_FREE_CLIENT_SPECS = [
 	'src/lib/ui/barcode-reader.svelte.spec.ts',
 	'src/lib/ui/cn.svelte.spec.ts',
 	'src/lib/ui/dictation.svelte.spec.ts',
-	'src/lib/ui/download.svelte.spec.ts'
+	'src/lib/ui/download.svelte.spec.ts',
+	'src/lib/ui/toast.svelte.spec.ts'
 ];

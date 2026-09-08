@@ -6,7 +6,7 @@ import { REFUSED_STORAGE_KEY, STORAGE_KEY, TendStore } from './tend.svelte';
 import { SYNC_STORAGE_KEY, SyncStore, type SyncRecord } from './sync.svelte';
 
 const announced = vi.hoisted(() => [] as string[]);
-vi.mock('svelte-sonner', () => ({
+vi.mock('$lib/ui/toast.svelte', () => ({
 	toast: (message: string) => {
 		announced.push(message);
 	}

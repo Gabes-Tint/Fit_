@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { toast } from 'svelte-sonner';
 	import { exportCsv, exportJson, mfpRowsToLogItems, parseMfpCsv } from '$lib/domain/export-data';
 	import { computeTargets } from '$lib/domain/tdee';
 	import type { Injection, LoadUnit, UnitSystem } from '$lib/domain/types';
@@ -17,6 +16,7 @@
 	import Switch from '$lib/ui/Switch.svelte';
 	import Textarea from '$lib/ui/Textarea.svelte';
 	import ToggleButton from '$lib/ui/ToggleButton.svelte';
+	import { toast } from '$lib/ui/toast.svelte';
 
 	// A stepper, not a typed field: typing into a bound-and-clamped number input
 	// fights the person typing, since every keystroke re-clamps mid-entry.

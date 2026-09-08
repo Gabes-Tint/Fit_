@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { toast } from 'svelte-sonner';
 	import { signOut, signOutEverywhere } from '$lib/auth/api';
 	import { failureWording } from '$lib/auth/wording';
 	import { session } from '$lib/state/session.svelte';
 	import { sync } from '$lib/state/sync.svelte';
 	import SectionLabel from '$lib/components/SectionLabel.svelte';
 	import Button from '$lib/ui/Button.svelte';
+	import { toast } from '$lib/ui/toast.svelte';
 
 	/**
 	 * The account, at the foot of the drawer.

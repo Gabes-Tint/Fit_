@@ -1,5 +1,4 @@
 import { resolve } from '$app/paths';
-import { toast } from 'svelte-sonner';
 import {
 	documentIsFromTheFuture,
 	OUTDATED_MESSAGE,
@@ -8,6 +7,7 @@ import {
 	storedDocument,
 	type StoredDocument
 } from '$lib/domain/state-document';
+import { toast } from '$lib/ui/toast.svelte';
 import { SyncRetry } from './sync-retry';
 import { STORAGE_KEY, tend } from './tend.svelte';
 import type { TendStore } from './tend.svelte';
