@@ -306,6 +306,42 @@ test.describe('deleting a routine', () => {
 		// The past day (Monday) still names the deleted routine, for history's sake.
 		await expect(page.getByRole('link', { name: /^Mon.*Full body/ })).toBeVisible();
 	});
+
+	// Deleting the only routine drops the rotation to zero, which is also the
+	// condition the planner uses to show its "nothing to plan yet" shelf. That
+	// gate has to read the unfiltered routine list, or the past days the
+	// deletion was careful to leave alone become unreachable behind the shelf.
+	test('leaves the week planner reachable, with the past day still on it, once the only routine is gone', async ({
+		page
+	}) => {
+		await page.getByRole('link', { name: /Full body \d+ exercises/ }).click();
+		await expect(page.getByRole('button', { name: 'Start this session' })).toBeVisible();
+		await page.getByRole('link', { name: 'Edit' }).click();
+		await expect(page.getByRole('button', { name: 'Add from library' })).toBeVisible();
+		await page.getByRole('button', { name: 'Delete routine' }).click();
+		await page.getByRole('button', { name: 'Delete', exact: true }).click();
+		await expect(page.getByRole('heading', { name: 'Exercise', level: 1 })).toBeVisible();
+
+		await page.getByRole('link', { name: 'Plan', exact: true }).click();
+		await expect(page.getByText('Nothing to plan yet')).toHaveCount(0);
+		await expect(page.getByRole('button', { name: /^Mon .*Full body/ })).toBeVisible();
+	});
+
+	test('dismissing with Keep leaves the routine alone', async ({ page }) => {
+		await page.getByRole('link', { name: /Full body \d+ exercises/ }).click();
+		await expect(page.getByRole('button', { name: 'Start this session' })).toBeVisible();
+		await page.getByRole('link', { name: 'Edit' }).click();
+		await expect(page.getByRole('button', { name: 'Add from library' })).toBeVisible();
+		await page.getByRole('button', { name: 'Delete routine' }).click();
+		await expect(page.getByRole('dialog')).toBeVisible();
+
+		await page.getByRole('button', { name: 'Keep' }).click();
+		await expect(page.getByRole('dialog')).toBeHidden();
+
+		await page.getByRole('link', { name: 'Back to Exercise' }).click();
+		await expect(page.getByRole('button', { name: 'Start Full body' })).toBeVisible();
+		await expect(page.getByText('1 in rotation')).toBeVisible();
+	});
 });
 
 test.describe('deleting a routine nothing is planned on', () => {

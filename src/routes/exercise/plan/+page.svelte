@@ -79,7 +79,7 @@
 		{/snippet}
 	</ScreenHeader>
 
-	{#if routines.length === 0}
+	{#if tend.state.routines.length === 0}
 		<EmptyState title="Nothing to plan yet">
 			A day holds the routines you mean to train that day. Add a routine first, then the week has
 			something to hold.

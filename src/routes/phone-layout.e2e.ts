@@ -207,6 +207,26 @@ test.describe('at 360px', () => {
 		await expectFitsViewport(page, sheet);
 	});
 
+	test('the delete-routine confirm sheet stays inside the viewport', async ({ page, baseURL }) => {
+		await signInThroughApi(page, baseURL ?? '');
+		await page.goto('/');
+		await openSampleJournal(page);
+		await page.getByRole('button', { name: 'Open menu' }).click();
+		await page.getByRole('link', { name: 'Exercise' }).click();
+		await page.getByRole('button', { name: /Full body/ }).click();
+		await expect(page.getByRole('heading', { name: 'Exercise', level: 1 })).toBeVisible();
+		await page.getByRole('link', { name: /Full body \d+ exercises/ }).click();
+		await expect(page.getByRole('button', { name: 'Start this session' })).toBeVisible();
+		await page.getByRole('link', { name: 'Edit' }).click();
+		await expect(page.getByRole('button', { name: 'Add from library' })).toBeVisible();
+
+		await atNarrowPhone(page);
+		await page.getByRole('button', { name: 'Delete routine' }).click();
+		const sheet = page.getByRole('dialog');
+		await expect(sheet).toBeVisible();
+		await expectFitsViewport(page, sheet);
+	});
+
 	test('a unit-toggled log row stays inside the viewport in both views (#178)', async ({
 		page,
 		baseURL
