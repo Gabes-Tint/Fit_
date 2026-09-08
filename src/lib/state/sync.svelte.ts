@@ -604,10 +604,7 @@ export class SyncStore {
 		// write, come back as a version it never heard about. What is on the
 		// device contains that document plus everything recorded after it left,
 		// so adopting there would throw the newer half away (#247).
-		if (
-			remote.version > this.version &&
-			!isOwnWrite(outstanding, { version: remote.version, body })
-		) {
+		if (remote.version > this.version && !isOwnWrite(outstanding, remote.version, body)) {
 			this.adopt({ version: remote.version, body, hadOwnWork, householdId });
 			return;
 		}

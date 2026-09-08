@@ -18,12 +18,12 @@ describe('naming a document', () => {
 	 * would say nothing about two documents that are not the same.
 	 */
 	it('is the same name every time, for these documents', () => {
-		expect(fingerprint({})).toBe('2.nf0rvp');
+		expect(fingerprint({})).toBe('2.1415952421');
 		expect(fingerprint({ onboarded: true, profiles: [{ name: 'Alex', heightCm: 168 }] })).toBe(
-			'1q.7o7np6'
+			'62.463931322'
 		);
 		expect(fingerprint({ onboarded: true, profiles: [{ name: 'Alex', heightCm: 175.26 }] })).toBe(
-			'1t.1j2j0x8'
+			'65.3329886572'
 		);
 	});
 
@@ -68,11 +68,11 @@ describe('recognizing this device’s own unanswered write', () => {
 	const outstanding = { version: 4, fingerprint: SENT_FINGERPRINT };
 
 	it('is the server holding what that write carried, one version on', () => {
-		expect(isOwnWrite(outstanding, { version: 5, body: roundTripped(SENT) })).toBe(true);
+		expect(isOwnWrite(outstanding, 5, roundTripped(SENT))).toBe(true);
 	});
 
 	it('is not so when this device has no unanswered write', () => {
-		expect(isOwnWrite(null, { version: 5, body: roundTripped(SENT) })).toBe(false);
+		expect(isOwnWrite(null, 5, roundTripped(SENT))).toBe(false);
 	});
 
 	/**
@@ -81,9 +81,9 @@ describe('recognizing this device’s own unanswered write', () => {
 	 * document this device may assume is its own.
 	 */
 	it('is not so at any version but the one that write would have created', () => {
-		expect(isOwnWrite(outstanding, { version: 4, body: roundTripped(SENT) })).toBe(false);
-		expect(isOwnWrite(outstanding, { version: 6, body: roundTripped(SENT) })).toBe(false);
-		expect(isOwnWrite(outstanding, { version: 3, body: roundTripped(SENT) })).toBe(false);
+		expect(isOwnWrite(outstanding, 4, roundTripped(SENT))).toBe(false);
+		expect(isOwnWrite(outstanding, 6, roundTripped(SENT))).toBe(false);
+		expect(isOwnWrite(outstanding, 3, roundTripped(SENT))).toBe(false);
 	});
 
 	/**
@@ -93,6 +93,6 @@ describe('recognizing this device’s own unanswered write', () => {
 	 */
 	it('is not so when the version is right but another device wrote it', () => {
 		const theirs = { onboarded: true, profiles: [{ name: 'Jordan', heightCm: 168 }] };
-		expect(isOwnWrite(outstanding, { version: 5, body: theirs })).toBe(false);
+		expect(isOwnWrite(outstanding, 5, theirs)).toBe(false);
 	});
 });

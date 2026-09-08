@@ -63,14 +63,14 @@ function hash(text: string): number {
  * A short, stable name for a document's contents.
  *
  * Over `JSON.stringify`, which is what actually traveled: the server stores
- * the text it was sent and hands back the same object graph, and
- * `JSON.parse` preserves key order, so a document that made the round trip
- * serializes to the same text it was sent as. The length goes in beside the
- * hash because it is free and independent of it.
+ * the text it was sent and hands back the same object graph, and `JSON.parse`
+ * preserves key order, so a document that made the round trip serializes to the
+ * same text it was sent as. The length goes in beside the hash because it is
+ * free and independent of it.
  */
 export function fingerprint(body: object): string {
 	const text = JSON.stringify(body);
-	return `${text.length.toString(36)}.${hash(text).toString(36)}`;
+	return `${text.length}.${hash(text)}`;
 }
 
 /**
@@ -92,9 +92,10 @@ export function outstandingWriteIn(value: unknown): OutstandingWrite | null {
  */
 export function isOwnWrite(
 	outstanding: OutstandingWrite | null,
-	remote: { version: number; body: object }
+	version: number,
+	body: object
 ): boolean {
 	if (outstanding === null) return false;
-	if (remote.version !== outstanding.version + 1) return false;
-	return fingerprint(remote.body) === outstanding.fingerprint;
+	if (version !== outstanding.version + 1) return false;
+	return fingerprint(body) === outstanding.fingerprint;
 }
