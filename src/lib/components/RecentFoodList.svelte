@@ -2,6 +2,7 @@
 	import { toast } from '$lib/ui/toast.svelte';
 	import { relogItem } from '$lib/domain/log-entry';
 	import { mostFrequentFoods, mostRecentFoods, type RecentFood } from '$lib/domain/recent-foods';
+	import { describePortion } from '$lib/domain/serving-display';
 	import type { Meal } from '$lib/domain/types';
 	import { todayISO } from '$lib/domain/utils';
 	import { tend } from '$lib/state/tend.svelte';
@@ -61,7 +62,8 @@
 	{:else}
 		<ul class="flex flex-col gap-1">
 			{#each foods as food (food.key)}
-				{@const summary = `${food.source.brand ? `${food.source.brand} · ` : ''}${food.source.servingLabel} · ${food.kcalPerServing} kcal`}
+				{@const serving = describePortion(food.source, 1, tend.state.units)}
+				{@const summary = `${food.source.brand ? `${food.source.brand} · ` : ''}${serving} · ${food.kcalPerServing} kcal`}
 				<li>
 					<button
 						type="button"
