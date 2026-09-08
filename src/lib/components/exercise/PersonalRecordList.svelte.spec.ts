@@ -25,11 +25,13 @@ function session(exercises: RoutineExercise[], ticked: boolean): Workout {
 afterEach(() => tend.setLoadUnit('kg'));
 
 describe('PersonalRecordList', () => {
-	it('reads the best set in whatever unit is set', async () => {
+	// A record is a mass, held in kilograms. Reading it in pounds converts it;
+	// printing "70 lb" beside a 70 kg squat would rewrite somebody's best lift.
+	it('converts the best set into whatever unit is set', async () => {
 		tend.setLoadUnit('lb');
 		await render(PersonalRecordList, { props: { workouts: [session([press, squat], true)] } });
-		await expect.element(page.getByText('70 lb × 5')).toBeInTheDocument();
-		await expect.element(page.getByText('45 lb × 8')).toBeInTheDocument();
+		await expect.element(page.getByText('154.3 lb × 5')).toBeInTheDocument();
+		await expect.element(page.getByText('99.2 lb × 8')).toBeInTheDocument();
 	});
 
 	it('names the best set of each movement and when it was lifted', async () => {

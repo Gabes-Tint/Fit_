@@ -8,7 +8,6 @@ import {
 	bumpField,
 	emptyRoutine,
 	exercisesFromLibrary,
-	formatLoad,
 	formCues,
 	libraryExercise,
 	libraryFor,
@@ -254,16 +253,5 @@ describe('stepping a field', () => {
 	it('does not move for a direction of neither up nor down', () => {
 		expect(bumpField('load', 40, 0)).toBe(40);
 		expect(bumpField('sets', 3, 0)).toBe(3);
-	});
-});
-
-describe('showing a load', () => {
-	it('reads bodyweight as an em dash rather than as nothing lifted', () => {
-		expect(formatLoad(0)).toBe('—');
-	});
-
-	it('shows a load as its own number', () => {
-		expect(formatLoad(42.5)).toBe('42.5');
-		expect(formatLoad(60)).toBe('60');
 	});
 });

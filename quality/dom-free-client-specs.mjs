@@ -20,6 +20,11 @@
  * what this one includes. A spec that is not listed stays in the browser
  * project — slow but correct — so a new file can never land in jsdom by
  * accident.
+ *
+ * `changed-client-surviving-mutant` in `scripts/quality/fixtures.ts` registers
+ * its planted spec here too, anchored on this array's closing bracket rather
+ * than on any particular entry, so this list can be sorted and appended to
+ * freely (see #231).
  */
 export const DOM_FREE_CLIENT_SPECS = [
 	'src/lib/auth/api.svelte.spec.ts',
@@ -28,6 +33,7 @@ export const DOM_FREE_CLIENT_SPECS = [
 	'src/lib/catalog/food-resolve.svelte.spec.ts',
 	'src/lib/catalog/food-search.svelte.spec.ts',
 	'src/lib/components/auth/auth-routes.svelte.spec.ts',
+	'src/lib/components/day-strip.svelte.spec.ts',
 	'src/lib/components/exercise/plan-options.svelte.spec.ts',
 	'src/lib/components/exercise/routine-tone.svelte.spec.ts',
 	'src/lib/photo/photo-log.svelte.spec.ts',
@@ -39,5 +45,6 @@ export const DOM_FREE_CLIENT_SPECS = [
 	'src/lib/ui/barcode-reader.svelte.spec.ts',
 	'src/lib/ui/cn.svelte.spec.ts',
 	'src/lib/ui/dictation.svelte.spec.ts',
-	'src/lib/ui/download.svelte.spec.ts'
+	'src/lib/ui/download.svelte.spec.ts',
+	'src/lib/ui/toast.svelte.spec.ts'
 ];

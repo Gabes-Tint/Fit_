@@ -1,6 +1,12 @@
 import { expect, type Page } from '@playwright/test';
 import { test } from '../../tests/preview-server';
-import { openEmptyJournal, signInThroughApi } from '../../tests/e2e-support';
+import {
+	EGG_ROW,
+	openEmptyJournal,
+	openLogSheet,
+	signInThroughApi,
+	stubFoodSearch
+} from '../../tests/e2e-support';
 
 /**
  * The units preference (PR #73) only ever changes how a stored weight is
@@ -18,6 +24,19 @@ async function switchUnits(page: Page, label: 'Metric' | 'Imperial') {
 	await expect(page.getByRole('heading', { name: 'You', level: 1 })).toBeVisible();
 	await page.getByRole('button', { name: label }).click();
 	await expect(page.getByRole('button', { name: label })).toHaveAttribute('aria-pressed', 'true');
+}
+
+async function searchTheCatalog(page: Page, query: string) {
+	await page.goto('/');
+	await openLogSheet(page);
+	await page.getByRole('button', { name: 'Search', exact: true }).click();
+	await page.getByLabel('Search foods, brands, barcodes').fill(query);
+}
+
+/** Leaves the log sheet, so the drawer under it can be opened again. */
+async function closeLogSheet(page: Page) {
+	await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click();
+	await expect(page.getByRole('dialog')).toBeHidden();
 }
 
 async function openProgress(page: Page) {
@@ -53,6 +72,27 @@ test.describe('the units preference, read on Progress and set on You', () => {
 		// Back to pounds: still exactly 160.0, not 160.1 — nothing stored ever
 		// changed, only the reading did.
 		await expect(page.getByText(/160\.0/)).toBeVisible();
+	});
+
+	/**
+	 * #74. The catalog's serving labels are free text from whatever source
+	 * supplied them, so a preference cannot rewrite one — what it changes is
+	 * the mass appended beside it. Driven through the real search box, because
+	 * the rule has to reach the render sites and not only the domain function.
+	 */
+	test('reads a search result’s serving in the person’s own system', async ({ page }) => {
+		await stubFoodSearch(page, [EGG_ROW]);
+
+		await switchUnits(page, 'Imperial');
+		await searchTheCatalog(page, 'egg');
+		// The source wrote "1 large", which names no mass at all; 50 g a serving
+		// is 1.8 oz, and the label stays so the portion is still a large egg.
+		await expect(page.getByText('1 large · 1.8 oz')).toBeVisible();
+
+		await closeLogSheet(page);
+		await switchUnits(page, 'Metric');
+		await searchTheCatalog(page, 'egg');
+		await expect(page.getByText('1 large · 50 g')).toBeVisible();
 	});
 
 	test('persists the units preference across a reload', async ({ page }) => {

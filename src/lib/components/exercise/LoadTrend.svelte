@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { loadTrend, trainedExercises, weekSpan } from '$lib/domain/training-progress';
 	import type { Workout } from '$lib/domain/types';
+	import { displayLoad } from '$lib/domain/units';
 	import { round1 } from '$lib/domain/utils';
 	import { tend } from '$lib/state/tend.svelte';
 	import ToggleButton from '$lib/ui/ToggleButton.svelte';
@@ -13,7 +14,18 @@
 
 	const names = $derived(trainedExercises(workouts));
 	const name = $derived(names.includes(picked) ? picked : (names[0] ?? ''));
-	const points = $derived(name === '' ? [] : loadTrend(workouts, name));
+	/**
+	 * The trend comes back in stored kilograms and is converted once, here, so the
+	 * bars, the labels, the caption and the screen-reader description are all the
+	 * same numbers — a chart whose caption disagreed with its bars would be worse
+	 * than no caption.
+	 */
+	const points = $derived(
+		(name === '' ? [] : loadTrend(workouts, name)).map((point) => ({
+			...point,
+			load: displayLoad(point.load, unit)
+		}))
+	);
 
 	const bars = $derived.by(() => {
 		const loads = points.map((p) => p.load);

@@ -339,12 +339,19 @@ already carrying `node_modules`, and `bun run worktree:done deploy-<slug>` remov
 the deploy is done. One command from a clean checkout deploys it:
 
 ```bash
-FIT_DEPLOY_HOST=user@host bun run deploy
+FIT_DEPLOY_HOST=user@host FIT_PUBLIC_ORIGIN=https://fit.psilva.org bun run deploy
 ```
 
 The host is Gabriel's VM. It is not written down in this repository, in an issue, or in
 anything the deploy installs on the machine, and the script refuses to run without it, so
 the only place it lives is the shell that runs the deploy.
+
+`FIT_PUBLIC_ORIGIN` names the origin `smoke.ts` checks against and the deploy logs, and is
+required alongside `FIT_DEPLOY_HOST`. It has no default: with one, a deploy to any other
+machine that forgot to set it would run its registration round trip against production and
+leave the account row behind, because the cleanup runs over SSH against `FIT_DEPLOY_HOST`.
+It configures nothing on the machine — `ORIGIN` in `/etc/fit/fit.env` does that, and the
+deploy writes that file only when it is absent.
 
 Cloudflare terminates TLS and forwards plain HTTP to the origin's port 80. There is no
 proxy on the VM and no certificate on it: the unit binds 80 itself, as the unprivileged
@@ -377,8 +384,11 @@ with a page this app built rather than with whatever else could be listening on 
 an anonymous session read is refused as `unauthenticated`, a throwaway account registers,
 signs out, signs back in and reads itself back, and `/opt/fit/current` points at the commit
 that was deployed. It writes `reports/deploy/smoke.json`, which is what the comment on the
-story being deployed is written from. It leaves the throwaway account behind — nothing
-deletes accounts yet — under a `smoke.` username. `--tunnel` on either command runs it
+story being deployed is written from. The throwaway account it registers, under a `smoke.`
+username, is taken back out again: the checks run wrapped in that removal — see
+`scripts/deploy/smoke-cleanup.ts` — so a check that fails part way through no longer skips
+it, and the run asserts the row was deleted rather than hoping it was. `--tunnel` on either
+command runs it
 through an SSH port forward to the origin instead of through Cloudflare, which is how a
 deploy is checked when the public name is the thing that is broken. Only that mode sends
 the client-address header: Cloudflare sets it itself and answers 403 to a request that

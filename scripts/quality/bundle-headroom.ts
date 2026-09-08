@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { run, captureStatus, readJsonFile } from '../security/shared';
 import { collectAssets, measure } from './bundle-assets';
+import { collectAlwaysLoadedAssets } from './bundle-closure';
 import type { Asset, Measurement } from './bundle-assets';
 import type { BundleBudgets } from './config-types';
 
@@ -32,14 +33,33 @@ export interface BudgetRow {
 	headroom: number;
 }
 
+/**
+ * One build's numbers. The always-loaded closure cannot be derived from a flat
+ * asset list — it needs the build's import graph, which `bundle-closure.ts`
+ * reads — so it travels alongside the measurement rather than inside it.
+ */
+export interface BundleReading {
+	measurement: Measurement;
+	alwaysLoadedJavaScriptBytes: number;
+}
+
 /** Pure: one row per metric, headroom negative when the budget is already blown. */
-export function buildBudgetTable(measurement: Measurement, budgets: BundleBudgets): BudgetRow[] {
+export function buildBudgetTable(
+	{ measurement, alwaysLoadedJavaScriptBytes }: BundleReading,
+	budgets: BundleBudgets
+): BudgetRow[] {
 	return [
 		{
 			metric: 'JS',
 			bytes: measurement.javascriptBytes,
 			budget: budgets.clientJavaScriptBytes,
 			headroom: budgets.clientJavaScriptBytes - measurement.javascriptBytes
+		},
+		{
+			metric: 'JS always loaded',
+			bytes: alwaysLoadedJavaScriptBytes,
+			budget: budgets.alwaysLoadedJavaScriptBytes,
+			headroom: budgets.alwaysLoadedJavaScriptBytes - alwaysLoadedJavaScriptBytes
 		},
 		{
 			metric: 'CSS',
@@ -137,26 +157,32 @@ export interface MetricDelta {
 	delta: number;
 }
 
-/** Pure: the same three metrics, before vs. after a ref. */
-export function metricDeltas(before: Measurement, after: Measurement): MetricDelta[] {
+/** Pure: the same four metrics, before vs. after a ref. */
+export function metricDeltas(before: BundleReading, after: BundleReading): MetricDelta[] {
 	return [
 		{
 			metric: 'JS',
-			before: before.javascriptBytes,
-			after: after.javascriptBytes,
-			delta: after.javascriptBytes - before.javascriptBytes
+			before: before.measurement.javascriptBytes,
+			after: after.measurement.javascriptBytes,
+			delta: after.measurement.javascriptBytes - before.measurement.javascriptBytes
+		},
+		{
+			metric: 'JS always loaded',
+			before: before.alwaysLoadedJavaScriptBytes,
+			after: after.alwaysLoadedJavaScriptBytes,
+			delta: after.alwaysLoadedJavaScriptBytes - before.alwaysLoadedJavaScriptBytes
 		},
 		{
 			metric: 'CSS',
-			before: before.cssBytes,
-			after: after.cssBytes,
-			delta: after.cssBytes - before.cssBytes
+			before: before.measurement.cssBytes,
+			after: after.measurement.cssBytes,
+			delta: after.measurement.cssBytes - before.measurement.cssBytes
 		},
 		{
 			metric: 'Largest asset',
-			before: before.largestAsset.bytes,
-			after: after.largestAsset.bytes,
-			delta: after.largestAsset.bytes - before.largestAsset.bytes
+			before: before.measurement.largestAsset.bytes,
+			after: after.measurement.largestAsset.bytes,
+			delta: after.measurement.largestAsset.bytes - before.measurement.largestAsset.bytes
 		}
 	];
 }
@@ -191,7 +217,8 @@ export function formatTopChunks(deltas: ChunkDelta[], top = 5): string {
 
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 const reportDirectory = path.join(projectRoot, 'reports', 'quality', 'bundle');
-const assetRootSegments = ['.svelte-kit', 'output', 'client', '_app', 'immutable'];
+const clientRootSegments = ['.svelte-kit', 'output', 'client'];
+const assetRootSegments = [...clientRootSegments, '_app', 'immutable'];
 
 async function readBudgets(root: string): Promise<BundleBudgets> {
 	return readJsonFile<BundleBudgets>(path.join(root, 'quality', 'bundle-budgets.json'));
@@ -206,12 +233,17 @@ async function readBudgets(root: string): Promise<BundleBudgets> {
  * can be matched against its counterpart in another build that lives at a
  * different path entirely (a scratch worktree for `--against`).
  */
-async function buildAndMeasure(root: string): Promise<{ measurement: Measurement }> {
+async function buildAndMeasure(root: string): Promise<BundleReading> {
 	const exitCode = await run('bun', ['run', 'build'], { cwd: root, allowFailure: true });
 	if (exitCode !== 0) throw new Error(`Production build failed in ${root} (exit ${exitCode}).`);
 	const assetRoot = path.join(root, ...assetRootSegments);
 	const assets = await collectAssets(assetRoot, assetRoot);
-	return { measurement: measure(assets) };
+	const clientRoot = path.join(root, ...clientRootSegments);
+	const alwaysLoaded = measure(await collectAlwaysLoadedAssets(clientRoot));
+	return {
+		measurement: measure(assets),
+		alwaysLoadedJavaScriptBytes: alwaysLoaded.javascriptBytes
+	};
 }
 
 async function hasNodeModules(root: string): Promise<boolean> {
@@ -249,6 +281,7 @@ async function removeRefWorktree(directory: string): Promise<void> {
 }
 
 interface Report {
+	alwaysLoadedJavaScriptBytes: number;
 	assets: Asset[];
 	budgets: BundleBudgets;
 	cssBytes: number;
@@ -257,10 +290,16 @@ interface Report {
 	violations: string[];
 }
 
-function violationsFor(measurement: Measurement, budgets: BundleBudgets): string[] {
+function violationsFor(
+	{ measurement, alwaysLoadedJavaScriptBytes }: BundleReading,
+	budgets: BundleBudgets
+): string[] {
 	return [
 		measurement.javascriptBytes > budgets.clientJavaScriptBytes
 			? `Client JavaScript is ${measurement.javascriptBytes} bytes; budget is ${budgets.clientJavaScriptBytes}.`
+			: undefined,
+		alwaysLoadedJavaScriptBytes > budgets.alwaysLoadedJavaScriptBytes
+			? `Always-loaded JavaScript is ${alwaysLoadedJavaScriptBytes} bytes; budget is ${budgets.alwaysLoadedJavaScriptBytes}.`
 			: undefined,
 		measurement.cssBytes > budgets.clientCssBytes
 			? `Client CSS is ${measurement.cssBytes} bytes; budget is ${budgets.clientCssBytes}.`
@@ -276,14 +315,16 @@ function violationsFor(measurement: Measurement, budgets: BundleBudgets): string
  * this command rewrites it from what was just measured, so a stale report
  * left over from an old run can never again be read as today's number.
  */
-async function writeReport(measurement: Measurement, budgets: BundleBudgets): Promise<void> {
+async function writeReport(reading: BundleReading, budgets: BundleBudgets): Promise<void> {
+	const { measurement, alwaysLoadedJavaScriptBytes } = reading;
 	const report: Report = {
+		alwaysLoadedJavaScriptBytes,
 		assets: measurement.assets,
 		budgets,
 		cssBytes: measurement.cssBytes,
 		javascriptBytes: measurement.javascriptBytes,
 		largestAsset: measurement.largestAsset,
-		violations: violationsFor(measurement, budgets)
+		violations: violationsFor(reading, budgets)
 	};
 	await rm(reportDirectory, { recursive: true, force: true });
 	await mkdir(reportDirectory, { recursive: true });
@@ -317,7 +358,7 @@ async function main(): Promise<void> {
 	const budgets = await readBudgets(projectRoot);
 
 	console.log('Building the current tree...');
-	const { measurement: current } = await buildAndMeasure(projectRoot);
+	const current = await buildAndMeasure(projectRoot);
 	await writeReport(current, budgets);
 
 	console.log('');
@@ -337,11 +378,13 @@ async function main(): Promise<void> {
 					throw new Error(`bun install --frozen-lockfile failed for ${ref} (exit ${installExit}).`);
 				}
 			}
-			const { measurement: base } = await buildAndMeasure(worktree);
+			const base = await buildAndMeasure(worktree);
 			console.log('');
 			console.log(formatMetricDeltas(metricDeltas(base, current), ref));
 			console.log('');
-			console.log(formatTopChunks(chunkDeltas(base.assets, current.assets)));
+			console.log(
+				formatTopChunks(chunkDeltas(base.measurement.assets, current.measurement.assets))
+			);
 		} finally {
 			await removeRefWorktree(worktree);
 		}

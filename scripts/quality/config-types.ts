@@ -8,7 +8,15 @@
 
 /** `quality/bundle-budgets.json` — read by `bundle-budget.ts` and `bundle-headroom.ts`. */
 export interface BundleBudgets {
+	/**
+	 * The JavaScript every page loads before it knows which page it is: the
+	 * SvelteKit entry, the app shell, the root layout node and their static
+	 * imports. Falls when code moves behind a dynamic import; see
+	 * `bundle-closure.ts`.
+	 */
+	alwaysLoadedJavaScriptBytes: number;
 	clientCssBytes: number;
+	/** Every emitted client chunk summed — a coarse ceiling on total growth. */
 	clientJavaScriptBytes: number;
 	largestAssetBytes: number;
 }

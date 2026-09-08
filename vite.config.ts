@@ -3,11 +3,27 @@ import thresholds from './quality/thresholds.json' with { type: 'json' };
 import { readBuildVersion } from './scripts/build/app-version.ts';
 import { previewKeepAlive } from './scripts/build/preview-keep-alive.ts';
 import { DOM_FREE_CLIENT_SPECS } from './quality/dom-free-client-specs.mjs';
+import {
+	browserLaunchEnv,
+	browserTempDir,
+	browserWorkerCount
+} from './scripts/quality/browser-memory.ts';
+import { availableParallelism } from 'node:os';
+import { mkdirSync } from 'node:fs';
 import { playwright } from '@vitest/browser-playwright';
 import adapter from '@sveltejs/adapter-node';
 import adapterStatic from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
+
+/**
+ * The browser project is bounded by memory, not just by cores, and Chromium's
+ * scratch space is kept off the tmpfs that `/tmp` is on most Linux desktops.
+ * `scripts/quality/browser-memory.ts` has the measurements and the reasoning;
+ * together these took `test:unit` from 9.29 GB to well under half that.
+ */
+const browserTemporaryDirectory = browserTempDir(import.meta.dirname);
+mkdirSync(browserTemporaryDirectory, { recursive: true });
 
 // DOM-free project first: Stryker's `bail: 1` + perTest coverage means the fast unit spec
 // must fail before the browser project boots, or the mutant times out instead of being killed.
@@ -40,10 +56,19 @@ const testProjects = [
 		cacheDir: 'node_modules/.vite-client',
 		test: {
 			name: 'client',
+			// Vitest's browser pool would take `min(12, cores - 1)` contexts,
+			// each with its own Chromium renderer; this bounds that by memory.
+			maxWorkers: browserWorkerCount(availableParallelism()),
 			sequence: { groupOrder: 1 },
 			browser: {
 				enabled: true,
-				provider: playwright(),
+				// `launchOptions` belongs to the provider, not the instance: an
+				// instance-level one is accepted by the types and silently dropped.
+				provider: playwright({
+					launchOptions: {
+						env: browserLaunchEnv(process.env, browserTemporaryDirectory)
+					}
+				}),
 				instances: [{ browser: 'chromium' as const, headless: true }]
 			},
 			include: ['src/**/*.svelte.{test,spec}.{js,ts}'],

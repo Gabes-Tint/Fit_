@@ -102,7 +102,12 @@ export function emptyRoutine(id: string): Routine {
 	return { id, name: 'New routine', exercises: [], deletedAt: null };
 }
 
-/** How far one tap on a stepper moves each field, in that field's own units. */
+/**
+ * How far one tap on a stepper moves each field, in that field's own units. A
+ * load steps by a plate in whichever unit it is being read in, not in the
+ * kilograms it is stored as: stepping a 137.5 lb bench has to reach 140 lb, so
+ * the store converts to the unit on display, steps here, and converts back.
+ */
 const FIELD_STEPS = { sets: 1, reps: 1, load: 2.5 } as const;
 
 export type BumpField = keyof typeof FIELD_STEPS;
@@ -120,9 +125,4 @@ export function bumpField(field: BumpField, current: number, direction: number):
 	const next = Math.round((current + FIELD_STEPS[field] * Math.sign(direction)) * 10) / 10;
 	const floored = Math.max(FIELD_MINIMUM[field], next);
 	return field === 'sets' ? Math.min(MAX_SETS, floored) : floored;
-}
-
-/** Zero load is bodyweight, which reads as an em dash rather than as a lift of nothing. */
-export function formatLoad(load: number): string {
-	return load === 0 ? '—' : String(load);
 }

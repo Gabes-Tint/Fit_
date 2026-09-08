@@ -268,6 +268,26 @@ export async function openEmptyJournal(page: Page): Promise<void> {
 }
 
 /**
+ * The Exercise tab on a freshly seeded journal: meals but no training, so
+ * every caller starts from an empty rotation and the template shelf showing.
+ */
+export async function openExerciseTabEmpty(page: Page, baseURL: string): Promise<void> {
+	// The tab is behind the gate like everything else, so the account comes first.
+	await signInThroughApi(page, baseURL);
+	await page.goto('/');
+	await openSampleJournal(page);
+	await page.getByRole('button', { name: 'Open menu' }).click();
+	await page.getByRole('link', { name: 'Exercise' }).click();
+	await expect(page.getByRole('heading', { name: 'Nothing here yet', level: 1 })).toBeVisible();
+}
+
+/** Take the two-day template, which is the shortest route to a routine. */
+export async function pickFullBodyTemplate(page: Page): Promise<void> {
+	await page.getByRole('button', { name: /Full body/ }).click();
+	await expect(page.getByRole('heading', { name: 'Exercise', level: 1 })).toBeVisible();
+}
+
+/**
  * Asserts nothing overflows the viewport at the page's current size.
  *
  * `document.documentElement.scrollWidth <= clientWidth` catches page-level

@@ -15,6 +15,7 @@ function setup(set: WorkoutSet) {
 		props: {
 			number: 1,
 			set,
+			unit: 'kg' as const,
 			onstep: (field: 'reps' | 'load', direction: number) => bumps.push([field, direction]),
 			ontoggle: () => toggles.push(1)
 		}

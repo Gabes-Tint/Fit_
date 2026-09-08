@@ -1,8 +1,9 @@
 <script lang="ts">
 	import X from '@lucide/svelte/icons/x';
-	import { withVolumeHint } from '$lib/domain/portions';
 	import { describeRecorded, resolveQuantity, type QuantifiedItem } from '$lib/domain/quantity';
+	import { describePortion } from '$lib/domain/serving-display';
 	import type { Food } from '$lib/domain/types';
+	import { tend } from '$lib/state/tend.svelte';
 	import FoodSearch from './FoodSearch.svelte';
 	import ProvenanceBadge from './ProvenanceBadge.svelte';
 	import QuantityStepper from './QuantityStepper.svelte';
@@ -37,10 +38,13 @@
 	// Re-read against the food rather than trusting a stored flag: matching an item
 	// to the catalog can turn a quantity the parser had to decline into one it can use.
 	const declined = $derived(item.quantity ? resolveQuantity(item.quantity, food).declined : null);
-	const recorded = $derived(describeRecorded(item.servings, food, declined));
-	// The millilitres are the unit's own definition, so they can be shown beside
-	// any label. The grams beside them are the food's and come from `recorded`.
-	const serving = $derived(withVolumeHint(food?.servingLabel ?? 'serving'));
+	const recorded = $derived(describeRecorded(item.servings, food, declined, tend.state.units));
+	// One serving, read in the person's own system (#74): the label the source
+	// gave, plus the mass it comes to when the label does not already state one.
+	// The scaled total belongs to `recorded`, so it is not repeated here.
+	const serving = $derived(
+		describePortion(food ?? { servingLabel: 'serving' }, 1, tend.state.units)
+	);
 </script>
 
 <li class="bg-background rounded-2xl p-3">

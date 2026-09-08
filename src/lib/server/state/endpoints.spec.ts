@@ -106,7 +106,7 @@ describe('readState', () => {
 		expect(response.status).toBe(200);
 		expect(await bodyOf(response)).toEqual({
 			version: 0,
-			format: 'tend.v3',
+			format: 'tend.v4',
 			body: null,
 			updatedAt: null
 		});
@@ -152,7 +152,7 @@ describe('readState', () => {
 		const response = readState(db, eventFor(otherAuth));
 		expect(await bodyOf(response)).toEqual({
 			version: 0,
-			format: 'tend.v3',
+			format: 'tend.v4',
 			body: null,
 			updatedAt: null
 		});
@@ -241,7 +241,7 @@ describe('writeState', () => {
 		expect(await bodyOf(response)).toEqual({
 			error: { code: 'stale-version' },
 			version: 0,
-			format: 'tend.v3',
+			format: 'tend.v4',
 			body: null
 		});
 		expect(db.prepare('select count(*) as n from household_state').get()?.['n']).toBe(0);

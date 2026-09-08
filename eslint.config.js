@@ -15,6 +15,15 @@ export default defineConfig(
 	// Built web assets in the Android project; root `.gitignore` doesn't cover them.
 	// `/build/**` and `/.svelte-kit/**` are anchored to the repo root — unanchored
 	// `build/**` would also swallow the real, tracked scripts/build/*.ts sources.
+	//
+	// Nothing is listed here for `.claude/worktrees/`, which holds a full second
+	// checkout per agent and would multiply this type-aware run by the number of
+	// them. It does not need to be: `includeIgnoreFile` above brings in
+	// `.gitignore`, which ignores that directory, and ESLint prunes an ignored
+	// directory instead of walking into it — so the generated `.svelte-kit` and
+	// `build` output inside a worktree never comes up either, anchors or not.
+	// Checked in #198 by counting what ESLint reports: 527 files, none of them
+	// under `.claude/`.
 	{ ignores: ['android/**', '/build/**', '/.svelte-kit/**'] },
 	js.configs.recommended,
 	ts.configs.recommendedTypeChecked,

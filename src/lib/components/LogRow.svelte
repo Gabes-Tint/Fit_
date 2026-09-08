@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { nutritionFactsForLogItem } from '$lib/domain/nutrition-facts';
-	import { withVolumeHint } from '$lib/domain/portions';
+	import { describePortion } from '$lib/domain/serving-display';
 	import type { LogItem } from '$lib/domain/types';
 	import { formatUnitCount } from '$lib/domain/unit-measure';
 	import { tend } from '$lib/state/tend.svelte';
@@ -35,7 +35,14 @@
 	let showUnit = $state(true);
 	const unitView = $derived(unitCount !== null && showUnit ? unitCount : null);
 
-	const portion = $derived(unitView ?? `${item.servings} × ${withVolumeHint(item.servingLabel)}`);
+	/**
+	 * The label, plus the mass in the person's system when the label does not
+	 * already state one (#74). A `LogItem` kept no `grams`, so the mass here is
+	 * whatever its own label states — enough to turn "100 g" into ounces for an
+	 * imperial reader, and nothing at all for "1 cup", whose weight the entry
+	 * never recorded.
+	 */
+	const portion = $derived(unitView ?? describePortion(item, item.servings, tend.state.units));
 	const stepperStep = $derived(unitView !== null ? 1 : step);
 
 	let factsOpen = $state(false);
@@ -89,6 +96,6 @@
 <NutritionFactsSheet
 	bind:open={factsOpen}
 	name={item.name}
-	servingLabel={item.servingLabel}
+	servingLabel={describePortion(item, item.servings, tend.state.units)}
 	rows={nutritionFactsForLogItem(item)}
 />
