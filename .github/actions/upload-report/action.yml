@@ -3,7 +3,13 @@ description: >-
   `actions/upload-artifact` with this repository's report conventions, which
   every upload block repeated by hand until #167: the run id and attempt are
   appended to the name so a re-run cannot collide with the run it replaces, and
-  reports are kept for fourteen days.
+  reports are kept for three days.
+
+  Three, not fourteen, because the allowance is 500 MB and a day's merges cost
+  roughly 400 MB of it. At fourteen days the store passed 1.6 GB on 2026-09-08
+  and every upload began failing its finalize step with a 403, which turns a
+  green run red on a gate that never failed. A report is read while its pull
+  request is open; nothing here has ever wanted a two-week-old one.
 
   The caller keeps its own `if: always()`. A composite step's condition cannot
   resurrect the step that calls it, so the evidence for a failed gate is only
@@ -36,5 +42,5 @@ runs:
       with:
         name: ${{ inputs.name }}-${{ github.run_id }}-${{ github.run_attempt }}
         if-no-files-found: ${{ inputs.if-no-files-found }}
-        retention-days: 14
+        retention-days: 3
         path: ${{ inputs.path }}
