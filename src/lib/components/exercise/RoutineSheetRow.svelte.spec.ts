@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
-import type { RoutineExercise } from '$lib/domain/types';
+import type { LoadUnit, RoutineExercise } from '$lib/domain/types';
 import RoutineSheetRow from './RoutineSheetRow.svelte';
 
 const BENCH: RoutineExercise = { name: 'Bench Press', group: 'Chest', sets: 4, reps: 8, load: 60 };
 
-async function renderRow(exercise: RoutineExercise = BENCH, open = false) {
+async function renderRow(exercise: RoutineExercise = BENCH, open = false, unit: LoadUnit = 'kg') {
 	const handlers = { ontoggle: vi.fn(), onplay: vi.fn(), onload: vi.fn() };
-	await render(RoutineSheetRow, { props: { exercise, open, ...handlers } });
+	await render(RoutineSheetRow, { props: { exercise, unit, open, ...handlers } });
 	return handlers;
 }
 

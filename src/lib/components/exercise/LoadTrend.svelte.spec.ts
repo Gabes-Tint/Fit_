@@ -31,14 +31,17 @@ function session(weekIndex: number, exercises: RoutineExercise[]): Workout {
 afterEach(() => tend.setLoadUnit('kg'));
 
 describe('LoadTrend', () => {
-	it('captions and labels the chart in whatever unit is set', async () => {
+	// Loads are stored in kilograms, so reading in pounds converts them rather
+	// than relabelling them: a 45 kg top set is 99.2 lb, and calling it "45 lb"
+	// would be reporting a lift that never happened.
+	it('converts the chart into whatever unit is set, rather than relabelling it', async () => {
 		tend.setLoadUnit('lb');
 		const workouts = [session(0, [bench(40)]), session(1, [bench(42.5)]), session(2, [bench(45)])];
 		await render(LoadTrend, { props: { workouts } });
 		await expect
-			.element(page.getByText('Bench Press · top set, last 3 weeks · +5 lb'))
+			.element(page.getByText('Bench Press · top set, last 3 weeks · +11 lb'))
 			.toBeInTheDocument();
-		await expect.element(page.getByText('45 lb')).toBeInTheDocument();
+		await expect.element(page.getByText('99.2 lb')).toBeInTheDocument();
 	});
 
 	it('captions the movement, the range and the change across it', async () => {

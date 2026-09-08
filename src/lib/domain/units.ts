@@ -1,12 +1,18 @@
-import type { UnitSystem } from './types';
+import type { LoadUnit, UnitSystem } from './types';
 import { round1 } from './utils';
 
 /**
  * Converts a canonical stored value (kilograms, centimeters) into the unit
  * system a person reads in, and back again for what they type. Storage is
- * never touched by this module — a `WeightEntry.kg` or `Profile.heightCm`
- * stays exactly as recorded no matter which system is on display. This is
- * the only place in the app a mass or a length is converted or rounded.
+ * never touched by this module — a `WeightEntry.kg`, a `Profile.heightCm` or a
+ * `WorkoutSet.load` stays exactly as recorded no matter which unit is on
+ * display. This is the only place in the app a mass or a length is converted or
+ * rounded.
+ *
+ * A load reads in `TendState.loadUnit` and everything else in `TendState.units`,
+ * because a gym and a bathroom scale are separate habits: somebody may well
+ * think in kilos on the bar and pounds on the scale. Two preferences, one
+ * canonical kilogram underneath both.
  */
 
 const KG_PER_LB = 0.45359237; // exact, by international agreement
@@ -26,6 +32,35 @@ export function cmToIn(cm: number): number {
 
 export function inToCm(inches: number): number {
 	return inches * CM_PER_IN;
+}
+
+/**
+ * Grams in one ounce, derived from the pound rather than written out a second
+ * time: an ounce is a sixteenth of the international pound by the same
+ * agreement `KG_PER_LB` states, so the two constants can never drift apart.
+ */
+const G_PER_OZ = (KG_PER_LB * 1000) / 16;
+
+export function gToOz(grams: number): number {
+	return grams / G_PER_OZ;
+}
+
+export function ozToG(ounces: number): number {
+	return ounces * G_PER_OZ;
+}
+
+/**
+ * A serving mass read in the chosen system, with its unit: "244 g", "8.6 oz".
+ *
+ * Whole grams and one decimal ounce, because that is the precision a portion is
+ * read at — a gram either way is inside the error of any household measure,
+ * while a whole ounce would round a 14 g tablespoon of oil to nothing worth
+ * printing. Unlike `formatWeight` this drops a trailing zero: a body weight is
+ * read against yesterday's and needs its decimal place to line up, whereas a
+ * portion is read on its own and "8.0 oz" only spends a character.
+ */
+export function formatServingMass(grams: number, units: UnitSystem): string {
+	return units === 'imperial' ? `${round1(gToOz(grams))} oz` : `${Math.round(grams)} g`;
 }
 
 /** The word a screen reader should announce — never the abbreviation alone. */
@@ -65,4 +100,35 @@ export function heightToFeetInches(cm: number): { feet: number; inches: number }
 /** The canonical `heightCm` for feet and inches a person typed in imperial. */
 export function heightFromFeetInches(feet: number, inches: number): number {
 	return inToCm(feet * 12 + inches);
+}
+
+// -- loads -------------------------------------------------------------------
+
+/** A stored load in kilograms, converted to the unit it is read in, unrounded. */
+export function loadInUnit(kg: number, unit: LoadUnit): number {
+	return unit === 'lb' ? kgToLb(kg) : kg;
+}
+
+/**
+ * A stored load read at the one decimal a load is entered at.
+ *
+ * That precision is the whole contract. Nothing writes a load with more than one
+ * decimal — the stepper moves it by 2.5 and floors it at zero — so rounding the
+ * reading to one decimal hands back exactly the number that was entered: 137.5 lb
+ * is stored as 62.36895... kg and reads as 137.5 lb, never 137.4. The kilograms
+ * underneath stay exact, which is what keeps volume and the next conversion
+ * honest.
+ */
+export function displayLoad(kg: number, unit: LoadUnit): number {
+	return round1(loadInUnit(kg, unit));
+}
+
+/** The canonical kilograms for a load somebody entered in the unit on show. */
+export function loadToKg(value: number, unit: LoadUnit): number {
+	return unit === 'lb' ? lbToKg(value) : value;
+}
+
+/** Zero load is bodyweight, which reads as an em dash rather than as a lift of nothing. */
+export function formatLoad(kg: number, unit: LoadUnit): string {
+	return kg === 0 ? '—' : String(displayLoad(kg, unit));
 }

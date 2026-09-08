@@ -18,6 +18,9 @@ function item() {
 beforeEach(() => {
 	localStorage.clear();
 	vi.restoreAllMocks();
+	// The store is a singleton, so a test that switches systems would otherwise
+	// leave the next one reading in it.
+	tend.setUnits('metric');
 });
 
 describe('LogRow', () => {
@@ -44,6 +47,40 @@ describe('LogRow', () => {
 		});
 		await render(LogRow, { props: { item: entry, open: false, step: 0.5, ontoggle: vi.fn() } });
 		await expect.element(page.getByText('2 × 1 cup (240 ml)')).toBeInTheDocument();
+	});
+
+	describe('the unit system the person set (#74)', () => {
+		/** Chicken breast, whose serving label the source wrote as "100 g". */
+		function byWeight(servings = 2) {
+			return logFromFood({
+				foodId: 'chicken-breast',
+				servings,
+				meal: 'lunch',
+				date: '2026-06-01',
+				source: 'manual'
+			});
+		}
+
+		it('leaves a metric label alone for someone reading in metric', async () => {
+			const entry = byWeight();
+			await render(LogRow, { props: { item: entry, open: false, step: 0.5, ontoggle: vi.fn() } });
+			await expect.element(page.getByText('2 × 100 g')).toBeInTheDocument();
+			expect(document.body.textContent).not.toContain('oz');
+		});
+
+		it('states the mass in ounces for someone reading in imperial', async () => {
+			tend.setUnits('imperial');
+			const entry = byWeight();
+			await render(LogRow, { props: { item: entry, open: false, step: 0.5, ontoggle: vi.fn() } });
+			await expect.element(page.getByText('2 × 100 g · 7.1 oz')).toBeInTheDocument();
+		});
+
+		it('scales the appended mass with the servings, writing the label once', async () => {
+			tend.setUnits('imperial');
+			const entry = byWeight(1);
+			await render(LogRow, { props: { item: entry, open: false, step: 0.5, ontoggle: vi.fn() } });
+			await expect.element(page.getByText('100 g · 3.5 oz')).toBeInTheDocument();
+		});
 	});
 
 	it('shows the energy', async () => {

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { toast } from 'svelte-sonner';
+	import { toast } from '$lib/ui/toast.svelte';
 	import { relogItem } from '$lib/domain/log-entry';
 	import { mostFrequentFoods, mostRecentFoods, type RecentFood } from '$lib/domain/recent-foods';
 	import type { Meal } from '$lib/domain/types';

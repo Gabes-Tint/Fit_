@@ -156,6 +156,58 @@ describe('the Height field', () => {
 		await expect.element(page.getByLabelText('Height in centimeters')).toHaveValue('175');
 		expect(tend.profile?.heightCm).toBe(175);
 	});
+
+	/**
+	 * #237. The height fields are not uncontrolled, whatever the form looks
+	 * like: `Input` binds its own `value`, so a `value` prop that changes puts
+	 * the stored reading back over whatever is half-typed. `heightToFeetInches`
+	 * hands back a fresh object, so reading `.feet`/`.inches` off it made every
+	 * unrelated profile write — a weight, a name, a document arriving from
+	 * another device — look to the two fields like a new height. In CI that
+	 * landed between the two `fill`s and the save, and the inches field went
+	 * back to the onboarded 6 while the feet field, unchanged at 5, hid it.
+	 */
+	it('keeps both typed height fields through an unrelated profile write', async () => {
+		tend.state.units = 'imperial';
+		await render(YouPage);
+		await page.getByLabelText('Height, feet').fill('6');
+		await page.getByLabelText('Height, inches').fill('9');
+
+		// Anything at all that rewrites the active profile; the height is not touched.
+		tend.patchActive((p) => ({ ...p, name: 'Jordan' }));
+
+		await expect.element(page.getByLabelText('Height, feet')).toHaveValue('6');
+		await expect.element(page.getByLabelText('Height, inches')).toHaveValue('9');
+		await page.getByRole('button', { name: 'Save height' }).click();
+		expect(tend.profile?.heightCm).toBe(heightFromFeetInches(6, 9));
+	});
+
+	it('recomposes both height fields when the stored height really does change', async () => {
+		// The other half of the same rule: holding still for an unrelated write
+		// must not turn into ignoring a height that genuinely moved underneath
+		// the form — a second device editing it, say.
+		tend.state.units = 'imperial';
+		await render(YouPage);
+		await expect.element(page.getByLabelText('Height, feet')).toHaveValue('5');
+		await expect.element(page.getByLabelText('Height, inches')).toHaveValue('6');
+
+		tend.patchActive((p) => ({ ...p, heightCm: heightFromFeetInches(6, 2) }));
+
+		await expect.element(page.getByLabelText('Height, feet')).toHaveValue('6');
+		await expect.element(page.getByLabelText('Height, inches')).toHaveValue('2');
+	});
+});
+
+describe('the energy target field', () => {
+	/** #237 again: `computeTargets` allocates a fresh object, same as the height reading. */
+	it('keeps a typed energy target through an unrelated profile write', async () => {
+		await render(YouPage);
+		await page.getByLabelText('Energy, kcal').fill('2400');
+
+		tend.patchActive((p) => ({ ...p, name: 'Jordan' }));
+
+		await expect.element(page.getByLabelText('Energy, kcal')).toHaveValue('2400');
+	});
 });
 
 describe('the Privacy section', () => {

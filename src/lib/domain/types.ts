@@ -233,7 +233,10 @@ export type LibraryExercise = {
 	group: MuscleGroup;
 };
 
-/** The units a load can be read in. Which one is on show is `TendState.loadUnit`. */
+/**
+ * The units a load can be read in. Which one is on show is `TendState.loadUnit`;
+ * what is stored underneath is always kilograms.
+ */
 export type LoadUnit = 'kg' | 'lb';
 
 export const DEFAULT_LOAD_UNIT: LoadUnit = 'kg';
@@ -252,7 +255,12 @@ export const MAX_REST_SECONDS = 180;
 export type RoutineExercise = LibraryExercise & {
 	sets: number;
 	reps: number;
-	/** The load on the bar, in the current `loadUnit`; zero means bodyweight and reads as an em dash. */
+	/**
+	 * The load on the bar, in kilograms, whatever `loadUnit` is set to. A load is
+	 * a mass and is stored like every other mass here, so the number survives a
+	 * change of unit unchanged in meaning; `units.ts` converts it for reading and
+	 * for what somebody steps. Zero means bodyweight and reads as an em dash.
+	 */
 	load: number;
 };
 
@@ -277,6 +285,7 @@ export type Routine = {
 /** One set as it was actually performed, which is why `done` lives here and not on the routine. */
 export type WorkoutSet = {
 	reps: number;
+	/** What was on the bar, in kilograms, on the same terms as `RoutineExercise.load`. */
 	load: number;
 	done: boolean;
 };
@@ -332,16 +341,22 @@ export type TendState = {
 	workouts: Workout[];
 	activeWorkout: Workout | null;
 	/**
-	 * The unit the labels are read in. It relabels the readouts only — a load is
-	 * stored as the number on the bar, so switching it rewrites nothing.
+	 * The unit loads are read in. Switching it rewrites nothing, because there is
+	 * nothing to rewrite: every load is stored in kilograms and converted on the
+	 * way to the screen, so the same mass simply reads as 100 kg or as 220.5 lb.
+	 * It was not always so — before schema version 4 a load was the bare number
+	 * on the bar and this preference decided what that number meant, which made
+	 * flipping it silently reinterpret every session ever logged.
 	 */
 	loadUnit: LoadUnit;
 	/** How long the rest between sets runs, in seconds. */
 	restSeconds: number;
 	/**
-	 * The system quantities are read in: mass, height. Conversion happens only
-	 * at display — body weight stays `kg`, height stays `heightCm`, regardless
-	 * of this.
+	 * The system everything outside the gym is read in: body weight, height.
+	 * Conversion happens only at display — body weight stays `kg`, height stays
+	 * `heightCm`, regardless of this. Loads have their own preference in
+	 * `loadUnit`, since thinking in kilos on the bar and pounds on the scale is a
+	 * perfectly ordinary way to live.
 	 */
 	units: UnitSystem;
 };

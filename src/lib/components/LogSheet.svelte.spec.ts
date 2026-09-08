@@ -7,15 +7,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  */
 const announced = vi.hoisted(() => [] as string[]);
 /**
- * The undo action a re-log or a direct-log toast carries (#recent-foods): the
- * mock above only ever kept the message, so a test that needs to press "Undo"
- * itself -- there being no real `Toaster` mounted here to click a button in --
- * needs the handler `toast()` was actually given.
+ * The undo action a re-log or a direct-log toast carries: the list above only
+ * ever kept the message, so a test that needs to press "Undo" itself -- there
+ * being no real `Toaster` mounted here to click a button in -- needs the
+ * handler `toast()` was actually given.
  */
 const toastActions = vi.hoisted(
 	() => [] as { message: string; action: { label: string; onClick: () => void } | undefined }[]
 );
-vi.mock('svelte-sonner', () => ({
+vi.mock('$lib/ui/toast.svelte', () => ({
 	toast: (message: string, opts?: { action?: { label: string; onClick: () => void } }) => {
 		announced.push(message);
 		toastActions.push({ message, action: opts?.action });

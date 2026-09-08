@@ -2,9 +2,9 @@
 	import { resolve } from '$app/paths';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import { formatLoad } from '$lib/domain/exercises';
 	import { summaryNote } from '$lib/domain/training-progress';
 	import type { WorkoutSet } from '$lib/domain/types';
+	import { formatLoad, loadInUnit } from '$lib/domain/units';
 	import { addDaysISO, todayISO } from '$lib/domain/utils';
 	import {
 		elapsedSeconds,
@@ -31,12 +31,20 @@
 	 */
 	const logged = $derived(workout !== null && workoutSetsDone(workout) > 0);
 
+	/** Loads and the volume they add up to are kilograms; this is how they read. */
+	const unit = $derived(tend.state.loadUnit);
+
 	const stats = $derived(
 		workout && logged
 			? [
 					{ key: 'Duration', value: formatDuration(elapsedSeconds(workout, Date.now())) },
 					{ key: 'Sets done', value: String(workoutSetsDone(workout)) },
-					{ key: 'Volume', value: `${Math.round(workoutVolume(workout))} ${tend.state.loadUnit}` }
+					// Converted before it is rounded, not after: rounding a kilogram total
+					// and then converting it would put the error in front of the person.
+					{
+						key: 'Volume',
+						value: `${Math.round(loadInUnit(workoutVolume(workout), unit))} ${unit}`
+					}
 				]
 			: []
 	);
@@ -54,7 +62,7 @@
 			? ''
 			: summaryNote({
 					workouts: tend.state.workouts,
-					unit: tend.state.loadUnit,
+					unit,
 					sinceISO: addDaysISO(todayISO(), -28)
 				})
 	);
@@ -68,7 +76,7 @@
 		const done = setsDone(sets);
 		const opener = sets[0];
 		if (done === 0 || !opener) return 'not done';
-		return `${done} × ${opener.reps} @ ${formatLoad(opener.load)}`;
+		return `${done} × ${opener.reps} @ ${formatLoad(opener.load, unit)}`;
 	}
 </script>
 

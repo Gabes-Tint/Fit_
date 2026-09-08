@@ -2,7 +2,9 @@
 	import ScanBarcode from '@lucide/svelte/icons/scan-barcode';
 	import { onDestroy, onMount } from 'svelte';
 	import { lookupBarcode, type BarcodeOutcome } from '$lib/catalog/barcode-lookup';
+	import { describePortion } from '$lib/domain/serving-display';
 	import type { Food } from '$lib/domain/types';
+	import { tend } from '$lib/state/tend.svelte';
 	import { createBarcodeReader, type BarcodeReader } from '$lib/ui/barcode-reader';
 	import { startCamera, type CameraFailure } from '$lib/ui/camera';
 	import Button from '$lib/ui/Button.svelte';
@@ -174,7 +176,8 @@
 						>
 							<p class="truncate font-medium">{food.name}</p>
 							<p class="text-muted-foreground truncate text-xs">
-								{food.brand ? `${food.brand} · ` : ''}{food.servingLabel} · {food.kcal} kcal
+								{food.brand ? `${food.brand} · ` : ''}{describePortion(food, 1, tend.state.units)} · {food.kcal}
+								kcal
 							</p>
 						</button>
 					</li>

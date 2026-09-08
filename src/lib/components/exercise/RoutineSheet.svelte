@@ -34,8 +34,13 @@
 		}))
 	);
 
-	/** Derived so the unit inside "Load (…)" tracks the store's current unit. */
-	const loadHeading = $derived(`Load (${tend.state.loadUnit})`);
+	/**
+	 * Derived so the heading and the rows under it move together when the unit
+	 * changes: the loads are stored in kilograms and converted for reading, so a
+	 * heading that lagged would put the wrong label on a converted number.
+	 */
+	const unit = $derived(tend.state.loadUnit);
+	const loadHeading = $derived(`Load (${unit})`);
 
 	let openIndex = $state<number | null>(null);
 	let formOpen = $state(false);
@@ -76,6 +81,7 @@
 				{#each section.rows as row (row.index)}
 					<RoutineSheetRow
 						exercise={row.exercise}
+						{unit}
 						open={openIndex === row.index}
 						ontoggle={() => toggle(row.index)}
 						onplay={() => showForm(row.exercise.name)}

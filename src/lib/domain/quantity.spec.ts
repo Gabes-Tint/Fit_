@@ -241,43 +241,58 @@ describe('resolveQuantity', () => {
 
 describe('describeRecorded', () => {
 	it('states the servings and the mass they come to', () => {
-		expect(describeRecorded(2, serving(100), null)).toBe('2 servings · 200 g');
+		expect(describeRecorded(2, serving(100), null, 'metric')).toBe('2 servings · 200 g');
 	});
 
 	it('says "serving" in the singular', () => {
-		expect(describeRecorded(1, serving(244), null)).toBe('1 serving · 244 g');
+		expect(describeRecorded(1, serving(244), null, 'metric')).toBe('1 serving · 244 g');
 	});
 
 	it('states a fractional count without trailing noise', () => {
-		expect(describeRecorded(0.82, serving(244), null)).toBe('0.82 servings · 200 g');
-		expect(describeRecorded(0.5, serving(40), null)).toBe('0.5 servings · 20 g');
+		expect(describeRecorded(0.82, serving(244), null, 'metric')).toBe('0.82 servings · 200 g');
+		expect(describeRecorded(0.5, serving(40), null, 'metric')).toBe('0.5 servings · 20 g');
 	});
 
 	it('leaves the mass out when the food has no serving weight', () => {
-		expect(describeRecorded(2, serving(0), null)).toBe('2 servings');
-		expect(describeRecorded(2, null, null)).toBe('2 servings');
-		expect(describeRecorded(2, serving(Number.POSITIVE_INFINITY), null)).toBe('2 servings');
+		expect(describeRecorded(2, serving(0), null, 'metric')).toBe('2 servings');
+		expect(describeRecorded(2, null, null, 'metric')).toBe('2 servings');
+		expect(describeRecorded(2, serving(Number.POSITIVE_INFINITY), null, 'metric')).toBe(
+			'2 servings'
+		);
 	});
 
 	it('rounds a long count rather than printing every digit of it', () => {
 		// 8 oz against a 100 g serving, unrounded.
-		expect(describeRecorded(2.26796185, serving(100), null)).toBe('2.268 servings · 227 g');
+		expect(describeRecorded(2.26796185, serving(100), null, 'metric')).toBe(
+			'2.268 servings · 227 g'
+		);
 	});
 
 	it('says plainly which quantity it could not use, and what it recorded instead', () => {
-		expect(describeRecorded(1, serving(244), spec(2, 'cups'))).toBe(
+		expect(describeRecorded(1, serving(244), spec(2, 'cups'), 'metric')).toBe(
 			'Couldn’t use “2 cups” — recorded as 1 serving · 244 g'
 		);
 	});
 
 	it('reports a declined mass the same way', () => {
-		expect(describeRecorded(1, null, spec(200, 'g'))).toBe(
+		expect(describeRecorded(1, null, spec(200, 'g'), 'metric')).toBe(
 			'Couldn’t use “200 g” — recorded as 1 serving'
 		);
 	});
 
+	it('states the mass in ounces for someone reading in imperial (#74)', () => {
+		expect(describeRecorded(2, serving(244), null, 'imperial')).toBe('2 servings · 17.2 oz');
+		expect(describeRecorded(1, serving(100), null, 'imperial')).toBe('1 serving · 3.5 oz');
+	});
+
+	it('still names a declined unit when reading in imperial', () => {
+		expect(describeRecorded(1, serving(244), spec(2, 'cups'), 'imperial')).toBe(
+			'Couldn’t use “2 cups” — recorded as 1 serving · 8.6 oz'
+		);
+	});
+
 	it('promises nothing about the unit it declined', () => {
-		const said = describeRecorded(1, serving(244), spec(2, 'cups'));
+		const said = describeRecorded(1, serving(244), spec(2, 'cups'), 'metric');
 		expect(said).not.toMatch(/soon|later|support|yet/i);
 	});
 });

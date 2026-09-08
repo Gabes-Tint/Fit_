@@ -139,7 +139,19 @@ let server: Server;
 let accounts: Set<string>;
 let base: string;
 
+/**
+ * Where the deployed app answers from outside, which is never this stand-in.
+ *
+ * `smoke()` needs it whatever `--base` says: it is how the run knows it is
+ * reaching the origin directly rather than through Cloudflare, and so whether
+ * it has to supply the client-address header itself. There is no default for
+ * it any more — a default of production is how a deploy to another machine
+ * would register its throwaway account on the live site.
+ */
+const PUBLIC_ORIGIN_VARIABLE = 'FIT_PUBLIC_ORIGIN';
+
 beforeEach(async () => {
+	process.env[PUBLIC_ORIGIN_VARIABLE] = 'https://qa.example.com';
 	machine.liveRelease = 'commit-under-test';
 	machine.removalOutput = '{"accounts":1,"households":1}';
 	machine.removals = [];
@@ -152,6 +164,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+	delete process.env[PUBLIC_ORIGIN_VARIABLE];
 	await new Promise<void>((resolve, reject) =>
 		server.close((error) => (error === undefined ? resolve() : reject(error)))
 	);

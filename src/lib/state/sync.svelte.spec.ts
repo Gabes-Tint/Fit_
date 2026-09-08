@@ -6,7 +6,7 @@ import { REFUSED_STORAGE_KEY, STORAGE_KEY, TendStore } from './tend.svelte';
 import { SYNC_STORAGE_KEY, SyncStore, type SyncRecord } from './sync.svelte';
 
 const announced = vi.hoisted(() => [] as string[]);
-vi.mock('svelte-sonner', () => ({
+vi.mock('$lib/ui/toast.svelte', () => ({
 	toast: (message: string) => {
 		announced.push(message);
 	}
@@ -187,7 +187,7 @@ describe('the first sync a device does', () => {
 		await sync.start(HOUSEHOLD);
 
 		const body = sent[1]?.body as { format: string; body: TendState } | undefined;
-		expect(body?.format).toBe('tend.v3');
+		expect(body?.format).toBe('tend.v4');
 		expect(body?.body.onboarded).toBe(true);
 		expect(body?.body.activeProfileId).toBe('p-1');
 	});

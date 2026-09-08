@@ -1,5 +1,6 @@
 {
-	"clientCssBytes": 53200,
-	"clientJavaScriptBytes": 432000,
-	"largestAssetBytes": 83120
+	"alwaysLoadedJavaScriptBytes": 270000,
+	"clientCssBytes": 40000,
+	"clientJavaScriptBytes": 410000,
+	"largestAssetBytes": 57000
 }

@@ -62,6 +62,12 @@ export default {
 	coverageAnalysis: 'perTest',
 	mutate: scopedMutate ?? MUTATE_PATTERNS,
 	ignorePatterns: [
+		// An agent worktree is another checkout of this same repo, not code to
+		// mutate. Stryker ignores only `node_modules` and `.git` of its own
+		// accord and never reads `.gitignore`, so unlike every other tool that
+		// walks this tree it has to be told: without this the sandbox copies one
+		// whole source tree per open worktree, and there are usually ten.
+		'.claude/**',
 		// Stryker sandbox copies cause concurrent runners to race on Vite's dep-optimizer cache.
 		'node_modules/.vite/**',
 		// Per-project Vite caches; same race as above.

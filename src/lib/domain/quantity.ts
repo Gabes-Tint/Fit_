@@ -1,6 +1,7 @@
 import { gramsPerVolumeUnit } from './portions';
 import { canonicalUnit, isVolumeUnit, type CanonicalUnit } from './unit-spellings';
-import type { Food, ProposedItem } from './types';
+import type { Food, ProposedItem, UnitSystem } from './types';
+import { formatServingMass } from './units';
 
 /**
  * What the app can do with the unit a person typed in front of a food.
@@ -117,19 +118,25 @@ function formatCount(n: number): string {
 }
 
 /**
- * One line saying what will be logged, in servings and in grams, so the reading
- * is visible before the entry is committed. A declined unit is named rather than
- * converted, and nothing is promised about it.
+ * One line saying what will be logged, in servings and in the person's own unit
+ * of mass, so the reading is visible before the entry is committed. A declined
+ * unit is named rather than converted, and nothing is promised about it.
+ *
+ * The mass is read in `units` because this line sits directly under the portion
+ * `describePortion` renders (#74): telling someone reading in imperial that a
+ * cup is "8.6 oz" and then that it was recorded as "244 g" would answer the
+ * question in the system they did not choose.
  */
 export function describeRecorded(
 	servings: number,
 	food: ServingWeight | null | undefined,
-	declined: QuantitySpec | null
+	declined: QuantitySpec | null,
+	units: UnitSystem
 ): string {
 	const perServing = food?.grams ?? 0;
 	const mass =
 		Number.isFinite(perServing) && perServing > 0
-			? ` · ${Math.round(servings * perServing)} g`
+			? ` · ${formatServingMass(servings * perServing, units)}`
 			: '';
 	const recorded = `${formatCount(servings)} ${servings === 1 ? 'serving' : 'servings'}${mass}`;
 	if (!declined) return recorded;

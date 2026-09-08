@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import { catalogFoodToFood } from '$lib/domain/catalog-food';
 import type { QuantifiedItem } from '$lib/domain/quantity';
+import { tend } from '$lib/state/tend.svelte';
 import ProposalRow from './ProposalRow.svelte';
 
 /**
@@ -103,6 +104,12 @@ const handlers = {
 	onremove: vi.fn()
 };
 
+beforeEach(() => {
+	// The store is a singleton: a test that switches systems must not leave the
+	// next one reading in it.
+	tend.setUnits('metric');
+});
+
 describe('ProposalRow', () => {
 	it('names the proposal', async () => {
 		await render(ProposalRow, {
@@ -123,6 +130,26 @@ describe('ProposalRow', () => {
 			props: { item: matched, step: 0.5, matching: false, resolved: egg, ...handlers }
 		});
 		await expect.element(page.getByText(egg.servingLabel)).toBeInTheDocument();
+	});
+
+	describe('the unit system the person set (#74)', () => {
+		it('reads the portion and the recorded mass in metric by default', async () => {
+			await render(ProposalRow, {
+				props: { item: matched, step: 0.5, matching: false, resolved: egg, ...handlers }
+			});
+			await expect.element(page.getByText('1 large · 50 g')).toBeInTheDocument();
+			await expect.element(page.getByText('2 servings · 100 g')).toBeInTheDocument();
+		});
+
+		it('reads both lines in ounces for someone reading in imperial', async () => {
+			tend.setUnits('imperial');
+			await render(ProposalRow, {
+				props: { item: matched, step: 0.5, matching: false, resolved: egg, ...handlers }
+			});
+			await expect.element(page.getByText('1 large · 1.8 oz')).toBeInTheDocument();
+			await expect.element(page.getByText('2 servings · 3.5 oz')).toBeInTheDocument();
+			expect(document.body.textContent).not.toContain(' g');
+		});
 	});
 
 	it('offers to match an item that has no catalog food', async () => {

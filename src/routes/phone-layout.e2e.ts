@@ -7,8 +7,10 @@ import {
 	expectFitsViewport,
 	openEmptyJournal,
 	openLogSheet,
+	openExerciseTabEmpty,
 	openLogSheetAndType,
 	openSampleJournal,
+	pickFullBodyTemplate,
 	signInThroughApi,
 	stubFoodResolve,
 	stubFoodSearch
@@ -77,6 +79,15 @@ test.describe('at 360px', () => {
 		await expectFitsViewport(page, strip);
 	});
 
+	test('the exercise training strip stays inside the viewport', async ({ page, baseURL }) => {
+		await openExerciseTabEmpty(page, baseURL ?? '');
+		await pickFullBodyTemplate(page);
+
+		await atNarrowPhone(page);
+		const strip = page.getByRole('link', { name: /^Today/ }).locator('xpath=..');
+		await expectFitsViewport(page, strip);
+	});
+
 	test('the log sheet Search results stay inside the viewport', async ({ page, baseURL }) => {
 		await signInThroughApi(page, baseURL ?? '');
 		// Since #146 every row in this list comes from the catalog endpoint, so
@@ -94,6 +105,38 @@ test.describe('at 360px', () => {
 		await page.getByLabel('Search foods, brands, barcodes').fill('cookie dough');
 		const results = page.getByRole('list').filter({ has: page.getByRole('listitem') });
 		await expect(results.first()).toBeVisible();
+		await expectFitsViewport(page, page.getByRole('dialog'));
+	});
+
+	test('a search result carrying an appended mass stays inside the viewport', async ({
+		page,
+		baseURL
+	}) => {
+		// #74 lengthened every row in this list: the serving label now carries the
+		// mass beside it. Imperial is the longer of the two readings ("3.5 oz"
+		// against "100 g"), and a long branded name in front of it is the widest
+		// this row gets.
+		await signInThroughApi(page, baseURL ?? '');
+		await stubFoodSearch(page, [
+			{
+				...EGG_ROW,
+				id: 902,
+				name: 'Chocolate Chip Cookie Dough Bar, Family Size',
+				brand: 'KIND',
+				serving: { label: '100 g', grams: 100 }
+			}
+		]);
+		await openEmptyJournal(page);
+		await page.getByRole('button', { name: 'Open menu' }).click();
+		await page.getByRole('link', { name: 'You' }).click();
+		await page.getByRole('button', { name: 'Imperial' }).click();
+		await page.goto('/');
+		await atNarrowPhone(page);
+
+		await openLogSheet(page);
+		await page.getByRole('button', { name: 'Search', exact: true }).click();
+		await page.getByLabel('Search foods, brands, barcodes').fill('cookie dough');
+		await expect(page.getByText('100 g · 3.5 oz')).toBeVisible();
 		await expectFitsViewport(page, page.getByRole('dialog'));
 	});
 
@@ -118,6 +161,25 @@ test.describe('at 360px', () => {
 			)
 		).toBeVisible();
 		await expectFitsViewport(page, page.getByRole('dialog'));
+	});
+
+	test('a toast stays inside the viewport', async ({ page, baseURL }) => {
+		// The longest sentence the app raises as a toast, at the width toasts are
+		// most likely to spill at. The offline branch of the matcher is how to get
+		// it on screen: it is the one message that does not fit on a line.
+		await signInThroughApi(page, baseURL ?? '');
+		await page.route('**/api/foods/resolve', (route) => route.fulfill({ status: 503, body: '' }));
+		await atNarrowPhone(page);
+		await openEmptyJournal(page);
+
+		await openLogSheetAndType(page, '2 tablespoons olive oil');
+		await page.getByRole('button', { name: 'Parse' }).click();
+
+		const toast = page.getByText(
+			'Matching needs the server. You can pick from Search when you\u2019re back online.'
+		);
+		await expect(toast).toBeVisible();
+		await expectFitsViewport(page, toast);
 	});
 
 	test('the Scan tab stays inside the viewport', async ({ page, baseURL }) => {
@@ -148,14 +210,8 @@ test.describe('at 360px', () => {
 	});
 
 	test('an exercise session stays inside the viewport', async ({ page, baseURL }) => {
-		await signInThroughApi(page, baseURL ?? '');
-		await page.goto('/');
-		await openSampleJournal(page);
-		await page.getByRole('button', { name: 'Open menu' }).click();
-		await page.getByRole('link', { name: 'Exercise' }).click();
-		await expect(page.getByRole('heading', { name: 'Nothing here yet', level: 1 })).toBeVisible();
-		await page.getByRole('button', { name: /Full body/ }).click();
-		await expect(page.getByRole('heading', { name: 'Exercise', level: 1 })).toBeVisible();
+		await openExerciseTabEmpty(page, baseURL ?? '');
+		await pickFullBodyTemplate(page);
 
 		await atNarrowPhone(page);
 		await page.getByRole('button', { name: 'Start Full body' }).click();
@@ -227,6 +283,49 @@ test.describe('at 360px', () => {
 		await expectFitsViewport(page, sheet);
 	});
 
+	test('a load read in pounds stays inside the viewport, sheet to summary (#71)', async ({
+		page,
+		baseURL
+	}) => {
+		await openExerciseTabEmpty(page, baseURL ?? '');
+		await pickFullBodyTemplate(page);
+
+		// Loads are stored in kilograms and converted for reading (#71), so pounds
+		// are the wide case everywhere a load is printed: the template's 60 kg squat
+		// reads 132.3, and a session's volume gains a digit.
+		await page.getByRole('button', { name: 'Open menu' }).click();
+		await page.getByRole('link', { name: 'You' }).click();
+		await page
+			.getByRole('group', { name: 'Exercise load unit: kg or lb' })
+			.getByRole('button', { name: 'lb' })
+			.click();
+
+		await atNarrowPhone(page);
+		await page.getByRole('button', { name: 'Open menu' }).click();
+		await page.getByRole('link', { name: 'Exercise' }).click();
+		await page.getByRole('link', { name: /Full body \d+ exercises/ }).click();
+
+		// The routine sheet, where the reading sits in a fixed grid column.
+		await expect(page.getByText('Load (lb)').first()).toBeVisible();
+		await expect(page.getByText('132.3').first()).toBeVisible();
+		await expectFitsViewport(page);
+
+		// The session's set list, where the same reading sits between two steppers.
+		await page.getByRole('button', { name: 'Start this session' }).click();
+		await expect(page.getByRole('heading', { name: 'Squat', level: 1 })).toBeVisible();
+		await expect(page.getByText('132.3').first()).toBeVisible();
+		await expectFitsViewport(page);
+
+		// The summary's volume tile: eight reps of the squat, which is 480 kg of
+		// work read back as 1058 lb — the widest number any of these screens print.
+		await page.getByRole('button', { name: 'Set 1 done' }).click();
+		await page.getByRole('button', { name: 'Finish' }).click();
+		await expect(page.getByText('Session done', { exact: true })).toBeVisible();
+		const volume = page.getByText('1058 lb', { exact: true });
+		await expect(volume).toBeVisible();
+		await expectFitsViewport(page, volume);
+	});
+
 	test('a unit-toggled log row stays inside the viewport in both views (#178)', async ({
 		page,
 		baseURL
@@ -254,7 +353,9 @@ test.describe('at 360px', () => {
 		await expectFitsViewport(page, row.locator('xpath=../..'));
 
 		await weightToggle.click();
-		await expect(page.getByText('1 × 1 sandwich (219 g)')).toBeVisible();
+		// One serving leads with the label rather than "1 × " (#74), and the label
+		// already states its mass in metric, so nothing is appended to it.
+		await expect(page.getByText('1 sandwich (219 g)')).toBeVisible();
 		await expect(page.getByLabel('Show unit count')).toBeVisible();
 		await expectFitsViewport(page, row.locator('xpath=../..'));
 	});

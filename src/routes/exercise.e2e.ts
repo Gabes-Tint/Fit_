@@ -1,18 +1,10 @@
 import { expect, type Page } from '@playwright/test';
 import { test } from '../../tests/preview-server';
-import { openSampleJournal, signInThroughApi } from '../../tests/e2e-support';
+import {
+	openExerciseTabEmpty as onboard,
+	pickFullBodyTemplate as pickFullBody
+} from '../../tests/e2e-support';
 import AxeBuilder from '@axe-core/playwright';
-
-/** Onboarding seeds meals but no training, so every run starts from an empty rotation. */
-async function onboard(page: Page, baseURL: string) {
-	// The tab is behind the gate like everything else, so the account comes first.
-	await signInThroughApi(page, baseURL);
-	await page.goto('/');
-	await openSampleJournal(page);
-	await page.getByRole('button', { name: 'Open menu' }).click();
-	await page.getByRole('link', { name: 'Exercise' }).click();
-	await expect(page.getByRole('heading', { name: 'Nothing here yet', level: 1 })).toBeVisible();
-}
 
 /** Scan every screen, not just two — the palette is reused at different tints, and contrast is what breaks. */
 async function axeViolations(page: Page) {
@@ -21,12 +13,6 @@ async function axeViolations(page: Page) {
 		.analyze();
 	// Returned rather than asserted here, so each test carries its own assertion.
 	return results.violations;
-}
-
-/** Take the two-day template, which is the shortest route to a routine. */
-async function pickFullBody(page: Page) {
-	await page.getByRole('button', { name: /Full body/ }).click();
-	await expect(page.getByRole('heading', { name: 'Exercise', level: 1 })).toBeVisible();
 }
 
 /**

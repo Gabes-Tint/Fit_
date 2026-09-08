@@ -3,11 +3,11 @@
 	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { Toaster } from 'svelte-sonner';
 	import { logUi } from '$lib/state/log-ui.svelte';
 	import { session } from '$lib/state/session.svelte';
 	import { sync } from '$lib/state/sync.svelte';
 	import { tend } from '$lib/state/tend.svelte';
+	import Toaster from '$lib/ui/Toaster.svelte';
 	import { AUTH_ROUTES, signInPath } from './auth/auth-routes';
 	import InitialSync from './InitialSync.svelte';
 	import LogFab from './LogFab.svelte';
@@ -28,7 +28,7 @@
 	 * is up. Onboarding renders without that bar, so there a toast simply
 	 * begins a little lower down.
 	 */
-	const TOAST_OFFSET = { top: 'calc(3.5rem + env(safe-area-inset-top) + 0.5rem)' };
+	const TOAST_OFFSET = 'calc(3.5rem + env(safe-area-inset-top) + 0.5rem)';
 
 	let menuOpen = $state(false);
 
@@ -212,13 +212,13 @@
 			inside the branch being left is unmounted mid-announcement and takes
 			the message with it.
 
-			Top rather than svelte-sonner's default corner, because the bottom of
-			the screen is where this application puts things to press. `Sheet` is
-			`fixed bottom-0` and `LogSheet` raises six of these from inside it;
-			`Onboarding` pins its actions there with `sticky bottom-0`; `LogFab`
-			floats the log button there too. On a phone the toaster is full width,
-			so the corner it nominally sits in means nothing.
+			Top rather than the bottom corner a toast usually takes, because the
+			bottom of the screen is where this application puts things to press.
+			`Sheet` is `fixed bottom-0` and `LogSheet` raises six of these from
+			inside it; `Onboarding` pins its actions there with `sticky bottom-0`;
+			`LogFab` floats the log button there too. On a phone a toast is the
+			width of the column anyway, so a corner would be a corner in name only.
 		-->
-		<Toaster position="top-center" offset={TOAST_OFFSET} mobileOffset={TOAST_OFFSET} />
+		<Toaster offset={TOAST_OFFSET} />
 	</div>
 {/if}
