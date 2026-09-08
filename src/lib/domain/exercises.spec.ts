@@ -13,7 +13,8 @@ import {
 	libraryFor,
 	muscleSections,
 	routinesFromTemplate,
-	routineTotals
+	routineTotals,
+	searchLibrary
 } from './exercises';
 import type { Routine, RoutineExercise } from './types';
 
@@ -45,6 +46,39 @@ describe('the exercise library', () => {
 		expect(chest.length).toBeGreaterThan(0);
 		expect(chest.length).toBeLessThan(EXERCISE_LIBRARY.length);
 		for (const e of chest) expect(e.group).toBe('Chest');
+	});
+});
+
+describe('searching the library', () => {
+	it('matches a substring anywhere in the name', () => {
+		expect(searchLibrary('press', null).map((e) => e.name)).toContain('Bench Press');
+		expect(searchLibrary('press', null).map((e) => e.name)).toContain('Leg Press');
+	});
+
+	it('ignores case', () => {
+		expect(searchLibrary('SQUAT', null).map((e) => e.name)).toEqual(['Squat']);
+	});
+
+	it('trims stray whitespace before matching', () => {
+		expect(searchLibrary('  squat  ', null).map((e) => e.name)).toEqual(['Squat']);
+	});
+
+	it('says nothing matches by returning nothing', () => {
+		expect(searchLibrary('tyre flip', null)).toEqual([]);
+	});
+
+	it('combines a query with a muscle group filter', () => {
+		expect(searchLibrary('press', 'Chest').map((e) => e.name)).toEqual([
+			'Bench Press',
+			'Incline Bench Press',
+			'Decline Bench Press'
+		]);
+		expect(searchLibrary('press', 'Legs').map((e) => e.name)).toEqual(['Leg Press']);
+	});
+
+	it('returns the unfiltered group when the query is empty', () => {
+		expect(searchLibrary('', 'Chest')).toEqual(libraryFor('Chest'));
+		expect(searchLibrary('   ', null)).toEqual(libraryFor(null));
 	});
 });
 
