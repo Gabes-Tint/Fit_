@@ -1,7 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import { connect, type Socket } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { Plugin } from 'vite';
 import viteConfig from '../../vite.config';
 import { holdKeepAliveConnections, previewKeepAlive } from './preview-keep-alive';
 
@@ -113,7 +112,11 @@ describe('the preview server and the connections its client pools', () => {
 	 * five sightings before anyone could name it. So the wiring is asserted too.
 	 */
 	it('is wired into the config vite preview actually loads', () => {
-		const plugins = (viteConfig.plugins ?? []).flat(Infinity) as Plugin[];
+		// `unknown[]` first: vite types a plugin entry as a recursive union that
+		// `flat` cannot instantiate, and the only thing asserted here is a name.
+		const plugins = ((viteConfig.plugins ?? []) as unknown[]).flat(Infinity) as {
+			name?: string;
+		}[];
 
 		expect(plugins.map((plugin) => plugin?.name)).toContain('fit-preview-keep-alive');
 	});
