@@ -139,7 +139,9 @@ built, not merely a 200 — a 200 is what anything listening on that port would 
 then checks that an anonymous `GET /api/sessions/current` is refused as `unauthenticated`,
 registers a throwaway account and signs it out, in and out again, confirms
 `/opt/fit/current` points at the commit under test, and asks `/api/version` whether the
-build answering is the one this deploy built. It writes `reports/deploy/smoke.json`.
+build answering is the one this deploy built. The throwaway account is removed again
+whether the checks passed or failed, and a run whose row could not be deleted fails saying
+so. It writes `reports/deploy/smoke.json`.
 Add `--tunnel` to either command to reach the origin through an SSH port forward instead of
 through Cloudflare, for when the public name is the thing that is broken; that mode also
 stands in for the proxy's client-address header, which Cloudflare otherwise supplies and

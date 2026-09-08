@@ -384,8 +384,11 @@ with a page this app built rather than with whatever else could be listening on 
 an anonymous session read is refused as `unauthenticated`, a throwaway account registers,
 signs out, signs back in and reads itself back, and `/opt/fit/current` points at the commit
 that was deployed. It writes `reports/deploy/smoke.json`, which is what the comment on the
-story being deployed is written from. It leaves the throwaway account behind — nothing
-deletes accounts yet — under a `smoke.` username. `--tunnel` on either command runs it
+story being deployed is written from. The throwaway account it registers, under a `smoke.`
+username, is taken back out again: the checks run wrapped in that removal — see
+`scripts/deploy/smoke-cleanup.ts` — so a check that fails part way through no longer skips
+it, and the run asserts the row was deleted rather than hoping it was. `--tunnel` on either
+command runs it
 through an SSH port forward to the origin instead of through Cloudflare, which is how a
 deploy is checked when the public name is the thing that is broken. Only that mode sends
 the client-address header: Cloudflare sets it itself and answers 403 to a request that
