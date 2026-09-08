@@ -226,4 +226,20 @@ describe('what this movement went at last time', () => {
 		expect(lastPerformance([earlier], 'Squat')).toBeNull();
 		expect(lastPerformance([], 'Bench Press')).toBeNull();
 	});
+
+	it('reads the named movement out of a session that trained several', () => {
+		const mixed = workout([
+			exercise('Squat', [set(80, 5, true)]),
+			exercise('Bench Press', [set(52.5, 4, true)]),
+			exercise('Pull-up', [set(0, 10, true)])
+		]);
+		expect(lastPerformance([mixed], 'Bench Press')).toEqual({ reps: 4, load: 52.5 });
+		expect(lastPerformance([mixed], 'Squat')).toEqual({ reps: 5, load: 80 });
+	});
+
+	it("leaves the caller's history in the order it was filed", () => {
+		const history = [earlier, later];
+		lastPerformance(history, 'Bench Press');
+		expect(history).toEqual([earlier, later]);
+	});
 });
