@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fingerprint, isOwnWrite, outstandingWriteIn } from './outstanding-write';
+import { fingerprint, isOwnWrite, outstandingWriteIn, pendingWrite } from './outstanding-write';
 
 const SENT = { onboarded: true, profiles: [{ name: 'Alex', heightCm: 168 }] };
 const SENT_FINGERPRINT = fingerprint(SENT);
@@ -41,7 +41,7 @@ describe('naming a document', () => {
 	});
 });
 
-describe('reading the outstanding write off a stored record', () => {
+describe('reading the outstanding writes off a stored record', () => {
 	it('is none for a record that names none', () => {
 		expect(outstandingWriteIn(undefined)).toBeNull();
 		expect(outstandingWriteIn(null)).toBeNull();
@@ -50,22 +50,87 @@ describe('reading the outstanding write off a stored record', () => {
 
 	it('is none when either half is missing or the wrong kind of thing', () => {
 		expect(outstandingWriteIn({ version: 3 })).toBeNull();
-		expect(outstandingWriteIn({ fingerprint: 'abc' })).toBeNull();
-		expect(outstandingWriteIn({ version: '3', fingerprint: 'abc' })).toBeNull();
-		expect(outstandingWriteIn({ version: 1.5, fingerprint: 'abc' })).toBeNull();
-		expect(outstandingWriteIn({ version: 3, fingerprint: 7 })).toBeNull();
+		expect(outstandingWriteIn({ fingerprints: ['abc'] })).toBeNull();
+		expect(outstandingWriteIn({ version: '3', fingerprints: ['abc'] })).toBeNull();
+		expect(outstandingWriteIn({ version: 1.5, fingerprints: ['abc'] })).toBeNull();
+		expect(outstandingWriteIn({ version: 3, fingerprints: 'abc' })).toBeNull();
+		expect(outstandingWriteIn({ version: 3, fingerprints: [] })).toBeNull();
 	});
 
-	it('is the write when both halves are there', () => {
+	/**
+	 * One bad entry answers "no" for the whole record rather than being quietly
+	 * dropped: a list with a hole in it cannot say which write is missing from
+	 * it, and a device that adopts on "no" is the behavior this module improves
+	 * on rather than one it can get wrong.
+	 */
+	it('is none when any of the names is not a name', () => {
+		expect(outstandingWriteIn({ version: 3, fingerprints: ['abc', 7] })).toBeNull();
+		expect(outstandingWriteIn({ version: 3, fingerprints: [null] })).toBeNull();
+	});
+
+	it('is the writes when both halves are there', () => {
+		expect(outstandingWriteIn({ version: 3, fingerprints: ['abc', 'def'] })).toEqual({
+			version: 3,
+			fingerprints: ['abc', 'def']
+		});
+	});
+
+	/**
+	 * A record left by the build that kept one write. Reading it as the list of
+	 * one it is means a device does not lose the protection it was already
+	 * holding the moment it updates — which is exactly the moment a write is
+	 * most likely to be in the air unanswered.
+	 */
+	it('reads a record from the build that named a single write', () => {
 		expect(outstandingWriteIn({ version: 3, fingerprint: 'abc' })).toEqual({
 			version: 3,
-			fingerprint: 'abc'
+			fingerprints: ['abc']
 		});
+		expect(outstandingWriteIn({ version: 3, fingerprint: 7 })).toBeNull();
+	});
+});
+
+describe('adding a write to the ones still unanswered', () => {
+	it('is the first name on its own when nothing was outstanding', () => {
+		expect(pendingWrite(null, 4, 'abc')).toEqual({ version: 4, fingerprints: ['abc'] });
+	});
+
+	it('keeps the earlier name beside the new one, oldest first', () => {
+		const first = pendingWrite(null, 4, 'abc');
+		expect(pendingWrite(first, 4, 'def')).toEqual({ version: 4, fingerprints: ['abc', 'def'] });
+	});
+
+	/**
+	 * The retry clock sends the same document again when nothing has changed
+	 * since. Counting that twice would fill the list with one document's name.
+	 */
+	it('adds nothing for a document already named', () => {
+		const first = pendingWrite(null, 4, 'abc');
+		expect(pendingWrite(first, 4, 'abc')).toEqual({ version: 4, fingerprints: ['abc'] });
+	});
+
+	/**
+	 * A version that moved is a version whose writes were all answered — the
+	 * answer is what moved it — so nothing from it is outstanding any more.
+	 */
+	it('starts over at a version the earlier names are not about', () => {
+		const first = pendingWrite(null, 4, 'abc');
+		expect(pendingWrite(first, 5, 'def')).toEqual({ version: 5, fingerprints: ['def'] });
+		expect(pendingWrite(first, 3, 'def')).toEqual({ version: 3, fingerprints: ['def'] });
+	});
+
+	it('stops growing, keeping the oldest names rather than the newest', () => {
+		let write = pendingWrite(null, 4, 'name-0');
+		for (let index = 1; index < 40; index += 1) write = pendingWrite(write, 4, `name-${index}`);
+
+		expect(write.fingerprints).toHaveLength(16);
+		expect(write.fingerprints[0]).toBe('name-0');
+		expect(write.fingerprints.at(-1)).toBe('name-15');
 	});
 });
 
 describe('recognizing this device’s own unanswered write', () => {
-	const outstanding = { version: 4, fingerprint: SENT_FINGERPRINT };
+	const outstanding = { version: 4, fingerprints: [SENT_FINGERPRINT] };
 
 	it('is the server holding what that write carried, one version on', () => {
 		expect(isOwnWrite(outstanding, 5, roundTripped(SENT))).toBe(true);
@@ -94,5 +159,15 @@ describe('recognizing this device’s own unanswered write', () => {
 	it('is not so when the version is right but another device wrote it', () => {
 		const theirs = { onboarded: true, profiles: [{ name: 'Jordan', heightCm: 168 }] };
 		expect(isOwnWrite(outstanding, 5, theirs)).toBe(false);
+	});
+
+	/**
+	 * The one the earlier build could not answer. Two writes went out from the
+	 * same version because the first was never answered; the first is the one
+	 * that landed, and it is not the last thing this device sent.
+	 */
+	it('is so for an earlier unanswered write, not only the most recent', () => {
+		const earlier = { version: 4, fingerprints: [SENT_FINGERPRINT, 'a-later-document'] };
+		expect(isOwnWrite(earlier, 5, roundTripped(SENT))).toBe(true);
 	});
 });

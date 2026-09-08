@@ -12,6 +12,7 @@ import {
 	fingerprint,
 	isOwnWrite,
 	outstandingWriteIn,
+	pendingWrite,
 	type OutstandingWrite
 } from './outstanding-write';
 import { SyncRetry } from './sync-retry';
@@ -525,9 +526,11 @@ export class SyncStore {
 		// Recorded before the request goes out and while the record still reads
 		// dirty, because the case this covers is the one where no answer ever
 		// arrives: the tab is reloaded or closed with the write in the air, and
-		// the next start has to be able to recognise it. See
-		// `outstanding-write.ts`.
-		this.outstanding = { version: this.version, fingerprint: fingerprint(body) };
+		// the next start has to be able to recognise it. Added to whatever is
+		// already unanswered rather than replacing it — a device that hears
+		// nothing goes on writing, and the write that landed is as likely to be
+		// an earlier one as this. See `outstanding-write.ts`.
+		this.outstanding = pendingWrite(this.outstanding, this.version, fingerprint(body));
 		this.save(householdId);
 		this.dirty = false;
 		const result = await writeRemote(this.version, body);
@@ -544,17 +547,21 @@ export class SyncStore {
 			return false;
 		}
 		if (result.stale) {
-			// A refusal names the version this write did not create, so its fate is
-			// settled: it never landed, and it is not what the server is holding.
-			this.outstanding = null;
+			// This write was refused, so what it carried was not stored and is
+			// still unsent — whatever `receive` goes on to make of the document
+			// that came back with the refusal. Adopting sets this straight back to
+			// false; recognising the document as this device's own leaves it
+			// standing, and the send below is what then carries it.
+			this.dirty = true;
 			this.receive(result, true, householdId);
 			// The refusal carried a document written by a newer build. Nothing
 			// more is sent, and what this device is holding stays here.
 			if (this.isOutdated()) return false;
-			// Adopting leaves nothing to send, so this is the other case: a
+			// Adopting leaves nothing to send, so this is one of the other two: a
 			// refusal carrying no document, meaning the version written from no
-			// longer exists. `receive` has recorded the one the server does hold,
-			// and the document goes out again from there.
+			// longer exists, or one carrying a document this device itself wrote
+			// and never heard about. Either way `receive` has recorded the version
+			// the server does hold, and the document goes out again from there.
 			if (this.dirty && again) await this.push(householdId, false);
 			return false;
 		}

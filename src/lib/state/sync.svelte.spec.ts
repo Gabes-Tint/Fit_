@@ -46,17 +46,24 @@ function stored(version: number): Response {
 
 const DROPPED = new TypeError('Failed to fetch');
 
+/** What one request asked, in the shape the assertions below read. */
+function noteCall(sent: Sent[], input: RequestInfo | URL, init: RequestInit | undefined): Sent {
+	const raw = init?.body;
+	const call: Sent = {
+		path: typeof input === 'string' ? input : '',
+		method: init?.method,
+		contentType: (init?.headers as Record<string, string> | undefined)?.['content-type'],
+		body: typeof raw === 'string' ? (JSON.parse(raw) as Record<string, unknown>) : null
+	};
+	sent.push(call);
+	return call;
+}
+
 /** A server that answers the given sequence, and records what it was asked. */
 function server(answers: (Response | Error)[]): Sent[] {
 	const sent: Sent[] = [];
 	vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
-		const raw = init?.body;
-		sent.push({
-			path: typeof input === 'string' ? input : '',
-			method: init?.method,
-			contentType: (init?.headers as Record<string, string> | undefined)?.['content-type'],
-			body: typeof raw === 'string' ? (JSON.parse(raw) as Record<string, unknown>) : null
-		});
+		noteCall(sent, input, init);
 		const next = answers.shift();
 		if (next === undefined) return Promise.reject(new Error('the server was asked once too often'));
 		return next instanceof Error ? Promise.reject(next) : Promise.resolve(next);
@@ -530,7 +537,7 @@ describe('a device that is behind', () => {
 			version: 0,
 			dirty: true,
 			// The write never got an answer, so the device is still holding it.
-			outstanding: { version: 0, fingerprint: carried(sent[1]) }
+			outstanding: { version: 0, fingerprints: [carried(sent[1])] }
 		});
 		expect(store.state.profiles).toHaveLength(1);
 	});
@@ -575,7 +582,7 @@ describe('a device that is behind', () => {
 			version: 2,
 			dirty: true,
 			// As above: the write that would have moved it on was dropped.
-			outstanding: { version: 2, fingerprint: carried(sent[1]) }
+			outstanding: { version: 2, fingerprints: [carried(sent[1])] }
 		});
 		expect(sent.map((call) => call.method)).toEqual(['GET', 'PUT']);
 	});
@@ -1129,7 +1136,7 @@ describe('writes while sync is running', () => {
 			dirty: true,
 			// The write is in the air, and the record says so before its answer
 			// exists — which is what makes it recognizable after a reload.
-			outstanding: { version: 2, fingerprint: carried(inTheAir) }
+			outstanding: { version: 2, fingerprints: [carried(inTheAir)] }
 		});
 		gate.release();
 	});
@@ -2108,6 +2115,116 @@ describe('a write the server took and never answered', () => {
 
 		expect(reloaded.state.profiles[0]?.name).toBe('Robin');
 		expect(announced).toEqual(['This device was behind, so it reloaded your newer data.']);
+	});
+
+	/**
+	 * The same loss without a reload, which is the half #253 left open.
+	 *
+	 * Nothing here is closed or reloaded. The device sends, hears nothing, and
+	 * goes on being used — the retry clock a second later, and a meal logged in
+	 * between. That second write is refused as stale, and what comes back with
+	 * the refusal is the document the *first* write put there. A device that
+	 * remembers only its most recent write does not recognise it, adopts it, and
+	 * throws away everything logged since — while telling the person it has just
+	 * reloaded their newer data, which is the opposite of what happened.
+	 */
+	describe('while the app is still open', () => {
+		/**
+		 * A server that takes the first write and loses its answer, refuses
+		 * anything sent afterwards from that same version, and behaves normally
+		 * from there. The one lost answer is the whole scenario; everything else
+		 * about it is an ordinary server.
+		 */
+		function lostOneAnswer(): Sent[] {
+			const sent: Sent[] = [];
+			let version = 0;
+			let held: Record<string, unknown> | null = null;
+			vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+				const call = noteCall(sent, input, init);
+				if ((init?.method ?? 'GET') === 'GET')
+					return Promise.resolve(documentAnswer(version, held));
+				const write = call.body as { version: number; body: Record<string, unknown> };
+				if (write.version !== version) return Promise.resolve(stale(version, held));
+				version += 1;
+				held = write.body;
+				return version === 1 ? Promise.reject(DROPPED) : Promise.resolve(stored(version));
+			});
+			return sent;
+		}
+
+		/** The device up to the point where it is holding an unheard write. */
+		async function unheardWrite(): Promise<{ store: TendStore; sync: SyncStore; sent: Sent[] }> {
+			const sent = lostOneAnswer();
+			const store = journal();
+			const sync = syncFor(store);
+			await sync.start(HOUSEHOLD);
+			expect(sync.status).toBe('waiting');
+			return { store, sync, sent };
+		}
+
+		it('does not let a refusal carrying it undo what was logged after it', async () => {
+			vi.useFakeTimers();
+			try {
+				const { store, sync } = await unheardWrite();
+
+				// The meal logged while the device was holding that write. Its own
+				// send is refused as stale, and the refusal carries the earlier
+				// document back.
+				store.togglePantry('oats');
+				await vi.advanceTimersByTimeAsync(2_000);
+
+				expect(store.state.pantry).toEqual(['oats']);
+				expect(announced).toEqual([]);
+				expect(sync.status).toBe('idle');
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
+		it('sends it on from the version the server turned out to be at', async () => {
+			vi.useFakeTimers();
+			try {
+				const { store, sync, sent } = await unheardWrite();
+
+				store.togglePantry('oats');
+				await vi.advanceTimersByTimeAsync(2_000);
+
+				const last = sent.at(-1);
+				expect(last?.body).toMatchObject({ version: 1 });
+				expect((last?.body as { body: { pantry: string[] } }).body.pantry).toEqual(['oats']);
+				expect(sync.version).toBe(2);
+				expect(record()).toEqual({
+					householdId: HOUSEHOLD,
+					version: 2,
+					dirty: false,
+					outstanding: null
+				});
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
+		/**
+		 * The other half again: a document at that version this device did not
+		 * write is another device's, and is adopted and said out loud however many
+		 * writes of its own this one is holding.
+		 */
+		it('still gives way to another device that wrote at the same moment', async () => {
+			vi.useFakeTimers();
+			try {
+				const { store } = await unheardWrite();
+				// From here the account is a version on, and not because of this device.
+				server([stale(1, remoteState('Robin'))]);
+
+				store.togglePantry('oats');
+				await vi.advanceTimersByTimeAsync(2_000);
+
+				expect(store.state.profiles[0]?.name).toBe('Robin');
+				expect(announced).toEqual(['This device was behind, so it reloaded your newer data.']);
+			} finally {
+				vi.useRealTimers();
+			}
+		});
 	});
 
 	/**
