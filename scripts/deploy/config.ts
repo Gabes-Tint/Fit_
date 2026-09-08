@@ -122,7 +122,7 @@ export function publicOrigin(): string {
 	const raw = process.env[PUBLIC_ORIGIN_VARIABLE];
 	if (raw === undefined || raw.trim() === '') {
 		throw new Error(
-			`${PUBLIC_ORIGIN_VARIABLE} must name the origin that target answers under, for example ` +
+			`${PUBLIC_ORIGIN_VARIABLE} must name the origin the target answers under, for example ` +
 				`${PUBLIC_ORIGIN_VARIABLE}=${PRODUCTION_ORIGIN} bun run deploy`
 		);
 	}
