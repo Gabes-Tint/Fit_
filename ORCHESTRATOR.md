@@ -339,16 +339,19 @@ already carrying `node_modules`, and `bun run worktree:done deploy-<slug>` remov
 the deploy is done. One command from a clean checkout deploys it:
 
 ```bash
-FIT_DEPLOY_HOST=user@host bun run deploy
+FIT_DEPLOY_HOST=user@host FIT_PUBLIC_ORIGIN=https://fit.psilva.org bun run deploy
 ```
 
 The host is Gabriel's VM. It is not written down in this repository, in an issue, or in
 anything the deploy installs on the machine, and the script refuses to run without it, so
 the only place it lives is the shell that runs the deploy.
 
-`FIT_PUBLIC_ORIGIN` names the origin `smoke.ts` checks against and the deploy logs. It
-defaults to production, `https://fit.psilva.org`, so it is only set deliberately, alongside
-`FIT_DEPLOY_HOST`, when deploying to another environment.
+`FIT_PUBLIC_ORIGIN` names the origin `smoke.ts` checks against and the deploy logs, and is
+required alongside `FIT_DEPLOY_HOST`. It has no default: with one, a deploy to any other
+machine that forgot to set it would run its registration round trip against production and
+leave the account row behind, because the cleanup runs over SSH against `FIT_DEPLOY_HOST`.
+It configures nothing on the machine — `ORIGIN` in `/etc/fit/fit.env` does that, and the
+deploy writes that file only when it is absent.
 
 Cloudflare terminates TLS and forwards plain HTTP to the origin's port 80. There is no
 proxy on the VM and no certificate on it: the unit binds 80 itself, as the unprivileged
