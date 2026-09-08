@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Plus from '@lucide/svelte/icons/plus';
 	import Search from '@lucide/svelte/icons/search';
 	import { onDestroy } from 'svelte';
 	import { createFoodSearch, MIN_QUERY_LENGTH } from '$lib/catalog/food-search.svelte';
@@ -13,8 +14,20 @@
 
 	let {
 		onpick,
+		ondirectlog,
 		placeholder = 'Search foods, brands, barcodes'
-	}: { onpick: (food: Food) => void; placeholder?: string } = $props();
+	}: {
+		onpick: (food: Food) => void;
+		/**
+		 * The `+` on a result row, for logging it straight away with no proposal
+		 * in between. Optional because `ProposalRow` also mounts this component
+		 * to find a catalog match for an already-typed item -- there, tapping a
+		 * row is meant to resolve that item, not create a second, unrelated log
+		 * entry, so it leaves this unset and the button never appears.
+		 */
+		ondirectlog?: (food: Food) => void;
+		placeholder?: string;
+	} = $props();
 
 	/** Named once: it is in every line this component has to say about the network. */
 	const FULL = 'the full catalog';
@@ -63,9 +76,17 @@
 	 * The follow-on under an empty list, and only when the catalog actually
 	 * answered. Offering "log it as custom" to someone who is offline would be
 	 * telling them the food does not exist, which nothing here knows.
+	 *
+	 * It used to say "You can still log it as custom from text.", which was
+	 * never true: the Type tab's unmatched proposals are exactly what
+	 * `commit()` (LogSheet.svelte) throws away, with a toast telling the
+	 * person to match each one to a catalog food first. There is no custom-food
+	 * path today, so this says what is actually still available -- another
+	 * spelling, or the barcode, which is its own search that does not depend
+	 * on getting the name right.
 	 */
 	const custom = $derived(
-		search.outcome?.kind === 'none' ? 'You can still log it as custom from text.' : ''
+		search.outcome?.kind === 'none' ? 'Try a different spelling, or scan the barcode instead.' : ''
 	);
 
 	function typed(value: string) {
@@ -120,6 +141,16 @@
 					</div>
 				</button>
 				<NutritionFactsButton name={food.name} onclick={() => showFacts(food)} />
+				{#if ondirectlog}
+					<button
+						type="button"
+						onclick={() => ondirectlog(food)}
+						aria-label={`Log ${food.name}`}
+						class="text-muted-foreground hover:bg-secondary flex size-10 shrink-0 items-center justify-center rounded-xl"
+					>
+						<Plus class="size-4" />
+					</button>
+				{/if}
 			</li>
 		{/each}
 	</ul>
