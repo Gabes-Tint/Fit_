@@ -28,22 +28,32 @@ export const GATE_SLICE = 'fit-gates.slice';
  * instead of dragging its siblings down with it.
  *
  * It has to sit above the honest peak of the heaviest step or it stops being a
- * runaway detector and becomes a cause of failure: measured on this 32-core
- * box, `lint` alone peaks at 9.3 GB (eslint runs `min(8, cores / 2)` type-aware
- * workers). At 6 GB the kernel OOM-killed a passing `lint`, which a gate
- * reports as a crash — no verdict, and so no evidence about the change either
- * way. 12 GB clears that peak and still bounds one runaway well inside the
- * slice's 18 GB.
+ * runaway detector and becomes a cause of failure: at 6 GB the kernel
+ * OOM-killed a passing `lint`, which a gate reports as a crash — no verdict,
+ * and so no evidence about the change either way.
+ *
+ * The number stays at 12 GB after #198, for a different reason than it was
+ * first chosen. That issue took `lint` from 9.3 GB to 2.4 GB and expected the
+ * cap to fall with it; measuring the rest of the tier first showed that it
+ * cannot, because `lint` was no longer the step this bounds. `test:unit` peaks
+ * at 9.6 GB, and 12 GB is the smallest cap that still clears it with room.
+ * Lowering it on the strength of the lint fix alone would have killed a
+ * passing test run — the very failure the paragraph above describes.
  */
 export const STEP_MEMORY_MAX = '12G';
 
 /**
- * The largest honest peak measured for a single gate step on this workstation
- * (`lint`, 9.3 GB, 2026-09-07). Recorded so the per-step cap cannot drift back
- * below it: a cap under this number does not catch runaways, it kills passing
- * gates.
+ * The largest honest peak measured for a single gate step on this workstation:
+ * `test:unit`, 9.6 GB (2026-09-08), of which the Chromium `client` project is
+ * 8.1 GB on its own. Recorded so the per-step cap cannot drift back below it:
+ * a cap under this number does not catch runaways, it kills passing gates.
+ *
+ * It named `lint` at 9.3 GB until #198. That reading was correct when taken and
+ * is simply no longer the largest — the same command now peaks at 2.4 GB — so
+ * what changed here is which step the number is about, not the standard it
+ * holds the cap to. Bounding the browser suite is what would let the cap move.
  */
-export const HEAVIEST_STEP_GIGABYTES = 9.3;
+export const HEAVIEST_STEP_GIGABYTES = 9.7;
 
 /** Parses the `<n>G` form both the unit file and the per-step cap are written in. */
 export function gigabytes(limit: string): number {
