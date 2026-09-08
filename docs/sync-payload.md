@@ -128,7 +128,7 @@ body.
 
 Two things this measurement turned up. Neither is changed here — the sync client is where a
 store-wide data-loss defect lived twice this month (#247, #253, #262), and a measurement pass is
-not where its behaviour changes.
+not where its behavior changes.
 
 1. **Passing the ceiling ends syncing permanently, and not quietly enough to be safe.** A body
    over 4 MB is refused with `invalid-body`. The client's `writeRemote` sees a non-409 answer
