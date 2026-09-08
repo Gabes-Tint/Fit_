@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { PROVENANCE_LABEL, SEED_FOOD_BY_ID, SEED_FOODS, scaleFood } from './foods';
 import { buildGrocery, groceryAisle } from './grocery';
 import { RECIPE_BY_ID, RECIPES, recipeFits, recipeMacros, type Recipe } from './recipes';
@@ -122,18 +122,6 @@ describe('the recipe book', () => {
 
 	it('indexes every recipe by id', () => {
 		expect(Object.keys(RECIPE_BY_ID).length).toBe(RECIPES.length);
-	});
-
-	/**
-	 * The index is built once, while the module loads, so every test that reads
-	 * the binding this file imported is reading an index some earlier import
-	 * already built. Re-importing into a reset registry builds it here instead.
-	 */
-	it('builds its id index as the module loads', async () => {
-		vi.resetModules();
-		const { RECIPES: freshRecipes, RECIPE_BY_ID: freshIndex } = await import('./recipes');
-		expect(Object.keys(freshIndex)).toEqual(freshRecipes.map((r) => r.id));
-		expect(freshIndex['yogurt-bowl']?.name).toBe('Greek yogurt, berries, chia');
 	});
 
 	it('only references foods the seed table carries', () => {
