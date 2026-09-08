@@ -32,28 +32,37 @@ export const GATE_SLICE = 'fit-gates.slice';
  * OOM-killed a passing `lint`, which a gate reports as a crash — no verdict,
  * and so no evidence about the change either way.
  *
- * The number stays at 12 GB after #198, for a different reason than it was
- * first chosen. That issue took `lint` from 9.3 GB to 2.4 GB and expected the
- * cap to fall with it; measuring the rest of the tier first showed that it
- * cannot, because `lint` was no longer the step this bounds. `test:unit` peaks
- * at 9.6 GB, and 12 GB is the smallest cap that still clears it with room.
- * Lowering it on the strength of the lint fix alone would have killed a
- * passing test run — the very failure the paragraph above describes.
+ * It comes down to 6 GB with #233, which was the half #198 could not do. Two
+ * steps sized themselves from the core count and nothing else: `lint`, fixed
+ * there (9.3 GB → 2.4 GB), and `test:unit`, fixed here (9.29 GB → 3.83 GB) by
+ * bounding the browser pool by memory and taking Chromium's shared memory off
+ * the tmpfs that `/tmp` is. With no step left that grows to fit the machine,
+ * the heaviest honest peak is 3.9 GB and 6 GB clears it by more than half
+ * again.
+ *
+ * 6 GB is also what #191 first specified, before an unbounded `lint` made it
+ * look wrong. What was wrong was the step, not the cap.
  */
-export const STEP_MEMORY_MAX = '12G';
+export const STEP_MEMORY_MAX = '6G';
 
 /**
  * The largest honest peak measured for a single gate step on this workstation:
- * `test:unit`, 9.6 GB (2026-09-08), of which the Chromium `client` project is
- * 8.1 GB on its own. Recorded so the per-step cap cannot drift back below it:
- * a cap under this number does not catch runaways, it kills passing gates.
+ * `test:unit`, 3.80 and 3.83 GB on two runs (2026-09-08), against
+ * `test:coverage` 3.47 GB and `lint` 2.39 GB. Recorded so the per-step cap
+ * cannot drift back below it: a cap under this number does not catch runaways,
+ * it kills passing gates.
  *
- * It named `lint` at 9.3 GB until #198. That reading was correct when taken and
- * is simply no longer the largest — the same command now peaks at 2.4 GB — so
- * what changed here is which step the number is about, not the standard it
- * holds the cap to. Bounding the browser suite is what would let the cap move.
+ * It named `test:unit` at 9.7 GB until #233 bounded the browser project, and
+ * `lint` at 9.3 GB until #198 bounded that one. Both readings were correct when
+ * taken; what changes here is the step's cost, not the standard this holds the
+ * cap to.
+ *
+ * Measured in a transient systemd scope, reading cgroup v2 `memory.peak` for
+ * the whole process tree. Summed process RSS is not a substitute: it missed the
+ * per-worker isolates of #198, and here it missed ~5 GB of tmpfs pages that
+ * appear in no process's RSS at all.
  */
-export const HEAVIEST_STEP_GIGABYTES = 9.7;
+export const HEAVIEST_STEP_GIGABYTES = 3.9;
 
 /** Parses the `<n>G` form both the unit file and the per-step cap are written in. */
 export function gigabytes(limit: string): number {
