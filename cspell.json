@@ -88,6 +88,7 @@
 		"onadd",
 		"onbump",
 		"oncontinue",
+		"ondirectlog",
 		"oneline",
 		"onfoods",
 		"onlog",

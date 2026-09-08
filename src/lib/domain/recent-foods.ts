@@ -26,13 +26,18 @@ export const MAX_RECENT_FOODS = 12;
 export type RecentFood = {
 	/** The grouping key this food was found under -- see `groupKey` below. */
 	key: string;
-	name: string;
-	brand: string | undefined;
-	servingLabel: string;
+	/**
+	 * The real `LogItem` this row was built from -- the group's own most
+	 * recent entry. A one-tap re-log (`relogItem`, log-entry.ts) needs a whole
+	 * entry to rescale -- `foodId`, `micros`, `provenance` -- none of which the
+	 * summary fields below carry, so the row keeps the source itself instead
+	 * of asking the caller to look it back up by `key`. `name`, `brand` and
+	 * `servingLabel` all live on `source` already; this type does not repeat
+	 * them.
+	 */
+	source: LogItem;
 	/** kcal for one serving, derived from the most recently logged entry. */
 	kcalPerServing: number;
-	/** The servings this food was last logged at -- re-logging defaults to this. */
-	lastServings: number;
 	lastDate: string;
 	/** How many qualifying entries this food has, within the window. */
 	count: number;
@@ -113,11 +118,8 @@ function toRecentFood(group: Group): RecentFood {
 		latest.servings > 0 ? Math.round(latest.kcal / latest.servings) : latest.kcal;
 	return {
 		key: group.key,
-		name: latest.name,
-		brand: latest.brand,
-		servingLabel: latest.servingLabel,
+		source: latest,
 		kcalPerServing,
-		lastServings: latest.servings,
 		lastDate: latest.date,
 		count: group.count
 	};
