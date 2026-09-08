@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { toast } from 'svelte-sonner';
 	import { SEED_FOOD_BY_ID } from '$lib/domain/foods';
 	import { buildGrocery, type GroceryItem } from '$lib/domain/grocery';
 	import { logFromFood } from '$lib/domain/log-entry';
@@ -12,6 +11,7 @@
 	import Button from '$lib/ui/Button.svelte';
 	import Checkbox from '$lib/ui/Checkbox.svelte';
 	import ToggleButton from '$lib/ui/ToggleButton.svelte';
+	import { toast } from '$lib/ui/toast.svelte';
 
 	let tab = $state<'meals' | 'grocery'>('meals');
 

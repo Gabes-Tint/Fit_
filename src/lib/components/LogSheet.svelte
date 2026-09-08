@@ -6,7 +6,6 @@
 	import ScanBarcode from '@lucide/svelte/icons/scan-barcode';
 	import Search from '@lucide/svelte/icons/search';
 	import Sparkles from '@lucide/svelte/icons/sparkles';
-	import { toast } from 'svelte-sonner';
 	import { resolveFoodNames } from '$lib/catalog/food-resolve';
 	import { MAX_QUERIES } from '$lib/domain/resolve-limits';
 	import { foodProposal } from '$lib/domain/food-proposal';
@@ -25,6 +24,7 @@
 	import Sheet from '$lib/ui/Sheet.svelte';
 	import Textarea from '$lib/ui/Textarea.svelte';
 	import ToggleButton from '$lib/ui/ToggleButton.svelte';
+	import { toast } from '$lib/ui/toast.svelte';
 	import BarcodeScan from './BarcodeScan.svelte';
 	import FoodSearch from './FoodSearch.svelte';
 	import PhotoCapture from './PhotoCapture.svelte';

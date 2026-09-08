@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * recorded rather than read off the DOM. Same shape as `sync.svelte.spec.ts`.
  */
 const announced = vi.hoisted(() => [] as string[]);
-vi.mock('svelte-sonner', () => ({
+vi.mock('$lib/ui/toast.svelte', () => ({
 	toast: (message: string) => {
 		announced.push(message);
 	}

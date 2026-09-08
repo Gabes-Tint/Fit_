@@ -131,6 +131,25 @@ test.describe('at 360px', () => {
 		await expectFitsViewport(page, page.getByRole('dialog'));
 	});
 
+	test('a toast stays inside the viewport', async ({ page, baseURL }) => {
+		// The longest sentence the app raises as a toast, at the width toasts are
+		// most likely to spill at. The offline branch of the matcher is how to get
+		// it on screen: it is the one message that does not fit on a line.
+		await signInThroughApi(page, baseURL ?? '');
+		await page.route('**/api/foods/resolve', (route) => route.fulfill({ status: 503, body: '' }));
+		await atNarrowPhone(page);
+		await openEmptyJournal(page);
+
+		await openLogSheetAndType(page, '2 tablespoons olive oil');
+		await page.getByRole('button', { name: 'Parse' }).click();
+
+		const toast = page.getByText(
+			'Matching needs the server. You can pick from Search when you\u2019re back online.'
+		);
+		await expect(toast).toBeVisible();
+		await expectFitsViewport(page, toast);
+	});
+
 	test('the Scan tab stays inside the viewport', async ({ page, baseURL }) => {
 		await signInThroughApi(page, baseURL ?? '');
 		await atNarrowPhone(page);
