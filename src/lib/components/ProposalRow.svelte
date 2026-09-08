@@ -8,6 +8,7 @@
 	import FoodSearch from './FoodSearch.svelte';
 	import ProvenanceBadge from './ProvenanceBadge.svelte';
 	import ServingAmount from './ServingAmount.svelte';
+	import ServingSizePicker from './ServingSizePicker.svelte';
 
 	let {
 		item,
@@ -17,6 +18,7 @@
 		onmatch,
 		onpickmatch,
 		onchange,
+		onportion,
 		onremove
 	}: {
 		item: QuantifiedItem;
@@ -27,6 +29,14 @@
 		onmatch: () => void;
 		onpickmatch: (food: Food) => void;
 		onchange: (next: QuantifiedItem) => void;
+		/**
+		 * A portion was chosen from `resolved`'s own serving list (#74's MFP
+		 * follow-up). The number the person already dialled in is not this
+		 * component's to touch — only the sheet holding the resolved food per
+		 * proposal can rebase it without another row sharing the same catalog
+		 * food changing underneath it.
+		 */
+		onportion: (food: Food) => void;
 		onremove: () => void;
 	} = $props();
 
@@ -76,7 +86,12 @@
 			<X class="size-4" />
 		</button>
 	</div>
-	<p class="text-muted-foreground mt-2 text-xs">{serving}</p>
+	<div class="mt-2 flex items-center gap-2">
+		<p class="text-muted-foreground text-xs">{serving}</p>
+		{#if food}
+			<ServingSizePicker {food} onchoose={onportion} />
+		{/if}
+	</div>
 	<ServingAmount
 		{food}
 		servings={item.servings}

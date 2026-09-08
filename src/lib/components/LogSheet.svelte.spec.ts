@@ -110,6 +110,15 @@ const CHICKEN = {
 	per100g: { ...EGG.per100g, kcal: 165 }
 };
 
+/** An egg the catalog also named a medium-egg portion for, MFP's second control. */
+const EGG_WITH_OPTIONS = {
+	...EGG,
+	servingOptions: [
+		{ label: '1 large', grams: 50 },
+		{ label: '1 medium', grams: 44 }
+	]
+};
+
 // Local, not `$lib/testing/fixtures`' `jsonResponse`: every caller here wants a resolved
 // promise of a 200, never a status or header override, so the narrower signature stays.
 function jsonResponse(body: unknown) {
@@ -679,6 +688,31 @@ describe('LogSheet', () => {
 		await page.getByRole('button', { name: 'Increase' }).click();
 		await page.getByRole('button', { name: 'Add to today' }).click();
 		expect(add).toHaveBeenCalledWith([expect.objectContaining({ servings: 2.5 })]);
+	});
+
+	it('logs the portion that was picked, not the food’s default serving', async () => {
+		// Two large eggs is the default. Switching to "1 medium" (44 g) must
+		// change what commit logs, while leaving the count of 2 the person
+		// already set untouched -- MFP keeps the number and re-bases the food.
+		resolvesTo(EGG_WITH_OPTIONS);
+		const add = vi.spyOn(tend, 'addLogItems').mockImplementation(() => undefined);
+		await openSheet();
+		await page.getByLabelText('What you ate').fill('two eggs');
+		await page.getByRole('button', { name: 'Parse' }).click();
+		await page.getByRole('button', { name: `Serving size for ${EGG.name}` }).click();
+		await page.getByRole('button', { name: '1 medium' }).click();
+		await page.getByRole('button', { name: 'Add to today' }).click();
+		expect(add).toHaveBeenCalledWith([
+			expect.objectContaining({ servings: 2, servingLabel: '1 medium', grams: 44 })
+		]);
+	});
+
+	it('offers no serving-size control for a food the catalog named no options for', async () => {
+		resolvesTo(EGG);
+		await openSheet();
+		await page.getByLabelText('What you ate').fill('two eggs');
+		await page.getByRole('button', { name: 'Parse' }).click();
+		expect(page.getByRole('button', { name: /Serving size for/ }).elements()).toHaveLength(0);
 	});
 
 	it('commits every matched item in one go', async () => {
