@@ -913,6 +913,15 @@ describe('routines', () => {
 		]);
 	});
 
+	it('has nothing to delete under an id nobody used, and leaves the plan alone', () => {
+		const store = freshStore();
+		store.useTemplate('ppl');
+		store.planDay('2026-03-09', 'legs');
+		store.removeRoutine('nope', '2026-03-04');
+		expect(store.state.routines.map((r) => r.deletedAt)).toEqual([null, null, null]);
+		expect(store.state.trainingPlan).toEqual([{ date: '2026-03-09', routineIds: ['legs'] }]);
+	});
+
 	it('will not start a deleted routine, any more than one that was never there', () => {
 		const store = freshStore();
 		store.useTemplate('ppl');

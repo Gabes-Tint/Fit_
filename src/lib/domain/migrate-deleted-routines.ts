@@ -18,18 +18,17 @@
 
 type Document = Record<string, unknown>;
 
-function withDeletionFlag(routines: unknown): unknown {
-	if (!Array.isArray(routines)) return routines;
-	return (routines as unknown[]).map((routine) => {
-		if (routine === null || typeof routine !== 'object') return routine;
-		return { ...(routine as Document), deletedAt: null };
-	});
-}
-
 export function migrate_2_to_3(document: Document): Document {
+	const routines = document['routines'];
 	return {
 		...document,
 		schemaVersion: 3,
-		routines: withDeletionFlag(document['routines'])
+		routines: Array.isArray(routines)
+			? (routines as unknown[]).map((routine) =>
+					routine !== null && typeof routine === 'object'
+						? { ...(routine as Document), deletedAt: null }
+						: routine
+				)
+			: routines
 	};
 }

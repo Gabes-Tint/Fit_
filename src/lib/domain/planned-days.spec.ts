@@ -4,7 +4,6 @@ import {
 	plannedSessionsBetween,
 	routineIdsOn,
 	toggleRoutineOn,
-	withoutRoutine,
 	withoutRoutineFrom
 } from './planned-days';
 import type { PlannedDay } from './types';
@@ -80,26 +79,6 @@ describe('putting a routine on a day', () => {
 		const before = JSON.stringify(WEEK);
 
 		toggleRoutineOn(WEEK, '2026-09-07', 'legs');
-
-		expect(JSON.stringify(WEEK)).toBe(before);
-	});
-});
-
-describe('taking a routine out of the plan altogether', () => {
-	it('drops it from every day it sat on', () => {
-		const next = withoutRoutine(WEEK, 'lift');
-
-		expect(next).toEqual([{ date: '2026-09-07', routineIds: ['run'] }]);
-	});
-
-	it('leaves the days that never held it exactly as they were', () => {
-		expect(withoutRoutine(WEEK, 'swim')).toEqual(WEEK);
-	});
-
-	it('leaves the plan it was handed alone', () => {
-		const before = JSON.stringify(WEEK);
-
-		withoutRoutine(WEEK, 'lift');
 
 		expect(JSON.stringify(WEEK)).toBe(before);
 	});

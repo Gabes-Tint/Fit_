@@ -420,10 +420,12 @@ export class TendStore {
 	 * was asked of somebody yesterday is left as the record it is.
 	 */
 	removeRoutine(id: string, date?: string) {
+		const routine = this.routine(id);
+		if (!routine) return;
 		const from = date ?? todayISO();
-		this.state.routines = this.state.routines.map((r) =>
-			r.id === id ? { ...r, deletedAt: from } : r
-		);
+		// Flagged in place, as the exercise steppers are: rebuilding the list would
+		// give every row a new identity and rerender a screen that has not changed.
+		routine.deletedAt = from;
 		this.state.trainingPlan = withoutRoutineFrom(this.state.trainingPlan, id, from);
 		this.persist();
 	}
@@ -498,8 +500,8 @@ export class TendStore {
 
 	startWorkout(routineId: string): Workout | null {
 		const routine = this.routine(routineId);
-		// A deleted routine is as unstartable as one that was never there: it is
-		// still resolvable only so that the days it already sat on can name it.
+		// A deleted routine can no more be started than one that was never there:
+		// it is still resolvable only so the days it already sat on can name it.
 		if (!routine || routine.deletedAt !== null) return null;
 		if (routine.exercises.length === 0) return null;
 		const workout = workoutFromRoutine(routine, {
