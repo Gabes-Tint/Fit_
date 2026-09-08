@@ -22,7 +22,7 @@ export const RECENT_WINDOW_DAYS = 60;
  */
 export const MAX_RECENT_FOODS = 12;
 
-/** One distinct food, ready to render as a re-loggable row. */
+/** One distinct food, ready to render as a row that can be logged again. */
 export type RecentFood = {
 	/** The grouping key this food was found under -- see `groupKey` below. */
 	key: string;
@@ -46,7 +46,7 @@ export type RecentFood = {
  * promise to keep, since it rebuilds the file wholesale, and a stored id that
  * later points at a different food -- or at nothing -- is worse than storing
  * none. That means most of a real journal cannot be grouped by `foodId` at
- * all, so the key here is the entry's own name and brand, normalised by
+ * all, so the key here is the entry's own name and brand, normalized by
  * trimming and case-folding, and `foodId` is used only where it exists and is
  * stable: seeded foods and recipes logged off the plan. This is the crux of
  * the whole module -- get the key wrong and "recent" either fractures one
