@@ -13,11 +13,12 @@ Follow `AGENTS.md` and the Svelte skill for any `.svelte` or SvelteKit file. New
 in a new small module rather than into a large existing one, because the mutation verdict
 charges whole-file debt to anything touched.
 
-Work only in the git worktree named in your brief; the shared checkout may hold another
-agent's uncommitted work, and `git clean`, `git stash`, or `git checkout --` there destroys
-it for good (AGENTS.md, "Worktree isolation"). If Read, Edit, or Write are denied because
-bypass mode is active, do the reading and editing through Bash instead — `cat`, `sed`,
-heredocs — rather than stopping to ask.
+Work only in your own git worktree: `bun run worktree:new <name>` if that script exists
+in `package.json`, else `git worktree add` off `origin/main` plus `bun install
+--frozen-lockfile`. Never `git clean`, `git stash`, or `git checkout --` in the shared
+checkout — it may hold another agent's uncommitted work (AGENTS.md, "Worktree isolation").
+If Read, Edit, or Write are denied because bypass mode is active, do the reading and editing
+through Bash instead — `cat`, `sed`, heredocs — rather than stopping to ask.
 
 When the brief names no tier, run `verify:changed`; run a wider tier only when the brief
 asks.
@@ -39,12 +40,11 @@ and any `+server.ts`; `changed-node` or `changed-client` otherwise — and paste
 verdict. `.svelte` files, specs, and `scripts/**` are not mutated; say you checked rather than
 leaving it silent.
 
-Commit with `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` and a `Claude-Session:`
-trailer, and close any PR body with the matching `🤖 Generated with [Claude Code]` line and
-session link — the brief may carry its own session URL since it changes per session; use
-that one. A PR body is two or three sentences, then gates with their result lines, then
-bundle before/after when client code changed, and `Closes #n` when the slice finishes the
-issue.
+Commit with the `Co-Authored-By:` name and `Claude-Session:` URL your brief gives — both
+change per session, so never hardcode one — and close any PR body with the matching `🤖
+Generated with [Claude Code]` line and session link from that same brief. A PR body is two
+or three sentences, then gates with their result lines, then bundle before/after when client
+code changed, and `Closes #n` when the slice finishes the issue.
 
 Report in under 250 words, evidence never cut for brevity: what was built, the files
 touched, the gate result from `reports/quality/gate-<tier>.json` with any failing step and

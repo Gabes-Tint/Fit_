@@ -9,13 +9,156 @@ Catalog statements run against the in-memory fixture schema (`tests/catalog-fixt
 ```sql
 select f.food_id, f.name, f.brand, f.kind, f.category, f.gtin14, f.license,
 	f.serving_label, f.serving_g, f.kcal, f.protein, f.fat, f.carbs, f.sugar, f.fiber,
-	f.sodium, f.saturated_fat, f.quality, f.n_sources from food f where f.gtin14 = ? order by f.quality desc
+	f.sodium, f.saturated_fat, f.potassium, f.iron, f.calcium, f.magnesium, f.zinc,
+	f.vitamin_a, f.vitamin_c, f.vitamin_d, f.vitamin_b12, f.quality, f.n_sources from food f where f.gtin14 = ? order by f.quality desc
 ```
 
 Plan:
 
 - SEARCH f USING INDEX idx_food_gtin (gtin14=?)
 - USE TEMP B-TREE FOR ORDER BY
+
+### src/lib/server/catalog/foods.ts — searchFoods (built at run time)
+
+```sql
+with matched as (
+	select rowid as food_id from food_fts where food_fts match :match
+),
+named as (
+	select
+		m.food_id as food_id,
+		f.name as name,
+		f.quality as row_quality,
+		-- LIKE and lower() fold ASCII only, so a name whose leading word carries
+		-- an accent would lose the name terms below. Three of the catalog's
+		-- 426,456 names hold any non-ASCII character and none of them is a
+		-- letter, so the cost of that today is nothing and the saved lower()
+		-- call is real.
+		(f.name like :prefix) as name_leads,
+		2 * min(1.0, (length(:text) * 1.0) / max(length(f.name), 1))
+			+ 1.5 * (case when f.kind = 'generic' then 1.0 else 0.0 end)
+			+ 0.75 * (case when f.kind = 'generic' and f.quality >= 91
+				then 1.0 else 0.0 end)
+			+ 1.5 * min(1.0,
+				ln(1.0 + f.n_sources) / ln(1.0 + 250.0))
+			+ 0.5 * max(0.0, (f.quality - 87) / 13.0)
+			as row_score
+	from matched m
+	join food f on f.food_id = m.food_id
+),
+scored as (
+	select food_id, name, row_quality, row_score + case when name_leads = 0 then 0.0 else (
+				with parts(full_name, head_name) as (values (lower(trim(name)), case when instr(name, ',') > 0
+					then lower(trim(substr(name, 1, instr(name, ',') - 1)))
+					else lower(trim(name)) end))
+				select 2 * (case when case when length(full_name) > 3 and substr(full_name, -1) = 's'
+				then substr(full_name, 1, length(full_name) - 1) else full_name end = :singular
+						then 1.0 else 0.0 end)
+					+ 2 * (case when case when length(head_name) > 3 and substr(head_name, -1) = 's'
+				then substr(head_name, 1, length(head_name) - 1) else head_name end = :singular
+						then 1.0 else 0.0 end)
+					+ 0.75 * (case when head_name like :text || '%' then 1.0 else 0.0 end)
+				from parts
+			) end as score
+	from named
+	order by score desc, row_quality desc
+	limit 2000
+),
+-- The collapse, before anything is cut to a page. The key is the name with one
+-- trailing "s" dropped, so "Milk" and "Milks" are one food; the ordering inside
+-- a name is what makes the survivor the best-scoring row of that name and, on a
+-- tie, the highest-quality one.
+deduplicated as (
+	select
+		food_id, name, row_quality, score,
+		row_number() over (partition by case when length(lower(trim(name))) > 3 and substr(lower(trim(name)), -1) = 's'
+				then substr(lower(trim(name)), 1, length(lower(trim(name))) - 1) else lower(trim(name)) end
+			order by score desc, row_quality desc) as position
+	from scored
+),
+shortlist as (
+	select food_id, name, row_quality, score
+	from deduplicated
+	where position = 1
+	order by score desc, row_quality desc
+	limit 500
+),
+-- MATERIALIZED, and measured: the byproduct test names this CTE's column 33
+-- times, and without the hint SQLite flattens the CTE and rebuilds the parts
+-- string once per mention. That cost 21 ms a query on the live catalog, against
+-- 5 ms with the hint.
+segmented as materialized (
+	select food_id, name, row_quality, score, ',' || replace(replace(lower(trim(name)), ' ,', ','), ', ', ',') || ',' as name_parts
+	from shortlist
+),
+ranked as (
+	select
+		food_id,
+		score - 1 * case when instr(lower(name), 'dried') > 0 or instr(lower(name), 'dehydrated') > 0 or instr(lower(name), 'powder') > 0 or instr(lower(name), 'frozen') > 0 or instr(lower(name), 'canned') > 0 or instr(lower(name), 'concentrate') > 0 or instr(lower(name), 'imitation') > 0 or instr(lower(name), 'meatless') > 0 or (instr(name_parts, ',beans,') = 0 and instr(name_parts, ',peanut butter,') = 0) and ((instr(' ' || :text || ' ', ' blood ') = 0 and instr(' ' || :text || ' ', ' bloods ') = 0 and instr(name_parts, ',blood,') > 0) or (instr(' ' || :text || ' ', ' bone marrow ') = 0 and instr(' ' || :text || ' ', ' bone marrows ') = 0 and instr(name_parts, ',bone marrow,') > 0) or (instr(' ' || :text || ' ', ' bones ') = 0 and instr(' ' || :text || ' ', ' bone ') = 0 and instr(name_parts, ',bones,') > 0) or (instr(' ' || :text || ' ', ' brain ') = 0 and instr(' ' || :text || ' ', ' brains ') = 0 and instr(name_parts, ',brain,') > 0) or (instr(' ' || :text || ' ', ' brains ') = 0 and instr(' ' || :text || ' ', ' brain ') = 0 and instr(name_parts, ',brains,') > 0) or (instr(' ' || :text || ' ', ' chitterlings ') = 0 and instr(' ' || :text || ' ', ' chitterling ') = 0 and instr(name_parts, ',chitterlings,') > 0) or (instr(' ' || :text || ' ', ' ears ') = 0 and instr(' ' || :text || ' ', ' ear ') = 0 and instr(name_parts, ',ears,') > 0) or (instr(' ' || :text || ' ', ' fat ') = 0 and instr(' ' || :text || ' ', ' fats ') = 0 and instr(name_parts, ',fat,') > 0) or (instr(' ' || :text || ' ', ' feet ') = 0 and instr(' ' || :text || ' ', ' feets ') = 0 and instr(name_parts, ',feet,') > 0) or (instr(' ' || :text || ' ', ' giblets ') = 0 and instr(' ' || :text || ' ', ' giblet ') = 0 and instr(name_parts, ',giblets,') > 0) or (instr(' ' || :text || ' ', ' gizzard ') = 0 and instr(' ' || :text || ' ', ' gizzards ') = 0 and instr(name_parts, ',gizzard,') > 0) or (instr(' ' || :text || ' ', ' heart ') = 0 and instr(' ' || :text || ' ', ' hearts ') = 0 and instr(name_parts, ',heart,') > 0) or (instr(' ' || :text || ' ', ' jowl ') = 0 and instr(' ' || :text || ' ', ' jowls ') = 0 and instr(name_parts, ',jowl,') > 0) or (instr(' ' || :text || ' ', ' kidney ') = 0 and instr(' ' || :text || ' ', ' kidneys ') = 0 and instr(name_parts, ',kidney,') > 0) or (instr(' ' || :text || ' ', ' kidneys ') = 0 and instr(' ' || :text || ' ', ' kidney ') = 0 and instr(name_parts, ',kidneys,') > 0) or (instr(' ' || :text || ' ', ' leaves ') = 0 and instr(' ' || :text || ' ', ' leave ') = 0 and instr(name_parts, ',leaves,') > 0) or (instr(' ' || :text || ' ', ' leaf fat ') = 0 and instr(' ' || :text || ' ', ' leaf fats ') = 0 and instr(name_parts, ',leaf fat,') > 0) or (instr(' ' || :text || ' ', ' liver ') = 0 and instr(' ' || :text || ' ', ' livers ') = 0 and instr(name_parts, ',liver,') > 0) or (instr(' ' || :text || ' ', ' livers ') = 0 and instr(' ' || :text || ' ', ' liver ') = 0 and instr(name_parts, ',livers,') > 0) or (instr(' ' || :text || ' ', ' lung ') = 0 and instr(' ' || :text || ' ', ' lungs ') = 0 and instr(name_parts, ',lung,') > 0) or (instr(' ' || :text || ' ', ' lungs ') = 0 and instr(' ' || :text || ' ', ' lung ') = 0 and instr(name_parts, ',lungs,') > 0) or (instr(' ' || :text || ' ', ' neck ') = 0 and instr(' ' || :text || ' ', ' necks ') = 0 and instr(name_parts, ',neck,') > 0) or (instr(' ' || :text || ' ', ' pancreas ') = 0 and instr(' ' || :text || ' ', ' pancrea ') = 0 and instr(name_parts, ',pancreas,') > 0) or (instr(' ' || :text || ' ', ' skin ') = 0 and instr(' ' || :text || ' ', ' skins ') = 0 and instr(name_parts, ',skin,') > 0) or (instr(' ' || :text || ' ', ' spleen ') = 0 and instr(' ' || :text || ' ', ' spleens ') = 0 and instr(name_parts, ',spleen,') > 0) or (instr(' ' || :text || ' ', ' stalks ') = 0 and instr(' ' || :text || ' ', ' stalk ') = 0 and instr(name_parts, ',stalks,') > 0) or (instr(' ' || :text || ' ', ' stomach ') = 0 and instr(' ' || :text || ' ', ' stomachs ') = 0 and instr(name_parts, ',stomach,') > 0) or (instr(' ' || :text || ' ', ' suet ') = 0 and instr(' ' || :text || ' ', ' suets ') = 0 and instr(name_parts, ',suet,') > 0) or (instr(' ' || :text || ' ', ' sweetbread ') = 0 and instr(' ' || :text || ' ', ' sweetbreads ') = 0 and instr(name_parts, ',sweetbread,') > 0) or (instr(' ' || :text || ' ', ' sweetbreads ') = 0 and instr(' ' || :text || ' ', ' sweetbread ') = 0 and instr(name_parts, ',sweetbreads,') > 0) or (instr(' ' || :text || ' ', ' tail ') = 0 and instr(' ' || :text || ' ', ' tails ') = 0 and instr(name_parts, ',tail,') > 0) or (instr(' ' || :text || ' ', ' testes ') = 0 and instr(' ' || :text || ' ', ' teste ') = 0 and instr(name_parts, ',testes,') > 0) or (instr(' ' || :text || ' ', ' thymus ') = 0 and instr(' ' || :text || ' ', ' thymu ') = 0 and instr(name_parts, ',thymus,') > 0) or (instr(' ' || :text || ' ', ' tongue ') = 0 and instr(' ' || :text || ' ', ' tongues ') = 0 and instr(name_parts, ',tongue,') > 0) or (instr(' ' || :text || ' ', ' tripe ') = 0 and instr(' ' || :text || ' ', ' tripes ') = 0 and instr(name_parts, ',tripe,') > 0)) then 1.0 else 0.0 end as score,
+		row_quality
+	from segmented
+)
+select f.food_id, f.name, f.brand, f.kind, f.category, f.gtin14, f.license,
+	f.serving_label, f.serving_g, f.kcal, f.protein, f.fat, f.carbs, f.sugar, f.fiber,
+	f.sodium, f.saturated_fat, f.potassium, f.iron, f.calcium, f.magnesium, f.zinc,
+	f.vitamin_a, f.vitamin_c, f.vitamin_d, f.vitamin_b12, f.quality, f.n_sources
+from ranked d
+join food f on f.food_id = d.food_id
+order by d.score desc, f.quality desc
+limit :limit
+```
+
+Plan:
+
+- MATERIALIZE segmented
+- CO-ROUTINE shortlist
+- CO-ROUTINE deduplicated
+- CO-ROUTINE (subquery-11)
+- CO-ROUTINE scored
+- SCAN food_fts VIRTUAL TABLE INDEX 0:M3
+- SEARCH f USING INDEX idx_food_id (food_id=?)
+- CORRELATED SCALAR SUBQUERY 4
+- MATERIALIZE parts
+- SCAN CONSTANT ROW
+- SCAN parts
+- USE TEMP B-TREE FOR ORDER BY
+- SCAN scored
+- USE TEMP B-TREE FOR ORDER BY
+- SCAN (subquery-11)
+- SCAN deduplicated
+- USE TEMP B-TREE FOR ORDER BY
+- SCAN shortlist
+- SCAN segmented
+- SEARCH f USING INDEX idx_food_id (food_id=?)
+- USE TEMP B-TREE FOR ORDER BY
+
+### src/lib/server/catalog/portions.ts — volumesByFood (built at run time)
+
+```sql
+select food_id, label, grams from food_serving
+		where food_id in (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			and typeof(label) = 'text' and typeof(grams) in ('real', 'integer')
+		order by food_id, is_default desc, label
+```
+
+Plan:
+
+- SEARCH food_serving USING INDEX idx_serving_food (food_id=?)
+- USE TEMP B-TREE FOR LAST 2 TERMS OF ORDER BY
+
+### src/lib/server/catalog/serving-rows.ts — servingRowsByFood (built at run time)
+
+```sql
+select food_id, label, grams from food_serving
+		where food_id in (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			and typeof(label) = 'text' and typeof(grams) in ('real', 'integer')
+		order by food_id, is_default desc, label
+```
+
+Plan:
+
+- SEARCH food_serving USING INDEX idx_serving_food (food_id=?)
+- USE TEMP B-TREE FOR LAST 2 TERMS OF ORDER BY
 
 ### src/lib/server/state/document.ts — readDocument
 
@@ -227,8 +370,3 @@ delete from sign_in_throttle
 Plan:
 
 - SEARCH sign_in_throttle USING INDEX sign_in_throttle_expiry (window_ends_at<?)
-
-## Not extracted
-
-- src/lib/server/catalog/foods.ts — searchFoods: `searchSql(FOOD_COLUMNS)`
-- src/lib/server/catalog/portions.ts — volumesByFood: `servingsSql(ids.length)`

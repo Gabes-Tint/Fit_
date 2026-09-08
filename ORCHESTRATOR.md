@@ -166,10 +166,11 @@ Rules:
 
 - **Every delegation brief names the agent's worktree and warns it off the shared
   checkout.** When the orchestrator writes the prompt for an agent, it says which worktree
-  to create (`git worktree add /tmp/fit-wt-<slug> -b <branch> main`) and tells the agent to
-  work only there — never in the shared checkout at the repo root, which may be holding
-  another agent's uncommitted work. This has already been destroyed once by an agent running
-  a clean or reset against the wrong tree; the brief is what prevents it happening again.
+  to create — `bun run worktree:new <slug>` (AGENTS.md, "Worktree isolation") — and tells the
+  agent to work only there — never in the shared checkout at the repo root, which may be
+  holding another agent's uncommitted work. This has already been destroyed once by an agent
+  running a clean or reset against the wrong tree; the brief is what prevents it happening
+  again.
 - **The orchestrator must stay free to talk.** Gabriel's instruction, 2026-09-04: "I want sub agents doing the work and you must be free to talk to me — you should be free as much as possible." Never block the main session on a long-running command. Do not poll CI, sleep, or watch a gate in the foreground; hand that to a subagent that blocks on it and reports a verdict. The orchestrator's own tool calls should be short reads and quick decisions, nothing that occupies it for minutes. If work needs waiting, the waiting belongs to an agent.
 
 - Default to the smallest rung that can do the job. Escalate when a smaller agent returns
