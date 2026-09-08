@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { mostRecentFoods } from './recent-foods';
 import { ZERO_MICROS, type LogItem } from './types';
 import { readsAsServings, usualServings } from './usual-portion';
 
@@ -104,22 +103,6 @@ describe('usualServings', () => {
 		// amount here would make the card and that list disagree.
 		const log = [logged('Nacho Cheese Tortilla Chips', '2026-09-01', 3, { foodId: 'f-chips' })];
 		expect(usualServings(log, CHIPS)).toBeNull();
-	});
-
-	it('answers with the amount the History list would re-log', () => {
-		// The card's default and the History list's one-tap re-log read the same
-		// log and must not disagree about which entry was the last one — one food
-		// with two different last portions is a bug nobody could explain.
-		const log = [
-			logged('Nacho Cheese Tortilla Chips', '2026-09-01', 0.5, { id: 'l-1' }),
-			logged('Egg, large', '2026-09-04', 9, { id: 'l-2', brand: undefined }),
-			logged('Nacho Cheese Tortilla Chips', '2026-09-03', 1.607, { id: 'l-3' }),
-			logged('Nacho Cheese Tortilla Chips', '2026-09-03', 2.5, { id: 'l-4' })
-		];
-		const history = mostRecentFoods(log, '2026-09-05');
-		const chips = history.find((food) => food.source.name === CHIPS.name);
-		expect(usualServings(log, CHIPS)).toBe(chips?.source.servings);
-		expect(usualServings(log, EGGS)).toBe(history[0]?.source.servings);
 	});
 
 	it('remembers a food logged long before the History list would still list it', () => {

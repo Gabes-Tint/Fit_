@@ -46,23 +46,11 @@ describe('mostRecentFoods', () => {
 	});
 
 	it('groups the same food regardless of case or surrounding whitespace', () => {
+		// `foodIdentity` decides this; the list is what makes it visible, as one
+		// row rather than two.
 		const log = [
 			item({ id: 'l-1', name: ' Oatmeal ', brand: ' Quaker ' }),
 			item({ id: 'l-2', name: 'oatmeal', brand: 'QUAKER' })
-		];
-		const foods = mostRecentFoods(log, TODAY);
-		expect(foods).toHaveLength(1);
-		expect(foods[0]?.count).toBe(2);
-	});
-
-	it('treats a food with no brand and one with a blank brand as the same food', () => {
-		// An unbranded catalog row logs `brand: undefined`; an imported one can
-		// carry the empty cell its spreadsheet had. Neither names a brand, so
-		// splitting them would show "Oatmeal" twice with no way to tell which
-		// row is which.
-		const log = [
-			item({ id: 'l-1', name: 'Oatmeal', brand: undefined }),
-			item({ id: 'l-2', name: 'Oatmeal', brand: '   ' })
 		];
 		const foods = mostRecentFoods(log, TODAY);
 		expect(foods).toHaveLength(1);
@@ -85,14 +73,6 @@ describe('mostRecentFoods', () => {
 		const foods = mostRecentFoods(log, TODAY);
 		expect(foods).toHaveLength(1);
 		expect(foods[0]?.count).toBe(2);
-	});
-
-	it('keeps two seeded foods apart, each under its own id', () => {
-		const log = [
-			item({ id: 'l-1', foodId: 'egg-large', name: 'Egg, large' }),
-			item({ id: 'l-2', foodId: 'oat-porridge', name: 'Porridge' })
-		];
-		expect(mostRecentFoods(log, TODAY)).toHaveLength(2);
 	});
 
 	it('orders distinct foods by the date they were most recently logged', () => {

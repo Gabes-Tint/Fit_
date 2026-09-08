@@ -1,3 +1,4 @@
+import { foodIdentity } from './food-identity';
 import type { LogItem } from './types';
 import { addDaysISO, todayISO } from './utils';
 
@@ -24,7 +25,7 @@ export const MAX_RECENT_FOODS = 12;
 
 /** One distinct food, ready to render as a row that can be logged again. */
 export type RecentFood = {
-	/** The grouping key this food was found under -- see `groupKey` below. */
+	/** The grouping key this food was found under -- see `foodIdentity`. */
 	key: string;
 	/**
 	 * The real `LogItem` this row was built from -- the group's own most
@@ -42,28 +43,6 @@ export type RecentFood = {
 	/** How many qualifying entries this food has, within the window. */
 	count: number;
 };
-
-/**
- * Group entries that name the same food.
- *
- * `logFromCatalogFood` (see `log-entry.ts`) sets `foodId: null` on every
- * catalog food on purpose: the catalog's own id is a hint the ETL does not
- * promise to keep, since it rebuilds the file wholesale, and a stored id that
- * later points at a different food -- or at nothing -- is worse than storing
- * none. That means most of a real journal cannot be grouped by `foodId` at
- * all, so the key here is the entry's own name and brand, normalized by
- * trimming and case-folding, and `foodId` is used only where it exists and is
- * stable: seeded foods and recipes logged off the plan. This is the crux of
- * the whole module -- get the key wrong and "recent" either fractures one
- * food across ten rows ("Egg" vs "egg " vs "EGG") or merges two unrelated
- * ones into one.
- */
-function groupKey(item: LogItem): string {
-	if (item.foodId) return `id:${item.foodId}`;
-	const name = item.name.trim().toLowerCase();
-	const brand = (item.brand ?? '').trim().toLowerCase();
-	return `name:${name}|${brand}`;
-}
 
 type Group = {
 	key: string;
@@ -91,7 +70,7 @@ function groupsWithinWindow(log: readonly LogItem[], today: string): Group[] {
 		// a clock-skewed device, dated in the future and not yet something to
 		// suggest re-logging.
 		if (item.date < cutoff || item.date > today) continue;
-		const key = groupKey(item);
+		const key = foodIdentity(item);
 		const existing = groups.get(key);
 		if (!existing) {
 			groups.set(key, { key, latest: item, count: 1 });

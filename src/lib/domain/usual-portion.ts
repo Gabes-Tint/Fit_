@@ -21,32 +21,18 @@
  * that mass before anything is logged, so it is visible rather than silent.
  */
 
+import { isSameFood } from './food-identity';
 import { EIGHTH, roundAmount } from './serving-amount';
 import type { Food, LogItem } from './types';
 
 /**
  * What identifies a food in somebody's log. Not its id: the catalog's own id
- * never reaches an entry, so this is all there is to match on.
+ * never reaches an entry, so this is all there is to match on. Whether an
+ * entry is one of this food's is `isSameFood` (food-identity.ts), which the
+ * History list asks too — one rule, so the card's remembered portion and the
+ * row that re-logs it can never disagree about which entries are this food.
  */
 export type RememberedFood = Pick<Food, 'name' | 'brand'>;
-
-/**
- * Whether this entry is one of that food's.
- *
- * Two halves, and both are needed. `foodId === null` is what a catalog food
- * logs as, on purpose: the ETL rebuilds the catalog wholesale and its ids are
- * not promised to survive (`logFromCatalogFood`), so an entry that kept an id
- * came from the seeded table instead and is a different, precisely identified
- * food — which is how the History list treats it too. What is left is the name
- * and the brand, and they are compared exactly, because both sides are the same
- * catalog string: `scaleFood` copies them onto the entry at log time. Folding
- * case or padding the way `recent-foods.ts` does would be guessing that two
- * differently written names are one food, which is a guess this has no need to
- * make.
- */
-function sameFood(item: LogItem, food: RememberedFood): boolean {
-	return item.foodId === null && item.name === food.name && item.brand === food.brand;
-}
 
 /**
  * The amount last logged of this food, or `null` for one never logged.
@@ -63,7 +49,7 @@ export function usualServings(
 	if (food === undefined) return null;
 	let latest: LogItem | null = null;
 	for (const item of log) {
-		if (!sameFood(item, food)) continue;
+		if (!isSameFood(item, food)) continue;
 		// The whole log, not its tail: an import can land older entries after
 		// newer ones. `>=` because a calendar day cannot separate two entries
 		// logged within it, and the log is appended to, so the later of two on
