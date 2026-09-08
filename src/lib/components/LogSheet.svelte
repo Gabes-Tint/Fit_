@@ -113,7 +113,7 @@
 	 * would be overruling them.
 	 */
 	function opensAt(food: Food): number {
-		return usualServings(tend.profile?.log ?? [], food.id) ?? servings;
+		return usualServings(tend.profile?.log ?? [], food) ?? servings;
 	}
 
 	function propose(food: Food, confidence: number) {

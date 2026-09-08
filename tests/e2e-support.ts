@@ -283,10 +283,20 @@ export async function openLogSheet(page: Page): Promise<void> {
  * same food is how a test proves what the card remembers (#159).
  */
 export async function openLogCardFor(page: Page, name: string, query = name): Promise<void> {
+	const sheet = page.getByRole('dialog');
 	await openLogSheet(page);
-	await page.getByRole('button', { name: 'Search', exact: true }).click();
-	await page.getByLabel('Search foods, brands, barcodes').fill(query);
-	await page.getByText(name, { exact: true }).click();
+	await sheet.getByRole('button', { name: 'Search', exact: true }).click();
+	await sheet.getByLabel('Search foods, brands, barcodes').fill(query);
+	// The search result, and nothing that shares its name: once the food has
+	// been logged once, the Today screen behind the sheet carries a row for it
+	// and the History list inside the sheet carries another — and tapping that
+	// one logs the food outright instead of opening a card. Only a result row
+	// carries `FoodSearch`'s own one-tap `Log` button, so that is what picks it
+	// out, and waiting for it is what keeps the search from being raced.
+	const result = sheet
+		.getByRole('listitem')
+		.filter({ has: page.getByRole('button', { name: `Log ${name}`, exact: true }) });
+	await result.getByText(name, { exact: true }).click();
 }
 
 /**

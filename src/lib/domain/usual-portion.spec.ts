@@ -2,63 +2,106 @@ import { describe, expect, it } from 'vitest';
 import { ZERO_MICROS, type LogItem } from './types';
 import { readsAsServings, usualServings } from './usual-portion';
 
-/** A logged entry, with only the three fields this module reads varied. */
-function logged(foodId: string | null, date: string, servings: number): LogItem {
+/** A logged entry, with only the fields this module reads varied. */
+function logged(
+	name: string,
+	date: string,
+	servings: number,
+	extra: Partial<LogItem> = {}
+): LogItem {
 	return {
-		id: `${foodId}-${date}-${servings}`,
-		foodId,
+		id: `l-${date}-${servings}`,
+		foodId: null,
 		date,
 		meal: 'lunch',
 		servings,
 		source: 'manual',
-		name: 'Nacho Cheese Tortilla Chips',
+		name,
 		kcal: 140,
 		protein: 2,
 		carbs: 17,
 		fat: 7,
 		micros: ZERO_MICROS,
 		servingLabel: '1 oz',
-		grams: 28
+		grams: 28,
+		brand: 'DORITOS',
+		...extra
 	};
 }
 
-const CHIPS = 'catalog-9002';
-const EGGS = 'catalog-9001';
+/**
+ * The catalog food behind those entries. Its own id never reaches the log —
+ * `logFromCatalogFood` stores `foodId: null` — so name and brand are what tie
+ * the two together, and are all `RememberedFood` asks for.
+ */
+const CHIPS = { name: 'Nacho Cheese Tortilla Chips', brand: 'DORITOS' };
+
+const EGGS = { name: 'Egg, large', brand: undefined };
 
 describe('usualServings', () => {
 	it('is the amount of the only entry for the food', () => {
-		expect(usualServings([logged(CHIPS, '2026-09-01', 1.607)], CHIPS)).toBe(1.607);
+		expect(usualServings([logged('Nacho Cheese Tortilla Chips', '2026-09-01', 1.607)], CHIPS)).toBe(
+			1.607
+		);
+	});
+
+	it('matches a catalog food to its entries by name and brand, not by id', () => {
+		// The entry carries `foodId: null` (`logFromCatalogFood`), so an
+		// implementation keyed on the food's own id would answer null here.
+		const log = [logged('Nacho Cheese Tortilla Chips', '2026-09-01', 2)];
+		expect(usualServings(log, CHIPS)).toBe(2);
+	});
+
+	it('keeps two brands of the same food apart', () => {
+		const log = [logged('Nacho Cheese Tortilla Chips', '2026-09-01', 2, { brand: 'Store' })];
+		expect(usualServings(log, CHIPS)).toBeNull();
 	});
 
 	it('is null for a food this person has never logged', () => {
-		expect(usualServings([logged(EGGS, '2026-09-01', 2)], CHIPS)).toBeNull();
+		expect(usualServings([logged('Egg, large', '2026-09-01', 2)], CHIPS)).toBeNull();
 	});
 
 	it('is null for an empty log', () => {
 		expect(usualServings([], CHIPS)).toBeNull();
 	});
 
-	it('is null when the row being opened has no catalog food behind it', () => {
-		expect(usualServings([logged(null, '2026-09-01', 3)], null)).toBeNull();
+	it('is null when the row being opened has no catalog food behind it yet', () => {
+		expect(usualServings([logged('Egg, large', '2026-09-01', 3)], undefined)).toBeNull();
 	});
 
 	it('reads the food it was asked about, not the one logged beside it', () => {
-		const log = [logged(CHIPS, '2026-09-02', 1.5), logged(EGGS, '2026-09-03', 4)];
-		expect(usualServings(log, CHIPS)).toBe(1.5);
+		const log = [
+			logged('Nacho Cheese Tortilla Chips', '2026-09-02', 1.5),
+			logged('Egg, large', '2026-09-03', 4, { brand: undefined })
+		];
+		expect(usualServings(log, EGGS)).toBe(4);
 	});
 
 	it('takes the latest date even when the log is not in date order', () => {
 		// A synced document is two devices' entries merged, so nothing promises
 		// the array is sorted: reading the tail would answer 0.5 here.
-		const log = [logged(CHIPS, '2026-09-05', 2), logged(CHIPS, '2026-09-01', 0.5)];
+		const log = [
+			logged('Nacho Cheese Tortilla Chips', '2026-09-05', 2),
+			logged('Nacho Cheese Tortilla Chips', '2026-09-01', 0.5)
+		];
 		expect(usualServings(log, CHIPS)).toBe(2);
 	});
 
-	it('takes the last entry added among several on the same day', () => {
-		// `date` is a day, so it cannot separate two entries within one day; the
-		// later one in the array is the later one logged.
-		const log = [logged(CHIPS, '2026-09-05', 1), logged(CHIPS, '2026-09-05', 2.25)];
-		expect(usualServings(log, CHIPS)).toBe(2.25);
+	it('takes the last one logged among several on the same day', () => {
+		// `date` is a day, so `id` is what separates two entries within one —
+		// `uid()` derives it from the clock, so it sorts chronologically.
+		const log = [
+			logged('Nacho Cheese Tortilla Chips', '2026-09-05', 1, { id: 'l-2000' }),
+			logged('Nacho Cheese Tortilla Chips', '2026-09-05', 2.25, { id: 'l-1000' })
+		];
+		expect(usualServings(log, CHIPS)).toBe(1);
+	});
+
+	it('remembers a food logged long before the History list would still list it', () => {
+		// The 60-day window belongs to a list somebody browses; this is a food
+		// they have just named themselves.
+		const log = [logged('Nacho Cheese Tortilla Chips', '2020-01-01', 3)];
+		expect(usualServings(log, CHIPS)).toBe(3);
 	});
 });
 

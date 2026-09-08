@@ -56,7 +56,7 @@ test.describe('the portion you usually log', () => {
 		await logFortyFiveGrams(page);
 		await openLogCardFor(page, CHIPS_NAME);
 
-		await page.getByRole('button', { name: '1 oz' }).click();
+		await page.getByRole('button', { name: '1 oz', exact: true }).click();
 		await expect(page.getByLabel('Amount in servings')).toHaveValue('1');
 		// One 28 g serving of a 500 kcal/100 g food, which is what "back to the
 		// label serving" has to come to if the tap did anything at all.

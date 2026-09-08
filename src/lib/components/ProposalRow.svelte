@@ -49,7 +49,7 @@
 	// What this person last logged of this food (#159), read out of the log they
 	// already have rather than out of a per-food table the document would have to
 	// carry and prune. `LogSheet` opens the row at it; this is what says so.
-	const usual = $derived(usualServings(tend.profile?.log ?? [], food?.id ?? null));
+	const usual = $derived(usualServings(tend.profile?.log ?? [], food));
 </script>
 
 <li class="bg-background rounded-2xl p-3">

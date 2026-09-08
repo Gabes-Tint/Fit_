@@ -384,7 +384,7 @@ test.describe('at 360px', () => {
 		await expectFitsViewport(page, dialog);
 
 		// And with the reset taken, where the chip row is still two chips wide.
-		await page.getByRole('button', { name: '1 oz' }).click();
+		await page.getByRole('button', { name: '1 oz', exact: true }).click();
 		await expect(page.getByLabel('Amount in servings')).toHaveValue('1');
 		await expectFitsViewport(page, dialog);
 	});
