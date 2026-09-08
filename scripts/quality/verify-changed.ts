@@ -15,8 +15,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { gateLogDirectory, gateReportPath } from './gate-paths';
 import { tiers } from './gates';
-import { isServerSource, walk } from './mutation-scope';
-import { isExcludedFromMutation } from './mutation-globs';
+import { isMutated, isServerSource, walk } from './mutation-scope';
 import { summarizeOutcomes, summaryExitCode, type StepOutcome } from './run-outcome';
 import { runLoggedStep, type LoggedStepResult } from './step-runner';
 import { buildVerifyChangedPlan, type ChangedFile, type PlanStep } from './verify-changed-plan';
@@ -273,7 +272,7 @@ async function main(): Promise<void> {
 		importingSpecs: (file) => importingCache.get(file) ?? [],
 		exists: (file) => existsCache.get(file) ?? false,
 		projectFor,
-		isMutated: (file) => !isExcludedFromMutation(file) && /^src\/lib\/.*\.ts$/.test(file),
+		isMutated,
 		allBrowsers: options.allBrowsers
 	});
 
