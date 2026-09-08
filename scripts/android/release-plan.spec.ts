@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { PUBLIC_ORIGIN } from '../deploy/config';
+import { PRODUCTION_ORIGIN } from '../deploy/config';
 import { projectRoot } from '../security/shared';
 import {
 	androidVersion,
@@ -271,7 +271,7 @@ describe('what this module and the rest of the repository have to agree on', () 
 	const read = (file: string): string => readFileSync(path.join(projectRoot, file), 'utf8');
 
 	it('points a release build at the origin the deploy serves', () => {
-		expect(PRODUCTION_SERVER_URL).toBe(PUBLIC_ORIGIN);
+		expect(PRODUCTION_SERVER_URL).toBe(PRODUCTION_ORIGIN);
 	});
 
 	it('names the application id the native project builds', () => {

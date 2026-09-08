@@ -18,8 +18,17 @@ const DEPLOY_HOST_VARIABLE = 'FIT_DEPLOY_HOST';
 /** Names the public origin the app answers under. Defaults to production, unlike the host. */
 const PUBLIC_ORIGIN_VARIABLE = 'FIT_PUBLIC_ORIGIN';
 
-/** Production, used whenever `FIT_PUBLIC_ORIGIN` is unset. */
-const DEFAULT_PUBLIC_ORIGIN = 'https://fit.psilva.org';
+/**
+ * Production, and nothing else — where a release build's WebView points, no
+ * matter what `FIT_PUBLIC_ORIGIN` says in whichever shell built it.
+ *
+ * `publicOrigin()` below answers "where is this deploy going", which is
+ * deliberately overridable; this answers "where is production", which is
+ * not, and the two must stay distinct: an Android release build compared
+ * against `publicOrigin()` would silently point at QA if built with
+ * `FIT_PUBLIC_ORIGIN` set in the environment.
+ */
+export const PRODUCTION_ORIGIN = 'https://fit.psilva.org';
 
 export const SERVICE_NAME = 'fit';
 export const SERVICE_USER = 'fit';
@@ -71,7 +80,7 @@ export function deployHost(): string {
  */
 export function publicOrigin(): string {
 	const raw = process.env[PUBLIC_ORIGIN_VARIABLE];
-	if (raw === undefined || raw.trim() === '') return DEFAULT_PUBLIC_ORIGIN;
+	if (raw === undefined || raw.trim() === '') return PRODUCTION_ORIGIN;
 	const value = raw.trim();
 	if (!/^https:\/\/[^/]+$/.test(value.replace(/\/$/, ''))) {
 		throw new Error(`${PUBLIC_ORIGIN_VARIABLE} must be an absolute https:// origin, got ${raw}`);
