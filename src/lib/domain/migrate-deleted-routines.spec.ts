@@ -26,6 +26,18 @@ describe('a routine that came up from version 2', () => {
 		expect(routines(V2).map((r) => r.deletedAt)).toEqual([null, null]);
 	});
 
+	it('preserves an existing non-null deletedAt value', () => {
+		const v2WithDeleted = {
+			schemaVersion: 2,
+			routines: [
+				{ id: 'push', name: 'Push', exercises: [], deletedAt: '2026-01-01' },
+				{ id: 'legs', name: 'Legs', exercises: [] }
+			]
+		};
+		const result = routines(v2WithDeleted);
+		expect(result.map((r) => r.deletedAt)).toEqual(['2026-01-01', null]);
+	});
+
 	it('keeps its id, its name and its movements', () => {
 		expect(routines(V2).map((r) => r.id)).toEqual(['push', 'legs']);
 		expect(routines(V2)[0]).toMatchObject({ name: 'Push', exercises: [] });

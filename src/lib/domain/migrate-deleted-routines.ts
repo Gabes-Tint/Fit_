@@ -26,7 +26,7 @@ export function migrate_2_to_3(document: Document): Document {
 		routines: Array.isArray(routines)
 			? (routines as unknown[]).map((routine) =>
 					routine !== null && typeof routine === 'object'
-						? { ...(routine as Document), deletedAt: null }
+						? { ...(routine as Document), deletedAt: (routine as Document)['deletedAt'] ?? null }
 						: routine
 				)
 			: routines
