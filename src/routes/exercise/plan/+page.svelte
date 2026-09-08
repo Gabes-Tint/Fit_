@@ -26,8 +26,16 @@
 	let picked = $state('');
 	let open = $state(false);
 
-	const routines = $derived(tend.state.routines);
+	/** A deleted routine is not offered by the day picker, or counted toward whether there is anything to plan. */
+	const routines = $derived(tend.routines);
+	/** The picker only ever offers a routine still in the rotation. */
 	const options = $derived(planOptions(routines));
+	/**
+	 * Every routine, deleted ones included, so a day already behind today can
+	 * still show what it was planned for — the same reason `TrainingWeekStrip`
+	 * reads the unfiltered list.
+	 */
+	const allOptions = $derived(planOptions(tend.state.routines));
 	const at = $derived(weekOf(monday));
 	const label = $derived(calendarWeeks(at.year).find((week) => week.week === at.week)?.label ?? '');
 
@@ -37,7 +45,7 @@
 			return {
 				iso,
 				label: `${name} ${parseISODate(iso).getDate()}`,
-				on: optionsOn(options, routineIdsOn(tend.state.trainingPlan, iso)),
+				on: optionsOn(allOptions, routineIdsOn(tend.state.trainingPlan, iso)),
 				isToday: iso === today
 			};
 		})

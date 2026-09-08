@@ -243,3 +243,85 @@ test.describe('a session where nothing was ticked', () => {
 		await expect(page.getByText(/1 session done this week already/)).toBeVisible();
 	});
 });
+
+/**
+ * Deletion is a soft flag, not a removal: the plan is cleared from today
+ * forward, but a day already behind today keeps the routine so
+ * `TrainingWeekStrip` — the only place a past day in the current week is
+ * still shown — keeps naming it.
+ */
+test.describe('deleting a routine', () => {
+	/** Tuesday, week 1 of 2026, so Monday of the same week sits in the past. */
+	const TUESDAY = new Date('2026-01-06T09:00:00');
+
+	async function planOn(page: Page, weekday: RegExp) {
+		await page.getByRole('button', { name: weekday }).click();
+		await page
+			.getByRole('dialog')
+			.getByRole('button', { name: /Full body/ })
+			.click();
+		await page.getByRole('button', { name: 'Close' }).click();
+	}
+
+	test.beforeEach(async ({ page, baseURL }) => {
+		await page.clock.setFixedTime(TUESDAY);
+		await onboard(page, baseURL ?? '');
+		await pickFullBody(page);
+		// A finished session, so the rotation going to zero later doesn't also
+		// zero the workout history — that combination reopens the first-run
+		// shelf, which is a different screen from the one this test means to check.
+		await page.getByRole('button', { name: 'Start Full body' }).click();
+		await page.getByRole('button', { name: 'Finish' }).click();
+		await expect(page.getByText('Session done', { exact: true })).toBeVisible();
+		await page.getByRole('link', { name: 'Done', exact: true }).click();
+		await page.getByRole('link', { name: 'Plan', exact: true }).click();
+		// Monday is already past; Wednesday and Friday are still ahead.
+		await planOn(page, /^Mon /);
+		await planOn(page, /^Wed /);
+		await planOn(page, /^Fri /);
+		await page.getByRole('link', { name: 'Back' }).click();
+		await expect(page.getByRole('heading', { name: 'Exercise', level: 1 })).toBeVisible();
+	});
+
+	test('names the upcoming days it will clear, then removes it from the rotation', async ({
+		page
+	}) => {
+		await page.getByRole('link', { name: /Full body \d+ exercises/ }).click();
+		await expect(page.getByRole('button', { name: 'Start this session' })).toBeVisible();
+		await page.getByRole('link', { name: 'Edit' }).click();
+		await expect(page.getByRole('button', { name: 'Add from library' })).toBeVisible();
+
+		await expect(page.getByRole('button', { name: 'Delete routine' })).toBeVisible();
+		await page.getByRole('button', { name: 'Delete routine' }).click();
+		await expect(page.getByRole('dialog')).toBeVisible();
+		// Wednesday and Friday are still ahead of Tuesday; Monday already passed.
+		await expect(page.getByText('This clears it from 2 upcoming days.')).toBeVisible();
+
+		await page.getByRole('button', { name: 'Delete', exact: true }).click();
+
+		await expect(page.getByRole('heading', { name: 'Exercise', level: 1 })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Start Full body' })).toHaveCount(0);
+		await expect(page.getByText('0 in rotation')).toBeVisible();
+
+		// The past day (Monday) still names the deleted routine, for history's sake.
+		await expect(page.getByRole('link', { name: /^Mon.*Full body/ })).toBeVisible();
+	});
+});
+
+test.describe('deleting a routine nothing is planned on', () => {
+	test.beforeEach(async ({ page, baseURL }) => {
+		await onboard(page, baseURL ?? '');
+		await pickFullBody(page);
+	});
+
+	test('says so instead of naming a day count', async ({ page }) => {
+		await page.getByRole('link', { name: /Full body/ }).click();
+		await expect(page.getByRole('button', { name: 'Start this session' })).toBeVisible();
+		await page.getByRole('link', { name: 'Edit' }).click();
+		await expect(page.getByRole('button', { name: 'Add from library' })).toBeVisible();
+		await page.getByRole('button', { name: 'Delete routine' }).click();
+		await expect(
+			page.getByText("This routine isn't scheduled on any upcoming days.")
+		).toBeVisible();
+	});
+});
