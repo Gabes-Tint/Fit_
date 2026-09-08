@@ -249,6 +249,47 @@ describe('ProposalRow', () => {
 		expect(onremove).toHaveBeenCalled();
 	});
 
+	describe('the quantity, in the food’s own serving (#158)', () => {
+		it('offers the amount in servings, not in grams', async () => {
+			await render(ProposalRow, {
+				props: { item: matched, step: 0.5, matching: false, resolved: egg, ...handlers }
+			});
+			await expect.element(page.getByLabelText('Amount in servings')).toHaveValue('2');
+		});
+
+		it('reports a typed eighth, which the stepper alone could not reach', async () => {
+			const onchange = vi.fn();
+			await render(ProposalRow, {
+				props: { item: matched, step: 0.5, matching: false, resolved: egg, ...handlers, onchange }
+			});
+			await page.getByLabelText('Amount in servings').fill('1/8');
+			expect(onchange).toHaveBeenCalledWith(expect.objectContaining({ servings: 0.125 }));
+		});
+
+		it('states the energy and macros of what is about to be logged', async () => {
+			await render(ProposalRow, {
+				props: { item: matched, step: 0.5, matching: false, resolved: egg, ...handlers }
+			});
+			// Two large eggs: the egg's own per-serving numbers, doubled.
+			await expect.element(page.getByText(/^144 kcal · 12.6g protein/)).toBeInTheDocument();
+		});
+
+		it('offers grams to a row whose food weighs something, and nothing to one that does not', async () => {
+			await render(ProposalRow, {
+				props: { item: matched, step: 0.5, matching: false, resolved: egg, ...handlers }
+			});
+			await expect.element(page.getByLabelText('Enter the amount in grams')).toBeInTheDocument();
+		});
+
+		it('leaves an unmatched row in servings, with no weight to convert against', async () => {
+			await render(ProposalRow, {
+				props: { item: unmatched, step: 0.5, matching: false, ...handlers }
+			});
+			expect(page.getByLabelText('Enter the amount in grams').elements()).toHaveLength(0);
+			await expect.element(page.getByLabelText('Amount in servings')).toHaveValue('2');
+		});
+	});
+
 	it('shows the serving of the resolved food', async () => {
 		await render(ProposalRow, {
 			props: { item: scanned, step: 0.5, matching: false, resolved: cereal, ...handlers }

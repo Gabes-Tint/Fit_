@@ -11,7 +11,6 @@
 	import { AUTH_ROUTES, signInPath } from './auth/auth-routes';
 	import InitialSync from './InitialSync.svelte';
 	import LogFab from './LogFab.svelte';
-	import LogSheet from './LogSheet.svelte';
 	import Onboarding from './Onboarding.svelte';
 	import SideNav from './SideNav.svelte';
 	import SyncStatusBadge from './SyncStatusBadge.svelte';
@@ -197,7 +196,18 @@
 						{@render children()}
 					</div>
 					<SideNav bind:open={menuOpen} {pathname} />
-					<LogSheet />
+					<!--
+						Fetched after the shell rather than inside it. The log sheet and
+						everything it can show — the search, the proposal rows, the photo
+						pane, the barcode reader and their cameras — is the largest thing
+						the root layout carries, and none of it is needed until somebody
+						taps Log. Measured in `docs/bundle-audit.md`, which argued for
+						exactly this split and cut the budgets to let it land: it takes
+						the JavaScript every page loads from 273,414 bytes to 224,371.
+					-->
+					{#await import('./LogSheet.svelte') then { default: LogSheet }}
+						<LogSheet />
+					{/await}
 					<LogFab onlog={() => logUi.show()} />
 				</div>
 			{:else}

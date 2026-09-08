@@ -6,7 +6,7 @@
 	import { tend } from '$lib/state/tend.svelte';
 	import FoodSearch from './FoodSearch.svelte';
 	import ProvenanceBadge from './ProvenanceBadge.svelte';
-	import QuantityStepper from './QuantityStepper.svelte';
+	import ServingAmount from './ServingAmount.svelte';
 
 	let {
 		item,
@@ -71,13 +71,13 @@
 			<X class="size-4" />
 		</button>
 	</div>
-	<div class="mt-2 flex items-center justify-between">
-		<p class="text-muted-foreground text-xs">{serving}</p>
-		<QuantityStepper
-			bind:value={() => item.servings, (n: number) => onchange({ ...item, servings: n })}
-			{step}
-		/>
-	</div>
+	<p class="text-muted-foreground mt-2 text-xs">{serving}</p>
+	<ServingAmount
+		{food}
+		servings={item.servings}
+		{step}
+		onchange={(n: number) => onchange({ ...item, servings: n })}
+	/>
 	<p class="text-muted-foreground mt-1.5 text-xs">{recorded}</p>
 	{#if matching}
 		<div class="mt-3">
