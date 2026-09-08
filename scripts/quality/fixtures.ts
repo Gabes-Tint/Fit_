@@ -206,6 +206,19 @@ export const fixtures: GateFixture[] = [
 			edit(root, 'quality/dom-free-client-specs.mjs', "\t'src/lib/ui/cn.svelte.spec.ts',\n", '')
 	},
 	{
+		name: 'unrecorded-blind-spot',
+		gate: 'check:mutation-scope',
+		failureIncludes: 'is not on the ledger',
+		description:
+			'A new component in an area no mutation lane reaches, added without a ledger line saying so.',
+		apply: (root) =>
+			write(
+				root,
+				'src/lib/components/Fixture.svelte',
+				'<script lang="ts">\n\tlet { label }: { label: string } = $props();\n</script>\n\n<p>{label}</p>\n'
+			)
+	},
+	{
 		name: 'broad-mutation-review',
 		gate: 'check:mutation-reviews',
 		failureIncludes: 'invalid reviewed-mutant entry',

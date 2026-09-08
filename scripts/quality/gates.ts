@@ -42,6 +42,11 @@ const staticSteps: GateStep[] = [
 		purpose: 'Mutated client files stay measurable',
 		concurrent: true
 	},
+	{
+		name: 'check:mutation-scope',
+		purpose: 'Files outside the mutation lanes stay on the ledger',
+		concurrent: true
+	},
 	{ name: 'check:ci-contract', purpose: 'Local and hosted CI job parity', concurrent: true },
 	{
 		name: 'check:stale-revert',

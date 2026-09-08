@@ -30,6 +30,7 @@
 		"check:thresholds": "bun scripts/quality/thresholds.ts",
 		"check:mutation-reviews": "bun scripts/quality/mutation-review-check.ts",
 		"check:mutation-oracle": "bun scripts/quality/mutation-oracle.ts",
+		"check:mutation-scope": "bun scripts/quality/mutation-scope-ledger.ts",
 		"mutation:repin": "bun scripts/quality/mutation-repin.ts",
 		"check:workflows": "bun scripts/quality/actionlint.ts",
 		"check:ci-contract": "bun scripts/quality/ci-contract.ts",
