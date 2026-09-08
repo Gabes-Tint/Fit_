@@ -212,6 +212,7 @@
 			"tests/catalog-fixture.ts",
 			"tests/e2e-build.ts",
 			"tests/e2e-support.ts",
+			"tests/e2e-warm.ts",
 			"tests/e2e-workspace.ts",
 			"tests/preview-server.ts"
 		]
