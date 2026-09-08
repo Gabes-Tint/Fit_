@@ -3,6 +3,7 @@ import { test } from '../../tests/preview-server';
 import {
 	EGG_ROW,
 	freshUsername,
+	OLIVE_OIL_ROW,
 	openEmptyJournal,
 	openLogSheetAndType,
 	returnThroughApi,
@@ -129,6 +130,20 @@ test.describe('what one device recorded', () => {
 		await expect(arrived().getByRole('heading', { name: 'Tend' })).toHaveCount(0);
 	});
 
+	/**
+	 * The other half of the same criterion: progress charts prove the session
+	 * crossed, and this proves the week it belongs to crossed with it. They are
+	 * two different readings of `workouts` — one over all of history, one over
+	 * the current week — and a document that arrived without dates would satisfy
+	 * the first and not this.
+	 */
+	test('counts the finished session in this week’s training there', async () => {
+		await expect(arrived().getByRole('heading', { name: 'Today', level: 1 })).toBeVisible();
+		await expect(arrived().getByRole('group', { name: "This week's training" })).toContainText(
+			/\b1 (of \d+ )?sessions? this week/
+		);
+	});
+
 	test('puts the finished session into training progress there', async () => {
 		await arrived().goto('/exercise/progress');
 		// The charts stand in for one finished session that actually trained, and
@@ -208,6 +223,57 @@ test.describe('with the server out of reach', () => {
 			.poll(() => accepted.filter((status) => status === 200).length, { timeout: 20_000 })
 			.toBeGreaterThan(0);
 		await settled(page);
+	});
+});
+
+/**
+ * The conflict rule, with two devices rather than a stubbed answer.
+ *
+ * Both hold the account's document. One moves on; the other, still at the
+ * version it last agreed on, logs something of its own and is refused. What it
+ * must not do is push over the newer document, and what it must not do quietly
+ * is replace what the person on it just logged. Merging the two is a later
+ * story and deliberately not what happens here.
+ */
+test.describe('two devices that edited while apart', () => {
+	test('leave the one that is behind holding the newer document, and told so', async ({
+		page,
+		browser,
+		baseURL
+	}) => {
+		const username = await signInThroughApi(page, baseURL ?? '');
+		await openEmptyJournal(page);
+		await settled(page);
+
+		// The second device takes the account's document, so both now agree on a
+		// version. Nothing after this is a device merely catching up for the first
+		// time; they have genuinely diverged.
+		const second = await otherDevice(browser, baseURL ?? '', username);
+		await second.goto('/');
+		await expect(second.getByRole('heading', { name: 'Today', level: 1 })).toBeVisible();
+		await settled(second);
+
+		// The first device moves the account on while the second is not looking.
+		await logTwoEggs(page);
+		await settled(page);
+
+		// And now the second logs something of its own, from the version it last
+		// agreed on. Its write is refused, and what comes back is the eggs.
+		await stubFoodResolve(second, [OLIVE_OIL_ROW]);
+		await openLogSheetAndType(second, '2 tablespoons olive oil');
+		await second.getByRole('button', { name: 'Parse' }).click();
+		await second.getByRole('button', { name: 'Add to today' }).click();
+		await expect(second.getByRole('dialog')).toBeHidden();
+
+		await expect(
+			second.getByText('This device was behind, so it reloaded your newer data.')
+		).toBeVisible();
+		await expect(second.getByText('Egg, large')).toBeVisible();
+		// Not merged, which is what the story says and what the message means: the
+		// oil was refused, and the person was told rather than left to notice.
+		await expect(second.getByText('Olive oil')).toHaveCount(0);
+
+		await second.context().close();
 	});
 });
 
