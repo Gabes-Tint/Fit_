@@ -7,7 +7,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { summarizeLatencies } from './server-latency-metrics.ts';
 import type { EndpointLatency } from './server-latency-metrics.ts';
-import { readJsonFile } from '../security/shared';
+import { readJsonFile } from '../security/shared.ts';
 import type { SearchFixture } from '../quality/config-types';
 
 /**
