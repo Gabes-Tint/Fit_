@@ -3,6 +3,7 @@ import {
 	EIGHTH,
 	amountFromGrams,
 	amountGrams,
+	describeEnergy,
 	massInUnits,
 	massToGrams,
 	parseAmount,
@@ -99,6 +100,22 @@ describe('parseAmount', () => {
 		expect(parseAmount('0/2')).toBeNull();
 	});
 
+	it('reads a fraction whose parts run to more than one digit', () => {
+		expect(parseAmount('12/8')).toBe(1.5);
+		expect(parseAmount('12 1/2')).toBe(12.5);
+		expect(parseAmount('1/16')).toBe(0.063);
+	});
+
+	it('reads a fraction through the spacing a person actually types', () => {
+		expect(parseAmount('1 / 2')).toBe(0.5);
+		expect(parseAmount('1  1/2')).toBe(1.5);
+	});
+
+	it('refuses a fraction with something else attached to it', () => {
+		expect(parseAmount('x1/2')).toBeNull();
+		expect(parseAmount('1/2x')).toBeNull();
+	});
+
 	it('refuses an amount with no end to it', () => {
 		expect(parseAmount('1/0')).toBeNull();
 		expect(parseAmount('1e999')).toBeNull();
@@ -164,5 +181,28 @@ describe('the weight the field itself shows', () => {
 	it('takes a typed weight in the system it was typed in', () => {
 		expect(massToGrams(438, 'metric')).toBe(438);
 		expect(massToGrams(16, 'imperial')).toBeCloseTo(453.592, 3);
+	});
+});
+
+describe('describeEnergy', () => {
+	/** A Big Mac's own per-serving numbers, which is what a `Food` carries. */
+	const BIG_MAC_MACROS = { kcal: 563, protein: 28, carbs: 40.9, fat: 32 };
+
+	it('states one serving as the food already knows it', () => {
+		expect(describeEnergy(BIG_MAC_MACROS, 1)).toBe(
+			'563 kcal · 28g protein · 40.9g carbs · 32g fat'
+		);
+	});
+
+	it('scales every number by the amount, energy and macros alike', () => {
+		expect(describeEnergy(BIG_MAC_MACROS, 2)).toBe(
+			'1126 kcal · 56g protein · 81.8g carbs · 64g fat'
+		);
+	});
+
+	it('states a part serving without pretending to precision it lacks', () => {
+		expect(describeEnergy(BIG_MAC_MACROS, 0.125)).toBe(
+			'70 kcal · 3.5g protein · 5.1g carbs · 4g fat'
+		);
 	});
 });
