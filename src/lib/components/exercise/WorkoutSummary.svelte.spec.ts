@@ -147,11 +147,12 @@ describe('WorkoutSummary', () => {
 		expect(page.getByText('Bench Press', { exact: true }).elements()).toHaveLength(2);
 	});
 
-	it('reads the volume in whatever unit is set', async () => {
+	// The volume is a mass moved, so it converts with the loads that make it up.
+	it('converts the volume into whatever unit is set', async () => {
 		tend.setLoadUnit('lb');
 		fileSession();
 		await render(WorkoutSummary);
-		await expect.element(page.getByText('1200 lb')).toBeInTheDocument();
+		await expect.element(page.getByText('2646 lb')).toBeInTheDocument();
 	});
 
 	// A walked-out session is still filed, and the screen says so.
@@ -205,12 +206,12 @@ describe('WorkoutSummary', () => {
 			.toBeInTheDocument();
 	});
 
-	it('reads the take-away in whatever unit is set', async () => {
+	it('converts the take-away into whatever unit is set', async () => {
 		tend.setLoadUnit('lb');
 		fileTwoWeeksOfPressing();
 		await render(WorkoutSummary);
 		await expect
-			.element(page.getByText(/Bench Press is 10 lb heavier than 1 week ago\./))
+			.element(page.getByText(/Bench Press is 22 lb heavier than 1 week ago\./))
 			.toBeInTheDocument();
 	});
 

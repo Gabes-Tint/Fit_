@@ -187,7 +187,7 @@ describe('the first sync a device does', () => {
 		await sync.start(HOUSEHOLD);
 
 		const body = sent[1]?.body as { format: string; body: TendState } | undefined;
-		expect(body?.format).toBe('tend.v3');
+		expect(body?.format).toBe('tend.v4');
 		expect(body?.body.onboarded).toBe(true);
 		expect(body?.body.activeProfileId).toBe('p-1');
 	});

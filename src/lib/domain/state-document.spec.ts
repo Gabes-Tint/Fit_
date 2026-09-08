@@ -11,6 +11,7 @@ import {
 	storedDocument
 } from './state-document';
 import { DEFAULT_LOAD_UNIT, DEFAULT_REST_SECONDS, DEFAULT_UNITS } from './types';
+import { displayLoad } from './units';
 
 /**
  * A blank document, written out rather than taken from `emptyState()`: a default
@@ -132,13 +133,21 @@ const STORED_BEFORE_THE_LADDER = {
 };
 
 /**
- * The same household once the whole ladder has run. Three rungs changed it: the
+ * 45 lb as the mass it is. The household read its loads in pounds, so version 4
+ * writes every one of them in kilograms; the number is written out rather than
+ * converted here, since a fixture that ran the same arithmetic as the rung would
+ * agree with it whatever either of them did.
+ */
+const BENCH_KG = 20.41165665;
+
+/**
+ * The same household once the whole ladder has run. Four rungs changed it: the
  * routine lost the `freq` that used to decide its days and gained the flag that
- * says it has not been deleted, and the single week it had planned became the
- * two dated days version 1 drew for a twice-a-week routine — Monday 7 and
- * Thursday 10 September, the Monday and Thursday of training week 36 of 2026.
- * Everything else is untouched, which is the claim this fixture exists to hold
- * the ladder to.
+ * says it has not been deleted, the single week it had planned became the two
+ * dated days version 1 drew for a twice-a-week routine — Monday 7 and Thursday
+ * 10 September, the Monday and Thursday of training week 36 of 2026 — and every
+ * load became kilograms. Everything else is untouched, which is the claim this
+ * fixture exists to hold the ladder to.
  */
 const AFTER_THE_LADDER = {
 	...STORED_BEFORE_THE_LADDER,
@@ -146,13 +155,38 @@ const AFTER_THE_LADDER = {
 		{
 			id: 'r-1',
 			name: 'Upper A',
-			exercises: [{ id: 'ex-1', name: 'Bench press', group: 'chest', sets: 3, reps: 8, load: 45 }],
+			exercises: [
+				{ id: 'ex-1', name: 'Bench press', group: 'chest', sets: 3, reps: 8, load: BENCH_KG }
+			],
 			deletedAt: null
 		}
 	],
 	trainingPlan: [
 		{ date: '2026-09-07', routineIds: ['r-1'] },
 		{ date: '2026-09-10', routineIds: ['r-1'] }
+	],
+	workouts: [
+		{
+			id: 'wo-9',
+			routineId: 'r-1',
+			routineName: 'Upper A',
+			date: '2026-09-05',
+			startedAt: 1757000000000,
+			finishedAt: 1757003600000,
+			exerciseIndex: 0,
+			exercises: [
+				{
+					name: 'Bench press',
+					group: 'chest',
+					note: 'felt strong',
+					sets: [
+						{ reps: 8, load: BENCH_KG, done: true },
+						{ reps: 8, load: BENCH_KG, done: true },
+						{ reps: 6, load: BENCH_KG, done: false }
+					]
+				}
+			]
+		}
 	]
 };
 
@@ -174,6 +208,17 @@ describe('a document stored before the ladder existed', () => {
 		expect(result.migrated).toBe(true);
 		// The whole document, field for field: nothing defaulted away, and the two
 		// fields the ladder reshapes carrying the same training they always did.
+		expect(result.state).toEqual(AFTER_THE_LADDER);
+	});
+});
+
+describe('a document that declares a version', () => {
+	// Version 1 is the lowest a document can declare, and the ladder has to start
+	// from it rather than refuse it: rung 0 is for documents that declare nothing.
+	it('climbs from the version it names, not from the bottom of the ladder', () => {
+		const result = loaded({ ...STORED_BEFORE_THE_LADDER, schemaVersion: 1 });
+
+		expect(result.migrated).toBe(true);
 		expect(result.state).toEqual(AFTER_THE_LADDER);
 	});
 });
@@ -219,8 +264,19 @@ describe('what a migrated document still holds', () => {
 	});
 
 	it('keeps the workouts, down to the set that was not finished', () => {
-		expect(state().workouts).toEqual(STORED_BEFORE_THE_LADDER.workouts);
+		expect(state().workouts).toEqual(AFTER_THE_LADDER.workouts);
 		expect(state().workouts[0]?.exercises[0]?.sets[2]?.done).toBe(false);
+		expect(state().workouts[0]?.exercises[0]?.note).toBe('felt strong');
+	});
+
+	// The household read in pounds, so its numbers were pounds; version 4 stores
+	// the mass and converts for reading, which is why the bench still reads 45 lb
+	// while a switch to kilograms now says 20.4 rather than repeating 45.
+	it('carries the loads up as the masses they were, in the plan and in the log', () => {
+		expect(state().routines[0]?.exercises[0]?.load).toBe(BENCH_KG);
+		expect(state().workouts[0]?.exercises[0]?.sets[0]?.load).toBe(BENCH_KG);
+		expect(displayLoad(BENCH_KG, 'lb')).toBe(45);
+		expect(displayLoad(BENCH_KG, 'kg')).toBe(20.4);
 	});
 
 	it('keeps the week plan, the pantry and the settings', () => {

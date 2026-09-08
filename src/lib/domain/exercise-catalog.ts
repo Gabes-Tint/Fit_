@@ -121,7 +121,8 @@ export type RoutineTemplate = {
 
 /**
  * First-run starting points. The loads are a beginner's opening offer, not a
- * prescription — every value is editable afterwards.
+ * prescription — every value is editable afterwards. They are in kilograms,
+ * like every stored load, and read back in whichever unit the account is set to.
  */
 export const ROUTINE_TEMPLATES: readonly RoutineTemplate[] = [
 	{

@@ -61,11 +61,11 @@ describe('SessionExercise', () => {
 		await expect.element(page.getByText('Load (lb)')).toBeInTheDocument();
 	});
 
-	it('reads what the movement went at last time in that unit too', async () => {
+	it('converts what the movement went at last time into that unit too', async () => {
 		tend.setLoadUnit('lb');
 		fileEarlier(8, 55);
 		await renderPanel();
-		await expect.element(page.getByText('8 × 55 lb')).toBeInTheDocument();
+		await expect.element(page.getByText('8 × 121.3 lb')).toBeInTheDocument();
 	});
 
 	it('names the movement and where it sits in the session', async () => {

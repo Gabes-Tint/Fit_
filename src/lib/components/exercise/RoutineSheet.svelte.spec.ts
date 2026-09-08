@@ -47,6 +47,20 @@ describe('RoutineSheet', () => {
 		await expect.element(page.getByText('Load (lb)').first()).toBeInTheDocument();
 	});
 
+	// The acceptance criterion of issue #71: a load entered under one label must
+	// not read as the same bare number under the other. 60 kg is 132.3 lb, and a
+	// sheet that answered "60 lb" would be quietly reporting a lighter session.
+	it('converts every load on the sheet when the unit changes, rather than relabelling it', async () => {
+		await renderSheet();
+		await expect.element(page.getByText('60')).toBeInTheDocument();
+
+		tend.setLoadUnit('lb');
+
+		await expect.element(page.getByText('132.3')).toBeInTheDocument();
+		await expect.element(page.getByText('99.2')).toBeInTheDocument();
+		expect(page.getByText('60', { exact: true }).elements()).toHaveLength(0);
+	});
+
 	it('reports the position in the routine, not the position on the sheet', async () => {
 		const onload = await renderSheet();
 		await page.getByText('Incline Bench Press').click();
