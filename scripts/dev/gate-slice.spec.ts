@@ -158,6 +158,14 @@ describe('sizing the per-step cap against the slice ceiling', () => {
 		expect(gigabytes(STEP_MEMORY_MAX)).toBeGreaterThan(HEAVIEST_STEP_GIGABYTES);
 	});
 
+	it('leaves the heaviest step real headroom rather than sitting on its peak', () => {
+		// A cap trimmed to the measured peak turns every ordinary run-to-run
+		// wobble, and every test added after the measurement, into an OOM kill
+		// reported as a crash. #198 raised this cap rather than let that happen;
+		// the ratio is what stops a later tightening from re-earning it.
+		expect(gigabytes(STEP_MEMORY_MAX)).toBeGreaterThanOrEqual(HEAVIEST_STEP_GIGABYTES * 1.5);
+	});
+
 	it('caps one step below the ceiling, so the cap still bounds a runaway', () => {
 		expect(gigabytes(STEP_MEMORY_MAX)).toBeLessThan(gigabytes(unitLimit('MemoryMax')));
 	});
