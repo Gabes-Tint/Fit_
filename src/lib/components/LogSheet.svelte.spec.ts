@@ -6,15 +6,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * recorded rather than read off the DOM. Same shape as `sync.svelte.spec.ts`.
  */
 const announced = vi.hoisted(() => [] as string[]);
+/**
+ * The undo action a re-log or a direct-log toast carries (#recent-foods): the
+ * mock above only ever kept the message, so a test that needs to press "Undo"
+ * itself -- there being no real `Toaster` mounted here to click a button in --
+ * needs the handler `toast()` was actually given.
+ */
+const toastActions = vi.hoisted(
+	() => [] as { message: string; action: { label: string; onClick: () => void } | undefined }[]
+);
 vi.mock('svelte-sonner', () => ({
-	toast: (message: string) => {
+	toast: (message: string, opts?: { action?: { label: string; onClick: () => void } }) => {
 		announced.push(message);
+		toastActions.push({ message, action: opts?.action });
 	}
 }));
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
+import { logFromFood } from '$lib/domain/log-entry';
 import { emptyProfile } from '$lib/domain/profile';
 import { guessMeal } from '$lib/domain/parse-text';
+import type { LogSource, Meal } from '$lib/domain/types';
+import { addDaysISO, todayISO } from '$lib/domain/utils';
 import { logUi } from '$lib/state/log-ui.svelte';
 import { tend } from '$lib/state/tend.svelte';
 import LogSheet from './LogSheet.svelte';
@@ -205,6 +218,25 @@ async function openSheet() {
 	await expect.element(page.getByRole('dialog')).toBeInTheDocument();
 }
 
+/** Log one seed food a few days back, the way a real journal accumulates history. */
+function logHistory(args: {
+	foodId: string;
+	servings: number;
+	meal: Meal;
+	daysAgo?: number;
+	source?: LogSource;
+}) {
+	tend.addLogItems([
+		logFromFood({
+			foodId: args.foodId,
+			servings: args.servings,
+			meal: args.meal,
+			date: addDaysISO(todayISO(), -(args.daysAgo ?? 0)),
+			source: args.source ?? 'manual'
+		})
+	]);
+}
+
 afterEach(() => {
 	delete (navigator as { mediaDevices?: MediaDevices }).mediaDevices;
 });
@@ -216,6 +248,7 @@ beforeEach(() => {
 	logUi.meal = null;
 	vi.restoreAllMocks();
 	announced.length = 0;
+	toastActions.length = 0;
 	onboard();
 });
 
@@ -823,6 +856,124 @@ describe('LogSheet', () => {
 		} finally {
 			delete globals.SpeechRecognition;
 		}
+	});
+});
+
+describe('LogSheet recent-food list', () => {
+	/** Opens on Search with a fixed meal, so a toast or a logged entry never
+	 * depends on the wall clock's `guessMeal()`. */
+	async function openOnSearch(meal: Meal = 'breakfast') {
+		await render(LogSheet);
+		logUi.show('search', meal);
+		await expect.element(page.getByRole('dialog')).toBeInTheDocument();
+	}
+
+	it('shows an explanatory line rather than a blank gap when there is no history', async () => {
+		await openOnSearch();
+		await expect.element(page.getByText(/Nothing here yet\. Log a few meals/)).toBeInTheDocument();
+	});
+
+	it('turns a seeded log into a recent row, and one tap logs it at its last servings', async () => {
+		logHistory({ foodId: 'egg-large', servings: 2, meal: 'breakfast', daysAgo: 1 });
+		await openOnSearch('breakfast');
+		const row = page.getByRole('button', { name: /Egg, large/ });
+		await expect.element(row).toBeInTheDocument();
+		await row.click();
+		// The seeded history entry (yesterday) and the fresh re-log (today) both
+		// name "Egg, large" -- only the one dated today is the tap's own doing.
+		const logged = tend.profile?.log.find(
+			(item) => item.name === 'Egg, large' && item.date === todayISO()
+		);
+		expect(logged).toMatchObject({ servings: 2, meal: 'breakfast', date: todayISO() });
+		expect(announced).toContain('Logged Egg, large to breakfast.');
+	});
+
+	it('undoes a one-tap re-log', async () => {
+		logHistory({ foodId: 'egg-large', servings: 2, meal: 'breakfast', daysAgo: 1 });
+		await openOnSearch('breakfast');
+		await page.getByRole('button', { name: /Egg, large/ }).click();
+		const before = tend.profile?.log.length ?? 0;
+		const call = toastActions.find((c) => c.message === 'Logged Egg, large to breakfast.');
+		call?.action?.onClick();
+		expect(tend.profile?.log.length).toBe(before - 1);
+		// The original history entry (yesterday) is untouched -- undo removes
+		// only the fresh re-log dated today, not every entry with this name.
+		expect(
+			tend.profile?.log.some((item) => item.name === 'Egg, large' && item.date === todayISO())
+		).toBe(false);
+		expect(
+			tend.profile?.log.some((item) => item.name === 'Egg, large' && item.date !== todayISO())
+		).toBe(true);
+	});
+
+	it('still renders and still logs when the catalog is unreachable', async () => {
+		// The headline claim of #recent-foods: history comes off the store, not
+		// the network, so it has to work while `FoodSearch` above is reporting
+		// "unreachable" for the exact same reason.
+		logHistory({ foodId: 'chicken-breast', servings: 1, meal: 'lunch', daysAgo: 2 });
+		vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+			Promise.reject(new TypeError('Failed to fetch'))
+		);
+		await openOnSearch('lunch');
+		await page.getByLabelText('Search foods, brands, barcodes').fill('chicken');
+		await expect
+			.element(page.getByText(/Search needs a connection/), { timeout: 4000 })
+			.toBeVisible();
+		const row = page.getByRole('button', { name: /Chicken breast/ });
+		await expect.element(row).toBeInTheDocument();
+		await row.click();
+		expect(tend.profile?.log.some((item) => item.name.includes('Chicken breast'))).toBe(true);
+	});
+
+	it('toggles between recency and frequency order', async () => {
+		// Logged once, three days ago: wins under "Recent" (nothing newer), loses
+		// under "Often" once something else has more entries.
+		logHistory({ foodId: 'egg-large', servings: 1, meal: 'breakfast', daysAgo: 3 });
+		// Logged twice, further back: fewer days-ago wins recency for banana only
+		// once counted twice for frequency.
+		logHistory({ foodId: 'chicken-breast', servings: 1, meal: 'lunch', daysAgo: 10 });
+		logHistory({ foodId: 'chicken-breast', servings: 1, meal: 'lunch', daysAgo: 9 });
+		await openOnSearch();
+		const names = () =>
+			page
+				.getByRole('button', { name: /Egg, large|Chicken breast/ })
+				.elements()
+				.map((el) => el.textContent ?? '');
+		// Recent (default): egg-large was logged more recently (3 days ago vs 9).
+		expect(names()[0]).toContain('Egg, large');
+		await page.getByRole('button', { name: 'Often' }).click();
+		// Often: chicken-breast has 2 qualifying entries against egg-large's 1.
+		expect(names()[0]).toContain('Chicken breast');
+	});
+});
+
+describe('LogSheet direct-log from search', () => {
+	it('logs a search result immediately from its + button, without a proposal', async () => {
+		searchFinds(CEREAL);
+		const add = vi.spyOn(tend, 'addLogItems');
+		await render(LogSheet);
+		logUi.show('search', 'breakfast');
+		await expect.element(page.getByRole('dialog')).toBeInTheDocument();
+		await page.getByLabelText('Search foods, brands, barcodes').fill('honey nut');
+		const plusButton = page.getByRole('button', { name: 'Log HONEY NUT CHEERIOS' });
+		await expect.element(plusButton, { timeout: 4000 }).toBeInTheDocument();
+		await plusButton.click();
+		expect(add).toHaveBeenCalled();
+		expect(add.mock.calls[0]?.[0]?.[0]).toMatchObject({ name: 'HONEY NUT CHEERIOS' });
+		// No proposal was created: the footer with "Add to today" never appears.
+		expect(page.getByRole('button', { name: 'Add to today' }).elements().length).toBe(0);
+		expect(announced).toContain('Logged HONEY NUT CHEERIOS to breakfast.');
+	});
+
+	it('still lets tapping the row itself create a proposal, unchanged', async () => {
+		searchFinds(CHICKEN);
+		await openSheet();
+		await page.getByRole('button', { name: 'Search' }).click();
+		await page.getByLabelText('Search foods, brands, barcodes').fill('chicken breast');
+		const hit = page.getByRole('button').filter({ hasText: 'kcal' }).first();
+		await expect.element(hit, { timeout: 4000 }).toBeInTheDocument();
+		await hit.click();
+		await expect.element(page.getByText(/Proposed/)).toBeInTheDocument();
 	});
 });
 

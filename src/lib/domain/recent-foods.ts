@@ -164,3 +164,21 @@ export function mostFrequentFoods(
 	});
 	return groups.slice(0, MAX_RECENT_FOODS).map(toRecentFood);
 }
+
+/**
+ * The real `LogItem` each `RecentFood.key` was built from.
+ *
+ * A one-tap re-log (`relogItem`, log-entry.ts) needs a whole entry to rescale
+ * -- `foodId`, `micros`, `provenance` -- none of which `RecentFood` carries,
+ * since it exists to be shown on screen, not to be logged from directly. This
+ * hands the UI the group's own most-recent entry instead of asking it to
+ * re-derive "which one was that" itself, which is exactly the fracture/merge
+ * mistake `groupKey`'s doc comment above warns about if it were done twice.
+ */
+export function recentFoodSources(
+	log: readonly LogItem[],
+	today: string = todayISO()
+): Map<string, LogItem> {
+	const groups = groupsWithinWindow(log, today);
+	return new Map(groups.map((group) => [group.key, group.latest]));
+}

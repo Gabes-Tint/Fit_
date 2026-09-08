@@ -29,6 +29,7 @@
 	import FoodSearch from './FoodSearch.svelte';
 	import PhotoCapture from './PhotoCapture.svelte';
 	import ProposalRow from './ProposalRow.svelte';
+	import RecentFoodList from './RecentFoodList.svelte';
 	import { startDictation, type Dictation } from '$lib/ui/dictation';
 
 	const TABS = [
@@ -231,6 +232,21 @@
 	}
 
 	/**
+	 * The `+` on a search result row (FoodSearch.svelte): log it now, at the
+	 * sheet's current servings and meal, with no proposal in between. MFP does
+	 * exactly this -- `+` logs, tapping the name opens the detail -- and it is
+	 * the search-tab twin of a one-tap re-log from `RecentFoodList`, which is
+	 * why both end in the same toast-and-undo.
+	 */
+	function logDirect(food: Food) {
+		const item = logFromCatalogFood(food, { servings, meal, date: todayISO(), source: 'manual' });
+		tend.addLogItems([item]);
+		toast(`Logged ${food.name} to ${meal}.`, {
+			action: { label: 'Undo', onClick: () => tend.removeLog(item.id) }
+		});
+	}
+
+	/**
 	 * How sure a proposal read off a photo is. Lower than a scan or a search,
 	 * which are the person naming the food themselves, and lower than a parsed
 	 * line, which is their own words: this one is a guess about a picture, and
@@ -389,7 +405,8 @@
 		{:else if logUi.tab === 'scan'}
 			<BarcodeScan onpick={pickFood} onsearch={() => (logUi.tab = 'search')} />
 		{:else}
-			<FoodSearch onpick={pickFood} />
+			<RecentFoodList {meal} />
+			<FoodSearch onpick={pickFood} ondirectlog={logDirect} />
 		{/if}
 
 		{#if proposals.length > 0}

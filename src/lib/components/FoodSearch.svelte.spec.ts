@@ -99,6 +99,49 @@ describe('FoodSearch', () => {
 			.toBeInTheDocument();
 	});
 
+	it('offers a direct-log button per row when the caller asks for it', async () => {
+		catalogAnswers(200, { foods: [BREAST] });
+		const onpick = vi.fn();
+		const ondirectlog = vi.fn();
+		await render(FoodSearch, { props: { onpick, ondirectlog } });
+		await page.getByLabelText(SEARCH).fill('chicken breast');
+		const plus = page.getByRole('button', { name: 'Log CATALOG CHICKEN BREAST' });
+		await expect.element(plus, ANSWERED).toBeInTheDocument();
+		await plus.click();
+		expect(ondirectlog).toHaveBeenCalledWith(expect.objectContaining({ id: 'catalog-1' }));
+		// Tapping the row itself must still only propose -- the `+` is an
+		// alternative, not a replacement for the existing tap-to-propose flow.
+		expect(onpick).not.toHaveBeenCalled();
+	});
+
+	it('gives the direct-log button and the nutrition-facts button distinct names', async () => {
+		// Regression: both buttons sit in the same row. If their accessible
+		// names collided, a screen reader (and a test locator) could not tell
+		// "log this" from "show me its nutrition facts".
+		catalogAnswers(200, { foods: [BREAST] });
+		await render(FoodSearch, { props: { onpick: vi.fn(), ondirectlog: vi.fn() } });
+		await page.getByLabelText(SEARCH).fill('chicken breast');
+		await expect
+			.element(page.getByRole('button', { name: 'Log CATALOG CHICKEN BREAST' }), ANSWERED)
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('button', { name: 'Nutrition facts for CATALOG CHICKEN BREAST' }))
+			.toBeInTheDocument();
+	});
+
+	it('has no direct-log button when the caller does not pass one', async () => {
+		// ProposalRow mounts this component to find a catalog match for an
+		// already-typed item -- tapping a row there resolves that item, and a
+		// second way to log it outright would be a second, contradictory action.
+		catalogAnswers(200, { foods: [BREAST] });
+		await render(FoodSearch, { props: { onpick: vi.fn() } });
+		await page.getByLabelText(SEARCH).fill('chicken breast');
+		await expect
+			.element(page.getByRole('button', { name: /CATALOG CHICKEN BREAST/ }).first(), ANSWERED)
+			.toBeInTheDocument();
+		expect(page.getByRole('button', { name: /^Log / }).elements().length).toBe(0);
+	});
+
 	it('accepts a custom placeholder', async () => {
 		await render(FoodSearch, { props: { onpick: vi.fn(), placeholder: 'Find a catalog match' } });
 		await expect.element(page.getByPlaceholder('Find a catalog match')).toBeInTheDocument();
@@ -198,14 +241,14 @@ describe('FoodSearch', () => {
 			.toBeVisible();
 	});
 
-	it('never offers to log it as custom when the catalog was never read', async () => {
-		// "You can still log it as custom" is a claim the food is not in the
-		// catalog. Offline, nothing knows that.
+	it('never suggests another spelling when the catalog was never read', async () => {
+		// "Try a different spelling" is a claim the food is not in the catalog.
+		// Offline, nothing knows that -- the request never got an answer.
 		catalogAnswers(503);
 		await render(FoodSearch, { props: { onpick: vi.fn() } });
 		await page.getByLabelText(SEARCH).fill('chicken breast');
 		await expect.element(page.getByText(/out of reach right now/), ANSWERED).toBeVisible();
-		expect(document.body.textContent).not.toContain('log it as custom');
+		expect(document.body.textContent).not.toContain('Try a different spelling');
 	});
 
 	it('says the same thing offline as it does when the catalog is missing', async () => {
@@ -233,8 +276,13 @@ describe('FoodSearch', () => {
 		await expect
 			.element(page.getByText(/Nothing in the full catalog matches/), ANSWERED)
 			.toBeVisible();
-		// Read and empty is the one case where custom logging is the right offer.
-		await expect.element(page.getByText('You can still log it as custom from text.')).toBeVisible();
+		// Regression: this used to say "You can still log it as custom from
+		// text.", which was never true -- commit() (LogSheet.svelte) drops every
+		// unmatched proposal. What follows now is something the person can
+		// actually do next.
+		await expect
+			.element(page.getByText('Try a different spelling, or scan the barcode instead.'))
+			.toBeVisible();
 	});
 
 	it('never lets a slower earlier query overwrite the results for what is typed now', async () => {
