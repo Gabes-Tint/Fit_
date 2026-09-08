@@ -58,6 +58,14 @@ export type CatalogFoodPayload = {
 	 * checked for `null` on every food.
 	 */
 	unit?: { label: string; grams: number } | undefined;
+	/**
+	 * The serving choices the catalog's `food_serving` rows named for this
+	 * food — MyFitnessPal-style "4.0 oz", "1.0 medium breast", "100 g" — kept
+	 * verbatim rather than reinterpreted the way `portions` and `unit` are.
+	 * Absent, not an empty list, when the catalog named none: same reasoning
+	 * as `portions`.
+	 */
+	servingOptions?: readonly { label: string; grams: number }[] | undefined;
 	/** Per 100 g or 100 ml, which is how the catalog stores every nutrient. */
 	per100g: NutrientBasis;
 };
@@ -138,6 +146,27 @@ function namesAUnit(value: unknown): boolean {
 }
 
 /**
+ * One serving choice. `fieldsOf` rather than a direct property read, the same
+ * as `namesAPortion`, so a prototype-polluting key (`__proto__`, `toString`)
+ * reads as "no such field" instead of reaching whatever `Object.prototype`
+ * already carries under that name.
+ */
+function namesAServingOption(value: unknown): boolean {
+	const option = fieldsOf(value);
+	return typeof option.label === 'string' && typeof option.grams === 'number';
+}
+
+/**
+ * The serving choices, when the payload carries any. Absent is valid — the
+ * field was added after the contract, and most deployments and most foods
+ * send none — but present and malformed is not, matching `namesPortions`.
+ */
+function namesServingOptions(value: unknown): boolean {
+	if (value === undefined) return true;
+	return Array.isArray(value) && value.every(namesAServingOption);
+}
+
+/**
  * The nutrients. `kcal` must be a number: a row without energy would log as a
  * zero-calorie line and quietly wrong the day's total, which is worse than
  * saying the catalog could not be read.
@@ -169,6 +198,7 @@ export function isCatalogFoodPayload(value: unknown): value is CatalogFoodPayloa
 		namesAServing(fieldsOf(row.serving)) &&
 		namesPortions(row.portions) &&
 		namesAUnit(row.unit) &&
+		namesServingOptions(row.servingOptions) &&
 		carriesNutrients(fieldsOf(row.per100g))
 	);
 }
@@ -205,6 +235,37 @@ function provenanceOf(payload: CatalogFoodPayload): Provenance {
 	return payload.kind === 'branded' ? 'brand' : 'usda';
 }
 
+/**
+ * The fields a `Food` carries only when the catalog actually named them: a
+ * brand, a barcode, household measures, a usable unit measure, and the
+ * serving options this slice adds.
+ *
+ * Pulled out of `catalogFoodToFood` itself rather than left as five
+ * conditional spreads inline: each one is its own independent branch, not a
+ * decision that depends on the others, so folding them into the function's
+ * own body only inflated its cyclomatic complexity without making any of the
+ * branches easier to read.
+ */
+function optionalFields(payload: CatalogFoodPayload) {
+	return {
+		...(payload.brand === null ? {} : { brand: payload.brand }),
+		...(payload.barcode === null ? {} : { barcode: payload.barcode }),
+		// Dropped when empty rather than carried as an empty array: `undefined` is
+		// what every bundled food says, so a catalog food that named no measure
+		// reads the same as one that never could.
+		...(payload.portions?.length ? { portions: payload.portions } : {}),
+		// Dropped when absent, the same as `portions`: a bundled food never has
+		// one either, and the toggle this backs (#178) reads its absence as "no
+		// usable unit" either way.
+		...(payload.unit ? { unit: payload.unit } : {}),
+		// Carried, not yet acted on: this slice only moves the wire field onto
+		// the domain type. Dropped when empty, the same as `portions` and
+		// `unit`, so a bundled food and a catalog food naming no choices read
+		// the same.
+		...(payload.servingOptions?.length ? { servingOptions: payload.servingOptions } : {})
+	};
+}
+
 /** A catalog row as a `Food`: per-100 g nutrients scaled onto one serving. */
 export function catalogFoodToFood(payload: CatalogFoodPayload): Food {
 	const grams = payload.serving.grams ?? PER;
@@ -218,22 +279,13 @@ export function catalogFoodToFood(payload: CatalogFoodPayload): Food {
 		// null `foodId` and the entry carries its own name and macros instead.
 		id: `catalog-${payload.id}`,
 		name: payload.name,
-		...(payload.brand === null ? {} : { brand: payload.brand }),
 		aliases: [],
-		...(payload.barcode === null ? {} : { barcode: payload.barcode }),
 		category: payload.category ?? 'other',
 		provenance: provenanceOf(payload),
 		servingLabel:
 			payload.serving.label ?? (payload.serving.grams === null ? NO_SERVING_LABEL : `${grams} g`),
 		grams,
-		// Dropped when empty rather than carried as an empty array: `undefined` is
-		// what every bundled food says, so a catalog food that named no measure
-		// reads the same as one that never could.
-		...(payload.portions?.length ? { portions: payload.portions } : {}),
-		// Dropped when absent, the same as `portions`: a bundled food never has
-		// one either, and the toggle this backs (#178) reads its absence as "no
-		// usable unit" either way.
-		...(payload.unit ? { unit: payload.unit } : {}),
+		...optionalFields(payload),
 		kcal: Math.round(per.kcal * factor),
 		protein: scaled(per.protein),
 		carbs: scaled(per.carbs),
