@@ -35,7 +35,7 @@ type Servable = { id: number };
  * rotisserie chicken is under 2 kg, a large cake under 3 kg) and comfortably
  * below what a magnitude error produces, so it never refuses real data.
  */
-const MAX_GRAMS = 10_000;
+export const MAX_GRAMS = 10_000;
 
 /** A weight a picker can show: finite, positive, and not an outlier by orders of magnitude. */
 function isPlausibleWeight(grams: number): boolean {
@@ -107,8 +107,12 @@ export function withServingOptions<T extends Servable>(
 	foods: readonly T[]
 ): (T & { servingOptions: ServingOption[] })[] {
 	const byFood = servingRowsByFood(catalog, [...new Set(foods.map((food) => food.id))]);
-	return foods.map((food) => ({
-		...food,
-		servingOptions: servingOptionsOf(byFood.get(food.id) ?? [])
-	}));
+	return foods.map((food) => {
+		const rows = byFood.get(food.id);
+		// `servingRowsByFood` only sets an entry for an id that had at least one
+		// row (see its own doc comment), so a miss here means zero rows, not a
+		// row to run past `servingOptionsOf`'s filters — reported directly as no
+		// choices, the same answer filtering every row out would reach anyway.
+		return { ...food, servingOptions: rows === undefined ? [] : servingOptionsOf(rows) };
+	});
 }

@@ -1,6 +1,6 @@
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { withServingOptions } from './serving-options';
+import { MAX_GRAMS, withServingOptions } from './serving-options';
 
 /** A catalog holding nothing but the serving rows a case needs. */
 function catalogOf(rows: [id: number, label: unknown, grams: unknown, isDefault: number][]) {
@@ -92,6 +92,45 @@ describe('withServingOptions', () => {
 		const foods: Food[] = [{ id: 5 }];
 		expect(withServingOptions(db, foods)).toEqual([
 			{ id: 5, servingOptions: [{ label: 'real one', grams: 30 }] }
+		]);
+	});
+
+	it('keeps a row at exactly MAX_GRAMS, and drops one a hair past it', () => {
+		// The #157/#178 catalog defect check above uses a weight ten times the
+		// cap, which says nothing about which side of the cap the boundary
+		// itself falls on — a `<=` weakened to `<` would still pass it while
+		// quietly rejecting the heaviest real serving the catalog can report.
+		db.exec(
+			`insert into food_serving (food_id, label, grams, is_default) values
+				(7, 'at the cap', ${MAX_GRAMS}, 0), (7, 'past the cap', ${MAX_GRAMS + 1}, 0)`
+		);
+		const foods: Food[] = [{ id: 7 }];
+		expect(withServingOptions(db, foods)).toEqual([
+			{ id: 7, servingOptions: [{ label: 'at the cap', grams: MAX_GRAMS }] }
+		]);
+	});
+
+	it('dedupes on a fold that goes toward lowercase, not toward uppercase', () => {
+		// Case-folding is not symmetric for every letter: the German ß
+		// lowercases to itself but uppercases to "SS", so a label spelled with
+		// it and a label already spelled "SS" agree once folded uppercase but
+		// disagree once folded lowercase. The catalog's own choice of
+		// direction is what a label like "1 Straße" and one already written
+		// "1 STRASSE" must be tested against, or a fold running the other way
+		// would still pass every same-case-pair fixture above.
+		db.exec(
+			`insert into food_serving (food_id, label, grams, is_default) values
+				(8, '1 Straße', 100, 1), (8, '1 STRASSE', 105, 0)`
+		);
+		const foods: Food[] = [{ id: 8 }];
+		expect(withServingOptions(db, foods)).toEqual([
+			{
+				id: 8,
+				servingOptions: [
+					{ label: '1 Straße', grams: 100 },
+					{ label: '1 STRASSE', grams: 105 }
+				]
+			}
 		]);
 	});
 
