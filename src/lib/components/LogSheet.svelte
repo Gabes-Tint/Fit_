@@ -17,6 +17,7 @@
 	import type { PhotoFood } from '$lib/photo/photo-log';
 	import type { Food, Meal } from '$lib/domain/types';
 	import { MEALS } from '$lib/domain/types';
+	import { usualServings } from '$lib/domain/usual-portion';
 	import { todayISO } from '$lib/domain/utils';
 	import { logUi, type LogTab } from '$lib/state/log-ui.svelte';
 	import { tend } from '$lib/state/tend.svelte';
@@ -101,6 +102,20 @@
 		if (logUi.open) meal = logUi.meal ?? guessMeal();
 	});
 
+	/**
+	 * The amount a row for this food opens at: what this person last logged of
+	 * it, and the profile's own default for a food they have never logged (#159).
+	 * Read out of the log rather than out of a remembered-portions table, so
+	 * there is nothing to keep in step with the log and nothing to prune.
+	 *
+	 * Only this path takes it. A typed sentence carries a quantity the person
+	 * said out loud, and `foodProposal` resolving "two eggs" to something else
+	 * would be overruling them.
+	 */
+	function opensAt(food: Food): number {
+		return usualServings(tend.profile?.log ?? [], food.id) ?? servings;
+	}
+
 	function propose(food: Food, confidence: number) {
 		proposals = [
 			...proposals,
@@ -109,7 +124,7 @@
 				foodId: food.id,
 				query: food.name,
 				name: food.name,
-				servings,
+				servings: opensAt(food),
 				meal,
 				confidence
 			}
