@@ -12,11 +12,13 @@ Follow `AGENTS.md`, the Svelte skill for any `.svelte` or SvelteKit file, and th
 guidelines: authorization is enforced on the server, never only represented in the
 interface. New behavior goes in a new small module rather than into a large existing one.
 
-Work only in the git worktree named in your brief; the shared checkout may hold another
-agent's uncommitted work, and destructive git commands there are unrecoverable (AGENTS.md,
-"Worktree isolation"). If Read, Edit, or Write are denied because bypass mode is active, do
-the reading and editing through Bash instead — `cat`, `sed`, heredocs — rather than stopping
-to ask.
+Work only in your own git worktree: `bun run worktree:new <name>` if that script exists
+in `package.json`, else `git worktree add` off `origin/main` plus `bun install
+--frozen-lockfile`. Never `git clean`, `git stash`, or `git checkout --` in the shared
+checkout — it may hold another agent's uncommitted work, and destructive git commands there
+are unrecoverable (AGENTS.md, "Worktree isolation"). If Read, Edit, or Write are denied
+because bypass mode is active, do the reading and editing through Bash instead — `cat`,
+`sed`, heredocs — rather than stopping to ask.
 
 When the brief names no tier, run `verify:changed`; run a wider tier only when the brief
 asks.
@@ -36,11 +38,11 @@ Anything under `src/lib/**/*.ts` you touch carries the whole-file strict verdict
 `changed-client` otherwise — and paste its per-file verdict; say you checked `.svelte` files,
 specs, and `scripts/**` rather than leaving their exemption silent.
 
-Commit with `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` and a
-`Claude-Session:` trailer, and close any PR body with the matching `🤖 Generated with [Claude
-Code]` line and session link from your brief, since the URL changes per session. A PR body is
-two or three sentences, then gates with their result lines, then bundle before/after when
-client code changed, and `Closes #n` when the slice finishes the issue.
+Commit with the `Co-Authored-By:` name and `Claude-Session:` URL your brief gives — both
+change per session, so never hardcode one — and close any PR body with the matching `🤖
+Generated with [Claude Code]` line and session link from that same brief. A PR body is two
+or three sentences, then gates with their result lines, then bundle before/after when client
+code changed, and `Closes #n` when the slice finishes the issue.
 
 If the problem turns out to need a product decision or a paid service, stop and say so;
 that is Gabriel's call, not yours.
