@@ -41,6 +41,7 @@
 			"src/lib/components/SectionLabel.svelte",
 			"src/lib/components/ServingAmount.svelte",
 			"src/lib/components/ServingAmountHarness.svelte",
+			"src/lib/components/ServingSizePicker.svelte",
 			"src/lib/components/SideNav.svelte",
 			"src/lib/components/SyncStatusBadge.svelte",
 			"src/lib/components/TodayView.svelte",
