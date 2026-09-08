@@ -147,6 +147,8 @@
 			"scripts/perf/report.ts",
 			"scripts/perf/server-latency-metrics.ts",
 			"scripts/perf/server-latency.ts",
+			"scripts/perf/source-resolver.ts",
+			"scripts/perf/sql-dynamic.ts",
 			"scripts/perf/sql-plans.ts",
 			"scripts/perf/sql-statements.ts",
 			"scripts/perf/stats.ts",

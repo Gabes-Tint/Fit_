@@ -316,6 +316,26 @@ it needs the 1.4 GB catalog, which is neither in the repository nor in CI, and i
 is a judgement about food rather than a threshold. Run it either side of a ranking change
 and put the table in the pull request.
 
+### Performance instruments
+
+`perf:measure` runs the four instruments of issue #130 — client bundle, phone-profile paint,
+server latency over the `search:eval` query set, and `EXPLAIN QUERY PLAN` for every prepared
+statement — and writes `reports/perf/latest.md`. `--baseline` records the run as the
+committed one under `quality/`; `--compare` reads the current run against it.
+
+```bash
+FIT_CATALOG_PATH=… bun run perf:measure
+bun run check:perf-plans
+```
+
+It runs under `node`, not `bun`, because instrument 4 needs `node:sqlite`. Latency and the
+catalog search need the same 1.4 GB catalog `search:eval` does and say so when it is absent;
+the query plans do not. `check:perf-plans` re-derives the plans and fails when they differ
+from `quality/perf-plans.md`, so a change that turns an index seek into a scan appears in a
+diff rather than in a slow request — `--write` records a reviewed new one. That file is
+generated against the fixture schema in `tests/catalog-fixture.ts` so it reproduces on a
+machine with no catalog; every plan row in it is identical to the live catalog's today.
+
 Generated reports are written under `coverage/`, `playwright-report/`, and `reports/`. They are
 ignored by Git and uploaded by GitHub Actions.
 

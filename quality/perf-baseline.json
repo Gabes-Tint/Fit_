@@ -76,7 +76,7 @@
 	},
 	"sqlPlans": {
 		"catalogSource": "live",
-		"statementCount": 21,
-		"unresolvedCount": 2
+		"statementCount": 24,
+		"unresolvedCount": 0
 	}
 }
