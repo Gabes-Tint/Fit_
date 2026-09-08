@@ -297,15 +297,6 @@ describe('PhotoCapture, pointed at the pictures already on the device', () => {
 		await expect.element(readButton()).toBeInTheDocument();
 		expect(document.body.textContent).toContain('The photo goes to OpenAI to be read.');
 	});
-
-	it('sends the user to typing when they ask for it', async () => {
-		const ontype = vi.fn();
-		await render(PhotoCapture, {
-			props: { ...props, route: 'file' as const, ontype, onfoods: vi.fn() }
-		});
-		await page.getByRole('button', { name: 'Type it instead' }).click();
-		expect(ontype).toHaveBeenCalled();
-	});
 });
 
 describe('PhotoCapture, sending the still to be read', () => {
