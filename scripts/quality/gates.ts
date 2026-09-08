@@ -58,6 +58,11 @@ const staticSteps: GateStep[] = [
 		purpose: 'Non-blocking tiers still run on a schedule',
 		concurrent: true
 	},
+	{
+		name: 'check:perf-plans',
+		purpose: 'Committed SQLite query plans match the code',
+		concurrent: true
+	},
 	{ name: 'knip', purpose: 'Unused files, exports, dependencies', concurrent: true },
 	{
 		name: 'duplicates',
