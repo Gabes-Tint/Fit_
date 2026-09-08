@@ -25,7 +25,7 @@ function row(name: string, group: RoutineExercise['group'], sets = 3): RoutineEx
 }
 
 function routine(exercises: RoutineExercise[]): Routine {
-	return { id: 'r1', name: 'Push', exercises };
+	return { id: 'r1', name: 'Push', exercises, deletedAt: null };
 }
 
 describe('the exercise library', () => {
@@ -204,7 +204,8 @@ describe('an empty routine', () => {
 		expect(emptyRoutine('r-7')).toEqual({
 			id: 'r-7',
 			name: 'New routine',
-			exercises: []
+			exercises: [],
+			deletedAt: null
 		});
 	});
 });

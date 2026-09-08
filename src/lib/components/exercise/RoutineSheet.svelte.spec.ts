@@ -13,7 +13,8 @@ const ROUTINE: Routine = {
 		{ name: 'Bench Press', group: 'Chest', sets: 4, reps: 8, load: 60 },
 		{ name: 'Lat Pulldown', group: 'Back', sets: 3, reps: 10, load: 45 },
 		{ name: 'Incline Bench Press', group: 'Chest', sets: 3, reps: 10, load: 40 }
-	]
+	],
+	deletedAt: null
 };
 
 async function renderSheet(routine: Routine = ROUTINE) {

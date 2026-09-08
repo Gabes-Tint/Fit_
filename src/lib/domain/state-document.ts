@@ -1,3 +1,4 @@
+import { migrate_2_to_3 } from './migrate-deleted-routines';
 import { migrate_1_to_2 } from './migrate-planned-days';
 import { DEFAULT_LOAD_UNIT, DEFAULT_REST_SECONDS, DEFAULT_UNITS, type TendState } from './types';
 
@@ -12,7 +13,7 @@ import { DEFAULT_LOAD_UNIT, DEFAULT_REST_SECONDS, DEFAULT_UNITS, type TendState 
  *
  * - **Older than this build** — migrated forward, one step at a time, by the
  *   pure functions in `MIGRATIONS`. Every shape change ships with its migration;
- *   `FIELD_CHECKS` below makes that a compile error rather than a convention.
+ *   a missing top-level field or required nested field is caught by FIELD_CHECKS or the type system, making it a compile error rather than a convention.
  * - **Newer than this build** — refused. Not merged, not downgraded, not
  *   written over. An old client cannot know what a new field means, and the one
  *   safe thing it can do with a document it does not understand is leave it
@@ -24,7 +25,7 @@ import { DEFAULT_LOAD_UNIT, DEFAULT_REST_SECONDS, DEFAULT_UNITS, type TendState 
  */
 
 /** The shape this build reads and writes. Bumped by every shape change. */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /**
  * A document with no `schemaVersion` at all: everything written before this
@@ -117,7 +118,7 @@ function migrate_0_to_1(document: Document): Document {
 }
 
 /** Ordered, one rung per version: `MIGRATIONS[n]` takes version `n` to `n + 1`. */
-export const MIGRATIONS: readonly Migration[] = [migrate_0_to_1, migrate_1_to_2];
+export const MIGRATIONS: readonly Migration[] = [migrate_0_to_1, migrate_1_to_2, migrate_2_to_3];
 
 /**
  * Every rung from the version a document declares up to this build's, in order.
@@ -138,9 +139,7 @@ function migrateForward(document: Document, from: number): Document {
  * is not in here: it is read and stripped before this runs, so what is checked
  * is exactly what the application will be handed.
  *
- * Top level only. What is inside `profiles` or `workouts` is not checked here:
- * refusing somebody's whole journal over one odd entry loses far more than it
- * protects, and the ladder is what keeps those shapes honest going forward.
+ * What is checked here are the top-level fields. Required fields on nested shapes like `Routine` are caught at compile time when writing routine literals, so a missing required field there also prevents compilation. Optional nested fields, by contrast, are not validated here: refusing somebody's whole document over one odd entry in a routine or profile loses far more than it protects, and the ladder is what keeps those shapes honest going forward.
  */
 const FIELD_CHECKS = {
 	onboarded: (value: unknown) => typeof value === 'boolean',

@@ -14,7 +14,8 @@ function pushA(): Routine {
 		exercises: [
 			{ name: 'Bench Press', group: 'Chest', sets: 2, reps: 10, load: 60 },
 			{ name: 'Lateral Raise', group: 'Shoulders', sets: 1, reps: 12, load: 8 }
-		]
+		],
+		deletedAt: null
 	};
 }
 

@@ -18,7 +18,8 @@ function pushA(): Routine {
 	return {
 		id: 'r-1',
 		name: 'Push A',
-		exercises: [{ name: 'Bench Press', group: 'Chest', sets: 3, reps: 10, load: 60 }]
+		exercises: [{ name: 'Bench Press', group: 'Chest', sets: 3, reps: 10, load: 60 }],
+		deletedAt: null
 	};
 }
 

@@ -40,7 +40,7 @@ export function stopPainting(): void {
 
 /** A minimal routine: an id, a name, and no exercises. */
 export function routine(id: string, name: string): Routine {
-	return { id, name, exercises: [] };
+	return { id, name, exercises: [], deletedAt: null };
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;

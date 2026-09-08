@@ -7,7 +7,7 @@ import {
 	emptyRoutine,
 	type BumpField
 } from '$lib/domain/exercises';
-import { toggleRoutineOn, withoutRoutine } from '$lib/domain/planned-days';
+import { toggleRoutineOn, withoutRoutineFrom } from '$lib/domain/planned-days';
 import { SEED_FOOD_BY_ID, scaleFood } from '$lib/domain/foods';
 import { emptyProfile } from '$lib/domain/profile';
 import type {
@@ -373,8 +373,18 @@ export class TendStore {
 
 	// -- training ------------------------------------------------------------
 
+	/**
+	 * Any routine by id, deleted ones included: a planned day that has already
+	 * passed still has to render the name of what it asked for, and the workout
+	 * history is read the same way.
+	 */
 	routine(id: string): Routine | undefined {
 		return this.state.routines.find((r) => r.id === id);
+	}
+
+	/** The rotation as somebody picks from it: what a list or a day sheet offers. */
+	get routines(): Routine[] {
+		return this.state.routines.filter((r) => r.deletedAt === null);
 	}
 
 	/**
@@ -403,9 +413,20 @@ export class TendStore {
 		this.persist();
 	}
 
-	removeRoutine(id: string) {
-		this.state.routines = this.state.routines.filter((r) => r.id !== id);
-		this.state.trainingPlan = withoutRoutine(this.state.trainingPlan, id);
+	/**
+	 * Deleting a routine flags it and cancels the days it was still going to be
+	 * trained on. The row stays because past planned days point at it and are the
+	 * denominator of adherence; the plan is cleared from `date` forward, so what
+	 * was asked of somebody yesterday is left as the record it is.
+	 */
+	removeRoutine(id: string, date?: string) {
+		const routine = this.routine(id);
+		if (!routine) return;
+		const from = date ?? todayISO();
+		// Flagged in place, as the exercise steppers are: rebuilding the list would
+		// give every row a new identity and rerender a screen that has not changed.
+		routine.deletedAt = from;
+		this.state.trainingPlan = withoutRoutineFrom(this.state.trainingPlan, id, from);
 		this.persist();
 	}
 
@@ -479,7 +500,9 @@ export class TendStore {
 
 	startWorkout(routineId: string): Workout | null {
 		const routine = this.routine(routineId);
-		if (!routine) return null;
+		// A deleted routine can no more be started than one that was never there:
+		// it is still resolvable only so the days it already sat on can name it.
+		if (!routine || routine.deletedAt !== null) return null;
 		if (routine.exercises.length === 0) return null;
 		const workout = workoutFromRoutine(routine, {
 			id: uid('w-'),

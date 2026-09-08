@@ -10,7 +10,8 @@ import AdherenceList from './AdherenceList.svelte';
 const push: Routine = {
 	id: 'r1',
 	name: 'Push',
-	exercises: [{ name: 'Bench Press', group: 'Chest', sets: 1, reps: 8, load: 40 }]
+	exercises: [{ name: 'Bench Press', group: 'Chest', sets: 1, reps: 8, load: 40 }],
+	deletedAt: null
 };
 const now = weekOf(todayISO());
 

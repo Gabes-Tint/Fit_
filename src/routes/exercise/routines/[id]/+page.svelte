@@ -11,7 +11,9 @@
 	import LinkButton from '$lib/ui/LinkButton.svelte';
 
 	const id = $derived(page.params.id ?? '');
-	const routine = $derived(tend.routine(id));
+	const found = $derived(tend.routine(id));
+	/** A soft-deleted routine falls through to the same "gone" screen as one that never existed. */
+	const routine = $derived(found?.deletedAt === null ? found : undefined);
 
 	async function start() {
 		if (tend.startWorkout(id)) await goto(resolve('/exercise/session'));

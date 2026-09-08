@@ -860,21 +860,75 @@ describe('routines', () => {
 		expect(store.routine('pull')?.name).toBe('Back day');
 	});
 
-	it('removes the routine it was asked for', () => {
+	it('opens a new routine in the rotation, with nothing said about deleting it', () => {
 		const store = freshStore();
+		expect(store.createRoutine().deletedAt).toBeNull();
 		store.useTemplate('ppl');
-		store.removeRoutine('pull');
-		expect(store.state.routines.map((r) => r.id)).toEqual(['push', 'legs']);
+		expect(store.state.routines.map((r) => r.deletedAt)).toEqual([null, null, null]);
 	});
 
-	it('clears the days that pointed at a routine it removed', () => {
+	it('flags the routine it was asked to delete, with the day it happened', () => {
 		const store = freshStore();
 		store.useTemplate('ppl');
-		store.planDay('2026-01-05', 'pull');
-		store.planDay('2026-01-06', 'pull');
-		store.planDay('2026-01-06', 'legs');
+		store.removeRoutine('pull', '2026-03-04');
+		expect(store.routine('pull')?.deletedAt).toBe('2026-03-04');
+	});
+
+	it('deletes on today when the caller names no day', () => {
+		const store = freshStore();
+		store.useTemplate('ppl');
 		store.removeRoutine('pull');
-		expect(store.state.trainingPlan).toEqual([{ date: '2026-01-06', routineIds: ['legs'] }]);
+		expect(store.routine('pull')?.deletedAt).toBe(todayISO());
+	});
+
+	// The row stays because past planned days point at it, and those days are the
+	// denominator of adherence: dropping it would raise the score for sessions
+	// that were missed, and leave the days that asked for it with no name to show.
+	it('keeps the deleted routine resolvable by id, so past days can still name it', () => {
+		const store = freshStore();
+		store.useTemplate('ppl');
+		store.removeRoutine('pull', '2026-03-04');
+		expect(store.routine('pull')?.name).toBe('Back & Arms');
+		expect(store.state.routines.map((r) => r.id)).toEqual(['push', 'pull', 'legs']);
+	});
+
+	it('stops offering it, which is what a list or a picker reads', () => {
+		const store = freshStore();
+		store.useTemplate('ppl');
+		store.removeRoutine('pull', '2026-03-04');
+		expect(store.routines.map((r) => r.id)).toEqual(['push', 'legs']);
+	});
+
+	it('clears the days from the deletion onwards, and only those', () => {
+		const store = freshStore();
+		store.useTemplate('ppl');
+		store.planDay('2026-03-02', 'pull');
+		store.planDay('2026-03-04', 'pull');
+		store.planDay('2026-03-04', 'legs');
+		store.planDay('2026-03-09', 'pull');
+		store.removeRoutine('pull', '2026-03-04');
+		expect(store.state.trainingPlan).toEqual([
+			{ date: '2026-03-02', routineIds: ['pull'] },
+			{ date: '2026-03-04', routineIds: ['legs'] }
+		]);
+	});
+
+	it('has nothing to delete under an id nobody used, and leaves the plan alone', () => {
+		const store = freshStore();
+		store.useTemplate('ppl');
+		store.planDay('2026-03-09', 'legs');
+		store.removeRoutine('nope', '2026-03-04');
+		expect(store.state.routines.map((r) => r.deletedAt)).toEqual([null, null, null]);
+		expect(store.state.trainingPlan).toEqual([{ date: '2026-03-09', routineIds: ['legs'] }]);
+	});
+
+	it('will not start a deleted routine, any more than one that was never there', () => {
+		const store = freshStore();
+		store.useTemplate('ppl');
+		store.removeRoutine('pull', '2026-03-04');
+		expect(store.startWorkout('pull')).toBeNull();
+		expect(store.state.activeWorkout).toBeNull();
+		expect(store.startWorkout('push')).not.toBeNull();
 	});
 
 	it('saves each change to the routine list as it is made', () => {
@@ -883,8 +937,9 @@ describe('routines', () => {
 		expect(stored().routines).toHaveLength(1);
 		store.updateRoutine(routine.id, { name: 'Everything' });
 		expect(stored().routines[0]?.name).toBe('Everything');
-		store.removeRoutine(routine.id);
-		expect(stored().routines).toEqual([]);
+		store.removeRoutine(routine.id, '2026-03-04');
+		expect(stored().routines).toHaveLength(1);
+		expect(stored().routines[0]?.deletedAt).toBe('2026-03-04');
 	});
 });
 

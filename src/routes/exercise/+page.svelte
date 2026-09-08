@@ -18,7 +18,14 @@
 
 	const today = todayISO();
 
-	const routines = $derived(tend.state.routines);
+	/** What a person picks from and sees offered — a deleted routine drops out here. */
+	const routines = $derived(tend.routines);
+	/**
+	 * Every routine ever made, deleted ones included. `TrainingWeekStrip` shows
+	 * past days too, and a past day still has to name the routine it asked for
+	 * even after that routine is gone from the rotation.
+	 */
+	const allRoutines = $derived(tend.state.routines);
 	const workouts = $derived(tend.state.workouts);
 	/** Today's routines, so the rotation below marks what is on today. */
 	const todayIds = $derived(routineIdsOn(tend.state.trainingPlan, today));
@@ -85,7 +92,7 @@
 			onopen={buildRoutine}
 		/>
 
-		<TrainingWeekStrip {routines} {today} {workouts} plan={tend.state.trainingPlan} />
+		<TrainingWeekStrip routines={allRoutines} {today} {workouts} plan={tend.state.trainingPlan} />
 
 		<div class="flex flex-col gap-2">
 			<div class="flex items-baseline justify-between px-1">

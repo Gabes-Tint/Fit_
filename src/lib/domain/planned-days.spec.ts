@@ -4,7 +4,7 @@ import {
 	plannedSessionsBetween,
 	routineIdsOn,
 	toggleRoutineOn,
-	withoutRoutine
+	withoutRoutineFrom
 } from './planned-days';
 import type { PlannedDay } from './types';
 
@@ -84,22 +84,62 @@ describe('putting a routine on a day', () => {
 	});
 });
 
-describe('taking a routine out of the plan altogether', () => {
-	it('drops it from every day it sat on', () => {
-		const next = withoutRoutine(WEEK, 'lift');
+/**
+ * A fortnight around Thursday 10 September: one day behind it, the day itself,
+ * and one ahead, with the middle day holding a second routine so there is a day
+ * that survives with less on it and a day that goes entirely.
+ */
+const FORTNIGHT: PlannedDay[] = [
+	{ date: '2026-09-07', routineIds: ['lift', 'run'] },
+	{ date: '2026-09-10', routineIds: ['lift', 'run'] },
+	{ date: '2026-09-14', routineIds: ['lift'] }
+];
 
-		expect(next).toEqual([{ date: '2026-09-07', routineIds: ['run'] }]);
+describe('taking a routine out of the plan from a date onwards', () => {
+	it('leaves the days already behind that date exactly as they were', () => {
+		const next = withoutRoutineFrom(FORTNIGHT, 'lift', '2026-09-10');
+
+		expect(next[0]).toEqual({ date: '2026-09-07', routineIds: ['lift', 'run'] });
+	});
+
+	it('takes it off the date itself, which is the day the deletion happens', () => {
+		const next = withoutRoutineFrom(FORTNIGHT, 'lift', '2026-09-10');
+
+		expect(next[1]).toEqual({ date: '2026-09-10', routineIds: ['run'] });
+	});
+
+	it('drops a day it emptied rather than leaving an empty one behind', () => {
+		const next = withoutRoutineFrom(FORTNIGHT, 'lift', '2026-09-10');
+
+		expect(next.map((day) => day.date)).toEqual(['2026-09-07', '2026-09-10']);
+	});
+
+	it('keeps the days in the order it was given them', () => {
+		const next = withoutRoutineFrom(FORTNIGHT, 'run', '2026-09-01');
+
+		expect(next.map((day) => day.date)).toEqual(['2026-09-07', '2026-09-10', '2026-09-14']);
+	});
+
+	it('clears the whole plan when the date is behind all of it', () => {
+		expect(withoutRoutineFrom(FORTNIGHT, 'lift', '2026-01-01')).toEqual([
+			{ date: '2026-09-07', routineIds: ['run'] },
+			{ date: '2026-09-10', routineIds: ['run'] }
+		]);
+	});
+
+	it('changes nothing when the date is past all of it', () => {
+		expect(withoutRoutineFrom(FORTNIGHT, 'lift', '2026-12-31')).toEqual(FORTNIGHT);
 	});
 
 	it('leaves the days that never held it exactly as they were', () => {
-		expect(withoutRoutine(WEEK, 'swim')).toEqual(WEEK);
+		expect(withoutRoutineFrom(FORTNIGHT, 'swim', '2026-09-10')).toEqual(FORTNIGHT);
 	});
 
 	it('leaves the plan it was handed alone', () => {
-		const before = JSON.stringify(WEEK);
+		const before = JSON.stringify(FORTNIGHT);
 
-		withoutRoutine(WEEK, 'lift');
+		withoutRoutineFrom(FORTNIGHT, 'lift', '2026-09-10');
 
-		expect(JSON.stringify(WEEK)).toBe(before);
+		expect(JSON.stringify(FORTNIGHT)).toBe(before);
 	});
 });
