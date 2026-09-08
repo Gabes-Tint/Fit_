@@ -3,6 +3,7 @@ import { SEED_FOOD_BY_ID } from './foods';
 import { catalogFoodToFood } from './catalog-food';
 import { logFromCatalogFood, logFromFood, relogItem, rescaleLogItem } from './log-entry';
 import { ZERO_MICROS } from './types';
+import { round1 } from './utils';
 import type { LogItem } from './types';
 
 describe('logFromFood', () => {
@@ -189,10 +190,37 @@ describe('rescaleLogItem', () => {
 			source: 'manual'
 		});
 		const after = rescaleLogItem(item, 2);
-		// Only re-deriving from the source food produces this exact figure; naive
-		// ratio scaling of the 0.5-serving numbers would round differently.
-		expect(after.kcal).toBe((SEED_FOOD_BY_ID['egg-large']?.kcal ?? 0) * 2);
 		expect(after.servings).toBe(2);
+		expect(after.kcal).toBe((SEED_FOOD_BY_ID['egg-large']?.kcal ?? 0) * 2);
+		// Protein is what separates the two ways of getting here. Half an egg
+		// stores 3.2g, rounded up from 3.15, and multiplying that stored figure
+		// by the 4x ratio compounds the rounding into 12.8g; re-deriving from the
+		// seed food gives the 12.6g two eggs actually have. Calories cannot tell
+		// them apart -- 36 x 4 and 72 x 2 are both 144 -- so the assertion above
+		// passes either way and this one is the one that holds the behavior.
+		expect(after.protein).toBe(round1((SEED_FOOD_BY_ID['egg-large']?.protein ?? 0) * 2));
+	});
+
+	it('re-derives a seeded entry filed by an older build from today’s seed food', () => {
+		// The state document is shared by devices running different builds, so an
+		// entry can carry macros from a `seed-foods.ts` that has since changed.
+		// Its `foodId` is the formula, and re-portioning is what re-applies it:
+		// two eggs read as two of today’s eggs, not as double a stale one.
+		const seed = SEED_FOOD_BY_ID['egg-large'];
+		const stale = customEntry({
+			foodId: 'egg-large',
+			servings: 1,
+			kcal: 60,
+			protein: 5,
+			carbs: 1,
+			fat: 3
+		});
+		const after = rescaleLogItem(stale, 2);
+		expect(after.servings).toBe(2);
+		expect(after.kcal).toBe(Math.round((seed?.kcal ?? 0) * 2));
+		expect(after.protein).toBe(round1((seed?.protein ?? 0) * 2));
+		expect(after.carbs).toBe(round1((seed?.carbs ?? 0) * 2));
+		expect(after.fat).toBe(round1((seed?.fat ?? 0) * 2));
 	});
 
 	it('scales a custom entry with no foodId by the servings ratio', () => {
@@ -200,6 +228,11 @@ describe('rescaleLogItem', () => {
 		expect(after.servings).toBe(3);
 		expect(after.kcal).toBe(600);
 		expect(after.protein).toBe(30);
+		// Carbs and fat move with the ratio too. They are the two macros the day's
+		// rings and the remaining-fat line read straight off the entry, so an edit
+		// that left either at its old figure would misreport the day.
+		expect(after.carbs).toBe(60);
+		expect(after.fat).toBe(22.5);
 		expect(after.micros.fiber).toBe(6);
 	});
 
