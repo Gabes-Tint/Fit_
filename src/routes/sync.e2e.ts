@@ -21,6 +21,13 @@ import {
 
 const PASSWORD = 'salt-and-pepper-mill';
 
+/**
+ * Long enough that an answer held for it cannot be heard before a reload that
+ * follows the tap immediately, and short enough that the test does not sit on
+ * it: nothing below ever waits this out.
+ */
+const HELD_ANSWER_MS = 3000;
+
 async function logTwoEggs(page: Page) {
 	// Naming the food is the server's job since #116, and this preview server
 	// has no catalog file; the sync behavior under test is unaffected by it.
@@ -201,5 +208,54 @@ test.describe('with the server out of reach', () => {
 			.poll(() => accepted.filter((status) => status === 200).length, { timeout: 20_000 })
 			.toBeGreaterThan(0);
 		await settled(page);
+	});
+});
+
+/**
+ * #247. Saving writes to the device the instant the tap lands, and that half was
+ * never in doubt. What could take the save away again was the reload: a write
+ * already in the air reaches the server, its answer does not reach the device,
+ * and the next start finds the account a version ahead. That version is this
+ * device's own document from a moment ago — but it was read as another device's
+ * newer work and adopted, and everything recorded since the write left went with
+ * it. It failed as an intermittent height flake on the You screen; nothing about
+ * it is particular to height, or to that screen.
+ *
+ * Holding the answer back is the only thing slowed down here, and it is what
+ * makes the window certain instead of a matter of luck. The reload still happens
+ * the instant the tap returns.
+ */
+test.describe('a write whose answer never arrives', () => {
+	test('does not take the next save down with it', async ({ page, baseURL }) => {
+		await signInThroughApi(page, baseURL ?? '');
+		await openEmptyJournal(page);
+		await settled(page);
+		await page.getByRole('button', { name: 'Open menu' }).click();
+		await page.getByRole('link', { name: 'You' }).click();
+		await expect(page.getByRole('heading', { name: 'You', level: 1 })).toBeVisible();
+
+		// From here the account accepts every write and answers too late to be heard.
+		await page.route('**/api/state', async (route) => {
+			if (route.request().method() !== 'PUT') return route.continue();
+			const answer = await route.fetch();
+			await new Promise((resolve) => setTimeout(resolve, HELD_ANSWER_MS));
+			await route.fulfill({ response: answer });
+		});
+
+		// The switch is what puts a write in the air; anything recorded a moment
+		// before a save would do as well.
+		await page.getByRole('button', { name: 'Imperial' }).click();
+		await expect(page.getByLabel('Height, inches')).toHaveValue('6');
+		await page.getByLabel('Height, feet').fill('5');
+		await page.getByLabel('Height, inches').fill('9');
+		await page.getByRole('button', { name: 'Save height' }).click();
+		await page.reload();
+
+		// The answers come back at their own pace again, so what the reloaded page
+		// makes of the account is reached without waiting the held answer out.
+		await page.unroute('**/api/state');
+		await settled(page);
+		await expect(page.getByLabel('Height, feet')).toHaveValue('5');
+		await expect(page.getByLabel('Height, inches')).toHaveValue('9');
 	});
 });
