@@ -37,6 +37,7 @@
 			"src/lib/components/ProposalRow.svelte",
 			"src/lib/components/ProvenanceBadge.svelte",
 			"src/lib/components/QuantityStepper.svelte",
+			"src/lib/components/RecentFoodList.svelte",
 			"src/lib/components/SectionLabel.svelte",
 			"src/lib/components/SideNav.svelte",
 			"src/lib/components/SyncStatusBadge.svelte",

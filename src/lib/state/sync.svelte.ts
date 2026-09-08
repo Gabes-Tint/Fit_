@@ -8,6 +8,12 @@ import {
 	type StoredDocument
 } from '$lib/domain/state-document';
 import { toast } from '$lib/ui/toast.svelte';
+import {
+	fingerprint,
+	isOwnWrite,
+	outstandingWriteIn,
+	type OutstandingWrite
+} from './outstanding-write';
 import { SyncRetry } from './sync-retry';
 import { STORAGE_KEY, tend } from './tend.svelte';
 import type { TendStore } from './tend.svelte';
@@ -28,6 +34,9 @@ import type { TendStore } from './tend.svelte';
  *    what would make the loss invisible.
  * 3. Nothing is marked sent until a write carrying it has been accepted.
  * 4. An answer that arrives after this device signed out is not acted on.
+ * 5. A version the server reached because of this device's own unanswered write
+ *    is not another device's work, and is not adopted over what is here. See
+ *    `outstanding-write.ts`.
  *
  * The whole `TendState` document is synced, `onboarded` and `activeProfileId`
  * included: with one account per household both belong to the account rather
@@ -72,6 +81,12 @@ export type SyncRecord = {
 	householdId: string;
 	version: number;
 	dirty: boolean;
+	/**
+	 * A write that left this device and was never answered, and `null` when
+	 * there is none. Written before the request goes out, because the case it
+	 * exists for is the one where nothing comes back.
+	 */
+	outstanding: OutstandingWrite | null;
 };
 
 export type SyncStatus =
@@ -199,7 +214,8 @@ function recordIn(value: unknown): SyncRecord | null {
 	return {
 		householdId: record.householdId,
 		version: record.version as number,
-		dirty: record.dirty === true
+		dirty: record.dirty === true,
+		outstanding: outstandingWriteIn(record.outstanding)
 	};
 }
 
@@ -236,6 +252,14 @@ export class SyncStore {
 
 	/** The household whose document has been read; `null` until a read lands. */
 	private pulledFor: string | null = null;
+
+	/**
+	 * The write this device sent and never heard the answer to, and `null` when
+	 * it is not holding one. Survives a reload through the sync record, which is
+	 * the whole point of it: the answer that never arrived is usually the one
+	 * the reload interrupted.
+	 */
+	private outstanding: OutstandingWrite | null = null;
 
 	/**
 	 * The exchange under way and whose it is. Every request records the household
@@ -280,11 +304,13 @@ export class SyncStore {
 			this.store.clear();
 			this.version = 0;
 			this.dirty = false;
+			this.outstanding = null;
 		} else {
 			this.version = record?.version ?? 0;
 			// No record and a document of its own is a device that predates sync:
 			// what it holds has never been sent, whatever the absent record says.
 			this.dirty = record?.dirty ?? hasLocalDocument();
+			this.outstanding = record?.outstanding ?? null;
 		}
 		this.store.watch(() => this.changed());
 		this.bindRetries();
@@ -301,6 +327,7 @@ export class SyncStore {
 		this.householdId = null;
 		this.dirty = false;
 		this.version = 0;
+		this.outstanding = null;
 		this.status = 'idle';
 	}
 
@@ -495,6 +522,13 @@ export class SyncStore {
 	private async push(householdId: string, again = true): Promise<boolean> {
 		const body = storedDocument($state.snapshot(this.store.state));
 		this.status = 'saving';
+		// Recorded before the request goes out and while the record still reads
+		// dirty, because the case this covers is the one where no answer ever
+		// arrives: the tab is reloaded or closed with the write in the air, and
+		// the next start has to be able to recognise it. See
+		// `outstanding-write.ts`.
+		this.outstanding = { version: this.version, fingerprint: fingerprint(body) };
+		this.save(householdId);
 		this.dirty = false;
 		const result = await writeRemote(this.version, body);
 		// The account this write was for is no longer the one signed in here, so
@@ -510,6 +544,9 @@ export class SyncStore {
 			return false;
 		}
 		if (result.stale) {
+			// A refusal names the version this write did not create, so its fate is
+			// settled: it never landed, and it is not what the server is holding.
+			this.outstanding = null;
 			this.receive(result, true, householdId);
 			// The refusal carried a document written by a newer build. Nothing
 			// more is sent, and what this device is holding stays here.
@@ -521,6 +558,7 @@ export class SyncStore {
 			if (this.dirty && again) await this.push(householdId, false);
 			return false;
 		}
+		this.outstanding = null;
 		this.version = result.version;
 		this.save(householdId);
 		this.status = 'idle';
@@ -537,6 +575,10 @@ export class SyncStore {
 	 * time is not interrupted.
 	 */
 	private receive(remote: RemoteDocument, hadOwnWork: boolean, householdId: string): void {
+		// The server has answered, so whatever this device was still holding an
+		// unheard answer for is answered now, whichever way the rest of this goes.
+		const outstanding = this.outstanding;
+		this.outstanding = null;
 		if (remote.body === null) {
 			// Nothing stored for this household. This device's document, if it has
 			// one, becomes the first version; it is never emptied to match.
@@ -555,6 +597,18 @@ export class SyncStore {
 			return;
 		}
 		if (remote.version > this.version) {
+			// Not another device's work: this device's own write, come back as a
+			// version it never heard about. What is on the device contains that
+			// document plus everything recorded after it left, so it is the later
+			// copy and adopting would throw the newer half away. The version is
+			// taken, nothing else is, and `dirty` is left as it stands so the
+			// document here goes out from where the server actually is.
+			if (isOwnWrite(outstanding, { version: remote.version, body: remote.body })) {
+				this.version = remote.version;
+				this.save(householdId);
+				this.status = 'idle';
+				return;
+			}
 			this.adopt({ version: remote.version, body: remote.body, hadOwnWork, householdId });
 			return;
 		}
@@ -617,7 +671,12 @@ export class SyncStore {
 	 * account whose answer produced it.
 	 */
 	private save(householdId: string): void {
-		const record: SyncRecord = { householdId, version: this.version, dirty: this.dirty };
+		const record: SyncRecord = {
+			householdId,
+			version: this.version,
+			dirty: this.dirty,
+			outstanding: this.outstanding
+		};
 		globalThis.localStorage?.setItem(SYNC_STORAGE_KEY, JSON.stringify(record));
 	}
 }
