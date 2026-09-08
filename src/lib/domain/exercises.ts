@@ -30,6 +30,18 @@ export function libraryFor(group: MuscleGroup | null): LibraryExercise[] {
 }
 
 /**
+ * `libraryFor` narrowed further by a typed name. Twenty-eight rows do not
+ * justify fuzzy matching or a ranking score — a trimmed, case-insensitive
+ * substring test finds "press" or "curl" as fast as scrolling never could,
+ * and a blank query is the same list `libraryFor` already returns.
+ */
+export function searchLibrary(query: string, group: MuscleGroup | null): LibraryExercise[] {
+	const needle = query.trim().toLowerCase();
+	if (needle === '') return libraryFor(group);
+	return libraryFor(group).filter((e) => e.name.toLowerCase().includes(needle));
+}
+
+/**
  * Other movements in the same muscle group. The exercise being replaced is not
  * offered as its own replacement.
  */
