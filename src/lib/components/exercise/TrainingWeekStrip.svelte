@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import DayStrip from '$lib/components/DayStrip.svelte';
-	import { DAY_STRIP_CELL, type DayStripCellProps } from '$lib/components/day-strip';
+	import { DAY_STRIP_CELL } from '$lib/components/day-strip';
 	import { routineIdsOn } from '$lib/domain/planned-days';
 	import type { PlannedDay, Routine, Workout } from '$lib/domain/types';
 	import { dayStripLabel } from '$lib/domain/week-strip';
@@ -60,7 +60,17 @@
 		<a href={resolve('/exercise/plan')} class="text-muted-foreground text-xs">Edit plan</a>
 	</div>
 	<DayStrip {today}>
-		{#snippet children({ iso, isToday, attach, onkeydown }: DayStripCellProps)}
+		{#snippet children({
+			iso,
+			isToday,
+			attach,
+			onkeydown
+		}: {
+			iso: string;
+			isToday: boolean;
+			attach: (el: HTMLElement) => void;
+			onkeydown: (event: KeyboardEvent) => void;
+		})}
 			{@const day = dayInfo(iso, isToday)}
 			<a
 				href={resolve('/exercise/plan')}

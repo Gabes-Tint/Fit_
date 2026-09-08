@@ -3,7 +3,7 @@
 	import Utensils from '@lucide/svelte/icons/utensils';
 	import Weight from '@lucide/svelte/icons/weight';
 	import DayStrip from '$lib/components/DayStrip.svelte';
-	import { DAY_STRIP_CELL, type DayStripCellProps } from '$lib/components/day-strip';
+	import { DAY_STRIP_CELL } from '$lib/components/day-strip';
 	import { dayStripAccessibleLabel, dayStripLabel, loggedMarksText } from '$lib/domain/week-strip';
 	import { cn } from '$lib/ui/cn';
 	import ToggleButton from '$lib/ui/ToggleButton.svelte';
@@ -34,7 +34,17 @@
 </script>
 
 <DayStrip>
-	{#snippet children({ iso, isToday, attach, onkeydown }: DayStripCellProps)}
+	{#snippet children({
+		iso,
+		isToday,
+		attach,
+		onkeydown
+	}: {
+		iso: string;
+		isToday: boolean;
+		attach: (el: HTMLElement) => void;
+		onkeydown: (event: KeyboardEvent) => void;
+	})}
 		{@const isSelected = iso === selected}
 		{@const hasFood = food.has(iso)}
 		{@const hasExercise = exercise.has(iso)}

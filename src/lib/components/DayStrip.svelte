@@ -1,9 +1,18 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import type { DayStripCellProps } from '$lib/components/day-strip';
 	import { dayStripRange } from '$lib/domain/week-strip';
 	import { todayISO } from '$lib/domain/utils';
-	import { cn } from '$lib/ui/cn';
+
+	/**
+	 * What one cell's snippet receives: the day itself, plus the wiring it
+	 * must attach to its own interactive element (button or link).
+	 */
+	type CellProps = {
+		iso: string;
+		isToday: boolean;
+		attach: (el: HTMLElement) => void;
+		onkeydown: (event: KeyboardEvent) => void;
+	};
 
 	/**
 	 * The scrollable 38-day shell behind both the home strip and the exercise
@@ -17,13 +26,11 @@
 	let {
 		today = todayISO(),
 		days = dayStripRange(today),
-		class: className = '',
 		children
 	}: {
 		today?: string;
 		days?: string[];
-		class?: string;
-		children: Snippet<[DayStripCellProps]>;
+		children: Snippet<[CellProps]>;
 	} = $props();
 
 	let todayEl = $state<HTMLElement>();
@@ -52,17 +59,11 @@
 	}
 </script>
 
-<div
-	class={cn(
-		'scrollbar-none flex snap-x snap-mandatory gap-2 overflow-x-auto px-[calc(50%-2.5rem)]',
-		className
-	)}
->
+<div class="scrollbar-none flex snap-x snap-mandatory gap-2 overflow-x-auto px-[calc(50%-2.5rem)]">
 	{#each days as iso, i (iso)}
 		{@render children({
 			iso,
 			isToday: iso === today,
-			index: i,
 			attach: (el: HTMLElement) => {
 				cellEls[i] = el;
 				if (iso === today) todayEl = el;
