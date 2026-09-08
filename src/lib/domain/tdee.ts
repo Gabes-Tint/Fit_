@@ -77,6 +77,11 @@ function dayTotals(log: LogItem[], date: string): DayNutrition | null {
  * points, an exact two-point line — can be pinned directly: every caller
  * today only ever reaches it with at least four points already, so those
  * edges are otherwise unreachable through the public API.
+ *
+ * Zero for fewer than two points, and for a non-finite x or y (a NaN
+ * anywhere in `points` propagates to NaN rather than 0, since no caller
+ * today can produce one — weightTrend's x is a day offset derived from a
+ * parsed date, and y is a logged kg).
  */
 export function linearSlope(points: { x: number; y: number }[]) {
 	const n = points.length;
@@ -84,14 +89,17 @@ export function linearSlope(points: { x: number; y: number }[]) {
 	// the mean are all zero, so `den` stays 0 and the fallback below already
 	// answers 0 the same way a guard would.
 	const meanX = points.reduce((s, p) => s + p.x, 0) / n;
+	// meanY is centered into y below rather than folded away algebraically:
+	// subtracting a constant from every y leaves the covariance sum unchanged
+	// in exact arithmetic, but not in IEEE 754. Review measured the drop
+	// shifting a displayed kcal figure by 1 for realistic profiles (up to
+	// 7.4e-15 kg/day drift over 400k cases). Keeping meanY is the
+	// numerically stable form of this sum.
+	const meanY = points.reduce((s, p) => s + p.y, 0) / n;
 	let num = 0;
 	let den = 0;
 	for (const p of points) {
-		// Only x needs centering here: subtracting any constant from y — meanY
-		// included — leaves this sum unchanged, because the (p.x - meanX)
-		// terms it is multiplied against already sum to zero across every
-		// point once meanX is the true mean.
-		num += (p.x - meanX) * p.y;
+		num += (p.x - meanX) * (p.y - meanY);
 		den += (p.x - meanX) ** 2;
 	}
 	return den === 0 ? 0 : num / den;

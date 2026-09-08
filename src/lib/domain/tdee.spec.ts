@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { emptyProfile } from './profile';
 import { SEED_FOOD_BY_ID, scaleFood } from './foods';
 import {
@@ -448,18 +448,24 @@ describe('computeTargets', () => {
 
 	it('reports the adaptive source once there is enough history', () => {
 		// computeTargets always calls adaptiveTdee against the real "today", so
-		// the fixture history is built relative to it rather than to the fixed
-		// END used elsewhere in this file.
-		const end = todayISO();
-		const log = Array.from({ length: 14 }, (_, i) => portions(addDaysISO(end, -(13 - i)), 5));
-		const weights = [15, 10, 5, 0].map((daysBefore) => ({
-			id: uid('w-'),
-			date: addDaysISO(end, -daysBefore),
-			kg: 80 - (15 - daysBefore) * 0.1
-		}));
-		const targets = computeTargets(profileWith({ log, weights }));
-		expect(targets.tdee.usingAdaptive).toBe(true);
-		expect(targets.source).toBe('adaptive');
+		// the clock is pinned rather than read once here and again inside the
+		// code under test — otherwise a midnight tick between the two reads
+		// could put the fixtures and the code one day apart.
+		vi.setSystemTime(new Date('2026-06-30T12:00:00'));
+		try {
+			const end = todayISO();
+			const log = Array.from({ length: 14 }, (_, i) => portions(addDaysISO(end, -(13 - i)), 5));
+			const weights = [15, 10, 5, 0].map((daysBefore) => ({
+				id: uid('w-'),
+				date: addDaysISO(end, -daysBefore),
+				kg: 80 - (15 - daysBefore) * 0.1
+			}));
+			const targets = computeTargets(profileWith({ log, weights }));
+			expect(targets.tdee.usingAdaptive).toBe(true);
+			expect(targets.source).toBe('adaptive');
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it('asks for more protein on GLP-1', () => {
