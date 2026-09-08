@@ -9,7 +9,7 @@ import {
 	APP_PORT,
 	CURRENT_LINK,
 	deployHost,
-	PUBLIC_ORIGIN,
+	publicOrigin,
 	SSH_OPTIONS,
 	remote,
 	shellQuote
@@ -46,7 +46,7 @@ const DOCUMENTATION_PREFIX = '2001:db8::';
  * throws and every request is a 500 that proves nothing.
  */
 export function standsInForProxy(base: string): boolean {
-	return base !== PUBLIC_ORIGIN;
+	return base !== publicOrigin();
 }
 
 /** Long enough for the password floor of 10, and never reused. */
@@ -106,8 +106,8 @@ function parseOptions(argv: string[]): Options {
 		index += 1;
 	}
 	return {
-		base: (flags.get('base') ?? PUBLIC_ORIGIN).replace(/\/$/, ''),
-		origin: flags.get('origin') ?? PUBLIC_ORIGIN,
+		base: (flags.get('base') ?? publicOrigin()).replace(/\/$/, ''),
+		origin: flags.get('origin') ?? publicOrigin(),
 		commit: flags.get('commit') ?? '',
 		version: flags.get('version') ?? '',
 		tunnel

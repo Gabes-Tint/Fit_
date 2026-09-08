@@ -9,7 +9,7 @@ import {
 	ENV_FILE,
 	NODE_ROOT,
 	pinnedNodeVersion,
-	PUBLIC_ORIGIN,
+	publicOrigin,
 	RELEASES_KEPT,
 	RELEASES_ROOT,
 	remote,
@@ -332,7 +332,7 @@ export async function deploy(argv: string[]): Promise<boolean> {
 
 	console.log(`Live: ${CURRENT_LINK} -> ${RELEASES_ROOT}/${release}`);
 	console.log(`Environment: ${ENV_FILE} (edit on the machine; the deploy never overwrites it).`);
-	console.log(`Smoke check against ${options.tunnel ? 'an SSH tunnel' : PUBLIC_ORIGIN}:`);
+	console.log(`Smoke check against ${options.tunnel ? 'an SSH tunnel' : publicOrigin()}:`);
 	return smoke([
 		...(options.tunnel ? ['--tunnel'] : []),
 		'--commit',

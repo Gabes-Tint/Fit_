@@ -86,7 +86,7 @@ In production the app is the `adapter-node` build, deployed to one small Linux V
 Cloudflare terminating TLS in front of it.
 
 ```bash
-FIT_DEPLOY_HOST=user@host bun run deploy
+FIT_DEPLOY_HOST=user@host FIT_PUBLIC_ORIGIN=https://fit.psilva.org bun run deploy
 ```
 
 `scripts/deploy/deploy.ts` builds here rather than there — the VM has 2 GB and cannot hold
@@ -97,6 +97,15 @@ in `/opt/fit/releases/<commit>/`, switches `/opt/fit/current`, restarts `fit.ser
 runs the smoke check. The tree must be clean: a release is named for its commit.
 
 The host is deliberately not in this repository. Without `FIT_DEPLOY_HOST` the script stops.
+`FIT_PUBLIC_ORIGIN` is required as well, and names the origin that machine answers under —
+it is what the smoke check aims at and what the deploy prints, and it has no default for the
+same reason the host has none: a default of production would point the smoke check's
+registration round trip at the live site whenever a deploy elsewhere forgot to set it.
+
+It does not configure the machine. What the app serves under is `ORIGIN` in
+`/etc/fit/fit.env`, installed from `scripts/deploy/fit.env.example` verbatim the first time
+and never overwritten after, so a target other than production has that line edited by hand
+on the machine as well.
 
 On the machine, all of it installed by the deploy:
 
@@ -122,7 +131,7 @@ The deploy writes that file only when it is absent, so an edit on the machine su
 next release.
 
 ```bash
-bun run deploy:smoke
+FIT_DEPLOY_HOST=user@host FIT_PUBLIC_ORIGIN=https://fit.psilva.org bun run deploy:smoke
 ```
 
 The smoke check asks the deployed server for the sign-in page and requires a page this app
