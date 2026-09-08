@@ -7,9 +7,9 @@ import { pathToFileURL } from 'node:url';
  * builds with a function.
  *
  * `sql-statements.ts` reads literals, and three of the catalog's call sites are
- * not literals — `searchSql(FOOD_COLUMNS)` in `foods.ts`, `servingsSql(ids.length)`
- * in `portions.ts` and `servingRowsSql(ids.length)` in `serving-rows.ts`. Those
- * are the ranked search and both reads of the 3.5-million-row `food_serving`
+ * not literals — `searchSql(FOOD_COLUMNS)` in `foods.ts` and `servingRowsSql(ids.length)`
+ * in both `portions.ts` and `serving-rows.ts`. Those are the ranked search and
+ * both reads of the 3.5-million-row `food_serving`
  * table: the three statements a plan regression would most likely appear in,
  * and the three the report could not answer for. Their plans were typed into
  * `quality/perf-plans-manual.md` by hand instead, which made them numbers no
