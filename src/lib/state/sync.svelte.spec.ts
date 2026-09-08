@@ -3,6 +3,7 @@ import { emptyProfile } from '$lib/domain/profile';
 import type { TendState } from '$lib/domain/types';
 import { OUTDATED_MESSAGE, SCHEMA_VERSION } from '$lib/domain/state-document';
 import { REFUSED_STORAGE_KEY, STORAGE_KEY, TendStore } from './tend.svelte';
+import { fingerprint } from './outstanding-write';
 import { SYNC_STORAGE_KEY, SyncStore, type SyncRecord } from './sync.svelte';
 
 const announced = vi.hoisted(() => [] as string[]);
@@ -61,6 +62,14 @@ function server(answers: (Response | Error)[]): Sent[] {
 		return next instanceof Error ? Promise.reject(next) : Promise.resolve(next);
 	});
 	return sent;
+}
+
+/**
+ * The name the device would have given the document a request carried, which is
+ * what its record should be holding while that request goes unanswered.
+ */
+function carried(call: Sent | undefined): string {
+	return fingerprint((call?.body as { body: object }).body);
 }
 
 function record(): SyncRecord | null {
@@ -164,7 +173,12 @@ describe('the first sync a device does', () => {
 		await sync.start(HOUSEHOLD);
 
 		expect(sync.version).toBe(1);
-		expect(record()).toEqual({ householdId: HOUSEHOLD, version: 1, dirty: false });
+		expect(record()).toEqual({
+			householdId: HOUSEHOLD,
+			version: 1,
+			dirty: false,
+			outstanding: null
+		});
 	});
 
 	it('reads once and writes once, and then stops talking', async () => {
@@ -436,7 +450,12 @@ describe('a device that is behind', () => {
 
 	it('records the version it adopted, with nothing left unsent', async () => {
 		const { sync } = await refusedPush();
-		expect(record()).toEqual({ householdId: HOUSEHOLD, version: 2, dirty: false });
+		expect(record()).toEqual({
+			householdId: HOUSEHOLD,
+			version: 2,
+			dirty: false,
+			outstanding: null
+		});
 		expect(sync.version).toBe(2);
 	});
 
@@ -501,13 +520,43 @@ describe('a device that is behind', () => {
 			SYNC_STORAGE_KEY,
 			JSON.stringify({ householdId: HOUSEHOLD, version: 5, dirty: false })
 		);
-		server([documentAnswer(0, null), DROPPED]);
+		const sent = server([documentAnswer(0, null), DROPPED]);
 		const sync = syncFor(store);
 
 		await sync.start(HOUSEHOLD);
 
-		expect(record()).toEqual({ householdId: HOUSEHOLD, version: 0, dirty: true });
+		expect(record()).toEqual({
+			householdId: HOUSEHOLD,
+			version: 0,
+			dirty: true,
+			// The write never got an answer, so the device is still holding it.
+			outstanding: { version: 0, fingerprint: carried(sent[1]) }
+		});
 		expect(store.state.profiles).toHaveLength(1);
+	});
+
+	/**
+	 * A device with nothing of its own sends nothing, so the version it is left
+	 * claiming is whatever this read wrote down. Claiming one the account no
+	 * longer has would have every write from here refused as stale.
+	 */
+	it('stops claiming a version the account has lost, with nothing of its own to send', async () => {
+		localStorage.setItem(
+			SYNC_STORAGE_KEY,
+			JSON.stringify({ householdId: HOUSEHOLD, version: 5, dirty: false })
+		);
+		const sent = server([documentAnswer(0, null)]);
+		const sync = syncFor(blankDevice());
+
+		await sync.start(HOUSEHOLD);
+
+		expect(sent.map((call) => call.method)).toEqual(['GET']);
+		expect(record()).toEqual({
+			householdId: HOUSEHOLD,
+			version: 0,
+			dirty: false,
+			outstanding: null
+		});
 	});
 
 	it('records the version the server does hold when it has fallen behind', async () => {
@@ -521,7 +570,13 @@ describe('a device that is behind', () => {
 
 		await sync.start(HOUSEHOLD);
 
-		expect(record()).toEqual({ householdId: HOUSEHOLD, version: 2, dirty: true });
+		expect(record()).toEqual({
+			householdId: HOUSEHOLD,
+			version: 2,
+			dirty: true,
+			// As above: the write that would have moved it on was dropped.
+			outstanding: { version: 2, fingerprint: carried(sent[1]) }
+		});
 		expect(sent.map((call) => call.method)).toEqual(['GET', 'PUT']);
 	});
 
@@ -645,7 +700,12 @@ describe('a change that cannot be sent', () => {
 		expect(sync.status).toBe('waiting');
 		// Recorded before the first request, so a device that never reaches the
 		// server still knows whose journal it holds and that it is unsent.
-		expect(record()).toEqual({ householdId: HOUSEHOLD, version: 0, dirty: true });
+		expect(record()).toEqual({
+			householdId: HOUSEHOLD,
+			version: 0,
+			dirty: true,
+			outstanding: null
+		});
 		// And no write from a version it only guessed at.
 		expect(sent.map((call) => call.method)).toEqual(['GET']);
 	});
@@ -917,7 +977,12 @@ describe('a dropped request', () => {
 			await vi.advanceTimersByTimeAsync(1);
 
 			expect(sent).toHaveLength(7);
-			expect(record()).toEqual({ householdId: HOUSEHOLD, version: 2, dirty: false });
+			expect(record()).toEqual({
+				householdId: HOUSEHOLD,
+				version: 2,
+				dirty: false,
+				outstanding: null
+			});
 		} finally {
 			vi.useRealTimers();
 		}
@@ -948,7 +1013,12 @@ describe('a dropped request', () => {
 			// server does hold rather than being dropped on the floor.
 			expect(sent.map((call) => call.method)).toEqual(['GET', 'PUT', 'PUT', 'PUT']);
 			expect(sent[3]?.body).toMatchObject({ version: 0 });
-			expect(record()).toEqual({ householdId: HOUSEHOLD, version: 1, dirty: false });
+			expect(record()).toEqual({
+				householdId: HOUSEHOLD,
+				version: 1,
+				dirty: false,
+				outstanding: null
+			});
 			expect(store.state.profiles[0]?.name).toBe('Alex');
 			expect(announced).toEqual([]);
 		} finally {
@@ -1023,21 +1093,44 @@ describe('writes while sync is running', () => {
 	it('records a change as unsent the moment it arrives, not when it is sent', async () => {
 		const store = blankDevice();
 		let puts = 0;
+		let inTheAir: Sent | undefined;
 		const gate = deferred();
 		vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
 			if (init?.method !== 'PUT') return documentAnswer(2, remoteState('Robin'));
 			puts += 1;
+			const raw = init.body;
+			inTheAir = {
+				path: '/api/state',
+				method: init.method,
+				contentType: undefined,
+				body: typeof raw === 'string' ? (JSON.parse(raw) as Record<string, unknown>) : null
+			};
 			await gate.promise;
 			return stored(3);
 		});
 		const sync = syncFor(store);
 		await sync.start(HOUSEHOLD);
-		expect(record()).toEqual({ householdId: HOUSEHOLD, version: 2, dirty: false });
+		expect(record()).toEqual({
+			householdId: HOUSEHOLD,
+			version: 2,
+			dirty: false,
+			outstanding: null
+		});
 
 		store.togglePantry('oats');
+		// Before the exchange it triggers has had a microtask to begin in: the
+		// record is what a tab closed this instant would leave behind.
+		expect(record()?.dirty).toBe(true);
 		await vi.waitFor(() => expect(puts).toBe(1));
 
-		expect(record()).toEqual({ householdId: HOUSEHOLD, version: 2, dirty: true });
+		expect(record()).toEqual({
+			householdId: HOUSEHOLD,
+			version: 2,
+			dirty: true,
+			// The write is in the air, and the record says so before its answer
+			// exists — which is what makes it recognizable after a reload.
+			outstanding: { version: 2, fingerprint: carried(inTheAir) }
+		});
 		gate.release();
 	});
 
@@ -1482,7 +1575,12 @@ describe('when the next account signs in before the last answer lands', () => {
 		gate.release();
 		await Promise.all([first, second]);
 
-		expect(record()).toEqual({ householdId: 'h-2', version: 0, dirty: false });
+		expect(record()).toEqual({
+			householdId: 'h-2',
+			version: 0,
+			dirty: false,
+			outstanding: null
+		});
 		expect(sync.version).toBe(0);
 	});
 
@@ -1569,7 +1667,12 @@ describe('when the next account signs in before the last answer lands', () => {
 		gate.release();
 		await Promise.all([first, second]);
 
-		expect(record()).toEqual({ householdId: 'h-2', version: 0, dirty: false });
+		expect(record()).toEqual({
+			householdId: 'h-2',
+			version: 0,
+			dirty: false,
+			outstanding: null
+		});
 		expect(sync.version).toBe(0);
 	});
 
@@ -1596,7 +1699,12 @@ describe('when the next account signs in before the last answer lands', () => {
 
 		expect(store.state.profiles).toEqual([]);
 		expect(announced).toEqual([]);
-		expect(record()).toEqual({ householdId: 'h-2', version: 0, dirty: false });
+		expect(record()).toEqual({
+			householdId: 'h-2',
+			version: 0,
+			dirty: false,
+			outstanding: null
+		});
 	});
 });
 
@@ -1625,6 +1733,28 @@ describe('the retry listeners', () => {
 		} finally {
 			vi.unstubAllGlobals();
 		}
+	});
+
+	/**
+	 * The pair to the one below, and the reason it is worth having both: a device
+	 * that could not reach the server is very often a phone that was put away, so
+	 * coming back into view is the moment it is most likely to succeed.
+	 */
+	it('try again for a page that has come back into view', async () => {
+		const store = journal();
+		const sent = server([documentAnswer(0, null), DROPPED, stored(1)]);
+		const sync = syncFor(store);
+		await sync.start(HOUSEHOLD);
+		expect(sync.status).toBe('waiting');
+
+		Object.defineProperty(globalThis.document, 'visibilityState', {
+			value: 'visible',
+			configurable: true
+		});
+		globalThis.dispatchEvent(new Event('visibilitychange'));
+
+		await vi.waitFor(() => expect(sync.version).toBe(1));
+		expect(sent.map((call) => call.method)).toEqual(['GET', 'PUT', 'PUT']);
 	});
 
 	it('do not try again for a page that went out of view rather than into it', async () => {
@@ -1890,5 +2020,108 @@ describe('a device that could not read its own document', () => {
 		// copy of whatever the newer build recorded here — was kept rather than
 		// deleted on the way past. See `REFUSED_STORAGE_KEY`.
 		expect(localStorage.getItem(REFUSED_STORAGE_KEY)).toBe(refused);
+	});
+});
+
+/**
+ * #247. The device sent a write, the server took it, and the answer never got
+ * back — the tab was reloaded or closed with the request still in the air. The
+ * account is now one version ahead of what this device last heard, and that
+ * version is this device's own document from a moment ago. Read as another
+ * device's work it gets adopted, and whatever was recorded between the write
+ * leaving and the reload is gone with no sign of it. What made it visible was a
+ * height saved on the You screen and reverted by the reload; nothing about it is
+ * particular to height, and every other save on every other screen sits in the
+ * same window.
+ */
+describe('a write the server took and never answered', () => {
+	/** A device holding an unanswered write, and the document that write carried. */
+	async function abandonedWrite(): Promise<{ store: TendStore; carried: Record<string, unknown> }> {
+		const store = journal();
+		const sent = server([documentAnswer(0, null), DROPPED]);
+		const sync = syncFor(store);
+		await sync.start(HOUSEHOLD);
+		// Nothing more from this device: what happens next is a reload.
+		sync.stop();
+		const put = sent[1]?.body as { body: Record<string, unknown> };
+		return { store, carried: put.body };
+	}
+
+	/** The same device coming back up, reading what the last one left behind. */
+	function afterTheReload(): TendStore {
+		const store = new TendStore();
+		store.hydrate();
+		return store;
+	}
+
+	it('does not let it undo what was saved after it', async () => {
+		const { store, carried } = await abandonedWrite();
+		// The save the person made while that write was in the air.
+		store.togglePantry('oats');
+
+		const reloaded = afterTheReload();
+		const sent = server([documentAnswer(1, carried), stored(2)]);
+		const sync = syncFor(reloaded);
+		await sync.start(HOUSEHOLD);
+
+		expect(reloaded.state.pantry).toEqual(['oats']);
+		expect(announced).toEqual([]);
+		expect(sync.version).toBe(2);
+		// And it goes out from where the server actually is, not from the version
+		// this device last heard about.
+		expect(sent[1]?.body).toMatchObject({ version: 1 });
+	});
+
+	it('is not counted as sent, so what is here still reaches the account', async () => {
+		const { store, carried } = await abandonedWrite();
+		store.togglePantry('oats');
+
+		const reloaded = afterTheReload();
+		const sent = server([documentAnswer(1, carried), stored(2)]);
+		const sync = syncFor(reloaded);
+		await sync.start(HOUSEHOLD);
+
+		const put = sent[1]?.body as { body: { pantry: string[] } } | undefined;
+		expect(put?.body.pantry).toEqual(['oats']);
+		expect(record()).toEqual({
+			householdId: HOUSEHOLD,
+			version: 2,
+			dirty: false,
+			outstanding: null
+		});
+	});
+
+	/**
+	 * The other half of the same decision, and the reason the document is
+	 * identified rather than the version merely counted: another device writing at
+	 * that moment lands on exactly the version this one's write would have. Its
+	 * work is adopted and said out loud, as it was before any of this.
+	 */
+	it('still gives way to another device that wrote at the same moment', async () => {
+		const { store } = await abandonedWrite();
+		store.togglePantry('oats');
+
+		const reloaded = afterTheReload();
+		server([documentAnswer(1, remoteState('Robin')), stored(2)]);
+		const sync = syncFor(reloaded);
+		await sync.start(HOUSEHOLD);
+
+		expect(reloaded.state.profiles[0]?.name).toBe('Robin');
+		expect(announced).toEqual(['This device was behind, so it reloaded your newer data.']);
+	});
+
+	/**
+	 * A write that was refused did not create the version it was sent from plus
+	 * one, whoever did. Holding on to it past a refusal would let a document
+	 * somebody else wrote be mistaken for this device's own at the next start.
+	 */
+	it('is let go of the moment the server refuses it', async () => {
+		const store = journal();
+		server([documentAnswer(0, null), stale(1, remoteState('Robin'))]);
+		const sync = syncFor(store);
+
+		await sync.start(HOUSEHOLD);
+
+		expect(record()?.outstanding).toBeNull();
 	});
 });
