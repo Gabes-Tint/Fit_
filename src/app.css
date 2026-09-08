@@ -18,7 +18,10 @@
 	--color-muted-foreground: #6f675d;
 	--color-accent: #dde6dc;
 	--color-accent-foreground: #3f5a48;
-	--color-destructive: #5c4638;
+	/* A brick red, muted enough to sit on paper beside the green without becoming
+	   the loudest thing on the screen. It marks what cannot be undone and what has
+	   gone wrong, which is why the errors and the sync failure share it. */
+	--color-destructive: #9c4231;
 	--color-destructive-foreground: #f6f3eb;
 	--color-border: #e0d8c8;
 	--color-input: #e0d8c8;

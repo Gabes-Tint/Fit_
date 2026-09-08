@@ -1,4 +1,5 @@
-export type ButtonVariant = 'default' | 'secondary' | 'ghost' | 'outline' | 'quiet';
+export type ButtonVariant =
+	'default' | 'secondary' | 'ghost' | 'outline' | 'quiet' | 'destructive' | 'destructive-outline';
 export type ButtonSize = 'default' | 'sm' | 'lg' | 'icon' | 'icon-round';
 
 export const BUTTON_BASE =
@@ -25,7 +26,14 @@ export const BUTTON_VARIANTS: Record<ButtonVariant, string> = {
 	ghost: 'text-foreground hover:bg-secondary disabled:opacity-50',
 	outline: 'border border-border bg-card text-foreground hover:bg-secondary disabled:opacity-50',
 	quiet:
-		'bg-transparent text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-50'
+		'bg-transparent text-muted-foreground hover:text-foreground hover:bg-secondary disabled:opacity-50',
+	// Filled red is for confirming the irreversible thing, never for offering it: the
+	// button that starts a deletion is the outline, so the weight arrives only once
+	// the question has been asked and the answer is the one that cannot be taken back.
+	destructive:
+		'bg-destructive text-destructive-foreground hover:opacity-90 disabled:bg-secondary disabled:text-secondary-foreground',
+	'destructive-outline':
+		'border border-destructive/30 bg-card text-destructive hover:bg-destructive/10 disabled:opacity-50'
 };
 
 export const BUTTON_SIZES: Record<ButtonSize, string> = {
