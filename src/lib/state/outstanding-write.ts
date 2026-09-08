@@ -1,5 +1,5 @@
 /**
- * The one write this device sent and never heard the answer to.
+ * The writes this device sent and never heard the answer to.
  *
  * `sync.svelte.ts` records the version it last *heard* about. A write it issued
  * can move the server past that version without the answer ever arriving: the
@@ -25,17 +25,47 @@
  * this existed, a document that has moved on again since. So the worst a stale
  * or unreadable fingerprint costs is the adoption the device would have made
  * anyway.
+ *
+ * Writes, plural, because one is not enough. A device that hears nothing keeps
+ * writing — the retry clock a second later, and whatever is logged in between —
+ * and every one of those goes out from the same version, since the version only
+ * moves when a write is answered. Remembering only the latest is what #247's
+ * fix left open: the earlier write was the one that landed, the later one came
+ * back refused with that earlier document attached, the device did not
+ * recognise it, and everything logged after it left was adopted away.
  */
 
 export type OutstandingWrite = {
 	/**
-	 * The version the write was sent from. The server assigns the next one, so a
-	 * write that landed leaves the server at exactly one past this.
+	 * The version these writes were sent from. The server assigns the next one,
+	 * so whichever of them landed leaves the server at exactly one past this.
 	 */
 	version: number;
-	/** What the write carried, as `fingerprint` describes it. */
-	fingerprint: string;
+	/**
+	 * What each unanswered write carried, as `fingerprint` describes it, oldest
+	 * first.
+	 *
+	 * A list rather than one entry, because a device holding an unheard write
+	 * keeps writing. The retry clock sends again a second later, and anything
+	 * logged in between goes out too — every one of them from the same version,
+	 * because the version only moves when a write is *answered*. Exactly one of
+	 * them can be what the server stored (the first to arrive takes the version;
+	 * the rest are refused as stale), and this device cannot tell which. So it
+	 * keeps them all and asks whether the document that came back is any of
+	 * them.
+	 */
+	fingerprints: string[];
 };
+
+/**
+ * How many unanswered writes are worth remembering. Reached only by a device
+ * that has sent this many distinct documents from one version without a single
+ * answer, which is a long outage with somebody logging throughout it. Past that
+ * the newest are dropped and the oldest kept: a write that landed is one that
+ * reached the server, and the later ones went out over a connection that was
+ * already failing.
+ */
+const MOST_KEPT = 16;
 
 /**
  * FNV-1a's two constants. The hash is not a security claim and does not need to
@@ -79,16 +109,52 @@ export function fingerprint(body: object): string {
  * every record whose write has been answered.
  */
 export function outstandingWriteIn(value: unknown): OutstandingWrite | null {
-	const write = (value ?? {}) as Partial<OutstandingWrite>;
-	if (!Number.isInteger(write.version) || typeof write.fingerprint !== 'string') return null;
-	return { version: write.version as number, fingerprint: write.fingerprint };
+	const write = (value ?? {}) as Partial<OutstandingWrite> & { fingerprint?: unknown };
+	if (!Number.isInteger(write.version)) return null;
+	const fingerprints = fingerprintsIn(write);
+	if (fingerprints.length === 0) return null;
+	return { version: write.version as number, fingerprints };
 }
 
 /**
- * Whether the document the server holds is this device's own unanswered write
- * come back to it. Both halves have to agree: the server sits at exactly the
- * version that write would have created, and what it holds is what that write
- * carried.
+ * The names a stored record carries. A record written by the build that kept
+ * one write names it under `fingerprint`, and is read as the list of one it is,
+ * so upgrading does not cost a device the protection it was already holding.
+ * Anything else — a list with a hole in it, a field of the wrong type — answers
+ * with none, which is this module's "no".
+ */
+function fingerprintsIn(write: { fingerprints?: unknown; fingerprint?: unknown }): string[] {
+	if (typeof write.fingerprint === 'string') return [write.fingerprint];
+	if (!Array.isArray(write.fingerprints)) return [];
+	// Typed as `unknown[]` first: `Array.isArray` narrows to `any[]`, and every
+	// entry of an `any[]` already passes for a name without being one.
+	const names: unknown[] = write.fingerprints;
+	if (!names.every((print): print is string => typeof print === 'string')) return [];
+	return names;
+}
+
+/**
+ * Add the write about to go out to the ones still unanswered, and `null` back
+ * from a version this record is not about — a version that moved is a version
+ * whose writes were all answered, so nothing from it is outstanding any more.
+ * A document identical to one already named adds nothing: the question this
+ * answers is which documents, not how many requests.
+ */
+export function pendingWrite(
+	current: OutstandingWrite | null,
+	version: number,
+	print: string
+): OutstandingWrite {
+	const kept = current !== null && current.version === version ? current.fingerprints : [];
+	if (kept.includes(print) || kept.length >= MOST_KEPT) return { version, fingerprints: kept };
+	return { version, fingerprints: [...kept, print] };
+}
+
+/**
+ * Whether the document the server holds is one of this device's own unanswered
+ * writes come back to it. Both halves have to agree: the server sits at exactly
+ * the version those writes would have created, and what it holds is what one of
+ * them carried.
  */
 export function isOwnWrite(
 	outstanding: OutstandingWrite | null,
@@ -97,5 +163,5 @@ export function isOwnWrite(
 ): boolean {
 	if (outstanding === null) return false;
 	if (version !== outstanding.version + 1) return false;
-	return fingerprint(body) === outstanding.fingerprint;
+	return outstanding.fingerprints.includes(fingerprint(body));
 }
