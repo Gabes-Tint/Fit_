@@ -14,10 +14,11 @@ import { formatCommitted } from './prettier-format.ts';
  * plans file is refreshed without also re-running instruments 1 to 3 and
  * overwriting their numbers with this machine's.
  *
- * Not wired into any CI tier — this needs the catalog file (or
- * falls back to the fixture schema, which does not reflect production row
- * counts) and takes the time `bun run build` plus a migration run cost, and
- * whether that is worth a gate is Gabriel's call to make separately.
+ * Wired into the static gate tier (`scripts/quality/gates.ts`): it uses the
+ * catalog file when one is installed, or falls back to the fixture schema
+ * (which does not reflect production row counts) otherwise, and either way
+ * only reads prepared statements and runs `EXPLAIN QUERY PLAN` — no build or
+ * migration is required, so it stays fast enough for that tier.
  */
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 const committedPath = path.join(projectRoot, 'quality', 'perf-plans.md');
