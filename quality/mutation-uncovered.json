@@ -152,6 +152,8 @@
 			"scripts/perf/sql-plans.ts",
 			"scripts/perf/sql-statements.ts",
 			"scripts/perf/stats.ts",
+			"scripts/perf/sync-payload.run.ts",
+			"scripts/perf/sync-payload.ts",
 			"scripts/quality/actionlint.ts",
 			"scripts/quality/browser-memory.ts",
 			"scripts/quality/bundle-assets.ts",
