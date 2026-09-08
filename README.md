@@ -257,10 +257,22 @@ the whole machine.
 
 The ceiling therefore lives on a shared cgroup rather than on any one process.
 `scripts/dev/fit-gates.slice` declares an 18 GB `MemoryMax` and a 2 GB `MemorySwapMax`, and
-every gate step runs inside it in a transient scope capped at 12 GB. A user slice is a named
-cgroup, not something a process owns, so every gate launched by this user joins it — two
-editor instances in two worktrees share the one ceiling, which an in-process semaphore could
-never do. One runaway step then dies alone and says why; the total never exceeds 18 GB.
+every gate step runs inside it in a transient scope capped at `STEP_MEMORY_MAX` (6 GB). A
+user slice is a named cgroup, not something a process owns, so every gate launched by this
+user joins it — two editor instances in two worktrees share the one ceiling, which an
+in-process semaphore could never do. One runaway step then dies alone and says why; the
+total never exceeds 18 GB.
+
+The ceiling is only half of it. A step that still sizes itself to the core count does not
+crash the machine any more, but it does get killed at the cap and report that as failing
+tests — a red gate whose cause is another process, with nothing in the output saying so. So
+each of the three steps that scale with the machine is bounded by a measured byte budget
+instead: `scripts/quality/lint-memory.ts` for ESLint's worker threads (#198),
+`browser-memory.ts` for the vitest browser pool (#233), and `e2e-memory.ts` for Playwright's
+workers (#278). Each records its own ladder of peak against worker count, and each is an
+absolute budget rather than a share of free memory — what matters is what one step adds to
+the shared total, not how idle the machine looks when it starts. A contended run then gets
+slower rather than red.
 
 Install it once, explicitly — a gate run never writes to your home directory as a side
 effect:
