@@ -2,13 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import type { PlannedDay, Routine, Workout } from '$lib/domain/types';
+import { addDaysISO } from '$lib/domain/utils';
+import { dayStripLabel, dayStripRange } from '$lib/domain/week-strip';
 import TrainingWeekStrip from './TrainingWeekStrip.svelte';
 
-/** Week 1 of 2026 runs Monday the 5th to Sunday the 11th. */
-const MONDAY = '2026-01-05';
-const TUESDAY = '2026-01-06';
-const WEDNESDAY = '2026-01-07';
-const FRIDAY = '2026-01-09';
+/** An arbitrary Tuesday; the routines below sit a few days either side of it. */
+const TODAY = '2026-01-06';
+const MONDAY = addDaysISO(TODAY, -1);
+const WEDNESDAY = addDaysISO(TODAY, 1);
+const FRIDAY = addDaysISO(TODAY, 3);
 
 const push: Routine = {
 	id: 'push',
@@ -49,13 +51,18 @@ const run: Routine = {
 	deletedAt: null
 };
 
-/** Monday, Wednesday and Friday of week 1 hold the one routine. */
+/** Monday, Wednesday and Friday around today hold the one routine. */
 const plan: PlannedDay[] = [
 	{ date: MONDAY, routineIds: ['push'] },
 	{ date: WEDNESDAY, routineIds: ['push'] },
 	{ date: FRIDAY, routineIds: ['push'] }
 ];
-const base = { routines: [push], plan, workouts: [], today: TUESDAY };
+const base = { routines: [push], plan, workouts: [], today: TODAY };
+
+/** The strip's full range: 30 days back through 7 days forward from today. */
+const RANGE_LENGTH = dayStripRange(TODAY).length;
+/** Days with nothing on them, once the three planned days above are removed. */
+const REST_DAY_COUNT = RANGE_LENGTH - plan.length;
 
 /** The small filled markers, which is how a day says it happened. */
 function markers(className: string) {
@@ -63,16 +70,30 @@ function markers(className: string) {
 }
 
 describe('TrainingWeekStrip', () => {
-	it('draws the week Monday first', async () => {
+	it('spans well beyond a single week, both before and after today', async () => {
 		await render(TrainingWeekStrip, { props: { ...base } });
-		await expect.element(page.getByText('Mon')).toBeInTheDocument();
-		await expect.element(page.getByText('Sun')).toBeInTheDocument();
+		expect(document.querySelectorAll('a').length).toBeGreaterThanOrEqual(RANGE_LENGTH);
+		const threeWeeksBack = addDaysISO(TODAY, -21);
+		const threeWeeksAhead = addDaysISO(TODAY, 7);
+		await expect
+			.element(page.getByRole('link', { name: new RegExp(`^${dayStripLabel(threeWeeksBack)},`) }))
+			.toBeInTheDocument();
+		await expect
+			.element(page.getByRole('link', { name: new RegExp(`^${dayStripLabel(threeWeeksAhead)},`) }))
+			.toBeInTheDocument();
 	});
 
 	it('names the current day rather than its weekday', async () => {
 		await render(TrainingWeekStrip, { props: { ...base } });
-		await expect.element(page.getByText('Today')).toBeInTheDocument();
-		expect(page.getByText('Tue', { exact: true }).elements()).toHaveLength(0);
+		await expect.element(page.getByText('Today', { exact: true })).toBeInTheDocument();
+		expect(page.getByText(dayStripLabel(TODAY), { exact: true }).elements()).toHaveLength(0);
+	});
+
+	it('labels a day other than today by weekday and date', async () => {
+		await render(TrainingWeekStrip, { props: { ...base } });
+		await expect
+			.element(page.getByText(dayStripLabel(MONDAY), { exact: true }))
+			.toBeInTheDocument();
 	});
 
 	it('marks the days the routine was actually put on', async () => {
@@ -82,7 +103,7 @@ describe('TrainingWeekStrip', () => {
 
 	it('leaves the days between them empty', async () => {
 		await render(TrainingWeekStrip, { props: { ...base } });
-		expect(page.getByText('·', { exact: true }).elements()).toHaveLength(4);
+		expect(page.getByText('·', { exact: true }).elements()).toHaveLength(REST_DAY_COUNT);
 	});
 
 	it('draws both initials, in order, on a day holding two routines', async () => {
@@ -106,14 +127,17 @@ describe('TrainingWeekStrip', () => {
 		});
 		await expect
 			.element(
-				page.getByRole('link', { name: 'Mon, Chest & Shoulders, then Easy run', exact: true })
+				page.getByRole('link', {
+					name: `${dayStripLabel(MONDAY)}, Chest & Shoulders, then Easy run`,
+					exact: true
+				})
 			)
 			.toBeInTheDocument();
 	});
 
-	it('leaves the whole week empty when nothing is planned', async () => {
+	it('leaves the whole strip empty when nothing is planned', async () => {
 		await render(TrainingWeekStrip, { props: { ...base, plan: [] } });
-		expect(page.getByText('·', { exact: true }).elements()).toHaveLength(7);
+		expect(page.getByText('·', { exact: true }).elements()).toHaveLength(RANGE_LENGTH);
 	});
 
 	// The dot carried a text color, which paints nothing on an empty span, so a
@@ -134,7 +158,7 @@ describe('TrainingWeekStrip', () => {
 		expect(markers('border-primary')).toHaveLength(1);
 	});
 
-	it('fills in a day earlier in the week that was trained', async () => {
+	it('fills in a day earlier that was trained', async () => {
 		await render(TrainingWeekStrip, {
 			props: { ...base, today: WEDNESDAY, workouts: [finished(MONDAY)] }
 		});
@@ -158,10 +182,15 @@ describe('TrainingWeekStrip', () => {
 
 	it('marks only the day that was trained when an empty session sits beside it', async () => {
 		await render(TrainingWeekStrip, {
-			props: { ...base, today: WEDNESDAY, workouts: [finished(MONDAY), walkedOut(TUESDAY)] }
+			props: { ...base, today: WEDNESDAY, workouts: [finished(MONDAY), walkedOut(TODAY)] }
 		});
 		await expect
-			.element(page.getByRole('link', { name: 'Mon, Chest & Shoulders, trained', exact: true }))
+			.element(
+				page.getByRole('link', {
+					name: `${dayStripLabel(MONDAY)}, Chest & Shoulders, trained`,
+					exact: true
+				})
+			)
 			.toBeInTheDocument();
 		expect(page.getByRole('link', { name: /trained$/ }).elements()).toHaveLength(1);
 	});
@@ -173,18 +202,18 @@ describe('TrainingWeekStrip', () => {
 		expect(markers('bg-primary')).toHaveLength(0);
 	});
 
-	it('sends anyone who disagrees with the week to the planner', async () => {
+	it('sends anyone who disagrees with the strip to the planner', async () => {
 		await render(TrainingWeekStrip, { props: { ...base } });
 		await expect
 			.element(page.getByRole('link', { name: 'Edit plan' }))
 			.toHaveAttribute('href', '/exercise/plan');
 	});
 
-	it('makes every day of the week a control that reaches the planner', async () => {
+	it('makes every day of the strip a control that reaches the planner', async () => {
 		await render(TrainingWeekStrip, { props: { ...base } });
 		const links = page.getByRole('link').elements();
-		// Seven days, and the 'Edit plan' link above them.
-		expect(links).toHaveLength(8);
+		// The full range, plus the 'Edit plan' link above it.
+		expect(links).toHaveLength(RANGE_LENGTH + 1);
 		for (const link of links) {
 			expect(link.getAttribute('href')).toBe('/exercise/plan');
 			// Keyboard-reachable, which a div dressed as a cell was not.
@@ -195,7 +224,9 @@ describe('TrainingWeekStrip', () => {
 	it('tells a screen reader which day it is on and what it holds', async () => {
 		await render(TrainingWeekStrip, { props: { ...base } });
 		await expect
-			.element(page.getByRole('link', { name: 'Mon, Chest & Shoulders', exact: true }))
+			.element(
+				page.getByRole('link', { name: `${dayStripLabel(MONDAY)}, Chest & Shoulders`, exact: true })
+			)
 			.toBeInTheDocument();
 	});
 
@@ -208,7 +239,7 @@ describe('TrainingWeekStrip', () => {
 
 	it('calls every day a rest day when nothing is planned at all', async () => {
 		await render(TrainingWeekStrip, { props: { ...base, plan: [] } });
-		expect(page.getByRole('link', { name: /rest day$/ }).elements()).toHaveLength(7);
+		expect(page.getByRole('link', { name: /rest day$/ }).elements()).toHaveLength(RANGE_LENGTH);
 	});
 
 	it('says which earlier day was actually trained', async () => {
@@ -216,7 +247,12 @@ describe('TrainingWeekStrip', () => {
 			props: { ...base, today: WEDNESDAY, workouts: [finished(MONDAY)] }
 		});
 		await expect
-			.element(page.getByRole('link', { name: 'Mon, Chest & Shoulders, trained', exact: true }))
+			.element(
+				page.getByRole('link', {
+					name: `${dayStripLabel(MONDAY)}, Chest & Shoulders, trained`,
+					exact: true
+				})
+			)
 			.toBeInTheDocument();
 		// Read once, not retried: the claim is exactly one day carries "trained".
 		expect(page.getByRole('link', { name: /trained$/ }).elements()).toHaveLength(1);

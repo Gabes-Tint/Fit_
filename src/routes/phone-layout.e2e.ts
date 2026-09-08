@@ -7,8 +7,10 @@ import {
 	expectFitsViewport,
 	openEmptyJournal,
 	openLogSheet,
+	openExerciseTabEmpty,
 	openLogSheetAndType,
 	openSampleJournal,
+	pickFullBodyTemplate,
 	signInThroughApi,
 	stubFoodResolve,
 	stubFoodSearch
@@ -74,6 +76,15 @@ test.describe('at 360px', () => {
 		await openSampleJournal(page);
 
 		const strip = page.getByRole('button', { name: /^Today/ }).locator('xpath=..');
+		await expectFitsViewport(page, strip);
+	});
+
+	test('the exercise training strip stays inside the viewport', async ({ page, baseURL }) => {
+		await openExerciseTabEmpty(page, baseURL ?? '');
+		await pickFullBodyTemplate(page);
+
+		await atNarrowPhone(page);
+		const strip = page.getByRole('link', { name: /^Today/ }).locator('xpath=..');
 		await expectFitsViewport(page, strip);
 	});
 
@@ -148,14 +159,8 @@ test.describe('at 360px', () => {
 	});
 
 	test('an exercise session stays inside the viewport', async ({ page, baseURL }) => {
-		await signInThroughApi(page, baseURL ?? '');
-		await page.goto('/');
-		await openSampleJournal(page);
-		await page.getByRole('button', { name: 'Open menu' }).click();
-		await page.getByRole('link', { name: 'Exercise' }).click();
-		await expect(page.getByRole('heading', { name: 'Nothing here yet', level: 1 })).toBeVisible();
-		await page.getByRole('button', { name: /Full body/ }).click();
-		await expect(page.getByRole('heading', { name: 'Exercise', level: 1 })).toBeVisible();
+		await openExerciseTabEmpty(page, baseURL ?? '');
+		await pickFullBodyTemplate(page);
 
 		await atNarrowPhone(page);
 		await page.getByRole('button', { name: 'Start Full body' }).click();
