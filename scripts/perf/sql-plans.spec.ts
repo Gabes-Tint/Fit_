@@ -22,6 +22,7 @@ describe('formatPlans', () => {
 					file: 'src/lib/server/users/sessions.ts',
 					label: 'startSession',
 					sql: 'insert into session (id) values (?)',
+					source: 'literal',
 					rows: [
 						{ id: 0, parent: 0, unused: 0, detail: 'SCAN session' },
 						{ id: 0, parent: 0, unused: 0, detail: 'USE TEMP B-TREE' }
@@ -35,6 +36,23 @@ describe('formatPlans', () => {
 		expect(text).toContain('insert into session (id) values (?)');
 		expect(text).toContain('- SCAN session');
 		expect(text).toContain('- USE TEMP B-TREE');
+	});
+
+	it('marks a statement recorded from the running code, so its provenance is in the diff', () => {
+		const text = formatPlans({
+			catalogSource: 'fixture',
+			plans: [
+				{
+					file: 'src/lib/server/catalog/foods.ts',
+					label: 'searchFoods',
+					sql: 'select 1',
+					source: 'captured',
+					rows: [{ id: 0, parent: 0, unused: 0, detail: 'SCAN food' }]
+				}
+			],
+			unresolved: []
+		});
+		expect(text).toContain('### src/lib/server/catalog/foods.ts — searchFoods (built at run time)');
 	});
 
 	it('lists call sites the parser could not resolve, under their own heading', () => {
