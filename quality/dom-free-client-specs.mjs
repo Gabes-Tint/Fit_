@@ -21,13 +21,10 @@
  * project — slow but correct — so a new file can never land in jsdom by
  * accident.
  *
- * The last entry is load bearing, which is why this list is not quite sorted.
  * `changed-client-surviving-mutant` in `scripts/quality/fixtures.ts` registers
- * its planted spec by matching `download.svelte.spec.ts` as the final,
- * comma-less line; give something else that place and the fixture's replacement
- * silently does nothing, its module is measured by no spec at all, and the
- * self-test fails with "No tests were found" rather than with the surviving
- * mutant it planted. Add new specs above that line.
+ * its planted spec here too, anchored on this array's closing bracket rather
+ * than on any particular entry, so this list can be sorted and appended to
+ * freely (see #231).
  */
 export const DOM_FREE_CLIENT_SPECS = [
 	'src/lib/auth/api.svelte.spec.ts',
@@ -48,6 +45,6 @@ export const DOM_FREE_CLIENT_SPECS = [
 	'src/lib/ui/barcode-reader.svelte.spec.ts',
 	'src/lib/ui/cn.svelte.spec.ts',
 	'src/lib/ui/dictation.svelte.spec.ts',
-	'src/lib/ui/toast.svelte.spec.ts',
-	'src/lib/ui/download.svelte.spec.ts'
+	'src/lib/ui/download.svelte.spec.ts',
+	'src/lib/ui/toast.svelte.spec.ts'
 ];
