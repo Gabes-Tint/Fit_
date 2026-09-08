@@ -15,23 +15,8 @@ import { capture, projectRoot } from '../security/shared';
 /** Names the machine to deploy to. No default: guessing a target is worse than stopping. */
 const DEPLOY_HOST_VARIABLE = 'FIT_DEPLOY_HOST';
 
-/**
- * Names the origin the machine being deployed to answers under. No default
- * either, for the reason `publicOrigin()` gives.
- */
-const PUBLIC_ORIGIN_VARIABLE = 'FIT_PUBLIC_ORIGIN';
-
-/**
- * Production, and nothing else — where a release build's WebView points, no
- * matter what `FIT_PUBLIC_ORIGIN` says in whichever shell built it.
- *
- * `publicOrigin()` below answers "where is this deploy going", which the
- * environment names once per deploy; this answers "where is production",
- * which is fixed, and the two must stay distinct: an Android release compared
- * against `publicOrigin()` would silently point at QA if built with
- * `FIT_PUBLIC_ORIGIN` set in the environment.
- */
-export const PRODUCTION_ORIGIN = 'https://fit.psilva.org';
+/** The public origin the app answers under, and the only origin it accepts writes from. */
+export const PUBLIC_ORIGIN = 'https://fit.psilva.org';
 
 export const SERVICE_NAME = 'fit';
 export const SERVICE_USER = 'fit';
@@ -69,64 +54,6 @@ export function deployHost(): string {
 		);
 	}
 	return host.trim();
-}
-
-function notAnOrigin(value: string): Error {
-	return new Error(
-		`${PUBLIC_ORIGIN_VARIABLE} must be an absolute https:// origin, scheme and host only, ` +
-			`with no credentials, path, query or fragment, got ${value}`
-	);
-}
-
-/**
- * One origin and nothing more, parsed rather than pattern-matched.
- *
- * `https://user:password@elsewhere.example` looks like an origin to any
- * expression permissive enough to accept a port, and it is the one malformed
- * value that does not fail loudly: the smoke check would send its registration
- * to `elsewhere.example`. `URL` already knows which part of a URL is the
- * origin, so the whole test is whether anything of the input was left over
- * once it says so — which rejects credentials, a path, a query and a
- * fragment in a single comparison.
- */
-function asOrigin(value: string): string {
-	const bare = value.replace(/\/$/, '');
-	let parsed: URL;
-	try {
-		parsed = new URL(bare);
-	} catch {
-		throw notAnOrigin(value);
-	}
-	// `origin` is lower-cased already, so comparing against the lower-cased
-	// input accepts a host typed in capitals and hands back the normalized one.
-	if (parsed.protocol !== 'https:' || parsed.origin !== bare.toLowerCase()) {
-		throw notAnOrigin(value);
-	}
-	return parsed.origin;
-}
-
-/**
- * The origin the deploy target answers under: what the smoke check aims at,
- * and the `Origin` it presents on every write.
- *
- * No default, exactly like `deployHost()`, and for a sharper reason. `deploy()`
- * calls `smoke()` with no `--base`, so a default of production would mean that
- * any deploy to another machine which forgot this variable smoke-tests
- * production instead: it registers a throwaway account there, spends
- * production's per-address registration throttle, and then leaves the row
- * behind, because the removal runs over SSH against `FIT_DEPLOY_HOST` — the
- * machine that never saw it. Guessing here is not a convenience; it is a write
- * to a server nobody asked to touch.
- */
-export function publicOrigin(): string {
-	const raw = process.env[PUBLIC_ORIGIN_VARIABLE];
-	if (raw === undefined || raw.trim() === '') {
-		throw new Error(
-			`${PUBLIC_ORIGIN_VARIABLE} must name the origin the target answers under, for example ` +
-				`${PUBLIC_ORIGIN_VARIABLE}=${PRODUCTION_ORIGIN} bun run deploy`
-		);
-	}
-	return asOrigin(raw.trim());
 }
 
 /** The Node version both ends run, read from the one file that pins it. */
