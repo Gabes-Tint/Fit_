@@ -37,13 +37,50 @@ async function write(root: string, relativePath: string, content: string): Promi
 	await writeFile(target, content);
 }
 
+/** Appends text to an existing file. Always changes the content, so it needs no anchor check. */
+async function append(root: string, relativePath: string, suffix: string): Promise<void> {
+	const target = path.join(root, relativePath);
+	const content = await readFile(target, 'utf8');
+	await writeFile(target, `${content}${suffix}`);
+}
+
+/**
+ * Applies one `content.replace(pattern, replacement)` edit to a file and
+ * writes the result back. `String.replace` returns its input unchanged, with
+ * no error, when `pattern` does not match -- so every caller here would
+ * otherwise silently plant a no-op fixture (see #231). This throws instead,
+ * naming both the pattern that failed to match and the file it was looking
+ * in, whenever the edit produces no change.
+ */
 async function edit(
 	root: string,
 	relativePath: string,
-	change: (content: string) => string
+	pattern: string | RegExp,
+	replacement: string
 ): Promise<void> {
 	const target = path.join(root, relativePath);
-	await writeFile(target, change(await readFile(target, 'utf8')));
+	const content = await readFile(target, 'utf8');
+	const result = content.replace(pattern, replacement);
+	if (result === content) {
+		const shown = typeof pattern === 'string' ? JSON.stringify(pattern) : pattern.toString();
+		throw new Error(
+			`fixtures.ts: edit() found no match for ${shown} in ${relativePath} -- the anchor no longer matches, so this fixture would silently apply no change.`
+		);
+	}
+	await writeFile(target, result);
+}
+
+/** Like `edit`, but replaces every occurrence of a literal string rather than just the first. */
+async function editAll(root: string, relativePath: string, literal: string, replacement: string) {
+	const target = path.join(root, relativePath);
+	const content = await readFile(target, 'utf8');
+	const result = content.replaceAll(literal, replacement);
+	if (result === content) {
+		throw new Error(
+			`fixtures.ts: editAll() found no occurrence of ${JSON.stringify(literal)} in ${relativePath} -- the anchor no longer matches, so this fixture would silently apply no change.`
+		);
+	}
+	await writeFile(target, result);
 }
 
 const duplicatedBlock = `export function normalize(values: number[], factor: number): number[] {
@@ -119,29 +156,21 @@ export const fixtures: GateFixture[] = [
 		name: 'weakened-threshold',
 		gate: 'check:thresholds',
 		description: 'A coverage threshold lowered below the recorded baseline.',
-		apply: (root) =>
-			edit(root, 'quality/thresholds.json', (content) =>
-				content.replace('"lines": 80', '"lines": 50')
-			)
+		apply: (root) => edit(root, 'quality/thresholds.json', '"lines": 80', '"lines": 50')
 	},
 	{
 		name: 'weakened-mutation-policy',
 		gate: 'check:thresholds',
 		description: 'A security mutation floor lowered below the recorded baseline.',
 		apply: (root) =>
-			edit(root, 'quality/mutation-policy.json', (content) =>
-				content.replace('"aggregateKilled": 95', '"aggregateKilled": 80')
-			)
+			edit(root, 'quality/mutation-policy.json', '"aggregateKilled": 95', '"aggregateKilled": 80')
 	},
 	{
 		name: 'missing-mutation-policy-limit',
 		gate: 'check:thresholds',
 		failureIncludes: 'mutation policy.changed must have exactly keys',
 		description: 'A deleted mutation limit, which would otherwise make a comparison inert.',
-		apply: (root) =>
-			edit(root, 'quality/mutation-policy.json', (content) =>
-				content.replace('\n\t\t"perFileKilled": 80,', '')
-			)
+		apply: (root) => edit(root, 'quality/mutation-policy.json', '\n\t\t"perFileKilled": 80,', '')
 	},
 	{
 		name: 'unmeasurable-mutated-file',
@@ -150,9 +179,7 @@ export const fixtures: GateFixture[] = [
 		description:
 			'A client module dropped out of the jsdom project, which would leave it mutated but measured by nothing.',
 		apply: (root) =>
-			edit(root, 'quality/dom-free-client-specs.mjs', (content) =>
-				content.replace("\t'src/lib/ui/cn.svelte.spec.ts',\n", '')
-			)
+			edit(root, 'quality/dom-free-client-specs.mjs', "\t'src/lib/ui/cn.svelte.spec.ts',\n", '')
 	},
 	{
 		name: 'broad-mutation-review',
@@ -222,9 +249,7 @@ export const fixtures: GateFixture[] = [
 		failureIncludes: 'CI workflow does not invoke declared jobs: mutation-security',
 		description: 'A declared CI job omitted from the hosted workflow.',
 		apply: (root) =>
-			edit(root, '.github/workflows/ci.yml', (content) =>
-				content.replace('            job: mutation-security\n', '')
-			)
+			edit(root, '.github/workflows/ci.yml', '            job: mutation-security\n', '')
 	},
 	{
 		// The queue's whole point is that the gates run on `main` plus the queued
@@ -236,8 +261,7 @@ export const fixtures: GateFixture[] = [
 		gate: 'check:ci-contract',
 		failureIncludes: 'no `merge_group:` trigger',
 		description: "The CI workflow no longer answers the merge queue's combined branch.",
-		apply: (root) =>
-			edit(root, '.github/workflows/ci.yml', (content) => content.replace('  merge_group:\n', ''))
+		apply: (root) => edit(root, '.github/workflows/ci.yml', '  merge_group:\n', '')
 	},
 	{
 		// A composite action is read from the workspace, so a job that calls one
@@ -251,11 +275,11 @@ export const fixtures: GateFixture[] = [
 		description:
 			'A CI job that calls a local composite action without checking the repository out.',
 		apply: (root) =>
-			edit(root, '.github/workflows/ci.yml', (content) =>
-				content.replace(
-					'      - name: Check out repository\n        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n        with:\n          fetch-depth: 0\n          persist-credentials: false\n\n',
-					''
-				)
+			edit(
+				root,
+				'.github/workflows/ci.yml',
+				'      - name: Check out repository\n        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n        with:\n          fetch-depth: 0\n          persist-credentials: false\n\n',
+				''
 			)
 	},
 	{
@@ -268,11 +292,11 @@ export const fixtures: GateFixture[] = [
 		failureIncludes: 'CI jobs run Bun without the shared toolchain setup: static',
 		description: 'A CI job that runs Bun with its shared toolchain setup removed.',
 		apply: (root) =>
-			edit(root, '.github/workflows/ci.yml', (content) =>
-				content.replace(
-					'      - name: Set up the toolchain\n        uses: ./.github/actions/setup\n\n',
-					''
-				)
+			edit(
+				root,
+				'.github/workflows/ci.yml',
+				'      - name: Set up the toolchain\n        uses: ./.github/actions/setup\n\n',
+				''
 			)
 	},
 	{
@@ -284,8 +308,11 @@ export const fixtures: GateFixture[] = [
 		failureIncludes: 'no longer installs from the lockfile',
 		description: 'The shared toolchain action no longer installs the locked dependencies.',
 		apply: (root) =>
-			edit(root, '.github/actions/setup/action.yml', (content) =>
-				content.replace('      run: bun install --frozen-lockfile\n', '')
+			edit(
+				root,
+				'.github/actions/setup/action.yml',
+				'      run: bun install --frozen-lockfile\n',
+				''
 			)
 	},
 	{
@@ -298,11 +325,11 @@ export const fixtures: GateFixture[] = [
 		failureIncludes: 'Upload static reports',
 		description: 'A report upload that no longer runs once the gate it documents fails.',
 		apply: (root) =>
-			edit(root, '.github/workflows/ci.yml', (content) =>
-				content.replace(
-					'        if: always()\n        uses: ./.github/actions/upload-report\n',
-					'        uses: ./.github/actions/upload-report\n'
-				)
+			edit(
+				root,
+				'.github/workflows/ci.yml',
+				'        if: always()\n        uses: ./.github/actions/upload-report\n',
+				'        uses: ./.github/actions/upload-report\n'
 			)
 	},
 	{
@@ -315,9 +342,7 @@ export const fixtures: GateFixture[] = [
 		failureIncludes: 'Tier "audit" runs on no schedule',
 		description: 'The scheduled full-tree mutation audit left with no schedule to run on.',
 		apply: (root) =>
-			edit(root, '.github/workflows/mutation-audit.yml', (content) =>
-				content.replace("    - cron: '41 4 * * *'\n", '')
-			)
+			edit(root, '.github/workflows/mutation-audit.yml', "    - cron: '41 4 * * *'\n", '')
 	},
 	{
 		// The trap a non-blocking lane walks into: every step swallows its exit,
@@ -328,11 +353,11 @@ export const fixtures: GateFixture[] = [
 		failureIncludes: 'which can never fire',
 		description: 'A non-blocking scheduled lane reporting on a job failure that cannot happen.',
 		apply: (root) =>
-			edit(root, '.github/workflows/mutation-audit.yml', (content) =>
-				content.replace(
-					"- name: Update the mutation debt ledger issue\n        if: '!cancelled()'",
-					'- name: Update the mutation debt ledger issue\n        if: failure()'
-				)
+			edit(
+				root,
+				'.github/workflows/mutation-audit.yml',
+				"- name: Update the mutation debt ledger issue\n        if: '!cancelled()'",
+				'- name: Update the mutation debt ledger issue\n        if: failure()'
 			)
 	},
 	{
@@ -343,22 +368,17 @@ export const fixtures: GateFixture[] = [
 		failureIncludes: 'cannot surface a failure',
 		description: 'A scheduled tier that can no longer open an issue when it goes red.',
 		apply: (root) =>
-			edit(root, '.github/workflows/mutation-audit.yml', (content) =>
-				// Every job in the file, not just one: `surfacesFailure` reads the
-				// whole workflow source, so as long as any job still declares
-				// `issues: write` the file as a whole can still surface a failure.
-				content.replaceAll('      issues: write\n', '')
-			)
+			// Every job in the file, not just one: `surfacesFailure` reads the
+			// whole workflow source, so as long as any job still declares
+			// `issues: write` the file as a whole can still surface a failure.
+			editAll(root, '.github/workflows/mutation-audit.yml', '      issues: write\n', '')
 	},
 	{
 		name: 'unprotected-ci-job',
 		gate: 'check:ci-contract',
 		failureIncludes: 'all-green.needs does not protect hosted gate jobs: mutation',
 		description: 'A hosted mutation job omitted from the protected merge-gate aggregator.',
-		apply: (root) =>
-			edit(root, '.github/workflows/ci.yml', (content) =>
-				content.replace('        mutation,\n', '')
-			)
+		apply: (root) => edit(root, '.github/workflows/ci.yml', '        mutation,\n', '')
 	},
 	{
 		// The end-to-end suite is sharded one job per browser project. Dropping a
@@ -369,8 +389,11 @@ export const fixtures: GateFixture[] = [
 		failureIncludes: 'CI workflow does not run every end-to-end project: firefox',
 		description: 'A declared browser project dropped from the hosted end-to-end matrix.',
 		apply: (root) =>
-			edit(root, '.github/workflows/ci.yml', (content) =>
-				content.replace('          - project: firefox\n            browser: firefox\n', '')
+			edit(
+				root,
+				'.github/workflows/ci.yml',
+				'          - project: firefox\n            browser: firefox\n',
+				''
 			)
 	},
 	{
@@ -381,10 +404,7 @@ export const fixtures: GateFixture[] = [
 		gate: 'check:ci-contract',
 		failureIncludes: 'CI workflow does not run every gate self-test group: mutation',
 		description: 'A gate self-test group dropped from the hosted workflow.',
-		apply: (root) =>
-			edit(root, '.github/workflows/ci.yml', (content) =>
-				content.replace('      SELF_TEST_GROUP: mutation\n', '')
-			)
+		apply: (root) => edit(root, '.github/workflows/ci.yml', '      SELF_TEST_GROUP: mutation\n', '')
 	},
 	{
 		// self-test-mutation is allowed to report `skipped`, but only when
@@ -399,9 +419,10 @@ export const fixtures: GateFixture[] = [
 			"all-green does not gate the following conditional self-test jobs' skipped result on their own scope output: self-test-mutation",
 		description: "all-green no longer checks self-test-mutation's skip against its scope output.",
 		apply: (root) =>
-			edit(root, '.github/workflows/ci.yml', (content) =>
-				content.replace(
-					`      - name: Require self-test-mutation to have succeeded, or been correctly skipped
+			edit(
+				root,
+				'.github/workflows/ci.yml',
+				`      - name: Require self-test-mutation to have succeeded, or been correctly skipped
         env:
           RESULT: \${{ needs.self-test-mutation.result }}
           MUTATION_NEEDED: \${{ needs.self-test-scope.outputs.mutation-needed }}
@@ -418,8 +439,7 @@ export const fixtures: GateFixture[] = [
           exit 1
 
 `,
-					''
-				)
+				''
 			)
 	},
 	{
@@ -525,11 +545,7 @@ export const fixtures: GateFixture[] = [
 		// indistinguishable from surviving mutants. Throwing out of the config
 		// reproduces that ending exactly, and the lane has to name it a crash.
 		apply: (root) =>
-			edit(
-				root,
-				'vite.config.ts',
-				(content) => `${content}\nthrow new Error('Failed to initialize projects');\n`
-			)
+			append(root, 'vite.config.ts', "\nthrow new Error('Failed to initialize projects');\n")
 	},
 	{
 		name: 'changed-node-surviving-mutant',
@@ -577,11 +593,14 @@ export const fixtures: GateFixture[] = [
 			// Mutation runs skip the browser project, so an unregistered spec
 			// would leave this module measured by nothing and Stryker would
 			// exit on "No tests were found" rather than the surviving mutant.
-			await edit(root, 'quality/dom-free-client-specs.mjs', (content) =>
-				content.replace(
-					"\t'src/lib/ui/download.svelte.spec.ts'\n",
-					"\t'src/lib/ui/download.svelte.spec.ts',\n\t'src/lib/ui/fixture.svelte.test.ts'\n"
-				)
+			// Anchored on the array's closing bracket, not on whatever entry
+			// happens to be last, so adding a spec after this one can never
+			// make the anchor stop matching (#231).
+			await edit(
+				root,
+				'quality/dom-free-client-specs.mjs',
+				/(export const DOM_FREE_CLIENT_SPECS = \[[\s\S]*?),?\n\];\n/,
+				"$1,\n\t'src/lib/ui/fixture.svelte.test.ts'\n];\n"
 			);
 		}
 	},
