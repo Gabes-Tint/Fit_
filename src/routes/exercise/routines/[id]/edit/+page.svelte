@@ -68,7 +68,7 @@
 			<!-- Reads "Delete" in a header that has no room for more; the label names what it deletes. -->
 			<Button
 				size="sm"
-				variant="outline"
+				variant="destructive-outline"
 				class="shrink-0"
 				aria-label="Delete routine"
 				onclick={askDelete}>Delete</Button
@@ -143,7 +143,7 @@
 	<Sheet bind:open={deleteOpen} title="Delete this routine?" description={deleteDescription}>
 		<div class="flex gap-2 px-5 pt-3.5 pb-6">
 			<Button variant="secondary" class="flex-1" onclick={() => (deleteOpen = false)}>Keep</Button>
-			<Button class="flex-1" onclick={confirmDelete}>Delete</Button>
+			<Button variant="destructive" class="flex-1" onclick={confirmDelete}>Delete</Button>
 		</div>
 	</Sheet>
 {:else}
