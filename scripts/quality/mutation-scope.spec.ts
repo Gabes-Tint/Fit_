@@ -7,8 +7,10 @@ import {
 	buildMutationScope,
 	discoverSecurityRoots,
 	expandRuntimeImports,
+	isMutated,
 	isServerSource
 } from './mutation-scope';
+import { fileURLToPath } from 'node:url';
 
 const roots: string[] = [];
 
@@ -216,5 +218,40 @@ describe('mutation security scope', () => {
 		expect(node.files).toEqual([]);
 		expect(client.fallback).toBeNull();
 		expect(client.files).toEqual([]);
+	});
+});
+
+describe('isMutated', () => {
+	it('is true for production TypeScript under src/ that no exclusion removes', () => {
+		expect(isMutated('src/lib/domain/tdee.ts')).toBe(true);
+		expect(isMutated('src/lib/server/users/session.ts')).toBe(true);
+		// Every lane hands Stryker a file list built by walking all of `src`, so a
+		// route handler is mutated even though the default glob says `src/lib/**`.
+		expect(isMutated('src/routes/api/sessions/+server.ts')).toBe(true);
+	});
+
+	it('is false for a file an exclusion in quality/mutate-patterns.mjs removes', () => {
+		expect(isMutated('src/lib/domain/seed-foods.ts')).toBe(false);
+		expect(isMutated('src/lib/ui/camera.ts')).toBe(false);
+		expect(isMutated('src/routes/+layout.ts')).toBe(false);
+	});
+
+	it('is false for components, tests and anything outside src/', () => {
+		expect(isMutated('src/lib/components/AppShell.svelte')).toBe(false);
+		expect(isMutated('src/lib/domain/tdee.spec.ts')).toBe(false);
+		expect(isMutated('scripts/deploy/deploy.ts')).toBe(false);
+		expect(isMutated('tests/preview-server.ts')).toBe(false);
+	});
+});
+
+describe('isMutated agrees with the lanes it describes', () => {
+	it('claims every file the security lane actually hands Stryker (#129)', async () => {
+		// The rule and the lane used to be written twice. `verify:changed` planned
+		// with `src/lib/**`, so a change to an API handler scheduled no mutation
+		// step at all while the security lane mutated ten files outside `src/lib`.
+		const root = fileURLToPath(new URL('../../', import.meta.url));
+		const scope = await buildMutationScope(root, 'security');
+		const unclaimed = scope.files.map(({ path: file }) => file).filter((file) => !isMutated(file));
+		expect(unclaimed).toEqual([]);
 	});
 });

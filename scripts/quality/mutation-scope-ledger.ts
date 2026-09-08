@@ -3,8 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { readJsonFile } from '../security/shared';
-import { isExcludedFromMutation } from './mutation-globs';
-import { isProductionTypeScript, walk } from './mutation-scope';
+import { isMutated, walk } from './mutation-scope';
 
 /**
  * The mutation lanes do not reach every source file, and that is a decision
@@ -105,11 +104,6 @@ export function isSourceFile(file: string): boolean {
 		!file.endsWith('.d.ts') &&
 		!TEST_FILE.test(file)
 	);
-}
-
-/** Exactly the rule `buildMutationScope` applies, asked of the same two modules. */
-export function isMutated(file: string): boolean {
-	return file.startsWith('src/') && isProductionTypeScript(file) && !isExcludedFromMutation(file);
 }
 
 /** The area a file belongs to, or `null` when no area claims it. */
