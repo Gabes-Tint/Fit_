@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 import { availableParallelism } from 'node:os';
 import { env } from 'node:process';
 import { DEFAULT_E2E_PROJECT, e2eProjects, isE2eProjectName } from './scripts/quality/e2e-projects';
+import { e2eWorkerCount } from './scripts/quality/e2e-memory';
 
 const isCI = Boolean(env.CI);
 const baseURL = env.E2E_BASE_URL;
@@ -48,28 +49,38 @@ const projects = selected.map((name) => {
 });
 
 /**
- * Half the cores. A worker is a browser and a preview server rather than a
- * browser alone. `workers: 1` used to be the containment for one shared server
- * and one shared database; `tests/preview-server.ts` gives each worker its own,
- * so the limit is the machine.
+ * Half the cores on a hosted runner; what the memory budget pays for here.
  *
- * Half rather than all of them, deliberately. WebKit on Linux is this suite's
- * fragile engine -- main flaked a `mobile-safari` test at `workers: 1` in run
- * 33917056886, before any of this -- and `failOnFlakyTests` means a test that
- * only passes on the retry fails the build. Runs 33916933876 and 33918527511
- * finished 292 tests each at half the cores with nothing flaky and no retry;
- * three workers on a four-core runner timed one out on the drawer. The last
- * core buys back more than it costs.
+ * A worker is a browser and a preview server rather than a browser alone.
+ * `workers: 1` used to be the containment for one shared server and one shared
+ * database; `tests/preview-server.ts` gives each worker its own, so the limit
+ * is the machine.
  *
- * A ZAP run is the exception: it names one server through `E2E_BASE_URL` and
- * scans what passes through one proxy.
+ * On a runner, half rather than all of them, deliberately. WebKit on Linux is
+ * this suite's fragile engine -- main flaked a `mobile-safari` test at
+ * `workers: 1` in run 33917056886, before any of this -- and
+ * `failOnFlakyTests` means a test that only passes on the retry fails the
+ * build. Runs 33916933876 and 33918527511 finished 292 tests each at half the
+ * cores with nothing flaky and no retry; three workers on a four-core runner
+ * timed one out on the drawer. The last core buys back more than it costs.
  *
- * Spread rather than an explicit `undefined`: under `exactOptionalPropertyTypes`
- * an explicit `undefined` is not the same as an absent key, and Playwright's
- * own type says so. Absent is what "let Playwright choose" means.
+ * Off a runner, this used to be absent -- "let Playwright choose" -- and
+ * Playwright chooses from the core count alone. On a 32-core workstation that
+ * is 16 workers against a 6 GB per-step cap, and the run was OOM-killed after
+ * 14 seconds and reported as failing tests (#278). `e2eWorkerCount` bounds
+ * that choice by what the memory budget pays for, so a contended run gets
+ * slower instead of red; `scripts/quality/e2e-memory.ts` carries the
+ * measurements. It is the local branch only, because #191's shared slice is a
+ * workstation mechanism -- a hosted runner has its 16 GB to itself and no
+ * sibling gates, and bounding it here would only make CI slower for a problem
+ * it does not have.
+ *
+ * A ZAP run is the exception to both: it names one server through
+ * `E2E_BASE_URL` and scans what passes through one proxy.
  */
 const hostedWorkers = { workers: Math.max(2, Math.floor(availableParallelism() / 2)) };
-const workers = env.ZAP_PROXY_URL ? { workers: 1 } : isCI ? hostedWorkers : {};
+const localWorkers = { workers: e2eWorkerCount(availableParallelism()) };
+const workers = env.ZAP_PROXY_URL ? { workers: 1 } : isCI ? hostedWorkers : localWorkers;
 
 /**
  * Shards report a blob each, merged into one HTML and one JSON report by the
