@@ -14,13 +14,31 @@ import { formatCommitted } from './prettier-format.ts';
  * plans file is refreshed without also re-running instruments 1 to 3 and
  * overwriting their numbers with this machine's.
  *
- * Not wired into any CI tier — this needs the catalog file (or
- * falls back to the fixture schema, which does not reflect production row
- * counts) and takes the time `bun run build` plus a migration run cost, and
- * whether that is worth a gate is Gabriel's call to make separately.
+ * Wired into the static gate tier (`scripts/quality/gates.ts`): it uses the
+ * catalog file when one is installed, or falls back to the fixture schema
+ * (which does not reflect production row counts) otherwise, and either way
+ * only reads prepared statements and runs `EXPLAIN QUERY PLAN` — no build or
+ * migration is required, so it stays fast enough for that tier.
  */
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 const committedPath = path.join(projectRoot, 'quality', 'perf-plans.md');
+
+/**
+ * `formatPlans` opens its report with a sentence naming where the catalog
+ * statements ran — live catalog file or in-memory fixture — so a human
+ * reading `quality/perf-plans.md` knows what it was captured against. That
+ * sentence is provenance about *this machine*, not part of the contract the
+ * gate enforces: the fixture and the live catalog share the same tables and
+ * indexes, so a plan is either identical either way or it is real drift, and
+ * real drift always shows up inside a statement's own `Plan:` block. Left in
+ * the comparison, the sentence would fail the gate on a pristine tree for
+ * anyone whose machine has the catalog installed, purely because CI (which
+ * never has it) committed the fixture wording. So it is excluded from the
+ * diff here and left untouched in the file for humans.
+ */
+function stripProvenance(content: string): string {
+	return content.replace(/^Catalog statements run against the .*$/m, '<provenance omitted>');
+}
 
 async function main(): Promise<void> {
 	const write = process.argv.slice(2).includes('--write');
@@ -40,7 +58,7 @@ async function main(): Promise<void> {
 		console.log(`Wrote ${path.relative(projectRoot, committedPath)}.`);
 		return;
 	}
-	if (fresh === committed) {
+	if (committed !== null && stripProvenance(fresh) === stripProvenance(committed)) {
 		console.log('SQLite plans match the committed baseline.');
 		return;
 	}
