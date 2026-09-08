@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Minus from '@lucide/svelte/icons/minus';
 	import Plus from '@lucide/svelte/icons/plus';
+	import type { Snippet } from 'svelte';
 	import { cn } from '$lib/ui/cn';
 
 	/**
@@ -12,14 +13,23 @@
 		label = '',
 		size = 'sm',
 		onstep,
+		readout,
 		class: className
 	}: {
-		value: string | number;
+		/** The number between the buttons. Omitted when `readout` renders it instead. */
+		value?: string | number | undefined;
 		/** The noun being adjusted — "reps", "load" — used to name both buttons. */
 		label?: string | undefined;
 		/** `sm` sits inside a row of its own; `md` stands alone beside 40px controls. */
 		size?: 'sm' | 'md' | undefined;
 		onstep: (direction: number) => void;
+		/**
+		 * What sits between the two buttons, when a plain reading is not enough
+		 * — an editable field, for a stepper whose number can also be typed
+		 * (#158). The buttons, their sizing and their labels stay here, so a
+		 * typed amount and a tapped one are still the same control.
+		 */
+		readout?: Snippet | undefined;
 		class?: string | undefined;
 	} = $props();
 
@@ -53,7 +63,11 @@
 	<button type="button" class={button} aria-label={decrease} onclick={() => onstep(-1)}>
 		<Minus class={style.icon} />
 	</button>
-	<span class={cn('tabular text-center text-sm', style.readout)}>{value}</span>
+	{#if readout}
+		{@render readout()}
+	{:else}
+		<span class={cn('tabular text-center text-sm', style.readout)}>{value}</span>
+	{/if}
 	<button type="button" class={button} aria-label={increase} onclick={() => onstep(1)}>
 		<Plus class={style.icon} />
 	</button>
