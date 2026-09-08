@@ -274,6 +274,22 @@ describe('what this module and the rest of the repository have to agree on', () 
 		expect(PRODUCTION_SERVER_URL).toBe(PRODUCTION_ORIGIN);
 	});
 
+	it('is not moved by FIT_PUBLIC_ORIGIN, unlike a web deploy', () => {
+		// A release build is compiled once and distributed through the store;
+		// there is no shell at install time to read an override from. If this
+		// pinned itself to publicOrigin() instead, an Android build made with
+		// FIT_PUBLIC_ORIGIN set for a QA deploy would silently ship a
+		// production APK that talks to QA.
+		const previous = process.env['FIT_PUBLIC_ORIGIN'];
+		process.env['FIT_PUBLIC_ORIGIN'] = 'https://qa.example.com';
+		try {
+			expect(PRODUCTION_SERVER_URL).toBe(PRODUCTION_ORIGIN);
+		} finally {
+			if (previous === undefined) delete process.env['FIT_PUBLIC_ORIGIN'];
+			else process.env['FIT_PUBLIC_ORIGIN'] = previous;
+		}
+	});
+
 	it('names the application id the native project builds', () => {
 		expect(read('android/app/build.gradle')).toContain(`applicationId "${APP_ID}"`);
 	});
