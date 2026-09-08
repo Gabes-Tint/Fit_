@@ -75,10 +75,6 @@ function csvRows(profile: Profile) {
 }
 
 describe('exportJson', () => {
-	it('produces parseable JSON', () => {
-		expect(() => JSON.parse(exportJson(state)) as unknown).not.toThrow();
-	});
-
 	it('stamps the format and export time', () => {
 		const parsed = JSON.parse(exportJson(state)) as { format: string; exportedAt: string };
 		expect(parsed.format).toBe(stateFormat(SCHEMA_VERSION));
