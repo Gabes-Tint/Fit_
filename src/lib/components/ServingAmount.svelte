@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { scaleFood } from '$lib/domain/foods';
 	import {
 		amountFromGrams,
 		amountGrams,
+		describeEnergy,
 		massInUnits,
 		massToGrams,
 		parseAmount,
@@ -85,11 +85,7 @@
 	);
 
 	/** The energy and macros of what is about to be logged, re-read on every change. */
-	const energy = $derived.by(() => {
-		if (food === undefined) return '';
-		const scaled = scaleFood(food, servings);
-		return `${scaled.kcal} kcal · ${scaled.protein}g protein · ${scaled.carbs}g carbs · ${scaled.fat}g fat`;
-	});
+	const energy = $derived(food === undefined ? '' : describeEnergy(food, servings));
 
 	function typed(value: string) {
 		draft = value;

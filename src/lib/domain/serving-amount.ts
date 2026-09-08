@@ -23,7 +23,7 @@
  */
 
 import { servingMassGrams, type PortionSource } from './serving-display';
-import type { UnitSystem } from './types';
+import type { Food, UnitSystem } from './types';
 import { gToOz, ozToG } from './units';
 import { round1 } from './utils';
 
@@ -114,6 +114,9 @@ export function amountFromGrams(source: PortionSource, grams: number): number | 
 	return servings > 0 ? servings : null;
 }
 
+/** The per-serving numbers an energy line is read off. */
+export type EnergySource = Pick<Food, 'kcal' | 'protein' | 'carbs' | 'fat'>;
+
 /**
  * A weight as the amount field itself shows it: whole grams, or the one
  * decimal an ounce is read at, in the system the person set (#71, #74).
@@ -130,4 +133,19 @@ export function massInUnits(grams: number, units: UnitSystem): number {
 /** The grams a weight typed in the person's own system comes to. */
 export function massToGrams(value: number, units: UnitSystem): number {
 	return units === 'imperial' ? ozToG(value) : value;
+}
+
+/**
+ * What the amount comes to, in energy and macros — the line that has to move
+ * the moment the stepper does (#158).
+ *
+ * Read off the food's own per-serving numbers rather than through
+ * `scaleFood`: that function exists to build a `LogItem`, so it scales all
+ * thirteen micros as well, and nothing here shows a micro. Doing it this way
+ * also keeps `foods.ts` and the seed food table out of the chunk the log
+ * sheet is in, which is the chunk every page pays for.
+ */
+export function describeEnergy(food: EnergySource, servings: number): string {
+	const macro = (value: number) => round1(value * servings);
+	return `${Math.round(food.kcal * servings)} kcal · ${macro(food.protein)}g protein · ${macro(food.carbs)}g carbs · ${macro(food.fat)}g fat`;
 }
