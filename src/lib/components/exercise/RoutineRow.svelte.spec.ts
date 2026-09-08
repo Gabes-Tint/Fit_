@@ -10,7 +10,8 @@ const routine: Routine = {
 	exercises: [
 		{ name: 'Bench Press', group: 'Chest', sets: 4, reps: 8, load: 45 },
 		{ name: 'Lateral Raise', group: 'Shoulders', sets: 3, reps: 15, load: 8 }
-	]
+	],
+	deletedAt: null
 };
 
 const legs: Routine = {
@@ -20,7 +21,8 @@ const legs: Routine = {
 		{ name: 'Squat', group: 'Legs', sets: 5, reps: 5, load: 70 },
 		{ name: 'Leg Press', group: 'Legs', sets: 4, reps: 10, load: 120 },
 		{ name: 'Calf Raise', group: 'Legs', sets: 4, reps: 20, load: 60 }
-	]
+	],
+	deletedAt: null
 };
 
 const noop = () => {};
@@ -61,7 +63,7 @@ describe('RoutineRow', () => {
 	});
 
 	it('will not start a routine with nothing on it', async () => {
-		const bare: Routine = { id: 'bare', name: 'Blank', exercises: [] };
+		const bare: Routine = { id: 'bare', name: 'Blank', exercises: [], deletedAt: null };
 		await render(RoutineRow, { props: { routine: bare, index: 0, onstart: noop } });
 		await expect.element(page.getByRole('button', { name: 'Start Blank' })).toBeDisabled();
 	});

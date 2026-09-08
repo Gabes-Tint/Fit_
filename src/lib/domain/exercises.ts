@@ -93,12 +93,13 @@ export function routinesFromTemplate(template: RoutineTemplate): Routine[] {
 	return template.routines.map((r) => ({
 		id: r.id,
 		name: r.name,
-		exercises: r.exercises.map((e) => ({ ...e }))
+		exercises: r.exercises.map((e) => ({ ...e })),
+		deletedAt: null
 	}));
 }
 
 export function emptyRoutine(id: string): Routine {
-	return { id, name: 'New routine', exercises: [] };
+	return { id, name: 'New routine', exercises: [], deletedAt: null };
 }
 
 /** How far one tap on a stepper moves each field, in that field's own units. */

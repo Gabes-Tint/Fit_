@@ -132,12 +132,13 @@ const STORED_BEFORE_THE_LADDER = {
 };
 
 /**
- * The same household once the whole ladder has run. Two rungs changed it: the
- * routine lost the `freq` that used to decide its days, and the single week it
- * had planned became the two dated days version 1 drew for a twice-a-week
- * routine — Monday 7 and Thursday 10 September, the Monday and Thursday of
- * training week 36 of 2026. Everything else is untouched, which is the claim
- * this fixture exists to hold the ladder to.
+ * The same household once the whole ladder has run. Three rungs changed it: the
+ * routine lost the `freq` that used to decide its days and gained the flag that
+ * says it has not been deleted, and the single week it had planned became the
+ * two dated days version 1 drew for a twice-a-week routine — Monday 7 and
+ * Thursday 10 September, the Monday and Thursday of training week 36 of 2026.
+ * Everything else is untouched, which is the claim this fixture exists to hold
+ * the ladder to.
  */
 const AFTER_THE_LADDER = {
 	...STORED_BEFORE_THE_LADDER,
@@ -145,7 +146,8 @@ const AFTER_THE_LADDER = {
 		{
 			id: 'r-1',
 			name: 'Upper A',
-			exercises: [{ id: 'ex-1', name: 'Bench press', group: 'chest', sets: 3, reps: 8, load: 45 }]
+			exercises: [{ id: 'ex-1', name: 'Bench press', group: 'chest', sets: 3, reps: 8, load: 45 }],
+			deletedAt: null
 		}
 	],
 	trainingPlan: [
@@ -197,6 +199,13 @@ describe('what a migrated document still holds', () => {
 		expect(state().routines).toEqual(AFTER_THE_LADDER.routines);
 		expect(state().routines[0]).not.toHaveProperty('freq');
 		expect(state().routines[0]?.exercises).toHaveLength(1);
+	});
+
+	// A routine that survived the ladder is one nobody deleted: version 2 had no
+	// way to say otherwise, so the flag it arrives with has to say it is in the
+	// rotation rather than leaving the question open.
+	it('brings the routine up still in the rotation', () => {
+		expect(state().routines[0]?.deletedAt).toBeNull();
 	});
 
 	// The point of the rung, asserted by content: the week that said "Upper A,

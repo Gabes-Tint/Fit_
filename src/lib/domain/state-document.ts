@@ -1,3 +1,4 @@
+import { migrate_2_to_3 } from './migrate-deleted-routines';
 import { migrate_1_to_2 } from './migrate-planned-days';
 import { DEFAULT_LOAD_UNIT, DEFAULT_REST_SECONDS, DEFAULT_UNITS, type TendState } from './types';
 
@@ -24,7 +25,7 @@ import { DEFAULT_LOAD_UNIT, DEFAULT_REST_SECONDS, DEFAULT_UNITS, type TendState 
  */
 
 /** The shape this build reads and writes. Bumped by every shape change. */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /**
  * A document with no `schemaVersion` at all: everything written before this
@@ -117,7 +118,7 @@ function migrate_0_to_1(document: Document): Document {
 }
 
 /** Ordered, one rung per version: `MIGRATIONS[n]` takes version `n` to `n + 1`. */
-export const MIGRATIONS: readonly Migration[] = [migrate_0_to_1, migrate_1_to_2];
+export const MIGRATIONS: readonly Migration[] = [migrate_0_to_1, migrate_1_to_2, migrate_2_to_3];
 
 /**
  * Every rung from the version a document declares up to this build's, in order.

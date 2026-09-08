@@ -55,6 +55,28 @@ export function withoutRoutine(plan: PlannedDay[], routineId: string): PlannedDa
 	});
 }
 
+/**
+ * The same, but only from a date onwards: the days before it keep the routine.
+ *
+ * This is what deleting a routine does. A day already past is a record of what
+ * was asked of somebody, and it counts towards adherence whether or not they
+ * did it; rewriting it would raise the score for sessions that were missed.
+ * From today on, the plan is an intention, and cancelling the intention is the
+ * whole of what deletion means. Days left holding nothing go, because absence is
+ * the only way this file says "nothing planned", and the order is untouched.
+ */
+export function withoutRoutineFrom(
+	plan: PlannedDay[],
+	routineId: string,
+	fromISO: string
+): PlannedDay[] {
+	return plan.flatMap((day) => {
+		if (day.date < fromISO) return [day];
+		const routineIds = day.routineIds.filter((id) => id !== routineId);
+		return routineIds.length > 0 ? [{ ...day, routineIds }] : [];
+	});
+}
+
 function sorted(plan: PlannedDay[]): PlannedDay[] {
 	return [...plan].sort((a, b) => a.date.localeCompare(b.date));
 }

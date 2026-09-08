@@ -20,7 +20,8 @@ function routine(id: string, name: string, moves: number): Routine {
 			sets: 3,
 			reps: 10,
 			load: 20
-		}))
+		})),
+		deletedAt: null
 	};
 }
 
@@ -96,7 +97,8 @@ describe('TodaySessionCard', () => {
 				{ name: 'Bench Press', group: 'Chest', sets: 3, reps: 10, load: 60 },
 				{ name: 'Incline Bench Press', group: 'Chest', sets: 3, reps: 10, load: 40 },
 				{ name: 'Bench Press', group: 'Chest', sets: 3, reps: 8, load: 65 }
-			]
+			],
+			deletedAt: null
 		};
 		await render(TodaySessionCard, { props: { ...base, routines: [twice, legs] } });
 		expect(page.getByText('Bench Press', { exact: true }).elements()).toHaveLength(2);

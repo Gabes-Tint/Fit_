@@ -19,7 +19,8 @@ const ROUTINE: Routine = {
 	exercises: [
 		{ name: 'Bench Press', group: 'Chest', sets: 3, reps: 8, load: 45 },
 		{ name: 'Pull-up', group: 'Back', sets: 2, reps: 8, load: 0 }
-	]
+	],
+	deletedAt: null
 };
 
 const OPENED = { id: 'w-1', date: '2026-06-01', startedAt: 1_000_000 };

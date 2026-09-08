@@ -13,7 +13,7 @@ const pushUp: RoutineExercise = { name: 'Push-up', group: 'Chest', sets: 1, reps
 
 function session(exercises: RoutineExercise[], ticked: boolean): Workout {
 	const workout = workoutFromRoutine(
-		{ id: 'r1', name: 'Full body', exercises },
+		{ id: 'r1', name: 'Full body', exercises, deletedAt: null },
 		{ id: 'w1', date: todayISO(), startedAt: 0 }
 	);
 	for (const exercise of workout.exercises) {

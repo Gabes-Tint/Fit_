@@ -13,7 +13,8 @@ const FRIDAY = '2026-01-09';
 const push: Routine = {
 	id: 'push',
 	name: 'Chest & Shoulders',
-	exercises: [{ name: 'Bench Press', group: 'Chest', sets: 4, reps: 8, load: 45 }]
+	exercises: [{ name: 'Bench Press', group: 'Chest', sets: 4, reps: 8, load: 45 }],
+	deletedAt: null
 };
 
 function filed(date: string, done: boolean): Workout {
@@ -44,7 +45,8 @@ function walkedOut(date: string): Workout {
 const run: Routine = {
 	id: 'run',
 	name: 'Easy run',
-	exercises: [{ name: 'Squat', group: 'Legs', sets: 1, reps: 1, load: 0 }]
+	exercises: [{ name: 'Squat', group: 'Legs', sets: 1, reps: 1, load: 0 }],
+	deletedAt: null
 };
 
 /** Monday, Wednesday and Friday of week 1 hold the one routine. */

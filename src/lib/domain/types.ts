@@ -264,6 +264,14 @@ export type Routine = {
 	id: string;
 	name: string;
 	exercises: RoutineExercise[];
+	/**
+	 * The day the routine was deleted, or `null` while it is still in the
+	 * rotation. Deletion is a flag rather than a removal because past planned
+	 * days are the denominator of adherence and still have to name the routine
+	 * they asked for: taking the row out would quietly raise the score for
+	 * sessions that were missed.
+	 */
+	deletedAt: string | null;
 };
 
 /** One set as it was actually performed, which is why `done` lives here and not on the routine. */
