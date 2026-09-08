@@ -29,6 +29,22 @@ async function pickFullBody(page: Page) {
 	await expect(page.getByRole('heading', { name: 'Exercise', level: 1 })).toBeVisible();
 }
 
+/**
+ * Opens Full body's routine sheet, then its edit screen. Each screen is
+ * waited for before the next click: the rotation's `Plan` button and the
+ * routine sheet's `Edit` sit in the same top-right slot, so a click
+ * dispatched while the first navigation is still settling lands on the
+ * wrong one and ends up on the planner. The name is matched on the exercise
+ * and set counts, not the bare routine name, because a planned day can put
+ * the same name on a `TrainingWeekStrip` link too.
+ */
+async function openFullBodyEdit(page: Page) {
+	await page.getByRole('link', { name: /Full body \d+ exercises/ }).click();
+	await expect(page.getByRole('button', { name: 'Start this session' })).toBeVisible();
+	await page.getByRole('link', { name: 'Edit' }).click();
+	await expect(page.getByRole('button', { name: 'Add from library' })).toBeVisible();
+}
+
 test.describe('with nothing planned yet', () => {
 	test.beforeEach(async ({ page, baseURL }) => {
 		await onboard(page, baseURL ?? '');
@@ -136,14 +152,7 @@ test.describe('once a routine is in the rotation', () => {
 	});
 
 	test('has no detectable accessibility violations in the library', async ({ page }) => {
-		// Each screen is waited for before the next click. The rotation's `Plan`
-		// button and the routine sheet's `Edit` sit in the same top-right slot, so
-		// a click dispatched while the first navigation is still settling lands on
-		// the wrong one and ends up on the planner.
-		await page.getByRole('link', { name: /Full body/ }).click();
-		await expect(page.getByRole('button', { name: 'Start this session' })).toBeVisible();
-		await page.getByRole('link', { name: 'Edit' }).click();
-		await expect(page.getByRole('button', { name: 'Add from library' })).toBeVisible();
+		await openFullBodyEdit(page);
 		await page.getByRole('button', { name: 'Add from library' }).click();
 		await expect(page.getByRole('dialog')).toBeVisible();
 		expect(await axeViolations(page)).toEqual([]);
@@ -286,10 +295,7 @@ test.describe('deleting a routine', () => {
 	test('names the upcoming days it will clear, then removes it from the rotation', async ({
 		page
 	}) => {
-		await page.getByRole('link', { name: /Full body \d+ exercises/ }).click();
-		await expect(page.getByRole('button', { name: 'Start this session' })).toBeVisible();
-		await page.getByRole('link', { name: 'Edit' }).click();
-		await expect(page.getByRole('button', { name: 'Add from library' })).toBeVisible();
+		await openFullBodyEdit(page);
 
 		await expect(page.getByRole('button', { name: 'Delete routine' })).toBeVisible();
 		await page.getByRole('button', { name: 'Delete routine' }).click();
@@ -314,10 +320,7 @@ test.describe('deleting a routine', () => {
 	test('leaves the week planner reachable, with the past day still on it, once the only routine is gone', async ({
 		page
 	}) => {
-		await page.getByRole('link', { name: /Full body \d+ exercises/ }).click();
-		await expect(page.getByRole('button', { name: 'Start this session' })).toBeVisible();
-		await page.getByRole('link', { name: 'Edit' }).click();
-		await expect(page.getByRole('button', { name: 'Add from library' })).toBeVisible();
+		await openFullBodyEdit(page);
 		await page.getByRole('button', { name: 'Delete routine' }).click();
 		await page.getByRole('button', { name: 'Delete', exact: true }).click();
 		await expect(page.getByRole('heading', { name: 'Exercise', level: 1 })).toBeVisible();
@@ -328,10 +331,7 @@ test.describe('deleting a routine', () => {
 	});
 
 	test('dismissing with Keep leaves the routine alone', async ({ page }) => {
-		await page.getByRole('link', { name: /Full body \d+ exercises/ }).click();
-		await expect(page.getByRole('button', { name: 'Start this session' })).toBeVisible();
-		await page.getByRole('link', { name: 'Edit' }).click();
-		await expect(page.getByRole('button', { name: 'Add from library' })).toBeVisible();
+		await openFullBodyEdit(page);
 		await page.getByRole('button', { name: 'Delete routine' }).click();
 		await expect(page.getByRole('dialog')).toBeVisible();
 
@@ -351,10 +351,7 @@ test.describe('deleting a routine nothing is planned on', () => {
 	});
 
 	test('says so instead of naming a day count', async ({ page }) => {
-		await page.getByRole('link', { name: /Full body/ }).click();
-		await expect(page.getByRole('button', { name: 'Start this session' })).toBeVisible();
-		await page.getByRole('link', { name: 'Edit' }).click();
-		await expect(page.getByRole('button', { name: 'Add from library' })).toBeVisible();
+		await openFullBodyEdit(page);
 		await page.getByRole('button', { name: 'Delete routine' }).click();
 		await expect(
 			page.getByText("This routine isn't scheduled on any upcoming days.")
