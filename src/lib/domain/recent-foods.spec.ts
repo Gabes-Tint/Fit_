@@ -30,6 +30,10 @@ function item(overrides: Partial<LogItem> = {}): LogItem {
 	};
 }
 
+function names(foods: { source: LogItem }[]): string[] {
+	return foods.map((food) => food.source.name);
+}
+
 describe('mostRecentFoods', () => {
 	it('groups entries that share a name and brand across null foodIds', () => {
 		const log = [
@@ -42,8 +46,10 @@ describe('mostRecentFoods', () => {
 	});
 
 	it('groups the same food regardless of case or surrounding whitespace', () => {
+		// `foodIdentity` decides this; the list is what makes it visible, as one
+		// row rather than two.
 		const log = [
-			item({ id: 'l-1', name: ' Oatmeal ', brand: 'Quaker' }),
+			item({ id: 'l-1', name: ' Oatmeal ', brand: ' Quaker ' }),
 			item({ id: 'l-2', name: 'oatmeal', brand: 'QUAKER' })
 		];
 		const foods = mostRecentFoods(log, TODAY);
@@ -70,26 +76,29 @@ describe('mostRecentFoods', () => {
 	});
 
 	it('orders distinct foods by the date they were most recently logged', () => {
+		// Named so that date order and alphabetical order disagree: a list that
+		// happened to be alphabetical would say nothing about dates.
 		const log = [
-			item({ id: 'l-1', name: 'Toast', date: addDaysISO(TODAY, -5) }),
-			item({ id: 'l-2', name: 'Eggs', date: addDaysISO(TODAY, -1) }),
-			item({ id: 'l-3', name: 'Coffee', date: TODAY })
+			item({ id: 'l-1', name: 'Apple', date: addDaysISO(TODAY, -5) }),
+			item({ id: 'l-2', name: 'Banana', date: addDaysISO(TODAY, -1) }),
+			item({ id: 'l-3', name: 'Cherry', date: TODAY })
 		];
-		expect(mostRecentFoods(log, TODAY).map((f) => f.source.name)).toEqual([
-			'Coffee',
-			'Eggs',
-			'Toast'
-		]);
+		expect(names(mostRecentFoods(log, TODAY))).toEqual(['Cherry', 'Banana', 'Apple']);
 	});
 
-	it('breaks a tie on last-logged date the same way on every call', () => {
-		const log = [
+	it('lists foods last logged on the same day in one order, whatever order the log lists them', () => {
+		// Two foods eaten the same day have nothing left to sort them by, and a
+		// list that reshuffled between two openings of the same screen would look
+		// broken. Alphabetical is the settled answer, and it does not depend on
+		// which entry an import happened to append first.
+		const sameDay = [
 			item({ id: 'l-1', name: 'Zebra Cake', date: TODAY }),
-			item({ id: 'l-2', name: 'Apple', date: TODAY })
+			item({ id: 'l-2', name: 'Muesli', date: TODAY }),
+			item({ id: 'l-3', name: 'Apple', date: TODAY })
 		];
-		const first = mostRecentFoods(log, TODAY).map((f) => f.source.name);
-		const second = mostRecentFoods(log, TODAY).map((f) => f.source.name);
-		expect(first).toEqual(second);
+		const expected = ['Apple', 'Muesli', 'Zebra Cake'];
+		expect(names(mostRecentFoods(sameDay, TODAY))).toEqual(expected);
+		expect(names(mostRecentFoods([...sameDay].reverse(), TODAY))).toEqual(expected);
 	});
 
 	it('excludes an entry logged before the window', () => {
@@ -106,6 +115,14 @@ describe('mostRecentFoods', () => {
 		expect(mostRecentFoods(log, TODAY)).toHaveLength(1);
 	});
 
+	it('excludes an entry dated after today', () => {
+		// A device whose clock ran ahead can write tomorrow's date onto today's
+		// breakfast. It is not something eaten lately, and letting it in would
+		// pin it to the top of the list until the calendar caught up.
+		const log = [item({ id: 'l-1', name: 'Tomorrow Toast', date: addDaysISO(TODAY, 1) })];
+		expect(mostRecentFoods(log, TODAY)).toHaveLength(0);
+	});
+
 	it('caps the list at MAX_RECENT_FOODS even with more foods logged', () => {
 		const log = Array.from({ length: MAX_RECENT_FOODS + 8 }, (_, i) =>
 			item({ id: `l-${i}`, name: `Food ${i}`, date: addDaysISO(TODAY, -i) })
@@ -119,6 +136,27 @@ describe('mostRecentFoods', () => {
 			item({ id: 'l-2', name: 'Rice', servings: 2, date: TODAY })
 		];
 		expect(mostRecentFoods(log, TODAY)[0]?.source.servings).toBe(2);
+	});
+
+	it('reads the last portion off the latest date, not off the end of the log', () => {
+		// An import appends whatever the file held, so an older entry can land
+		// after a newer one -- with a larger id, since it was written later. The
+		// date is what decides which portion this food was last eaten at.
+		const log = [
+			item({ id: 'l-3', name: 'Rice', servings: 2, date: TODAY }),
+			item({ id: 'l-9', name: 'Rice', servings: 0.5, date: addDaysISO(TODAY, -3) })
+		];
+		expect(mostRecentFoods(log, TODAY)[0]?.source.servings).toBe(2);
+	});
+
+	it('takes the later of two entries logged on one day, in either log order', () => {
+		// A calendar date cannot separate breakfast from supper. `uid()` builds an
+		// id from the clock, so the larger id is the later entry -- and that stays
+		// true however the two are ordered in the array.
+		const second = item({ id: 'l-2', name: 'Rice', servings: 2, date: TODAY });
+		const first = item({ id: 'l-1', name: 'Rice', servings: 0.5, date: TODAY });
+		expect(mostRecentFoods([second, first], TODAY)[0]?.source.servings).toBe(2);
+		expect(mostRecentFoods([first, second], TODAY)[0]?.source.servings).toBe(2);
 	});
 
 	it('derives kcal for one serving from the most recent entry', () => {
@@ -147,30 +185,41 @@ describe('mostRecentFoods', () => {
 });
 
 describe('mostFrequentFoods', () => {
-	it('orders distinct foods by how many times each was logged', () => {
+	it('puts the food logged most often first, ahead of one logged more recently', () => {
+		// "What do I usually eat" is a question about habit, so a count beats both
+		// of the tiebreaks under it: Steak here is neither the most recent nor the
+		// first alphabetically.
 		const log = [
-			item({ id: 'l-1', name: 'Banana', date: addDaysISO(TODAY, -1) }),
-			item({ id: 'l-2', name: 'Banana', date: TODAY }),
-			item({ id: 'l-3', name: 'Steak', date: TODAY })
+			item({ id: 'l-1', name: 'Steak', date: addDaysISO(TODAY, -2) }),
+			item({ id: 'l-2', name: 'Steak', date: addDaysISO(TODAY, -1) }),
+			item({ id: 'l-3', name: 'Apple', date: TODAY })
 		];
-		expect(mostFrequentFoods(log, TODAY).map((f) => f.source.name)).toEqual(['Banana', 'Steak']);
+		expect(names(mostFrequentFoods(log, TODAY))).toEqual(['Steak', 'Apple']);
 	});
 
 	it('breaks an equal-count tie by whichever food was logged more recently', () => {
 		const log = [
-			item({ id: 'l-1', name: 'Toast', date: addDaysISO(TODAY, -2) }),
-			item({ id: 'l-2', name: 'Bagel', date: TODAY })
+			item({ id: 'l-1', name: 'Apple', date: addDaysISO(TODAY, -2) }),
+			item({ id: 'l-2', name: 'Zebra Cake', date: TODAY })
 		];
-		expect(mostFrequentFoods(log, TODAY).map((f) => f.source.name)).toEqual(['Bagel', 'Toast']);
+		expect(names(mostFrequentFoods(log, TODAY))).toEqual(['Zebra Cake', 'Apple']);
 	});
 
-	it('breaks an equal-count, equal-date tie the same way on every call', () => {
-		const log = [
+	it('lists foods tied on count and date in one order, whatever order the log lists them', () => {
+		const sameDay = [
 			item({ id: 'l-1', name: 'Zebra Cake', date: TODAY }),
-			item({ id: 'l-2', name: 'Apple', date: TODAY })
+			item({ id: 'l-2', name: 'Muesli', date: TODAY }),
+			item({ id: 'l-3', name: 'Apple', date: TODAY })
 		];
-		const first = mostFrequentFoods(log, TODAY).map((f) => f.source.name);
-		const second = mostFrequentFoods(log, TODAY).map((f) => f.source.name);
-		expect(first).toEqual(second);
+		const expected = ['Apple', 'Muesli', 'Zebra Cake'];
+		expect(names(mostFrequentFoods(sameDay, TODAY))).toEqual(expected);
+		expect(names(mostFrequentFoods([...sameDay].reverse(), TODAY))).toEqual(expected);
+	});
+
+	it('caps the list at MAX_RECENT_FOODS even with more foods logged', () => {
+		const log = Array.from({ length: MAX_RECENT_FOODS + 8 }, (_, i) =>
+			item({ id: `l-${i}`, name: `Food ${i}`, date: addDaysISO(TODAY, -i) })
+		);
+		expect(mostFrequentFoods(log, TODAY)).toHaveLength(MAX_RECENT_FOODS);
 	});
 });
