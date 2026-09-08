@@ -271,7 +271,7 @@ const brokenSetup = unmetGuarantees(setupSource, [
 ]);
 const brokenUpload = unmetGuarantees(uploadSource, [
 	['uploads through actions/upload-artifact', /uses: actions\/upload-artifact@[0-9a-f]{40}/],
-	['keeps a report for 14 days', /retention-days: 14/],
+	['keeps a report for 3 days', /retention-days: 3\b/],
 	[
 		'names each artifact after the run and attempt',
 		/name: \$\{\{ inputs\.name \}\}-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}/
