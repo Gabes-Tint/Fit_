@@ -28,6 +28,7 @@ export const DOM_FREE_CLIENT_SPECS = [
 	'src/lib/catalog/food-resolve.svelte.spec.ts',
 	'src/lib/catalog/food-search.svelte.spec.ts',
 	'src/lib/components/auth/auth-routes.svelte.spec.ts',
+	'src/lib/components/day-strip.svelte.spec.ts',
 	'src/lib/components/exercise/plan-options.svelte.spec.ts',
 	'src/lib/components/exercise/routine-tone.svelte.spec.ts',
 	'src/lib/photo/photo-log.svelte.spec.ts',
