@@ -8,7 +8,7 @@
  * exactly one `${IDENTIFIER}` interpolation back to a same-file
  * `const NAME = `...`;` (the one real case in this tree, `FOOD_COLUMNS` in
  * `foods.ts`). A call site built from a function call — `searchSql(columns)`,
- * `servingsSql(ids.length)` — is not evaluated; it is reported as
+ * `servingRowsSql(ids.length)` — is not evaluated; it is reported as
  * unresolved, by name, so the report says what it could not check rather than
  * silently checking less than it claims.
  */
