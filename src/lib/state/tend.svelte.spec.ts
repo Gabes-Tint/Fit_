@@ -13,6 +13,7 @@ import type {
 	TendState
 } from '$lib/domain/types';
 import { DEFAULT_REST_SECONDS, PLANNED_MEALS, ZERO_MICROS } from '$lib/domain/types';
+import { displayLoad } from '$lib/domain/units';
 import { todayISO } from '$lib/domain/utils';
 import { countsAsTraining } from '$lib/domain/workout';
 import { emptyState, SCHEMA_VERSION } from '$lib/domain/state-document';
@@ -1387,7 +1388,8 @@ describe('the load unit and the rest length', () => {
 		expect(reloaded().state.loadUnit).toBe('lb');
 	});
 
-	// The unit is a label, not a conversion: rewriting the log would lose what was lifted.
+	// A load is a mass held in kilograms, so there is nothing for the switch to
+	// rewrite. What was lifted stays what was lifted, and only the reading moves.
 	it('leaves every load already logged exactly as it was', () => {
 		const store = inSession();
 		store.toggleSet(0);
@@ -1397,6 +1399,91 @@ describe('the load unit and the rest length', () => {
 		store.setLoadUnit('lb');
 		expect(store.state.workouts[0]?.exercises[0]?.sets[0]?.load).toBe(loggedLoad);
 		expect(store.state.routines[0]?.exercises[0]?.load).toBe(prescribedLoad);
+	});
+
+	// The bug this canonical store exists to end: a 60 kg bench must not become a
+	// 60 lb bench because somebody looked at the preference screen.
+	it('reads a load that was entered in one unit as the same lift in the other', () => {
+		const store = inSession();
+		const entered = store.currentExercise?.sets[0]?.load;
+		expect(entered).toBe(60);
+
+		store.setLoadUnit('lb');
+
+		const kg = store.currentExercise?.sets[0]?.load ?? 0;
+		expect(displayLoad(kg, 'lb')).toBe(132.3);
+		expect(displayLoad(kg, 'kg')).toBe(60);
+	});
+
+	it('steps a load by a plate in the unit it is being read in, not the one it is stored in', () => {
+		const store = inSession();
+		store.setLoadUnit('lb');
+		const shown = () => displayLoad(store.currentExercise?.sets[0]?.load ?? 0, 'lb');
+		expect(shown()).toBe(132.3);
+
+		store.bumpSet(0, 'load', 1);
+
+		expect(shown()).toBe(134.8);
+	});
+
+	// The reading comes back, not the stored kilograms — the step went out through
+	// a number rounded to one decimal. What matters is that it settles: the drift
+	// is one cycle wide and does not compound with the tapping.
+	it('returns a load stepped up and back down to the number it was read at, and holds there', () => {
+		const store = inSession();
+		store.setLoadUnit('lb');
+		const stored = () => store.currentExercise?.sets[0]?.load ?? 0;
+
+		store.bumpSet(0, 'load', 1);
+		store.bumpSet(0, 'load', -1);
+		const afterOneCycle = stored();
+
+		for (let i = 0; i < 5; i++) {
+			store.bumpSet(0, 'load', 1);
+			store.bumpSet(0, 'load', -1);
+		}
+
+		expect(displayLoad(afterOneCycle, 'lb')).toBe(132.3);
+		expect(stored()).toBe(afterOneCycle);
+	});
+
+	it('steps a prescribed load in the unit it is being read in too', () => {
+		const store = withRoutine();
+		store.setLoadUnit('lb');
+		const shown = () => displayLoad(store.routine('full-body')?.exercises[0]?.load ?? 0, 'lb');
+		// The template prescribes a 60 kg squat, which reads as 132.3 lb.
+		expect(shown()).toBe(132.3);
+
+		store.bumpRoutineExercise('full-body', 0, 'load', 1);
+
+		expect(shown()).toBe(134.8);
+	});
+
+	// The preference is a load's, not a count's: a stepper that sent reps through
+	// the load conversion would read 8 reps as 17.6 and step from there.
+	it('steps reps as the count it is, whatever unit loads are read in', () => {
+		const store = inSession();
+		store.setLoadUnit('lb');
+
+		store.bumpSet(0, 'reps', 1);
+
+		expect(store.currentExercise?.sets[0]?.reps).toBe(9);
+	});
+
+	it('steps sets as the count they are, whatever unit loads are read in', () => {
+		const store = withRoutine();
+		store.setLoadUnit('lb');
+
+		store.bumpRoutineExercise('full-body', 0, 'sets', 1);
+
+		expect(store.routine('full-body')?.exercises[0]?.sets).toBe(4);
+	});
+
+	it('still stops a load at bodyweight when it is being read in pounds', () => {
+		const store = inSession();
+		store.setLoadUnit('lb');
+		for (let i = 0; i < 100; i++) store.bumpSet(0, 'load', -1);
+		expect(store.currentExercise?.sets[0]?.load).toBe(0);
 	});
 
 	it('moves the rest length within the range the control offers', async () => {

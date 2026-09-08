@@ -234,11 +234,11 @@
 					</p>
 				</div>
 				<div class="mt-4">
-					<p class="text-muted-foreground text-sm font-medium">Exercise load label</p>
+					<p class="text-muted-foreground text-sm font-medium">Exercise load unit</p>
 					<div
 						class="mt-2 inline-flex gap-1"
 						role="group"
-						aria-label="Exercise load label: kg or lb"
+						aria-label="Exercise load unit: kg or lb"
 					>
 						{#each LOAD_UNITS as u (u.id)}
 							<ToggleButton
@@ -252,7 +252,8 @@
 						{/each}
 					</div>
 					<p class="text-muted-foreground mt-2 text-xs">
-						Exercise load. Relabels the bar only — a load already logged keeps its number.
+						Routines and sessions. A load is stored as a weight, so switching converts it: a 60 kg
+						squat reads as 132.3 lb.
 					</p>
 				</div>
 				<div class="mt-4">

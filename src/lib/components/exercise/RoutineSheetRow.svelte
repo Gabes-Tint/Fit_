@@ -1,7 +1,7 @@
 <script lang="ts">
 	import CirclePlay from '@lucide/svelte/icons/circle-play';
-	import { formatLoad } from '$lib/domain/exercises';
-	import type { RoutineExercise } from '$lib/domain/types';
+	import type { LoadUnit, RoutineExercise } from '$lib/domain/types';
+	import { formatLoad } from '$lib/domain/units';
 	import Button from '$lib/ui/Button.svelte';
 	import { cn } from '$lib/ui/cn';
 	import Stepper from '$lib/ui/Stepper.svelte';
@@ -13,19 +13,22 @@
 	 */
 	let {
 		exercise,
+		unit,
 		open,
 		ontoggle,
 		onplay,
 		onload
 	}: {
 		exercise: RoutineExercise;
+		/** The unit `exercise.load` — kilograms, always — is read in. */
+		unit: LoadUnit;
 		open: boolean;
 		ontoggle: () => void;
 		onplay: () => void;
 		onload: (direction: number) => void;
 	} = $props();
 
-	const load = $derived(formatLoad(exercise.load));
+	const load = $derived(formatLoad(exercise.load, unit));
 	const watchLabel = $derived(`Watch ${exercise.name}`);
 </script>
 

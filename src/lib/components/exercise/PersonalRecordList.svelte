@@ -1,15 +1,19 @@
 <script lang="ts">
 	import { personalRecords } from '$lib/domain/training-progress';
 	import type { Workout } from '$lib/domain/types';
+	import { displayLoad } from '$lib/domain/units';
 	import { monthDay } from '$lib/domain/utils';
 	import { tend } from '$lib/state/tend.svelte';
 
 	let { workouts }: { workouts: Workout[] } = $props();
 
+	/** A record is the heaviest set in kilograms; the unit decides how it reads. */
+	const unit = $derived(tend.state.loadUnit);
+
 	const records = $derived(
 		personalRecords(workouts).map((r) => ({
 			name: r.name,
-			best: `${r.load} ${tend.state.loadUnit} × ${r.reps}`,
+			best: `${displayLoad(r.load, unit)} ${unit} × ${r.reps}`,
 			when: monthDay(r.date)
 		}))
 	);

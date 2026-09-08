@@ -1,6 +1,7 @@
 import { weekOf, WEEKS_IN_YEAR, type CalendarWeek } from '$lib/domain/training-plan';
 import { plannedSessionsBetween } from '$lib/domain/planned-days';
 import type { LoadUnit, MuscleGroup, PlannedDay, Workout } from '$lib/domain/types';
+import { displayLoad } from '$lib/domain/units';
 import { round1 } from '$lib/domain/utils';
 import { countsAsTraining, setsDone } from '$lib/domain/workout';
 
@@ -15,6 +16,7 @@ export type TrendPoint = {
 	week: number;
 	/** "W34", the training week the top set was lifted in. */
 	label: string;
+	/** The top set that week, in stored kilograms. */
 	load: number;
 };
 
@@ -166,7 +168,10 @@ function loadSentence(workouts: Workout[], unit: LoadUnit): string {
 	const first = points[0];
 	const last = points.at(-1);
 	if (!first || !last || first.load === last.load) return '';
-	const change = round1(Math.abs(last.load - first.load));
+	// The difference between the two readings, not the reading of the difference:
+	// each end is rounded to the decimal it is shown at, so the sentence has to
+	// report the gap the chart above it draws.
+	const change = round1(Math.abs(displayLoad(last.load, unit) - displayLoad(first.load, unit)));
 	const direction = last.load > first.load ? 'heavier' : 'lighter';
 	// One less than the span: it points at the week the first bar was lifted,
 	// not the width of the chart.

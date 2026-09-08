@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Check from '@lucide/svelte/icons/check';
-	import { formatLoad } from '$lib/domain/exercises';
-	import type { WorkoutSet } from '$lib/domain/types';
+	import type { LoadUnit, WorkoutSet } from '$lib/domain/types';
+	import { formatLoad } from '$lib/domain/units';
 	import { cn } from '$lib/ui/cn';
 	import Stepper from '$lib/ui/Stepper.svelte';
 	import ToggleButton from '$lib/ui/ToggleButton.svelte';
@@ -14,11 +14,14 @@
 	let {
 		number,
 		set,
+		unit,
 		onstep,
 		ontoggle
 	}: {
 		number: number;
 		set: WorkoutSet;
+		/** The unit `set.load` — kilograms, always — is read in. */
+		unit: LoadUnit;
 		onstep: (field: 'reps' | 'load', direction: number) => void;
 		ontoggle: () => void;
 	} = $props();
@@ -41,7 +44,7 @@
 	/>
 	<Stepper
 		class="justify-center"
-		value={formatLoad(set.load)}
+		value={formatLoad(set.load, unit)}
 		label="load on set {number}"
 		onstep={(direction: number) => onstep('load', direction)}
 	/>

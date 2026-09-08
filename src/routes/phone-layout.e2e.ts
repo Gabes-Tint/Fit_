@@ -283,6 +283,49 @@ test.describe('at 360px', () => {
 		await expectFitsViewport(page, sheet);
 	});
 
+	test('a load read in pounds stays inside the viewport, sheet to summary (#71)', async ({
+		page,
+		baseURL
+	}) => {
+		await openExerciseTabEmpty(page, baseURL ?? '');
+		await pickFullBodyTemplate(page);
+
+		// Loads are stored in kilograms and converted for reading (#71), so pounds
+		// are the wide case everywhere a load is printed: the template's 60 kg squat
+		// reads 132.3, and a session's volume gains a digit.
+		await page.getByRole('button', { name: 'Open menu' }).click();
+		await page.getByRole('link', { name: 'You' }).click();
+		await page
+			.getByRole('group', { name: 'Exercise load unit: kg or lb' })
+			.getByRole('button', { name: 'lb' })
+			.click();
+
+		await atNarrowPhone(page);
+		await page.getByRole('button', { name: 'Open menu' }).click();
+		await page.getByRole('link', { name: 'Exercise' }).click();
+		await page.getByRole('link', { name: /Full body \d+ exercises/ }).click();
+
+		// The routine sheet, where the reading sits in a fixed grid column.
+		await expect(page.getByText('Load (lb)').first()).toBeVisible();
+		await expect(page.getByText('132.3').first()).toBeVisible();
+		await expectFitsViewport(page);
+
+		// The session's set list, where the same reading sits between two steppers.
+		await page.getByRole('button', { name: 'Start this session' }).click();
+		await expect(page.getByRole('heading', { name: 'Squat', level: 1 })).toBeVisible();
+		await expect(page.getByText('132.3').first()).toBeVisible();
+		await expectFitsViewport(page);
+
+		// The summary's volume tile: eight reps of the squat, which is 480 kg of
+		// work read back as 1058 lb — the widest number any of these screens print.
+		await page.getByRole('button', { name: 'Set 1 done' }).click();
+		await page.getByRole('button', { name: 'Finish' }).click();
+		await expect(page.getByText('Session done', { exact: true })).toBeVisible();
+		const volume = page.getByText('1058 lb', { exact: true });
+		await expect(volume).toBeVisible();
+		await expectFitsViewport(page, volume);
+	});
+
 	test('a unit-toggled log row stays inside the viewport in both views (#178)', async ({
 		page,
 		baseURL

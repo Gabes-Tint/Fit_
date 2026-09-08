@@ -472,9 +472,11 @@ describe('the summary note', () => {
 		);
 	});
 
-	it('reads the change in whatever unit is set', () => {
+	// 40 kg to 47.5 kg is 88.2 lb to 104.7 lb: the same lift, converted, not the
+	// same digits with a different word after them.
+	it('converts the change into whatever unit is set', () => {
 		expect(note(history(), 'lb')).toBe(
-			'Bench Press is 7.5 lb heavier than 2 weeks ago. Legs are still the thin part of the plan.'
+			'Bench Press is 16.5 lb heavier than 2 weeks ago. Legs are still the thin part of the plan.'
 		);
 	});
 

@@ -32,6 +32,7 @@ import {
 	storedDocument,
 	type LoadRefusal
 } from '$lib/domain/state-document';
+import { displayLoad, loadToKg } from '$lib/domain/units';
 import { round1, todayISO, uid } from '$lib/domain/utils';
 import { currentExercise, workoutFromRoutine } from '$lib/domain/workout';
 import { buildWeekPlan, mealPool } from '$lib/domain/week-plan';
@@ -434,8 +435,27 @@ export class TendStore {
 	bumpRoutineExercise(id: string, index: number, field: BumpField, direction: number) {
 		const exercise = this.routine(id)?.exercises[index];
 		if (!exercise) return;
-		exercise[field] = bumpField(field, exercise[field], direction);
+		exercise[field] = this.stepped(field, exercise[field], direction);
 		this.persistSoon();
+	}
+
+	/**
+	 * One tap on a stepper. Sets and reps are counts and step as they read, but a
+	 * load is stored in kilograms and read in `loadUnit`, so the step has to land
+	 * on the number in front of the person: a bench showing 137.5 lb must reach
+	 * 140 lb, not the pound value of 62.4 kg plus a plate.
+	 *
+	 * What tapping up and back down restores is the reading, not the stored
+	 * kilograms: 60 kg comes back as 60.0102... kg, because the step went out
+	 * through a reading that was rounded to one decimal. It reads 132.3 lb before
+	 * and after, and the drift does not accumulate — every cycle after the first
+	 * lands on that same number, since it now starts from a reading that is
+	 * already the rounded one.
+	 */
+	private stepped(field: BumpField, current: number, direction: number): number {
+		if (field !== 'load') return bumpField(field, current, direction);
+		const unit = this.state.loadUnit;
+		return loadToKg(bumpField(field, displayLoad(current, unit), direction), unit);
 	}
 
 	addExercises(id: string, names: string[]) {
@@ -473,7 +493,12 @@ export class TendStore {
 
 	// -- training settings ---------------------------------------------------
 
-	// The unit is a label, not a conversion: converting would rewrite the log on every look.
+	/**
+	 * Which unit loads are read in. Nothing stored moves: a load is kilograms and
+	 * stays kilograms, so this changes the reading and not the lift. Before schema
+	 * version 4 the number itself was whatever unit was on show, and this setter
+	 * silently reinterpreted every session ever logged.
+	 */
 	setLoadUnit(unit: LoadUnit) {
 		this.state.loadUnit = unit;
 		this.persist();
@@ -491,6 +516,7 @@ export class TendStore {
 	// -- preferences -----------------------------------------------------------
 
 	// The system is a display choice, not a conversion: nothing stored is rewritten.
+	// Loads are not in it — they have their own unit, in `setLoadUnit`.
 	setUnits(units: UnitSystem) {
 		this.state.units = units;
 		this.persist();
@@ -531,7 +557,7 @@ export class TendStore {
 	bumpSet(index: number, field: 'reps' | 'load', direction: number) {
 		const set = this.liveExercise?.sets[index];
 		if (!set) return;
-		set[field] = bumpField(field, set[field], direction);
+		set[field] = this.stepped(field, set[field], direction);
 		this.persistSoon();
 	}
 

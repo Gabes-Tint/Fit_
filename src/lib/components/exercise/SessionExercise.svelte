@@ -1,7 +1,7 @@
 <script lang="ts">
 	import CirclePlay from '@lucide/svelte/icons/circle-play';
 	import Repeat from '@lucide/svelte/icons/repeat';
-	import { formatLoad } from '$lib/domain/exercises';
+	import { formatLoad } from '$lib/domain/units';
 	import { lastPerformance } from '$lib/domain/workout';
 	import { tend } from '$lib/state/tend.svelte';
 	import SectionLabel from '$lib/components/SectionLabel.svelte';
@@ -28,6 +28,8 @@
 
 	const workout = $derived(tend.state.activeWorkout);
 	const exercise = $derived(tend.currentExercise);
+	/** Loads are stored in kilograms; this is the unit every one of them is read in. */
+	const unit = $derived(tend.state.loadUnit);
 
 	function toggle(index: number, wasDone: boolean) {
 		tend.toggleSet(index);
@@ -39,7 +41,7 @@
 {#if workout && exercise}
 	{@const last = lastPerformance(tend.state.workouts, exercise.name)}
 	{@const position = `Exercise ${workout.exerciseIndex + 1} of ${workout.exercises.length}`}
-	{@const loadHeading = `Load (${tend.state.loadUnit})`}
+	{@const loadHeading = `Load (${unit})`}
 	<div class="flex flex-col gap-4">
 		<div class="flex items-start gap-3">
 			<div class="min-w-0 flex-1">
@@ -72,8 +74,8 @@
 				</div>
 			</div>
 			{#if last}
-				{@const lastLine = `${last.reps} × ${formatLoad(last.load)}${
-					last.load > 0 ? ` ${tend.state.loadUnit}` : ''
+				{@const lastLine = `${last.reps} × ${formatLoad(last.load, unit)}${
+					last.load > 0 ? ` ${unit}` : ''
 				}`}
 				<div class="shrink-0 text-right">
 					<p class="text-muted-foreground text-xs">Last time</p>
@@ -99,6 +101,7 @@
 					<SetRow
 						number={i + 1}
 						{set}
+						{unit}
 						onstep={(field: 'reps' | 'load', direction: number) =>
 							tend.bumpSet(i, field, direction)}
 						ontoggle={() => toggle(i, set.done)}

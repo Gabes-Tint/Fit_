@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
 	cmToIn,
+	displayLoad,
 	displayWeight,
+	formatLoad,
 	formatServingMass,
 	formatWeight,
 	gToOz,
@@ -10,6 +12,8 @@ import {
 	inToCm,
 	kgToLb,
 	lbToKg,
+	loadInUnit,
+	loadToKg,
 	ozToG,
 	weightToKg,
 	weightUnitAbbr,
@@ -115,5 +119,56 @@ describe('serving mass (#74)', () => {
 
 	it('drops a trailing zero a portion does not need', () => {
 		expect(formatServingMass(453.59237, 'imperial')).toBe('16 oz');
+	});
+});
+
+describe('reading a load', () => {
+	it('leaves the stored number where it is for an account reading in kilograms', () => {
+		expect(displayLoad(62.5, 'kg')).toBe(62.5);
+		expect(loadToKg(62.5, 'kg')).toBe(62.5);
+	});
+
+	it('reads a stored kilogram load in pounds', () => {
+		// 100 kg is 220.462... lb, which is read at one decimal.
+		expect(displayLoad(100, 'lb')).toBe(220.5);
+	});
+
+	it('stores a load entered in pounds as the kilograms it is', () => {
+		expect(loadToKg(100, 'lb')).toBeCloseTo(45.359237, 9);
+	});
+
+	it('hands back the unrounded conversion for a total that is rounded later', () => {
+		// Volume is reps times load summed over a session: rounding each load
+		// first would put the error into the total.
+		expect(loadInUnit(1000, 'lb')).toBeCloseTo(2204.6226, 4);
+		expect(loadInUnit(1000, 'kg')).toBe(1000);
+	});
+
+	it('reads bodyweight as an em dash rather than as nothing lifted, in either unit', () => {
+		expect(formatLoad(0, 'kg')).toBe('—');
+		expect(formatLoad(0, 'lb')).toBe('—');
+	});
+
+	it('shows a load as its own number', () => {
+		expect(formatLoad(42.5, 'kg')).toBe('42.5');
+		expect(formatLoad(60, 'kg')).toBe('60');
+		expect(formatLoad(loadToKg(135, 'lb'), 'lb')).toBe('135');
+	});
+
+	// The promise the canonical store rests on: what somebody entered is what
+	// they read back, whichever unit they entered it in.
+	it('round-trips every load the steppers can produce, in both units', () => {
+		for (let step = 0; step <= 200; step++) {
+			const entered = step * 2.5;
+			for (const unit of ['kg', 'lb'] as const) {
+				expect(displayLoad(loadToKg(entered, unit), unit)).toBe(entered);
+			}
+		}
+	});
+
+	it('round-trips a load carrying the one decimal a reading can have', () => {
+		for (const entered of [0.1, 2.3, 45.4, 137.5, 220.5, 999.9]) {
+			expect(displayLoad(loadToKg(entered, 'lb'), 'lb')).toBe(entered);
+		}
 	});
 });
