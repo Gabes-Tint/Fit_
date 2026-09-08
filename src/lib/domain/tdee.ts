@@ -71,7 +71,13 @@ function dayTotals(log: LogItem[], date: string): DayNutrition | null {
 	}, emptyDay());
 }
 
-function linearSlope(points: { x: number; y: number }[]) {
+/**
+ * Least-squares slope of y over x. Exported so its edge cases — too few
+ * points, an exact two-point line — can be pinned directly: every caller
+ * today only ever reaches it with at least four points already, so those
+ * edges are otherwise unreachable through the public API.
+ */
+export function linearSlope(points: { x: number; y: number }[]) {
 	const n = points.length;
 	if (n < 2) return 0;
 	const meanX = points.reduce((s, p) => s + p.x, 0) / n;
@@ -218,19 +224,34 @@ export function loggedDatesSet(log: LogItem[]) {
 	return new Set(log.map((i) => i.date));
 }
 
-/** Weeks (Mon–Sun) with at least `minDays` logged. Never resets on a miss. */
+const WEEK_OFFSETS = [0, 1, 2, 3, 4, 5, 6] as const;
+
+/**
+ * Weeks (Mon–Sun) with at least `minDays` logged. Never resets on a miss.
+ *
+ * The week count is sized up front from the date span rather than walked
+ * with a `while (cursor <= end)` loop stepped by a mutable cursor: a loop
+ * bounded that way hangs forever under a mutation that drops the step, and
+ * this codebase's mutation ledger charges that timeout as debt even though
+ * the mutation runner itself scores a timeout as a kill. Iterating a
+ * pre-sized array instead means every mutation to the loop body still
+ * terminates in a fixed number of steps, so it fails fast on a wrong answer
+ * instead of hanging.
+ */
 export function calmWeeks(log: LogItem[], minDays = 4, end = todayISO()) {
 	const dates = new Set(log.map((i) => i.date));
 	if (!dates.size) return 0;
-	let cursor = startOfWeek([...dates].sort()[0] ?? end);
+	const firstWeek = startOfWeek([...dates].sort()[0] ?? end);
+	const spanDays = Math.round(
+		(parseISODate(end).getTime() - parseISODate(firstWeek).getTime()) / 86400000
+	);
+	if (spanDays < 0) return 0;
+	const totalWeeks = Math.floor(spanDays / 7) + 1;
 	let count = 0;
-	while (cursor <= end) {
-		let n = 0;
-		for (let i = 0; i < 7; i++) {
-			if (dates.has(addDaysISO(cursor, i))) n++;
-		}
+	for (const week of Array.from({ length: totalWeeks }, (_, w) => w)) {
+		const cursor = addDaysISO(firstWeek, week * 7);
+		const n = WEEK_OFFSETS.filter((offset) => dates.has(addDaysISO(cursor, offset))).length;
 		if (n >= minDays) count++;
-		cursor = addDaysISO(cursor, 7);
 	}
 	return count;
 }
