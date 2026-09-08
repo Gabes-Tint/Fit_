@@ -36,11 +36,32 @@
 	const profile = $derived(tend.profile);
 	const targets = $derived(profile ? computeTargets(profile) : null);
 
-	// Read straight off the profile — an uncontrolled field, like a native
-	// form, rather than a draft synced back on every keystroke. Nothing but
-	// `saveHeight` ever writes `heightCm`, and it only reads the submitted
-	// form values, so switching the units preference to look never drifts
-	// the stored figure.
+	// Two numbers, not one `{feet, inches}` object, and this is load-bearing
+	// rather than tidiness (#237). `Input` binds its `value` internally, so a
+	// prop that changes discards whatever is half-typed in the field and puts
+	// the stored reading back. A `$derived` only tells its readers anything when
+	// its value actually changes, and `heightToFeetInches` allocates a fresh
+	// object every call, so reading `.feet`/`.inches` straight off it made every
+	// unrelated profile write — a weight, a name, a document arriving from
+	// another device — look like a new height and wipe the field mid-edit. Split
+	// into numbers, an unrelated write recomputes to `5` and `6`, compares equal,
+	// and stops there. The centimeters field was always safe for exactly this
+	// reason: `Math.round(profile.heightCm)` is already a number.
+	const heightReading = $derived(profile ? heightToFeetInches(profile.heightCm) : null);
+	const heightFeet = $derived(heightReading?.feet ?? 0);
+	const heightInches = $derived(heightReading?.inches ?? 0);
+
+	// The energy field is the same shape and needs the same treatment:
+	// `computeTargets` returns a fresh object, so `targets.kcal` read straight
+	// into the field made every profile write a new energy target.
+	const energyKcal = $derived(targets?.kcal ?? 0);
+
+	// Read off the profile and submitted like a native form, rather than kept
+	// as a draft synced back on every keystroke. Nothing but `saveHeight` ever
+	// writes `heightCm`, and it only reads the submitted form values, so
+	// switching the units preference to look never drifts the stored figure.
+	// The field is not uncontrolled, though — `Input` binds its value — which is
+	// why the readings above have to hold still while somebody types.
 	function saveHeight(event: SubmitEvent) {
 		event.preventDefault();
 		if (!profile) return;
@@ -151,7 +172,6 @@
 				<form onsubmit={saveHeight}>
 					<p class="text-muted-foreground text-sm font-medium">Height</p>
 					{#if tend.state.units === 'imperial'}
-						{@const feetInches = heightToFeetInches(profile.heightCm)}
 						<div class="mt-1.5 flex gap-3">
 							<div class="flex items-center gap-2">
 								<Input
@@ -160,7 +180,7 @@
 									class="w-24"
 									inputmode="numeric"
 									aria-label="Height, feet"
-									value={feetInches.feet}
+									value={heightFeet}
 								/>
 								<Label for="you-height-ft">ft</Label>
 							</div>
@@ -171,7 +191,7 @@
 									class="w-24"
 									inputmode="numeric"
 									aria-label="Height, inches"
-									value={feetInches.inches}
+									value={heightInches}
 								/>
 								<Label for="you-height-in">in</Label>
 							</div>
@@ -326,7 +346,7 @@
 								class="h-8 w-20 px-2 text-sm"
 								inputmode="numeric"
 								aria-label="Energy, kcal"
-								value={targets.kcal}
+								value={energyKcal}
 							/>
 							<Button size="sm" type="submit">Save</Button>
 						</form>
