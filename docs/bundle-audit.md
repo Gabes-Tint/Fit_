@@ -40,17 +40,39 @@ Current state against `quality/bundle-budgets.json`:
 | Client CSS    | 52,273                  | 53,200  | 927      |
 | Largest asset | 75,036 (`nodes/0.*.js`) | 83,120  | 8,084    |
 
-### The number is not reproducible to the byte
+### The number is not reproducible, and it is biased against every branch
 
-Five consecutive builds of an identical clean tree produced 424,689, 424,689, 424,685, 424,685,
-424,685. Diffing two of those outputs, exactly one chunk differs and only in the SvelteKit
-namespace token it embeds — `globalThis.__sveltekit_<token>`, where the token is a random
-base-36 string. One build's token was seven characters, the other's six, and the token appears
-four times in that chunk. Hence four bytes.
+Two things move the total without a line of source changing.
 
-The gate therefore has a small source-independent noise floor. It does not explain PR #219,
-which is 246 bytes over, but it does mean a change measured at a handful of bytes is measuring
-nothing.
+**Random build noise, four bytes.** Repeated builds of one identical clean tree alternate between
+two totals four bytes apart. Diffing two such outputs, exactly one chunk differs, and only in the
+SvelteKit namespace token it embeds — `globalThis.__sveltekit_<token>`, where the token is a
+random base-36 string appearing four times. A six-character token gives one total, a
+seven-character token gives that total plus four. Nine builds during this audit produced exactly
+those two values and nothing else.
+
+**A systematic eight-byte penalty on every branch.** The build stamps its version into the client
+bundle through `__APP_VERSION__`, and `scripts/build/app-version.ts` derives that from git: a
+commit sitting exactly on its tag gets `v0.0.64`, and anything ahead of the tag gets
+`v0.0.64+<short sha>` — eight characters longer.
+
+`main` is tagged on every merge by `.github/workflows/version-tag.yml`, so a build of clean `main`
+always gets the short form and a branch never does. **Every pull request is therefore measured
+against a baseline eight bytes smaller than any branch build can be**, and eight bytes of every
+reported delta belong to the tag suffix rather than to the change.
+
+Measured on this machine, same `node_modules`:
+
+| Tree                                  | Version stamped   | Total             |
+| ------------------------------------- | ----------------- | ----------------- |
+| `main` at `e186b47`, on tag `v0.0.64` | `v0.0.64`         | 424,685 / 424,689 |
+| this audit branch, one commit ahead   | `v0.0.64+ca3efb4` | 424,693 / 424,697 |
+| PR #219's head `953c2e3`              | `v0.0.63+953c2e3` | 425,246           |
+
+So the gate's practical resolution is about ten bytes and its zero point depends on whether the
+commit is tagged. That does not rescue PR #219, which is 246 bytes over — but it does mean a
+change measured in single-digit bytes is measuring nothing, and that every branch starts eight
+bytes in the hole.
 
 ## What a person actually downloads
 
@@ -219,8 +241,12 @@ diffing the attribution shows every byte of it:
 | +141     | 0       | 141     | `src/lib/components/day-strip.ts` (new)                |
 | −94      | 713     | 619     | `src/lib/domain/week-strip.ts`                         |
 | +46      | 1,949   | 1,995   | `src/lib/components/exercise/TrainingWeekStrip.svelte` |
-| −124     | —       | —       | ten other modules, chunk reshuffling                   |
+| +8       | 403     | 411     | `src/lib/version.ts` — the tag suffix, not the change  |
+| −78      | —       | —       | eleven other modules, chunk reshuffling                |
 | **+561** | 424,685 | 425,246 | total                                                  |
+
+Eight of those bytes are the branch-versus-tag penalty described above and have nothing to do
+with the refactor, so **the change itself costs 553 bytes**.
 
 Three things went wrong at once, and the module boundary is the smallest of them.
 
@@ -250,8 +276,8 @@ everything else.
 
 **And `TrainingWeekStrip` grew rather than shrank**, by 46 bytes, because the same PR extends it
 from one week to the 38-day range with new labels. Its deduplication saving and its new feature
-roughly cancel. So the +561 is not purely the price of removing duplication, and a version of
-this PR that only deduplicated would land somewhere near +500 rather than +561.
+roughly cancel. So the +553 is not purely the price of removing duplication either, and a
+version of this PR that only deduplicated would land somewhere near +500.
 
 The honest summary: the extraction created 955 bytes of new shared code and chunk overhead to
 remove 475. Sharing about forty lines of scroll-and-keyboard logic between two components does
@@ -369,8 +395,8 @@ Two ways to fix the instrument, neither implemented here and both a decision rat
   so splitting is rewarded by one metric and total growth is still caught by the other.
 
 Either way the budget should be a round headroom above where the tree sits, not 315 bytes above
-it, because at 315 bytes of headroom the gate is measuring build noise as often as it is
-measuring code.
+it: at 315 bytes of headroom, against a metric with a ten-byte resolution and an eight-byte
+penalty on every branch, the gate is measuring the build as often as it is measuring the code.
 
 ## Reproducing this
 
