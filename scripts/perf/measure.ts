@@ -14,7 +14,7 @@ import type { PerfReport } from './report.ts';
 import { compareReports, formatCompare } from './compare.ts';
 import { formatCommitted } from './prettier-format.ts';
 import { catalogPath } from '../../src/lib/server/catalog/connection.ts';
-import { readJsonFile } from '../security/shared';
+import { readJsonFile } from '../security/shared.ts';
 
 /**
  * The one command issue #130 asks for: runs instruments 1 to 4 and writes

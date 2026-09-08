@@ -9,11 +9,20 @@ import { createFixtureCatalog } from '../../tests/catalog-fixture.ts';
 // does not resolve a specifier that omits its extension the way Vite does.
 import { parseFile } from './sql-statements.ts';
 import type { ExtractedStatement, UnresolvedStatement } from './sql-statements.ts';
+import { captureDynamicStatements } from './sql-dynamic.ts';
 
 /**
  * Instrument 4: `EXPLAIN QUERY PLAN` for every prepared statement this tree's
  * server code holds, checked into a file so a change that turns an index seek
  * into a scan shows up in a diff instead of only in a slow request.
+ *
+ * Two halves, because this tree writes SQL two ways. A statement written as a
+ * literal is read out of the source by `sql-statements.ts`; a statement built
+ * by a function is recorded from the running code by `sql-dynamic.ts`, which
+ * is the only way to plan the ranked search and the two `food_serving` reads
+ * without transcribing them into a second file that drifts. Every call site
+ * the parser reports unresolved has to be claimed by a probe or it stays in
+ * the report as unresolved, and a probe that claims nothing is an error.
  *
  * `statements.ts` is excluded: it is the `prepared()` cache itself, not a
  * statement. Every `*.spec.ts` is excluded for the same reason `foods.ts`
@@ -63,6 +72,8 @@ interface StatementPlan {
 	file: string;
 	label: string;
 	sql: string;
+	/** Where the SQL came from: read out of the source, or recorded from the running code. */
+	source: 'literal' | 'captured';
 	rows: PlanRow[];
 }
 
@@ -104,6 +115,8 @@ export interface PlanResult {
  */
 export async function planStatements(root: string): Promise<PlanResult> {
 	const files = await collectStatements(root);
+	const captured = await captureDynamicStatements(root);
+	const claimed = new Set<string>();
 	const live = openCatalog(catalogPath());
 	const catalogDb = live ?? createFixtureCatalog();
 	const appDb = openDatabase(':memory:');
@@ -117,10 +130,34 @@ export async function planStatements(root: string): Promise<PlanResult> {
 					file: entry.file,
 					label: statement.label,
 					sql: statement.sql,
+					source: 'literal',
 					rows: explain(db, statement.sql)
 				});
 			}
-			for (const item of entry.unresolved) unresolved.push({ ...item, file: entry.file });
+			for (const item of entry.unresolved) {
+				const built = captured.find(
+					(each) => each.file === entry.file && each.label === item.label
+				);
+				if (built === undefined) {
+					unresolved.push({ ...item, file: entry.file });
+					continue;
+				}
+				claimed.add(`${built.file} ${built.label}`);
+				plans.push({
+					file: entry.file,
+					label: item.label,
+					sql: built.sql,
+					source: 'captured',
+					rows: explain(db, built.sql)
+				});
+			}
+		}
+		const stale = captured.filter((each) => !claimed.has(`${each.file} ${each.label}`));
+		if (stale.length > 0) {
+			const names = stale.map((each) => `${each.file} — ${each.label}`).join(', ');
+			throw new Error(
+				`${names}: no such unresolved call site. A probe in sql-dynamic.ts is stale.`
+			);
 		}
 		return { catalogSource: live ? 'live' : 'fixture', plans, unresolved };
 	} finally {
@@ -131,7 +168,8 @@ export async function planStatements(root: string): Promise<PlanResult> {
 
 /** Pure: renders one statement's plan as a markdown section. */
 function formatStatement(plan: StatementPlan): string[] {
-	const lines = [`### ${plan.file} — ${plan.label}`, '', '```sql', plan.sql.trim(), '```', ''];
+	const heading = plan.source === 'captured' ? `${plan.label} (built at run time)` : plan.label;
+	const lines = [`### ${plan.file} — ${heading}`, '', '```sql', plan.sql.trim(), '```', ''];
 	lines.push('Plan:');
 	for (const row of plan.rows) lines.push(`- ${row.detail}`);
 	lines.push('');
