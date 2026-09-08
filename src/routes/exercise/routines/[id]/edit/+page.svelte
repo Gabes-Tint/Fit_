@@ -57,8 +57,23 @@
 {#if routine}
 	{@const totals = routineTotals(routine)}
 	<!-- "Save" only leaves: every edit below is written to the store as it is made. -->
+	<!--
+		Delete sits beside Save with a wide gap between them: the two are the only
+		ways out of this screen, so they belong together, and the gap is what keeps
+		the irreversible one from being hit on the way to the other.
+	-->
 	{#snippet save()}
-		<LinkButton size="sm" class="shrink-0" href={home}>Save</LinkButton>
+		<div class="flex shrink-0 items-center gap-6">
+			<LinkButton size="sm" class="shrink-0" href={home}>Save</LinkButton>
+			<!-- Reads "Delete" in a header that has no room for more; the label names what it deletes. -->
+			<Button
+				size="sm"
+				variant="outline"
+				class="shrink-0"
+				aria-label="Delete routine"
+				onclick={askDelete}>Delete</Button
+			>
+		</div>
 	{/snippet}
 
 	<div class="flex flex-col gap-6">
@@ -115,8 +130,6 @@
 				+ Add from library
 			</button>
 		</section>
-
-		<Button variant="outline" onclick={askDelete}>Delete routine</Button>
 	</div>
 
 	<LibrarySheet
