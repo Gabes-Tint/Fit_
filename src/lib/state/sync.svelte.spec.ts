@@ -2228,6 +2228,37 @@ describe('a write the server took and never answered', () => {
 	});
 
 	/**
+	 * The same letting go, from a read rather than a refusal, and written down
+	 * rather than only held in memory. The account is still at the version this
+	 * device last heard about, so that write did not land and never will. Left
+	 * in the record it would outlive the device it belongs to and answer for the
+	 * next document that arrives at that version — somebody else's — and stop it
+	 * being adopted.
+	 */
+	it('stops naming a write the account plainly never took', async () => {
+		localStorage.setItem(
+			SYNC_STORAGE_KEY,
+			JSON.stringify({
+				householdId: HOUSEHOLD,
+				version: 5,
+				dirty: false,
+				outstanding: { version: 5, fingerprints: ['a-write-that-never-landed'] }
+			})
+		);
+		server([documentAnswer(5, remoteState('Robin'))]);
+		const sync = syncFor(blankDevice());
+
+		await sync.start(HOUSEHOLD);
+
+		expect(record()).toEqual({
+			householdId: HOUSEHOLD,
+			version: 5,
+			dirty: false,
+			outstanding: null
+		});
+	});
+
+	/**
 	 * A write that was refused did not create the version it was sent from plus
 	 * one, whoever did. Holding on to it past a refusal would let a document
 	 * somebody else wrote be mistaken for this device's own at the next start.
