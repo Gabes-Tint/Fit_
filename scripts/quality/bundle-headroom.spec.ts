@@ -9,14 +9,19 @@ import {
 	metricDeltas,
 	stableChunkName
 } from './bundle-headroom';
-import type { Asset } from './bundle-headroom';
+import type { Asset, BundleReading } from './bundle-headroom';
 import type { BundleBudgets } from './config-types';
 
 const budgets: BundleBudgets = {
+	alwaysLoadedJavaScriptBytes: 700,
 	clientCssBytes: 100,
 	clientJavaScriptBytes: 1000,
 	largestAssetBytes: 500
 };
+
+function reading(assets: Asset[], alwaysLoadedJavaScriptBytes: number): BundleReading {
+	return { measurement: measure(assets), alwaysLoadedJavaScriptBytes };
+}
 
 describe('measure', () => {
 	it('sums JS and CSS separately and finds the largest asset regardless of extension', () => {
@@ -39,13 +44,19 @@ describe('measure', () => {
 
 describe('buildBudgetTable', () => {
 	it('reports positive headroom under budget and negative headroom over budget', () => {
-		const measurement = measure([
-			{ file: 'a.js', bytes: 900 },
-			{ file: 'a.css', bytes: 150 }
-		]);
-		const rows = buildBudgetTable(measurement, budgets);
+		const rows = buildBudgetTable(
+			reading(
+				[
+					{ file: 'a.js', bytes: 900 },
+					{ file: 'a.css', bytes: 150 }
+				],
+				750
+			),
+			budgets
+		);
 		expect(rows).toEqual([
 			{ metric: 'JS', bytes: 900, budget: 1000, headroom: 100 },
+			{ metric: 'JS always loaded', bytes: 750, budget: 700, headroom: -50 },
 			{ metric: 'CSS', bytes: 150, budget: 100, headroom: -50 },
 			{ metric: 'Largest asset', bytes: 900, budget: 500, headroom: -400 }
 		]);
@@ -54,7 +65,7 @@ describe('buildBudgetTable', () => {
 
 describe('formatBudgetTable', () => {
 	it('renders a header, a rule and one aligned row per metric', () => {
-		const rows = buildBudgetTable(measure([{ file: 'a.js', bytes: 900 }]), budgets);
+		const rows = buildBudgetTable(reading([{ file: 'a.js', bytes: 900 }], 600), budgets);
 		const text = formatBudgetTable(rows);
 		const lines = text.split('\n');
 		expect(lines[0]).toContain('Metric');
@@ -121,13 +132,34 @@ describe('chunkDeltas', () => {
 
 describe('metricDeltas', () => {
 	it('reports before, after and the signed delta for each metric', () => {
-		const before = measure([{ file: 'a.js', bytes: 1000 }]);
-		const after = measure([{ file: 'a.js', bytes: 1200 }]);
+		const before = reading([{ file: 'a.js', bytes: 1000 }], 800);
+		const after = reading([{ file: 'a.js', bytes: 1200 }], 700);
 		expect(metricDeltas(before, after)).toEqual([
 			{ metric: 'JS', before: 1000, after: 1200, delta: 200 },
+			{ metric: 'JS always loaded', before: 800, after: 700, delta: -100 },
 			{ metric: 'CSS', before: 0, after: 0, delta: 0 },
 			{ metric: 'Largest asset', before: 1000, after: 1200, delta: 200 }
 		]);
+	});
+
+	it('shows the tree growing while the always-loaded closure shrinks, which is what a split does', () => {
+		const deltas = metricDeltas(
+			reading([{ file: 'a.js', bytes: 1000 }], 900),
+			reading(
+				[
+					{ file: 'a.js', bytes: 700 },
+					{ file: 'lazy.js', bytes: 400 }
+				],
+				700
+			)
+		);
+		expect(deltas).toContainEqual({ metric: 'JS', before: 1000, after: 1100, delta: 100 });
+		expect(deltas).toContainEqual({
+			metric: 'JS always loaded',
+			before: 900,
+			after: 700,
+			delta: -200
+		});
 	});
 });
 

@@ -20,9 +20,10 @@
 	"mutationPolicy.changed.maxTimeouts": 0,
 	"mutationPolicy.changed.maxNoCoverage": 0,
 	"mutationPolicy.changed.maxErrors": 0,
-	"bundle.clientCssBytes": 53200,
-	"bundle.clientJavaScriptBytes": 425000,
-	"bundle.largestAssetBytes": 83120,
+	"bundle.alwaysLoadedJavaScriptBytes": 270000,
+	"bundle.clientCssBytes": 40000,
+	"bundle.clientJavaScriptBytes": 410000,
+	"bundle.largestAssetBytes": 57000,
 	"duplication.threshold": 5,
 	"duplication.maxClones": 0,
 	"suppressions.maxUnjustified": 0

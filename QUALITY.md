@@ -200,10 +200,38 @@ pass.
 
 ## Bundle budget
 
-`bun run bundle:headroom` builds the current tree the same way `check:bundle` does and
-prints JS, CSS and largest-asset bytes against the budgets in `quality/bundle-budgets.json`,
-never against a stale report; add `--against <ref>` (default `origin/main`) to also print the
-delta and the top five changed chunks against another ref. A proposal to raise a budget in
+`check:bundle` polices four numbers, each answering a question the others cannot. When one
+goes red, this is which one you tripped and what it is for:
+
+- **`clientJavaScriptBytes`** — a coarse ceiling on the total amount of code shipped. Every
+  emitted client chunk summed, as if one visitor downloaded all sixteen route nodes at once.
+  Nobody does, so it says nothing about load time; it is deliberately blind to how the code is
+  split, and exists only to stop the tree growing unwatched.
+- **`alwaysLoadedJavaScriptBytes`** — what every visitor downloads on every page, and the one
+  metric that rewards splitting. The always-loaded closure: the SvelteKit entry, the app
+  shell, the root layout node and everything those import _statically_ (`bundle-closure.ts`,
+  walking the client build's own manifest). Moving code behind a dynamic import takes it out
+  of this number while usually adding a little to the tree total — exactly the trade the two
+  JS budgets together are meant to reward.
+- **`clientCssBytes`** — the stylesheet, which gets its own budget because CSS bytes never
+  move the JS ones and would otherwise hide inside a total. There is exactly one file, and
+  every page loads all of it.
+- **`largestAssetBytes`** — a guard against one chunk growing unbounded while the totals still
+  look fine. A single 200 KB file and four small ones cost a phone far more than five even
+  ones of the same sum, and neither JS number can tell them apart.
+
+Every budget sits a couple of percent above what the tree measures, on purpose. Two
+things move the count without a line of source changing: the version stamp costs a branch
+**eight bytes** (`main` is tagged on every merge and stamps `v0.0.NN`; a branch is ahead of
+its tag and stamps `v0.0.NN+<sha>`), and SvelteKit's random `__sveltekit_<token>` identifier
+varies by **four bytes** between builds of an identical tree. `check:bundle` prints both with
+every failure. A budget whose headroom is smaller than that is measuring the build rather
+than the code; `docs/bundle-audit.md` has the measurements.
+
+`bun run bundle:headroom` builds the current tree the same way `check:bundle` does and prints
+all four metrics against the budgets in `quality/bundle-budgets.json`, never against a stale
+report; add `--against <ref>` (default `origin/main`) to also print the delta and the top five
+changed chunks against another ref. A proposal to raise a budget in
 `quality/bundle-budgets.json` must quote this command's output as evidence.
 
 ## Mutation lanes
