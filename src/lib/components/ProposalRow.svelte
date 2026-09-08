@@ -40,26 +40,24 @@
 		onremove: () => void;
 	} = $props();
 
-	// Every food a proposal can name comes from the server catalog, so the one
-	// the sheet resolved is the only one there is -- there is no bundled table
-	// left to fall back to.
-	const food = $derived(resolved);
 	const summary = $derived(`${Math.round(item.confidence * 100)}% sure · ${item.meal}`);
 	const removeLabel = $derived(`Remove ${item.name}`);
 	// Re-read against the food rather than trusting a stored flag: matching an item
 	// to the catalog can turn a quantity the parser had to decline into one it can use.
-	const declined = $derived(item.quantity ? resolveQuantity(item.quantity, food).declined : null);
-	const recorded = $derived(describeRecorded(item.servings, food, declined, tend.state.units));
+	const declined = $derived(
+		item.quantity ? resolveQuantity(item.quantity, resolved).declined : null
+	);
+	const recorded = $derived(describeRecorded(item.servings, resolved, declined, tend.state.units));
 	// One serving, read in the person's own system (#74): the label the source
 	// gave, plus the mass it comes to when the label does not already state one.
 	// The scaled total belongs to `recorded`, so it is not repeated here.
 	const serving = $derived(
-		describePortion(food ?? { servingLabel: 'serving' }, 1, tend.state.units)
+		describePortion(resolved ?? { servingLabel: 'serving' }, 1, tend.state.units)
 	);
 	// What this person last logged of this food (#159), read out of the log they
 	// already have rather than out of a per-food table the document would have to
 	// carry and prune. `LogSheet` opens the row at it; this is what says so.
-	const usual = $derived(usualServings(tend.profile?.log ?? [], food));
+	const usual = $derived(usualServings(tend.profile?.log ?? [], resolved));
 </script>
 
 <li class="bg-background rounded-2xl p-3">
@@ -67,8 +65,8 @@
 		<div class="min-w-0 flex-1">
 			<p class="font-medium">{item.name}</p>
 			<div class="mt-1 flex flex-wrap items-center gap-1.5">
-				{#if food}
-					<ProvenanceBadge provenance={food.provenance} />
+				{#if resolved}
+					<ProvenanceBadge provenance={resolved.provenance} />
 				{:else}
 					<button type="button" onclick={onmatch} class="text-primary text-xs underline">
 						Match to catalog
@@ -88,12 +86,12 @@
 	</div>
 	<div class="mt-2 flex items-center gap-2">
 		<p class="text-muted-foreground text-xs">{serving}</p>
-		{#if food}
-			<ServingSizePicker {food} onchoose={onportion} />
+		{#if resolved}
+			<ServingSizePicker food={resolved} onchoose={onportion} />
 		{/if}
 	</div>
 	<ServingAmount
-		{food}
+		food={resolved}
 		servings={item.servings}
 		{step}
 		{usual}

@@ -979,6 +979,23 @@ describe('LogSheet recent-food list', () => {
 		// Often: chicken-breast has 2 qualifying entries against egg-large's 1.
 		expect(names()[0]).toContain('Chicken breast');
 	});
+
+	/**
+	 * A history row is a food summary, and every other food summary in the app
+	 * -- a search result, a log row, a proposal -- reads its portion through
+	 * `describePortion`, which appends the mass in the person's own system when
+	 * the label does not already state one (#74). This list used to print
+	 * `servingLabel` raw, so the same chicken breast said "100 g" here and
+	 * "100 g · 3.5 oz" one tab away.
+	 */
+	it('reads a portion in the system the person set, like every other food row', async () => {
+		tend.setUnits('imperial');
+		logHistory({ foodId: 'chicken-breast', servings: 1, meal: 'lunch', daysAgo: 1 });
+		await openOnSearch('lunch');
+		await expect
+			.element(page.getByRole('button', { name: /Chicken breast/ }))
+			.toHaveTextContent('100 g · 3.5 oz');
+	});
 });
 
 describe('LogSheet direct-log from search', () => {
