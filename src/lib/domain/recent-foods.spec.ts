@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { ZERO_MICROS } from './types';
 import type { LogItem } from './types';
 import { addDaysISO } from './utils';
-import { mostFrequentFoods, mostRecentFoods, RECENT_WINDOW_DAYS } from './recent-foods';
+import {
+	MAX_RECENT_FOODS,
+	mostFrequentFoods,
+	mostRecentFoods,
+	RECENT_WINDOW_DAYS
+} from './recent-foods';
 
 const TODAY = '2026-06-15';
 
@@ -48,7 +53,7 @@ describe('mostRecentFoods', () => {
 
 	it('keeps foods with the same name but different brands apart', () => {
 		const log = [
-			item({ id: 'l-1', name: 'Yogurt', brand: 'Chobani' }),
+			item({ id: 'l-1', name: 'Yogurt', brand: 'Store Brand' }),
 			item({ id: 'l-2', name: 'Yogurt', brand: 'Fage' })
 		];
 		expect(mostRecentFoods(log, TODAY)).toHaveLength(2);
@@ -101,11 +106,11 @@ describe('mostRecentFoods', () => {
 		expect(mostRecentFoods(log, TODAY)).toHaveLength(1);
 	});
 
-	it('caps the list at the configured maximum even with more foods logged', () => {
-		const log = Array.from({ length: 20 }, (_, i) =>
+	it('caps the list at MAX_RECENT_FOODS even with more foods logged', () => {
+		const log = Array.from({ length: MAX_RECENT_FOODS + 8 }, (_, i) =>
 			item({ id: `l-${i}`, name: `Food ${i}`, date: addDaysISO(TODAY, -i) })
 		);
-		expect(mostRecentFoods(log, TODAY).length).toBeLessThanOrEqual(12);
+		expect(mostRecentFoods(log, TODAY)).toHaveLength(MAX_RECENT_FOODS);
 	});
 
 	it('carries the servings the food was last logged at, not an earlier one', () => {

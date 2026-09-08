@@ -20,9 +20,9 @@ export const RECENT_WINDOW_DAYS = 60;
  * -- enough to cover breakfast, lunch and a couple of regulars -- without the
  * "recent" list turning into a second, slower search box.
  */
-const MAX_RECENT_FOODS = 12;
+export const MAX_RECENT_FOODS = 12;
 
-/** One distinct food, ready to render as a re-loggable row. */
+/** One distinct food, ready to render as a row that can be logged again. */
 export type RecentFood = {
 	/** The grouping key this food was found under -- see `groupKey` below. */
 	key: string;
