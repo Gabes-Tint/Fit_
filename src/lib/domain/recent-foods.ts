@@ -128,12 +128,14 @@ function toRecentFood(group: Group): RecentFood {
 /**
  * Two groups tied on whatever the caller is ordering by (same date, or same
  * count and date) must not swap between calls just because a `Map`'s
- * iteration order happens to differ. `key` is stable and unique per food, so
- * comparing it lexically is a final tiebreak that always produces the same
- * order for the same input.
+ * iteration order happens to differ, or because an import happened to append
+ * one of them first. `key` is stable and unique per food -- it is what the
+ * `Map` above is keyed on, so two groups can never share one -- and comparing
+ * it lexically is a final tiebreak that always produces the same order for
+ * the same set of foods, whatever order the log listed them in.
  */
 function byKey(a: Group, b: Group): number {
-	return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+	return a.key.localeCompare(b.key);
 }
 
 /**
@@ -142,10 +144,11 @@ function byKey(a: Group, b: Group): number {
  */
 export function mostRecentFoods(log: readonly LogItem[], today: string = todayISO()): RecentFood[] {
 	const groups = groupsWithinWindow(log, today);
-	groups.sort((a, b) => {
-		if (a.latest.date !== b.latest.date) return a.latest.date < b.latest.date ? 1 : -1;
-		return byKey(a, b);
-	});
+	// Later date first, then `byKey`. `||` reads the tiebreaks in order because
+	// a comparator's "these are equal" is 0: the next comparison is consulted
+	// exactly when the one before it had nothing to say. Dates are ISO strings,
+	// so comparing them as text compares them as days.
+	groups.sort((a, b) => b.latest.date.localeCompare(a.latest.date) || byKey(a, b));
 	return groups.slice(0, MAX_RECENT_FOODS).map(toRecentFood);
 }
 
@@ -159,10 +162,8 @@ export function mostFrequentFoods(
 	today: string = todayISO()
 ): RecentFood[] {
 	const groups = groupsWithinWindow(log, today);
-	groups.sort((a, b) => {
-		if (a.count !== b.count) return b.count - a.count;
-		if (a.latest.date !== b.latest.date) return a.latest.date < b.latest.date ? 1 : -1;
-		return byKey(a, b);
-	});
+	groups.sort(
+		(a, b) => b.count - a.count || b.latest.date.localeCompare(a.latest.date) || byKey(a, b)
+	);
 	return groups.slice(0, MAX_RECENT_FOODS).map(toRecentFood);
 }
