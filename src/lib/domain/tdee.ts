@@ -120,13 +120,22 @@ export type AdaptiveTdee = {
 /** Least-squares kg/day over the weigh-ins, plus their span; zero with fewer than four readings. */
 function weightTrend(weights: WeightEntry[]) {
 	const first = weights[0];
-	if (weights.length < 4 || !first) return { kgPerDay: 0, weightSpanDays: 0 };
+	// `last` is read the same way `first` is: the length guard below already
+	// guarantees both are defined once weights.length >= 4, so this is a type
+	// narrowing, not a real fewer-than-four-elements case the optional chain
+	// on `points.at(-1)` used to guard against. `points` is `weights.map(...)`,
+	// so it always has `last`'s index too.
+	const last = weights[weights.length - 1];
+	if (weights.length < 4 || !first || !last) return { kgPerDay: 0, weightSpanDays: 0 };
 	const t0 = parseISODate(first.date).getTime();
 	const points = weights.map((w) => ({
 		x: (parseISODate(w.date).getTime() - t0) / 86400000,
 		y: w.kg
 	}));
-	return { kgPerDay: linearSlope(points), weightSpanDays: points.at(-1)?.x ?? 0 };
+	return {
+		kgPerDay: linearSlope(points),
+		weightSpanDays: (parseISODate(last.date).getTime() - t0) / 86400000
+	};
 }
 
 export function adaptiveTdee(profile: Profile, end = todayISO()): AdaptiveTdee {
@@ -147,7 +156,10 @@ export function adaptiveTdee(profile: Profile, end = todayISO()): AdaptiveTdee {
 
 	const { kgPerDay, weightSpanDays } = weightTrend(weights);
 
-	const enough = logged.length >= 7 && weights.length >= 4 && weightSpanDays >= 10;
+	// No separate weights.length >= 4 check: weightTrend only ever reports a
+	// nonzero weightSpanDays when it had at least four weigh-ins to trend
+	// (see its own guard above), so weightSpanDays >= 10 already implies it.
+	const enough = logged.length >= 7 && weightSpanDays >= 10;
 
 	const surplusKcalPerDay = kgPerDay * KCAL_PER_KG;
 	const inferredRaw = avgIntake - surplusKcalPerDay;

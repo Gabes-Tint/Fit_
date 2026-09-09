@@ -193,6 +193,22 @@ describe('linearSlope', () => {
 		];
 		expect(linearSlope(points)).toBe(2);
 	});
+
+	it('centers both x and y on their own mean, not on a stray constant', () => {
+		// Centering matters only at IEEE 754's precision, so small tidy numbers
+		// can't tell a correctly-centered mean from a wrong one -- the deviations
+		// from a wrong mean still sum to (numerically) zero and wash out. These
+		// three points are large enough that they don't: computing meanX or
+		// meanY any other way than "sum divided by count", or centering x or y
+		// on the wrong constant, changes the least-significant bit of the
+		// result, which the exact comparison below catches.
+		const points = [
+			{ x: -430156.34511330957, y: -192606.04862471475 },
+			{ x: 318117.92316166556, y: 353716.763340479 },
+			{ x: -81634.71478296025, y: -28404.49978440751 }
+		];
+		expect(linearSlope(points)).toBe(0.7356073889782075);
+	});
 });
 
 describe('estimatedTdee', () => {
