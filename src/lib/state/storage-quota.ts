@@ -46,6 +46,29 @@ export function isStorageFull(error: unknown): boolean {
 }
 
 /**
+ * Write to this device, and say what happened: `true` when the text is on it,
+ * `false` when the device refused it for want of room, and `null` when there is
+ * no storage at all — a server render, where nothing was written and nothing
+ * about the device is being claimed either way.
+ *
+ * The one place `setItem` is called. Both keys a browser tab writes go through
+ * it — the document and the sync record — because the record is written from
+ * inside the document's own write, so an unguarded one there is the same throw
+ * arriving in the same tap by a longer route.
+ */
+export function putItem(key: string, text: string): boolean | null {
+	const storage = globalThis.localStorage;
+	if (storage === undefined) return null;
+	try {
+		storage.setItem(key, text);
+		return true;
+	} catch (error) {
+		if (!isStorageFull(error)) throw error;
+		return false;
+	}
+}
+
+/**
  * Whether this device is still able to keep the document.
  *
  * `'full'` is not a latch. It is set by a write that was refused and cleared by

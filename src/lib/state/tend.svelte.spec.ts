@@ -797,6 +797,24 @@ describe('a device with no room left', () => {
 		expect(store.storage).toBe('full');
 	});
 
+	it('says nothing either way where there is no storage to be full', () => {
+		// A server render has no device to call full, and a write that reached no
+		// storage at all is no evidence that room has been found: clearing the
+		// warning on one would be the same lie in the other direction.
+		const store = onboarded();
+		withStorage(refusingStorage(quotaError()).storage, () => store.addWeight(80));
+		expect(store.storage).toBe('full');
+
+		const real = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+		Object.defineProperty(globalThis, 'localStorage', { value: undefined, configurable: true });
+		try {
+			expect(() => store.addWeight(79)).not.toThrow();
+		} finally {
+			if (real) Object.defineProperty(globalThis, 'localStorage', real);
+		}
+		expect(store.storage).toBe('full');
+	});
+
 	it('lets a failure that is not the quota wall through instead of blaming the device', () => {
 		// Reporting a full phone for every storage failure would be the same
 		// silence wearing a different label: nothing would ever be looked into.

@@ -33,7 +33,7 @@ import {
 	type LoadRefusal
 } from '$lib/domain/state-document';
 import { displayLoad, loadToKg } from '$lib/domain/units';
-import { isStorageFull, STORAGE_FULL_MESSAGE, type StorageStatus } from './storage-quota';
+import { putItem, STORAGE_FULL_MESSAGE, type StorageStatus } from './storage-quota';
 import { todayISO, uid } from '$lib/domain/utils';
 import { currentExercise, workoutFromRoutine } from '$lib/domain/workout';
 import { buildWeekPlan, mealPool } from '$lib/domain/week-plan';
@@ -163,23 +163,18 @@ export class TendStore {
 	}
 
 	/**
-	 * One write to this device, and the only place `setItem` is called.
+	 * One write to this device, and where `storage` is decided.
 	 *
-	 * A device out of room says so through `storage` and keeps going: the state
-	 * in memory is untouched, the action that triggered the write completes, and
-	 * `write()` still tells `sync` there is something to push. Anything that is
-	 * not the quota wall is re-thrown — see `isStorageFull` — because a store
-	 * that swallowed every storage failure would be indistinguishable from one
-	 * that worked.
+	 * A device out of room says so and keeps going: the state in memory is
+	 * untouched, the action that triggered the write completes, and `write()`
+	 * still tells `sync` there is something to push. A write that reached no
+	 * storage at all reports nothing — there is no device to call full on a
+	 * server render, and clearing the warning on a write that never happened
+	 * would be a lie the other way.
 	 */
 	private put(key: string, text: string): void {
-		try {
-			globalThis.localStorage?.setItem(key, text);
-			this.storage = 'ok';
-		} catch (error) {
-			if (!isStorageFull(error)) throw error;
-			this.storage = 'full';
-		}
+		const landed = putItem(key, text);
+		if (landed !== null) this.storage = landed ? 'ok' : 'full';
 	}
 
 	/**

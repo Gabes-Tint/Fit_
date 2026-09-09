@@ -2430,3 +2430,154 @@ describe('a document the server will not accept for its size', () => {
 		expect(sync.status).toBe('idle');
 	});
 });
+
+describe('a device that could not store the document it sent', () => {
+	/**
+	 * The device runs out of room mid-conversation: the change is in memory and,
+	 * once the push lands, on the server — and the copy on the device is the one
+	 * without it. Everything here is about what the record says while that is
+	 * true, because the record is all the next start has to go on (#300).
+	 */
+	function refuseDocumentWrites(): () => void {
+		const real = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+		const storage = globalThis.localStorage;
+		const full = {
+			getItem: (key: string) => storage.getItem(key),
+			setItem: (key: string, value: string) => {
+				if (key === STORAGE_KEY) throw new DOMException('exceeded the quota', 'QuotaExceededError');
+				storage.setItem(key, value);
+			},
+			removeItem: (key: string) => storage.removeItem(key),
+			clear: () => storage.clear(),
+			key: (index: number) => storage.key(index),
+			get length() {
+				return storage.length;
+			}
+		};
+		Object.defineProperty(globalThis, 'localStorage', { value: full, configurable: true });
+		return () => {
+			if (real) Object.defineProperty(globalThis, 'localStorage', real);
+		};
+	}
+
+	/** A device with no room for anything, the record included. */
+	function refuseEveryWrite(): () => void {
+		const real = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+		const storage = globalThis.localStorage;
+		const full = {
+			getItem: (key: string) => storage.getItem(key),
+			setItem: () => {
+				throw new DOMException('exceeded the quota', 'QuotaExceededError');
+			},
+			removeItem: (key: string) => storage.removeItem(key),
+			clear: () => storage.clear(),
+			key: (index: number) => storage.key(index),
+			get length() {
+				return storage.length;
+			}
+		};
+		Object.defineProperty(globalThis, 'localStorage', { value: full, configurable: true });
+		return () => {
+			if (real) Object.defineProperty(globalThis, 'localStorage', real);
+		};
+	}
+
+	it('records the version its own copy reached, not the one the exchange did', async () => {
+		const store = journal();
+		server([documentAnswer(0, null), stored(1)]);
+		const sync = syncFor(store);
+		await sync.start(HOUSEHOLD);
+		expect(record()?.version).toBe(1);
+
+		const restore = refuseDocumentWrites();
+		try {
+			server([stored(2)]);
+			store.togglePantry('oats');
+			await sync.flush();
+
+			// The server took it and is at 2. The document on the device is the
+			// one from version 1, so that is what the record says: claiming 2 is
+			// what would stop the next start adopting the copy that has it.
+			expect(sync.version).toBe(2);
+			expect(record()?.version).toBe(1);
+		} finally {
+			restore();
+		}
+	});
+
+	it('takes the account newer copy on the next start instead of pushing its own over it', async () => {
+		const store = journal();
+		server([documentAnswer(0, null), stored(1)]);
+		const sync = syncFor(store);
+		await sync.start(HOUSEHOLD);
+
+		const restore = refuseDocumentWrites();
+		try {
+			server([stored(2)]);
+			store.togglePantry('oats');
+			await sync.flush();
+
+			// The reload. The device hydrates the copy it managed to store, which
+			// is the one without the pantry change, while the account is at 2 with
+			// everything — this device's change included, and Robin's after it.
+			const reloaded = new TendStore();
+			reloaded.hydrate();
+			expect(reloaded.state.pantry).toEqual([]);
+			const sent = server([documentAnswer(2, remoteState('Robin'))]);
+			const next = syncFor(reloaded);
+
+			await next.start(HOUSEHOLD);
+
+			expect(reloaded.state.profiles[0]?.name).toBe('Robin');
+			expect(sent.filter((call) => call.method === 'PUT')).toEqual([]);
+		} finally {
+			restore();
+		}
+	});
+
+	it('stops defending an unanswered write once its own copy is behind it', async () => {
+		const store = journal();
+		server([documentAnswer(0, null), stored(1)]);
+		const sync = syncFor(store);
+		await sync.start(HOUSEHOLD);
+
+		const restore = refuseDocumentWrites();
+		try {
+			server([DROPPED]);
+			store.togglePantry('oats');
+			await sync.flush();
+
+			// The write is still unanswered, and normally the record would name it
+			// so a reload does not adopt this device's own document away (#247).
+			// Here that protection is pointed the wrong way: the document it would
+			// protect is not on the device at all.
+			expect(record()).toEqual({
+				householdId: HOUSEHOLD,
+				version: 1,
+				dirty: true,
+				outstanding: null
+			});
+		} finally {
+			restore();
+		}
+	});
+
+	it('does not throw out of the tap that filled the device', async () => {
+		// The record is written from inside the store's own write — `persist()`,
+		// `write()`, the watcher, `save()` — so an unguarded `setItem` there is
+		// #300 reaching the same tap by a longer route.
+		const store = journal();
+		server([documentAnswer(0, null), stored(1)]);
+		const sync = syncFor(store);
+		await sync.start(HOUSEHOLD);
+
+		const restore = refuseEveryWrite();
+		try {
+			server([stored(2)]);
+			expect(() => store.togglePantry('oats')).not.toThrow();
+			await sync.flush();
+		} finally {
+			restore();
+		}
+	});
+});
