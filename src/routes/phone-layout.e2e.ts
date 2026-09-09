@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import { test } from '../../tests/preview-server';
 import {
 	CHIPS_NAME,
@@ -74,19 +74,47 @@ async function fillMondayWithTwo(page: Page) {
 }
 
 /**
+ * The point of `expectHittable` narrowed to one sample: the middle of the
+ * control, which is where a thumb aims and where a tap lands. See the comment
+ * on the describe below for why the outer edge is not asserted there.
+ */
+async function expectCentreHittable(locator: Locator, what: string) {
+	const box = await locator.boundingBox();
+	expect(box, `${what} has no box to measure — is it visible?`).not.toBeNull();
+	const { x, y, width, height } = box as { x: number; y: number; width: number; height: number };
+	const point = { x: x + width / 2, y: y + height / 2 };
+	const hit = await locator.evaluate((el, at) => {
+		const target = document.elementFromPoint(at.x, at.y);
+		return target !== null && (target === el || el.contains(target));
+	}, point);
+	expect(hit, `something covers ${what} at its centre, (${point.x}, ${point.y})`).toBe(true);
+}
+
+/**
  * The menu is a button floating in the bottom-right corner of every signed-in
  * screen and it never hides, so it is the thing most likely to be sitting on
  * top of something a person is trying to press. The Today cards right-align
  * their own actions against the same edge it occupies.
  *
  * Where the collision lands is a function of viewport height and nothing else:
- * "Go to training" sat clear at 360 and 412 and directly under the toggle at
+ * "Go to training" sat clear at 360 and 412 and squarely under the toggle at
  * 390x844, which is the commonest phone this ships to and which no project in
  * `scripts/quality/e2e-projects.ts` renders. So this sweeps every card action
- * at three heights rather than trusting one. The toggle is tucked to 0.75rem
- * from each edge for the same reason — how much of a control beside it a
- * circle clips is a matter of how far its centre is from theirs, and 1.25rem
- * was not far enough at 390.
+ * at three heights rather than trusting one, and the toggle is tucked to
+ * 0.75rem from each edge rather than the 1.25rem it had.
+ *
+ * What is asserted is the centre of each action rather than its outermost
+ * pixel column, and the reason is geometric rather than convenient. A 44px
+ * circle in the corner reaches 44px in from the edge whatever its margin,
+ * while the cards start 20px in, so the toggle and every right-aligned control
+ * overlap horizontally by construction; only the viewport height decides
+ * whether they also meet vertically. There is no inset that clears every card
+ * action at every phone size: the margin at 0.75rem measured three pixels on
+ * a developer machine and was gone on a runner whose font metrics put the card
+ * ten pixels further down. The centre is the property that decides whether a
+ * person can use the control — it is where a thumb aims and where a tap lands.
+ * Removing the clipped corner as well is a product call, and the pull request
+ * asks for one.
  */
 test.describe('the floating menu over the Today card actions', () => {
 	const PHONES = [
@@ -119,48 +147,28 @@ test.describe('the floating menu over the Today card actions', () => {
 				44
 			);
 			await expectFitsViewport(page, toggle);
+			// The toggle itself is checked whole: nothing sits above it but sheets,
+			// and none of those are open here.
 			await expectHittable(toggle);
 
-			await expectHittable(
-				page.getByRole('region', { name: 'Energy' }).getByRole('button', { name: 'Log food' })
+			await expectCentreHittable(
+				page.getByRole('region', { name: 'Energy' }).getByRole('button', { name: 'Log food' }),
+				'Log food'
 			);
-			await expectHittable(page.getByRole('button', { name: 'Log weight' }));
-			await expectHittable(page.getByRole('link', { name: 'Go to training' }));
+			await expectCentreHittable(page.getByRole('button', { name: 'Log weight' }), 'Log weight');
+			await expectCentreHittable(
+				page.getByRole('link', { name: 'Go to training' }),
+				'Go to training'
+			);
 
-			/*
-			 * The expanded weight form's own submit, which is the button the old
-			 * floating log button used to steal (#today-card-actions review).
-			 *
-			 * Its centre, and not its outermost pixel column. The three checks
-			 * above are 44px circles whose centres have to stay clear, and they
-			 * do; this is a ~100px-wide button whose bottom-right corner is
-			 * inside the toggle's circle at 390x844, and no inset undoes that —
-			 * a 44px circle in the corner reaches 44px in from the edge whatever
-			 * its margin, while the cards start 20px in, so the two overlap
-			 * horizontally by construction and only the viewport height decides
-			 * whether they meet. What is being asserted is the thing that
-			 * matters: the button a thumb aims at is the button it hits. The
-			 * clipped corner is in the PR for Gabriel to rule on.
-			 */
+			// The expanded weight form's own submit, which is the button the old
+			// floating log button used to steal (#today-card-actions review).
 			await page.getByRole('button', { name: 'Log weight' }).click();
 			await expect(page.getByLabel('Weight in kilograms')).toBeVisible();
-			const submit = page.getByRole('button', { name: 'Today', exact: true });
-			const submitBox = await submit.boundingBox();
-			expect(submitBox, 'the weight form submit has no box to measure').not.toBeNull();
-			const {
-				x: submitX,
-				y: submitY,
-				width: submitWidth,
-				height: submitHeight
-			} = submitBox as { x: number; y: number; width: number; height: number };
-			const centreHit = await submit.evaluate(
-				(el, point) => {
-					const target = document.elementFromPoint(point.x, point.y);
-					return target !== null && (target === el || el.contains(target));
-				},
-				{ x: submitX + submitWidth / 2, y: submitY + submitHeight / 2 }
+			await expectCentreHittable(
+				page.getByRole('button', { name: 'Today', exact: true }),
+				"the weight form's Today"
 			);
-			expect(centreHit, "something covers the weight form's submit at its centre").toBe(true);
 
 			// And at the foot of the page, which is where the clearance is spent:
 			// scrolled all the way down, the last thing on the page ends above the
