@@ -799,7 +799,7 @@ describe('a device with no room left', () => {
 
 	it('lets a failure that is not the quota wall through instead of blaming the device', () => {
 		// Reporting a full phone for every storage failure would be the same
-		// silence in a different colour: nothing would ever be looked into.
+		// silence wearing a different label: nothing would ever be looked into.
 		const store = onboarded();
 		withStorage(refusingStorage(new TypeError('storage is broken')).storage, () => {
 			expect(() => store.addWeight(80)).toThrow(TypeError);
