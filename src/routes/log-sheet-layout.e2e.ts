@@ -35,16 +35,13 @@ function chickenRows(count: number) {
 }
 
 async function stubChickenSearch(page: Page) {
-	await page.route('**/api/foods?*', (route) => {
-		const url = new URL(route.request().url());
-		const q = url.searchParams.get('q') ?? '';
-		const foods = q.toLowerCase().includes('chicken') ? chickenRows(30) : [];
-		return route.fulfill({
+	await page.route('**/api/foods?*', (route) =>
+		route.fulfill({
 			status: 200,
 			contentType: 'application/json',
-			body: JSON.stringify({ foods })
-		});
-	});
+			body: JSON.stringify({ foods: chickenRows(30) })
+		})
+	);
 }
 
 test.describe('the Log sheet fills the screen on a phone', () => {
