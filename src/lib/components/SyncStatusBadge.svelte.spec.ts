@@ -10,6 +10,7 @@ afterEach(() => {
 	// would leak into whichever test runs next.
 	sync.status = 'idle';
 	tend.refusal = null;
+	tend.storage = 'ok';
 	vi.useRealTimers();
 });
 
@@ -160,6 +161,39 @@ describe('SyncStatusBadge, a document too large to send', () => {
 		await render(SyncStatusBadge);
 		await vi.advanceTimersByTimeAsync(5000);
 		expect(document.body.textContent).toContain('still saved on this device');
+	});
+});
+
+describe('SyncStatusBadge, a device with no room left', () => {
+	it('says the changes are not saved on the device, which is what makes it different', async () => {
+		// Every other notice here is about the server, and all of them can say the
+		// data is safe on the phone. This one cannot: the newest changes really
+		// are only in this tab, so the sentence leads with that (#300).
+		tend.storage = 'full';
+		await render(SyncStatusBadge);
+		await expect.element(page.getByText(/not saved on it/i)).toBeInTheDocument();
+	});
+
+	it('says what to do about it, since waiting is not it', async () => {
+		tend.storage = 'full';
+		await render(SyncStatusBadge);
+		expect(document.body.textContent).toContain('Export a backup');
+	});
+
+	it('stays up rather than clearing itself the way a finished save does', async () => {
+		vi.useFakeTimers();
+		tend.storage = 'full';
+		await render(SyncStatusBadge);
+		await vi.advanceTimersByTimeAsync(5000);
+		expect(document.body.textContent).toContain('not saved on it');
+	});
+
+	it('outranks the offline notice, because the device is the copy that failed', async () => {
+		sync.status = 'waiting';
+		tend.storage = 'full';
+		await render(SyncStatusBadge);
+		expect(document.body.textContent).toContain('not saved on it');
+		expect(document.body.textContent).not.toContain('Offline');
 	});
 });
 
