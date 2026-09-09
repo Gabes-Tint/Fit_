@@ -290,6 +290,22 @@ describe('LogSheet', () => {
 			.toHaveAttribute('aria-pressed', 'true');
 	});
 
+	/**
+	 * Focus-on-open is bits-ui's dialog default: the first focusable element
+	 * inside `Dialog.Content` gets it, which is the Close button in the header
+	 * -- above the tab strip and every tab's own content. Moving the search
+	 * input to the top of the Search tab's content must not change this: the
+	 * input still sits inside the scrollable body, after the header, so the
+	 * header's Close button keeps first claim on focus regardless of what
+	 * order the content beneath it renders in.
+	 */
+	it('still focuses the Close button on open, not the moved search input', async () => {
+		await render(LogSheet);
+		logUi.show();
+		await expect.element(page.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: 'Close' })).toHaveFocus();
+	});
+
 	it('lists Search first among the tabs', async () => {
 		await render(LogSheet);
 		logUi.show();
@@ -905,6 +921,23 @@ describe('LogSheet recent-food list', () => {
 	it('shows an explanatory line rather than a blank gap when there is no history', async () => {
 		await openOnSearch();
 		await expect.element(page.getByText(/Nothing here yet\. Log a few meals/)).toBeInTheDocument();
+	});
+
+	/**
+	 * The search box sits above the History list in DOM order, not below it --
+	 * a thumb reaching Search first is what the field is for, and the History
+	 * heading trailing it (not preceding it) is how a reader -- assistive tech
+	 * included, which walks the DOM in order rather than by pixel position --
+	 * finds the search field before the list it can filter.
+	 */
+	it('puts the search box above the History list, not below it', async () => {
+		logHistory({ foodId: 'egg-large', servings: 1, meal: 'breakfast', daysAgo: 1 });
+		await openOnSearch();
+		const input = page.getByLabelText('Search foods, brands, barcodes').element();
+		const heading = page.getByRole('heading', { name: 'History' }).element();
+		// DOCUMENT_POSITION_FOLLOWING (4) on `heading` relative to `input` means
+		// `heading` comes after `input` in the document.
+		expect(input.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 	});
 
 	it('turns a seeded log into a recent row, and one tap logs it at its last servings', async () => {
