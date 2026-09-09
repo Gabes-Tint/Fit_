@@ -105,40 +105,41 @@ describe('a toast with something to do about it', () => {
 		expect(onClick).toHaveBeenCalledOnce();
 	});
 
-	it('stays up well past the four seconds a plain message gets', () => {
+	it('stays up past the four seconds a plain message gets', () => {
 		// The whole point of the longer life: four seconds is a reading budget,
 		// and this one has to survive noticing, reading, deciding and reaching.
 		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
 		vi.advanceTimersByTime(4000);
 		expect(onScreen()).toEqual(['Logged Egg to breakfast.']);
 
-		vi.advanceTimersByTime(5999);
+		vi.advanceTimersByTime(999);
 		expect(onScreen()).toEqual(['Logged Egg to breakfast.']);
 	});
 
 	it('still takes itself away in the end', () => {
 		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
-		vi.advanceTimersByTime(10000);
+		vi.advanceTimersByTime(5000);
 		expect(onScreen()).toEqual([]);
 	});
 
 	it('does not lend its longer life to a plain message queued beside it', () => {
 		// Two timers, two lengths. A plain sentence raised alongside one that can
-		// be undone must not sit on the screen for ten seconds because of it.
+		// be undone must not sit on the screen for five seconds because of it.
 		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
 		toast('Height saved.');
 
 		vi.advanceTimersByTime(4000);
 		expect(onScreen()).toEqual(['Logged Egg to breakfast.']);
 
-		vi.advanceTimersByTime(6000);
+		vi.advanceTimersByTime(1000);
 		expect(onScreen()).toEqual([]);
 	});
 
-	it('does not let a dismissed toast’s timer carry off the one that replaced it', () => {
-		// Pressing the action dismisses the toast early, but the ten-second timer
-		// armed when it appeared still fires afterwards. By then the list has
-		// moved on, and the entry at that position belongs to someone else.
+	it('does not let an earlier dismiss disturb the toast that replaced it', () => {
+		// Dismissing is by identity, not position: pressing the action removes
+		// the toast early, and the entry at that position later belongs to
+		// whatever was queued after it. That later toast's own five-second
+		// countdown must run its own course untouched.
 		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
 		toasts.dismiss(only());
 
@@ -150,5 +151,89 @@ describe('a toast with something to do about it', () => {
 
 		vi.advanceTimersByTime(1000);
 		expect(onScreen()).toEqual([]);
+	});
+
+	it('says nothing about being dismissible when the caller did not ask for it', () => {
+		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
+		expect(only().dismissible).toBeUndefined();
+	});
+
+	it('carries the dismissible flag the caller gave it', () => {
+		toast('Logged Egg to breakfast.', {
+			action: { label: 'Undo', onClick: () => {} },
+			dismissible: true
+		});
+		expect(only().dismissible).toBe(true);
+	});
+});
+
+describe('pausing the countdown a pointer or focus has landed on', () => {
+	it('does not take a paused toast away, however long it is paused for', () => {
+		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
+		toasts.pause(only());
+
+		vi.advanceTimersByTime(60000);
+		expect(onScreen()).toEqual(['Logged Egg to breakfast.']);
+	});
+
+	it('restarts the full countdown once resumed, not whatever was left of it', () => {
+		// `resume` re-arms at the entry's usual length rather than tracking
+		// exactly how much was left when it paused — simpler, and the person
+		// reading it has, at minimum, glanced away and back, which already
+		// argues for more than whatever remained.
+		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
+		const entry = only();
+
+		// Four of the five seconds spent before the pointer arrives.
+		vi.advanceTimersByTime(4000);
+		toasts.pause(entry);
+
+		// Paused for a while — none of this counts against what resume grants.
+		vi.advanceTimersByTime(10000);
+		expect(onScreen()).toEqual(['Logged Egg to breakfast.']);
+
+		toasts.resume(entry);
+		vi.advanceTimersByTime(4999);
+		expect(onScreen()).toEqual(['Logged Egg to breakfast.']);
+
+		vi.advanceTimersByTime(1);
+		expect(onScreen()).toEqual([]);
+	});
+
+	it('pauses a plain message just as well, at the store level', () => {
+		// `Toaster` only wires the pointer/focus handlers on an actionable toast
+		// (a plain message has no button to reach for), but the store itself does
+		// not know or care which kind of toast it is pausing — every toast is
+		// armed the same way in `show`, so every toast can be paused.
+		toast('Height saved.');
+		toasts.pause(only());
+		vi.advanceTimersByTime(4000);
+		expect(onScreen()).toEqual(['Height saved.']);
+	});
+
+	it('does not resurrect a dismissed toast, and does not throw on one', () => {
+		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
+		const entry = only();
+		toasts.dismiss(entry);
+
+		expect(() => toasts.pause(entry)).not.toThrow();
+		expect(() => toasts.resume(entry)).not.toThrow();
+		expect(onScreen()).toEqual([]);
+	});
+
+	it('cancels the pending timer on dismiss, so it does not fire again later', () => {
+		// `dismiss` reuses `pause` to cancel its own timeout rather than leaving
+		// it to fire uselessly later. Without that, the timer `show` armed would
+		// still be sitting there and would call `dismiss` a second time once its
+		// five seconds were up — harmless in the sense that the entry is already
+		// gone either way, but a leak this spy is what catches.
+		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
+		const entry = only();
+		const dismissSpy = vi.spyOn(toasts, 'dismiss');
+
+		toasts.dismiss(entry);
+		vi.advanceTimersByTime(5000);
+
+		expect(dismissSpy).toHaveBeenCalledTimes(1);
 	});
 });
