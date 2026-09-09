@@ -160,6 +160,28 @@ test.describe('at 360px', () => {
 		await expectFitsViewport(page, energyCard);
 	});
 
+	// GLP-1 mode used to swap the Energy card for a concentric ring cluster
+	// (#glp1-concentric-rings); it now shares the same one-ring-plus-bars
+	// layout as calorie-led mode, only the bars differ (Protein/Fiber instead
+	// of Protein/Carbs/Fat), so this replaces the old
+	// `today-glp1-rings.e2e.ts` 360px coverage rather than dropping it.
+	test('the Today energy card stays inside the viewport in GLP-1 mode', async ({
+		page,
+		baseURL
+	}) => {
+		await signInThroughApi(page, baseURL ?? '');
+		await page.goto('/');
+		await atNarrowPhone(page);
+		await page.getByRole('button', { name: 'Continue' }).click();
+		await page.getByRole('switch', { name: 'GLP-1 mode' }).click();
+		await page.getByRole('button', { name: 'Continue' }).click();
+		await page.getByRole('button', { name: 'Start empty' }).click();
+		await expect(page.getByRole('heading', { name: 'Today', level: 1 })).toBeVisible();
+
+		const energyCard = page.getByRole('region', { name: 'Energy' });
+		await expectFitsViewport(page, energyCard);
+	});
+
 	test('the Today training card stays inside the viewport', async ({ page, baseURL }) => {
 		await signInThroughApi(page, baseURL ?? '');
 		await page.goto('/');
