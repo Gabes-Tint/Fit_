@@ -248,24 +248,25 @@ goes red, this is which one you tripped and what it is for:
   look fine. A single 200 KB file and four small ones cost a phone far more than five even
   ones of the same sum, and neither JS number can tell them apart.
 
-Every budget sits a couple of percent above what the tree measures, on purpose. One thing
-still moves the count without a line of source changing: SvelteKit's random
-`__sveltekit_<token>` identifier varies by **four bytes** between builds of an identical tree.
-`check:bundle` prints that noise note with every failure. A budget whose headroom is smaller
-than that is measuring the build rather than the code; `docs/bundle-audit.md` has the
-measurements.
+Every budget sits a couple of percent above what the tree measures, on purpose. Previously,
+SvelteKit's random `__sveltekit_<token>` identifier would vary by up to **four bytes**
+between builds. Now `kit.version.name` is pinned during measurement builds
+(`FIT_BUNDLE_MEASURE_VERSION` set), so the token is consistent and measurements are
+byte-for-byte identical. `check:bundle` never rebuilds a stale output — the build always
+sets `FIT_BUNDLE_MEASURE_VERSION`, which makes `vite.config.ts` embed a fixed-length
+placeholder for `__APP_VERSION__` / `__APP_COMMIT__` instead of the real, git-derived one.
 
 `check:bundle` always rebuilds before measuring — the `bun scripts/quality/bundle-budget.ts`
 that `npm run check:bundle` runs is never a report of whatever happened to be sitting in
 `.svelte-kit/output/client`, stale or otherwise. That rebuild also sets
-`FIT_BUNDLE_MEASURE_VERSION`, which makes `vite.config.ts` (via
-`scripts/build/bundle-measurement-version.ts`) embed a fixed-length placeholder for
-`__APP_VERSION__`/`__APP_COMMIT__` instead of the real, git-derived one. The real version's
+`FIT_BUNDLE_MEASURE_VERSION`, which makes `vite.config.ts` pin `kit.version.name` and
+embed a fixed-length placeholder for `__APP_VERSION__`/`__APP_COMMIT__`. The real version's
 length is not stable — a tagged `main` stamps the short `v0.0.NN`, a branch ahead of its tag
 stamps the eight-characters-longer `v0.0.NN+<sha>`, and a shallow or differently-fetched
-checkout can see a different tag distance again — so without the placeholder, `check:bundle`'s
-number depended on which checkout produced it rather than on the code. `npm run build`, the
-deploy path, never sets that variable and keeps embedding the real version.
+checkout can see a different tag distance again. Additionally, `kit.version.name` pinning
+ensures SvelteKit's `__sveltekit_<token>` is consistent. Both together make every measurement
+build's byte count depend only on the code. `npm run build`, the deploy path, never sets that
+variable and keeps embedding the real version and dynamic token.
 
 `bun run bundle:headroom` also builds fresh and prints all four metrics against the budgets in
 `quality/bundle-budgets.json`, never against a stale report; add `--against <ref>` (default

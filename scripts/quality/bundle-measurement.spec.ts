@@ -21,6 +21,10 @@ import { BUNDLE_MEASUREMENT_ENV } from '../build/bundle-measurement-version';
  * leak back into a measurement build, this fake `git` would make that show
  * up as a byte-count difference here; today it must not, because
  * `resolveBuildVersion` never even asks its version provider when measuring.
+ * Additionally, `vite.config.ts` pins `kit.version.name` during measurement
+ * builds so SvelteKit's `__sveltekit_<token>` identifier is consistent
+ * across builds, eliminating the variable-length token noise (6–7 chars, 4
+ * occurrences).
  *
  * This runs two real `bun run build`s, so it is slow (tens of seconds); that
  * cost buys the only proof that actually exercises the build pipeline rather
@@ -74,15 +78,14 @@ describe('bundle measurement is independent of the git-derived version string le
 				'abcdef1234567890'
 			);
 
-			// SvelteKit stamps a random `__sveltekit_<token>` identifier into one
-			// chunk on every build (six or seven characters, four occurrences), an
-			// unrelated four bytes of noise `docs/bundle-audit.md` documents and
-			// this test tolerates. What it must not tolerate is anything close to
-			// the eight-byte-or-more delta the variable-length version string used
-			// to cause.
-			expect(Math.abs(long.javascriptBytes - short.javascriptBytes)).toBeLessThanOrEqual(4);
+			// Previously, SvelteKit stamped a random `__sveltekit_<token>` identifier
+			// (six or seven characters, four occurrences) on every build, adding
+			// unrelated noise. Now `kit.version.name` is pinned during measurement
+			// builds, so the token is consistent. Measurements must be byte-for-byte
+			// identical when no source changes.
+			expect(Math.abs(long.javascriptBytes - short.javascriptBytes)).toBeLessThanOrEqual(0);
 			expect(long.cssBytes).toBe(short.cssBytes);
-			expect(Math.abs(long.largestAsset.bytes - short.largestAsset.bytes)).toBeLessThanOrEqual(4);
+			expect(Math.abs(long.largestAsset.bytes - short.largestAsset.bytes)).toBeLessThanOrEqual(0);
 		} finally {
 			await rm(binDirectory, { recursive: true, force: true });
 		}

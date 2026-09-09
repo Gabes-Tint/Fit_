@@ -1,3 +1,4 @@
+import type * as NodeFs from 'node:fs';
 import {
 	chmodSync,
 	existsSync,
@@ -13,6 +14,24 @@ import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { applicationDatabasePath, getDatabase, migrate, openDatabase } from './db';
+
+// `statSync` is wrapped so one test can force an insecure stat result without
+// disturbing every other test's real filesystem assertions: the wrapped
+// implementation delegates to the actual `statSync` unless a test overrides
+// it with `mockImplementation`.
+vi.mock('node:fs', async (importOriginal) => {
+	const actual = await importOriginal<typeof NodeFs>();
+	return { ...actual, statSync: vi.fn(actual.statSync) };
+});
+
+// Captured once, so a test that overrides `statSync` can restore the real
+// implementation afterwards instead of leaving a mocked return value in
+// place for whichever test happens to call `statSync` next.
+const capturedRealStatSync = vi.mocked(statSync).getMockImplementation();
+if (capturedRealStatSync === undefined) {
+	throw new Error('expected the node:fs mock factory to seed a default statSync implementation');
+}
+const realStatSync = capturedRealStatSync;
 
 const temporaryDirectories: string[] = [];
 
@@ -276,6 +295,38 @@ describe('openDatabase', () => {
 			expect(statSync(directory).mode & 0o777).toBe(0o755);
 		}
 	);
+
+	it.skipIf(process.platform === 'win32')(
+		'does not require privacy from a directory it just created',
+		() => {
+			// The mode passed to mkdirSync already makes a fresh directory private
+			// (0700), so this forces statSync to lie about it: only the
+			// `created === undefined` guard, not the real mode, can be why this
+			// does not throw.
+			const path = temporaryPath('brand-new/nested/app.sqlite');
+			vi.mocked(statSync).mockImplementation(
+				() => ({ mode: 0o777 }) as ReturnType<typeof statSync>
+			);
+			try {
+				expect(() => openDatabase(path)).not.toThrow();
+			} finally {
+				vi.mocked(statSync).mockImplementation(realStatSync);
+			}
+		}
+	);
+
+	it('does not require directory privacy on a platform without POSIX modes', () => {
+		const path = temporaryPath('app.sqlite');
+		const directory = dirname(path);
+		chmodSync(directory, 0o755);
+		const originalPlatform = process.platform;
+		Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+		try {
+			expect(() => openDatabase(path)).not.toThrow();
+		} finally {
+			Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+		}
+	});
 
 	it.skipIf(process.platform === 'win32')(
 		'hardens existing sidecars and closes a connection when migration fails',
