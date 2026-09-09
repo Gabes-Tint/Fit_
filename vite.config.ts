@@ -11,8 +11,6 @@ import {
 import { availableParallelism } from 'node:os';
 import { mkdirSync } from 'node:fs';
 import { playwright } from '@vitest/browser-playwright';
-import adapter from '@sveltejs/adapter-node';
-import adapterStatic from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 
@@ -173,33 +171,7 @@ export default defineConfig({
 		__APP_VERSION__: JSON.stringify(build.version),
 		__APP_COMMIT__: JSON.stringify(build.commit)
 	},
-	plugins: [
-		tailwindcss(),
-		previewKeepAlive(),
-		sveltekit({
-			compilerOptions: {
-				// Force runes mode for the project, except for libraries. Can be removed in svelte 6.
-				runes: ({ filename }) =>
-					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
-			},
-
-			// Pinned so `bun run build` proves a deployable artifact rather than
-			// succeeding while adapting to nothing. A consuming app may swap this
-			// for its own target: https://svelte.dev/docs/kit/adapters
-			//
-			// The Capacitor target is the one exception: a WebView has no Node to
-			// run a server bundle, so that build emits a static SPA into its own
-			// directory. Both are real artifacts; neither adapts to nothing.
-			adapter: process.env.VITE_CAPACITOR
-				? adapterStatic({
-						pages: 'build-capacitor',
-						assets: 'build-capacitor',
-						fallback: 'index.html',
-						precompress: false
-					})
-				: adapter()
-		})
-	],
+	plugins: [tailwindcss(), previewKeepAlive(), sveltekit()],
 	server: { allowedHosts: DEV_HOSTS },
 	preview: {
 		allowedHosts: ['host.docker.internal', ...DEV_HOSTS]
