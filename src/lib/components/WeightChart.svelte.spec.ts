@@ -246,7 +246,7 @@ describe('WeightChart scrubbing', () => {
 	/**
 	 * #today-polish: the viewBox's width now tracks the box's own measured
 	 * `clientWidth` (`bind:clientWidth` in the component) instead of a fixed
-	 * 320, so a box of any width scales at 1 rather than being letterboxed by
+	 * 320, so a box of any width scales at 1 rather than being letter-boxed by
 	 * `preserveAspectRatio`'s default `xMidYMid meet`. Height is set to match
 	 * the fixed drawing height exactly, so the box and the viewBox line up on
 	 * both axes and a click at the drawing's own edge lands on the point

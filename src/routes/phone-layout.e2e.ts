@@ -148,8 +148,8 @@ test.describe('at 360px', () => {
 		const gridlines = chart.locator('line');
 		const topBox = await gridlines.first().boundingBox();
 		const bottomBox = await gridlines.last().boundingBox();
-		expect(topBox, 'no gridline to measure').not.toBeNull();
-		expect(bottomBox, 'no gridline to measure').not.toBeNull();
+		expect(topBox, 'gridlines missing, nothing to measure').not.toBeNull();
+		expect(bottomBox, 'gridlines missing, nothing to measure').not.toBeNull();
 		const { y: topY } = topBox as { y: number };
 		const { y: bottomY, height: bottomHeight } = bottomBox as { y: number; height: number };
 
