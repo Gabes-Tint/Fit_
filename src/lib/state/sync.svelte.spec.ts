@@ -2343,6 +2343,50 @@ describe('a document the server will not accept for its size', () => {
 		expect(sync.version).toBe(1);
 	});
 
+	it('measures the wire, not the string, so a document that shrank is offered', async () => {
+		// The refused document carries accented food and brand names, which cost
+		// two bytes each and one code unit each. The one that replaces it is
+		// longer in code units and smaller on the wire — which is the document
+		// the server would now accept, and the one a device measuring
+		// `payload.length` would silently refuse to send (#282).
+		const store = journal();
+		store.state.profiles.push({ ...emptyProfile({ name: 'é'.repeat(400) }), id: 'p-bulk' });
+		store.persist();
+		const sent = server([documentAnswer(0, null), tooLarge(), stored(1)]);
+		const sync = syncFor(store);
+		await sync.start(HOUSEHOLD);
+		expect(sync.status).toBe('too-large');
+
+		store.state.profiles[1] = { ...emptyProfile({ name: 'a'.repeat(600) }), id: 'p-bulk' };
+		store.persist();
+		const flushed = await sync.flush();
+
+		expect(sent).toHaveLength(3);
+		expect(flushed).toBe(true);
+		expect(sync.status).toBe('idle');
+	});
+
+	it('stops holding a refusal against a document the server has since taken', async () => {
+		const store = bulkyJournal();
+		const sent = server([documentAnswer(0, null), tooLarge(), stored(1), stored(2)]);
+		const sync = syncFor(store);
+		await sync.start(HOUSEHOLD);
+
+		store.state.profiles.splice(1, 1);
+		store.persist();
+		await sync.flush();
+		// Bigger than the document that was refused, on a server that has just
+		// accepted a write. What it will do with this one is its answer to give,
+		// not this device's to assume.
+		store.state.profiles.push({ ...emptyProfile({ name: 'C'.repeat(9000) }), id: 'p-bigger' });
+		store.persist();
+		const flushed = await sync.flush();
+
+		expect(sent).toHaveLength(4);
+		expect(flushed).toBe(true);
+		expect(sync.version).toBe(2);
+	});
+
 	it('is not what an ordinary malformed-body refusal means', async () => {
 		const store = journal();
 		server([documentAnswer(0, null), jsonResponse({ error: { code: 'invalid-body' } }, 400)]);

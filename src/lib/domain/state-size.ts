@@ -49,6 +49,23 @@ export const TOO_LARGE_MESSAGE =
 	'Your data has outgrown what the server accepts, so it is not being sent. It is still saved on this device — export a backup from the You page.';
 
 /**
+ * The bytes a payload takes on the wire, which is the unit the ceiling is named
+ * in and the unit the server counts (`readJsonText` in `api.ts`).
+ *
+ * Not `payload.length`: that is UTF-16 code units, and a document full of
+ * accented food and brand names measures far smaller that way than it does on
+ * the wire. Comparing one document's code units with another's is not even
+ * self-consistent — a shorter string of accented names outweighs a longer
+ * plain-ASCII one — so a device measuring that way can conclude a document has
+ * grown when it has shrunk, and stop sending without asking (#282).
+ */
+const encoder = new TextEncoder();
+
+export function payloadBytes(payload: string): number {
+	return encoder.encode(payload).length;
+}
+
+/**
  * Whether this answer is the size refusal. Both halves are checked: a `reason`
  * on some other code is another endpoint's word, not this one.
  */
@@ -71,9 +88,11 @@ export function refusedForSize(body: unknown): boolean {
  * shrank, by a profile removed or entries deleted, syncs again by itself with
  * nobody having to know why it stopped.
  *
- * `refusedAt` is deliberately not remembered across a reload. A device starting
- * fresh asks once and finds out, which is right when the ceiling it ran into
- * belongs to a server that may have been raised since.
+ * `refusedAt` is deliberately short-lived. It is dropped the moment a write is
+ * accepted — the bound was learned about a conversation that has since moved
+ * on, and a server may have been given a larger ceiling in the meantime — and
+ * it is not remembered across a reload at all, so a device starting fresh asks
+ * once and finds out.
  */
 export function worthSending(refusedAt: number | null, size: number): boolean {
 	return refusedAt === null || size < refusedAt;

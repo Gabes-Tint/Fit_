@@ -7,7 +7,7 @@ import {
 	storedDocument,
 	type StoredDocument
 } from '$lib/domain/state-document';
-import { refusedForSize, refusedSize, worthSending } from '$lib/domain/state-size';
+import { payloadBytes, refusedForSize, refusedSize, worthSending } from '$lib/domain/state-size';
 import { toast } from '$lib/ui/toast.svelte';
 import {
 	fingerprint,
@@ -126,6 +126,18 @@ type ReadOutcome = RemoteDocument | NoDocument;
  * request — see `state-size.ts`.
  */
 type WriteOutcome = ({ stale: boolean } & RemoteDocument) | NoDocument | 'too-large';
+
+/**
+ * One write on its way out: the document, the exact text carrying it, and what
+ * that text measures on the wire. Bundled rather than positional for the same
+ * reason `Adoption` below is.
+ */
+type OutgoingWrite = {
+	householdId: string;
+	body: StoredDocument;
+	payload: string;
+	size: number;
+};
 
 /**
  * What an adoption puts into the store, bundled rather than positional:
@@ -560,13 +572,16 @@ export class SyncStore {
 	private async push(householdId: string, again = true): Promise<boolean> {
 		const body = storedDocument($state.snapshot(this.store.state));
 		const payload = envelope(this.version, body);
-		const result = await this.send(householdId, body, payload);
+		// Measured in the unit the server's ceiling is named in, which is not the
+		// unit a string reports its own length in; see `payloadBytes`.
+		const size = payloadBytes(payload);
+		const result = await this.send({ householdId, body, payload, size });
 		// The account this write was for is no longer the one signed in here, so
 		// neither the version it created nor the document it was refused with
 		// belongs to whoever is.
 		if (this.householdId !== householdId) return false;
 		if (result === 'unreachable' || result === 'refused' || result === 'too-large') {
-			this.stalled(result, payload.length);
+			this.stalled(result, size);
 			return false;
 		}
 		if (result.stale) {
@@ -590,6 +605,11 @@ export class SyncStore {
 		}
 		this.outstanding = null;
 		this.version = result.version;
+		// The server took this document, so whatever it refused before belongs to
+		// a conversation that has moved on — and to a ceiling it may since have
+		// been given more of. The next document that is too large finds out by
+		// being offered rather than by being assumed.
+		this.refusedAt = null;
 		this.save(householdId);
 		this.status = 'idle';
 		return this.dirty;
@@ -604,17 +624,10 @@ export class SyncStore {
 	 * document only grows — so the answer is known, and asking again would cost
 	 * megabytes of somebody's mobile data to hear it. Refusing it here rather
 	 * than after the bookkeeping is the point of doing it here at all: nothing
-	 * left the device, so nothing is recorded as an unanswered write. The size
-	 * measured is the payload's code units rather than its bytes, because it is
-	 * only ever compared with another measurement of the same kind and never
-	 * with the server's ceiling.
+	 * left the device, so nothing is recorded as an unanswered write.
 	 */
-	private async send(
-		householdId: string,
-		body: StoredDocument,
-		payload: string
-	): Promise<WriteOutcome> {
-		if (!worthSending(this.refusedAt, payload.length)) return 'too-large';
+	private async send(write: OutgoingWrite): Promise<WriteOutcome> {
+		if (!worthSending(this.refusedAt, write.size)) return 'too-large';
 		this.status = 'saving';
 		// Recorded before the request goes out and while the record still reads
 		// dirty, because the case this covers is the one where no answer ever
@@ -623,10 +636,10 @@ export class SyncStore {
 		// already unanswered rather than replacing it — a device that hears
 		// nothing goes on writing, and the write that landed is as likely to be
 		// an earlier one as this. See `outstanding-write.ts`.
-		this.outstanding = pendingWrite(this.outstanding, this.version, fingerprint(body));
-		this.save(householdId);
+		this.outstanding = pendingWrite(this.outstanding, this.version, fingerprint(write.body));
+		this.save(write.householdId);
 		this.dirty = false;
-		return writeRemote(payload);
+		return writeRemote(write.payload);
 	}
 
 	/**
