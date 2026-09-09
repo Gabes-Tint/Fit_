@@ -40,7 +40,7 @@ const QUOTA_ERROR_NAMES = ['QuotaExceededError', 'NS_ERROR_DOM_QUOTA_REACHED'];
  * `Object()` is what lets that read run over `null` and `undefined` too, so
  * there is no guard here that no browser would ever exercise.
  */
-export function isStorageFull(error: unknown): boolean {
+function isStorageFull(error: unknown): boolean {
 	const thrown = Object(error) as { name?: unknown };
 	return QUOTA_ERROR_NAMES.includes(String(thrown.name));
 }
