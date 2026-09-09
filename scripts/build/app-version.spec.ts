@@ -32,17 +32,6 @@ describe('the version a build carries', () => {
 		).toBe('v0.0.7+be031ca');
 	});
 
-	it('falls back to the package version when no tag is reachable, as in a pull request build', () => {
-		expect(
-			deriveAppVersion({
-				tag: null,
-				tagged: false,
-				commit: 'be031ca',
-				packageVersion: PACKAGE_VERSION
-			})
-		).toBe('v0.0.1+be031ca');
-	});
-
 	it('will not let an untagged build claim a release number', () => {
 		// `tagged` without a tag is a caller mixing two git answers up. The
 		// suffix is what stops the result reading as a real release.

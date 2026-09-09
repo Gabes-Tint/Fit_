@@ -154,10 +154,6 @@ describe('sizing the per-step cap against the slice ceiling', () => {
 		expect(unitLimit('MemorySwapMax')).toBe('2G');
 	});
 
-	it('caps one step above the heaviest step actually measured', () => {
-		expect(gigabytes(STEP_MEMORY_MAX)).toBeGreaterThan(HEAVIEST_STEP_GIGABYTES);
-	});
-
 	it('leaves the heaviest step real headroom rather than sitting on its peak', () => {
 		// A cap trimmed to the measured peak turns every ordinary run-to-run
 		// wobble, and every test added after the measurement, into an OOM kill

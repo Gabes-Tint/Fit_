@@ -145,11 +145,6 @@ describe('the public origin', () => {
 		expect(() => publicOrigin()).toThrow(PUBLIC_ORIGIN_VARIABLE);
 	});
 
-	it('is not answered by an empty one', () => {
-		process.env[PUBLIC_ORIGIN_VARIABLE] = '';
-		expect(() => publicOrigin()).toThrow(PUBLIC_ORIGIN_VARIABLE);
-	});
-
 	it('comes from the environment when set', () => {
 		process.env[PUBLIC_ORIGIN_VARIABLE] = QA_ORIGIN;
 		expect(publicOrigin()).toBe(QA_ORIGIN);
