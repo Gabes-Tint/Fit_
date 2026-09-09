@@ -51,6 +51,15 @@ describe('parseISODate', () => {
 	it('falls back when only the day is not a number', () => {
 		expect(todayISO(parseISODate('2026-01-x'))).toBe('1970-01-01');
 	});
+
+	// Year, month and day of zero are real (if unusual) values, not a missing
+	// field: folding a missing part to NaN must not also catch zero, which
+	// `0 ?? NaN` preserves but `0 && NaN` would not.
+	it('keeps a year, month or day of zero rather than treating it as missing', () => {
+		expect(todayISO(parseISODate('0000-01-05'))).not.toBe('1970-01-01');
+		expect(todayISO(parseISODate('2026-00-05'))).not.toBe('1970-01-01');
+		expect(todayISO(parseISODate('2026-01-00'))).not.toBe('1970-01-01');
+	});
 });
 
 describe('addDaysISO', () => {
