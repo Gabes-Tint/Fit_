@@ -132,4 +132,50 @@ describe('WeightChart scrubbing', () => {
 		expect(label).toMatch(/Weight trend from Jun 1 to Jun 3/);
 		expect(label).toMatch(/80 to 78 kilograms/);
 	});
+
+	it('ignores a pointermove or pointerup with no active pointer down', async () => {
+		await render(WeightChart, { props: { weights: readings([80, 79, 78]) } });
+		const rect = svgRect();
+
+		pointerAt('pointermove', rect.left + rect.width - 1, { pointerType: 'mouse' });
+		pointerAt('pointerup', rect.left + rect.width - 1, { pointerType: 'mouse' });
+
+		await expect
+			.element(page.getByRole('img').getByText(/·/, { exact: false }))
+			.not.toBeInTheDocument();
+	});
+
+	it('keeps the selection through a touch pointerup and a touch pointerleave', async () => {
+		await render(WeightChart, { props: { weights: readings([80, 79, 78]) } });
+		const rect = svgRect();
+
+		pointerAt('pointerdown', rect.left + rect.width - 1, { pointerType: 'touch' });
+		await expect.element(chartLabel('Jun 3 · 78.0 kg')).toBeInTheDocument();
+
+		pointerAt('pointerup', rect.left + rect.width - 1, { pointerType: 'touch' });
+		pointerAt('pointerleave', rect.left + rect.width - 1, { pointerType: 'touch' });
+
+		await expect.element(chartLabel('Jun 3 · 78.0 kg')).toBeInTheDocument();
+	});
+
+	it('a new touch elsewhere on the chart replaces a lingering touch selection', async () => {
+		await render(WeightChart, { props: { weights: readings([80, 79, 78]) } });
+		const rect = svgRect();
+
+		pointerAt('pointerdown', rect.left + rect.width - 1, { pointerType: 'touch' });
+		pointerAt('pointerup', rect.left + rect.width - 1, { pointerType: 'touch' });
+		await expect.element(chartLabel('Jun 3 · 78.0 kg')).toBeInTheDocument();
+
+		pointerAt('pointerdown', rect.left + 1, { pointerType: 'touch', pointerId: 2 });
+		await expect.element(chartLabel('Jun 1 · 80.0 kg')).toBeInTheDocument();
+	});
+
+	it('selects the leftmost point when the pointer starts there, exercising every candidate in the nearest-point scan', async () => {
+		await render(WeightChart, { props: { weights: readings([80, 79, 78, 77]) } });
+		const rect = svgRect();
+
+		pointerAt('pointerdown', rect.left + 1, { pointerType: 'mouse' });
+
+		await expect.element(chartLabel('Jun 1 · 80.0 kg')).toBeInTheDocument();
+	});
 });

@@ -113,10 +113,12 @@
 	}
 
 	/**
-	 * Mouse clears on release, as it does on leave below; a finger's selection
-	 * outlives the lift so the reading can still be read once the hand is out
-	 * of the way, and is cleared by `clearOnOutsideTouch` instead (see there for
-	 * which of the two allowed mechanisms this component picked and why).
+	 * Chosen touch-clearing mechanism: a finger's selection outlives the lift
+	 * (unlike a mouse's, cleared right here) so the reading stays legible once
+	 * the hand is out of the way, and clears only when a new touch lands on the
+	 * chart — `handlePointerDown` above already re-selects on every pointerdown,
+	 * touch included, so nothing further is needed to make "a new touch starts
+	 * elsewhere on the chart" replace the old reading with the new one.
 	 */
 	function handlePointerUp(event: PointerEvent) {
 		if (activePointerId === null || event.pointerId !== activePointerId) return;
@@ -130,25 +132,6 @@
 		if (event.pointerType === 'touch') return;
 		selectedIndex = null;
 	}
-
-	/**
-	 * Touch clearing, chosen: a lingering selection clears on a tap outside the
-	 * chart, not on a fresh touch landing elsewhere inside it (the other option
-	 * the brief allowed) — a new touch inside the chart already lands on
-	 * `handlePointerDown` and moves the selection to wherever it landed, so a
-	 * second listener racing it to "clear first" would only flicker the label
-	 * before the new point replaced it.
-	 */
-	function clearOnOutsideTouch(event: PointerEvent) {
-		if (event.pointerType !== 'touch' || selectedIndex === null) return;
-		if (svgEl && event.target instanceof Node && svgEl.contains(event.target)) return;
-		selectedIndex = null;
-	}
-
-	$effect(() => {
-		window.addEventListener('pointerdown', clearOnOutsideTouch);
-		return () => window.removeEventListener('pointerdown', clearOnOutsideTouch);
-	});
 </script>
 
 {#if geometry}
