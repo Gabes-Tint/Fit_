@@ -6,12 +6,14 @@
 	import Button from '$lib/ui/Button.svelte';
 	import Input from '$lib/ui/Input.svelte';
 
-	let { units, id = 'weight' }: { units: UnitSystem; id?: string } = $props();
+	let { units }: { units: UnitSystem } = $props();
 
 	let enteredWeight = $state('');
 
 	const weightAbbr = $derived(weightUnitAbbr(units));
 	const weightName = $derived(weightUnitName(units));
+	const weightPlaceholder = $derived(`Weight in ${weightAbbr}`);
+	const weightAriaLabel = $derived(`Weight in ${weightName}`);
 
 	function saveFor(daysAgo: 0 | 1 | 2) {
 		const n = Number(enteredWeight);
@@ -28,10 +30,10 @@
 
 <form class="flex flex-col gap-2" onsubmit={saveWeight}>
 	<Input
-		{id}
+		id="weight"
 		inputmode="decimal"
-		placeholder="Weight in {weightAbbr}"
-		aria-label="Weight in {weightName}"
+		placeholder={weightPlaceholder}
+		aria-label={weightAriaLabel}
 		bind:value={enteredWeight}
 	/>
 	<div class="flex gap-2">
