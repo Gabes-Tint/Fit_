@@ -91,7 +91,7 @@
 
 	function cycle(step: number) {
 		const index = ORDER.indexOf(selected);
-		selected = ORDER[(index + step + ORDER.length) % ORDER.length];
+		selected = ORDER[(index + step + ORDER.length) % ORDER.length] ?? null;
 	}
 
 	function onkeydown(event: KeyboardEvent) {

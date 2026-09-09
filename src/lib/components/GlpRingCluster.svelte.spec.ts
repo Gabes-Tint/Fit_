@@ -22,14 +22,15 @@ describe('GlpRingCluster', () => {
 		const radii = ringRadii();
 		// Two circles (track + progress) per ring, so six in total.
 		expect(radii).toHaveLength(6);
+		const [energyTrack, energyArc, proteinTrack, proteinArc, fiberTrack, fiberArc] = radii;
 		// The first pair (Energy) has the largest radius, the last pair
 		// (Fiber) the smallest — each smaller than the last by more than a
 		// stroke width, so there is a visible gap between rings.
-		expect(radii[0]).toBe(radii[1]);
-		expect(radii[2]).toBe(radii[3]);
-		expect(radii[4]).toBe(radii[5]);
-		expect(radii[0]).toBeGreaterThan(radii[2]);
-		expect(radii[2]).toBeGreaterThan(radii[4]);
+		expect(energyTrack).toBe(energyArc);
+		expect(proteinTrack).toBe(proteinArc);
+		expect(fiberTrack).toBe(fiberArc);
+		expect(energyTrack).toBeGreaterThan(proteinTrack ?? 0);
+		expect(proteinTrack).toBeGreaterThan(fiberTrack ?? 0);
 	});
 
 	it('is empty at the centre by default', async () => {
