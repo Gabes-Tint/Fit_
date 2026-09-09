@@ -29,8 +29,20 @@ const DRAWER_MARKER = 'Everything stays on this device.';
 /**
  * Stall the drawer's chunk until the returned function is called. Every other
  * request is passed straight through, so only this one thing is late.
+ *
+ * Recognizing the chunk costs an interception of every script the app asks
+ * for, and the app keeps asking after the last assertion has been made: the
+ * log sheet, the onboarding screen and the route chunks behind the drawer's
+ * own links all arrive on their own schedule. One of those was still inside
+ * `route.fetch()` when this test ended in run 34293608030, which fails the
+ * whole shard under `failOnFlakyTests` -- not because anything about the
+ * drawer was wrong, but because an interception outlived what it was for.
+ *
+ * So releasing also takes the interception down: `unrouteAll` waits for the
+ * handler this just let go of to finish fulfilling, and every script asked for
+ * afterwards is served without passing through here at all.
  */
-async function holdBackTheDrawer(page: Page): Promise<() => void> {
+async function holdBackTheDrawer(page: Page): Promise<() => Promise<void>> {
 	let release = (): void => {};
 	const held = new Promise<void>((resolve) => {
 		release = resolve;
@@ -41,7 +53,10 @@ async function holdBackTheDrawer(page: Page): Promise<() => void> {
 		if (body.includes(DRAWER_MARKER)) await held;
 		await route.fulfill({ response, body });
 	});
-	return release;
+	return async () => {
+		release();
+		await page.unrouteAll({ behavior: 'wait' });
+	};
 }
 
 test('draws the journal while the drawer is still on its way', async ({ page, baseURL }) => {
@@ -54,7 +69,7 @@ test('draws the journal while the drawer is still on its way', async ({ page, ba
 		await expect(page.getByRole('button', { name: 'Open menu' })).toBeVisible();
 		await expect(page.getByRole('dialog')).toBeHidden();
 	} finally {
-		release();
+		await release();
 	}
 });
 
@@ -66,7 +81,7 @@ test('opens the drawer for a tap that beat its chunk to the screen', async ({ pa
 		await page.getByRole('button', { name: 'Open menu' }).click();
 		await expect(page.getByRole('dialog')).toBeHidden();
 	} finally {
-		release();
+		await release();
 	}
 
 	// The tap is not lost waiting: the drawer opens the moment it can, on the
