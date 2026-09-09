@@ -17,8 +17,13 @@ export function addDaysISO(iso: string, days: number) {
 
 export function parseISODate(iso: string) {
 	// A malformed string must not become an Invalid Date: NaN would propagate and fail silently.
-	const [y, m, d] = iso.split('-').map(Number);
-	if (y === undefined || m === undefined || d === undefined) return new Date(1970, 0, 1);
+	// A string with too few '-'-separated parts leaves a part undefined; folding
+	// it to NaN here means the isFinite check below is the only guard this
+	// function needs, for a missing part and one that parses to NaN alike.
+	const [yPart, mPart, dPart] = iso.split('-').map(Number);
+	const y = yPart ?? NaN;
+	const m = mPart ?? NaN;
+	const d = dPart ?? NaN;
 	if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) {
 		return new Date(1970, 0, 1);
 	}
