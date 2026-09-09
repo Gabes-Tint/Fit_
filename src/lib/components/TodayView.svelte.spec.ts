@@ -137,7 +137,7 @@ describe('TodayView', () => {
 
 	it('leads with energy for a calorie-led profile', async () => {
 		await render(TodayView);
-		await expect.element(page.getByText('Energy').first()).toBeInTheDocument();
+		await expect.element(page.getByText(/of \d+\s*kcal/).first()).toBeInTheDocument();
 	});
 
 	it('leads with protein on GLP-1', async () => {
@@ -150,13 +150,6 @@ describe('TodayView', () => {
 		onboard(true);
 		await render(TodayView);
 		await expect.element(page.getByText('Fiber').first()).toBeInTheDocument();
-	});
-
-	it('says plainly that unlogged days are not counted as zero', async () => {
-		await render(TodayView);
-		expect(document.body.textContent?.replace(/\s+/g, ' ')).toContain(
-			'unlogged days are not counted as zero'
-		);
 	});
 
 	it('drops the single Log something button in favor of per-meal buttons', async () => {

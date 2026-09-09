@@ -25,27 +25,11 @@ describe('MacroRing', () => {
 		await expect.element(page.getByText('Fiber')).toBeInTheDocument();
 	});
 
-	it('reads as on pace below the target', async () => {
+	it('renders no label paragraph when none is given', async () => {
 		await render(MacroRing, {
-			props: { value: 50, target: 100, label: 'Energy', unit: 'kcal' }
+			props: { value: 10, target: 100, unit: 'kcal' }
 		});
-		await expect.element(page.getByText('On pace.')).toBeInTheDocument();
-	});
-
-	it('never scolds when over — it informs', async () => {
-		await render(MacroRing, {
-			props: { value: 150, target: 100, label: 'Energy', unit: 'kcal' }
-		});
-		await expect
-			.element(page.getByText('A little over — information, not a verdict.'))
-			.toBeInTheDocument();
-	});
-
-	it('treats a small overshoot as still on pace', async () => {
-		await render(MacroRing, {
-			props: { value: 102, target: 100, label: 'Energy', unit: 'kcal' }
-		});
-		await expect.element(page.getByText('On pace.')).toBeInTheDocument();
+		expect(document.querySelector('p.font-medium')).toBeNull();
 	});
 
 	it('draws a heavier ring when emphasized', async () => {

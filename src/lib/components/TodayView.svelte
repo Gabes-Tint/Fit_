@@ -89,22 +89,9 @@
 						unit="g"
 						size={108}
 					/>
-					<MacroRing
-						value={dayTotals.kcal}
-						target={targets.kcal}
-						label="Energy"
-						unit="kcal"
-						size={96}
-					/>
+					<MacroRing value={dayTotals.kcal} target={targets.kcal} unit="kcal" size={96} />
 				{:else}
-					<MacroRing
-						value={dayTotals.kcal}
-						target={targets.kcal}
-						label="Energy"
-						unit="kcal"
-						emphasis
-						size={148}
-					/>
+					<MacroRing value={dayTotals.kcal} target={targets.kcal} unit="kcal" emphasis size={148} />
 					<div class="flex flex-col justify-center gap-3 pt-2 text-sm">
 						<MiniStat label="Protein" value={dayTotals.protein} target={targets.protein} unit="g" />
 						<MiniStat label="Carbs" value={dayTotals.carbs} target={targets.carbs} unit="g" />
@@ -112,10 +99,6 @@
 					</div>
 				{/if}
 			</div>
-			<p class="text-muted-foreground mt-4 px-3 text-center text-xs">
-				Week’s average {Math.round(week.avg.kcal) || '—'} kcal on logged days — unlogged days are not
-				counted as zero.
-			</p>
 		</section>
 
 		<section class="bg-card grid grid-cols-2 gap-3 rounded-3xl px-4 py-3 shadow-border text-sm">
