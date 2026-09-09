@@ -196,10 +196,10 @@ test.describe('at 360px', () => {
 		// Scrolled one step down, the way reading past the expanded form
 		// naturally would: this used to be the exact scroll position where the
 		// fixed "Log food" FAB sat over the "Today" submit button and stole its
-		// tap (#today-card-actions review). The FAB is gone (#today-polish), but
-		// the check stays as regression coverage against anything else that
-		// ends up fixed at the bottom of the screen. A direct scroll rather than
-		// a simulated wheel: Chromium's wheel-driven scroll can still be
+		// tap (#today-card-actions review). That button is gone, but the menu
+		// toggle floats in the same corner now and never hides, so this is once
+		// again a live check rather than a standing guard. A direct scroll rather
+		// than a simulated wheel: Chromium's wheel-driven scroll can still be
 		// mid-flight (and occasionally double-applies) the instant after
 		// dispatch, which made this landing spot non-deterministic.
 		await page.evaluate(() => window.scrollBy(0, 400));
@@ -215,6 +215,73 @@ test.describe('at 360px', () => {
 
 		const energyCard = page.getByRole('region', { name: 'Energy' });
 		await expectFitsViewport(page, energyCard);
+	});
+
+	/**
+	 * The menu is a button floating in the bottom-right corner of every signed-in
+	 * screen, and it never hides — so on the narrowest phone this ships to, it is
+	 * the thing most likely to be sitting on top of something a person is trying
+	 * to press. The Today cards put their own actions in exactly that corner.
+	 *
+	 * This is the shape of the failure #today-card-actions found with the old
+	 * floating log button, and the reason `AppShell` keeps 5.5rem of clearance
+	 * under the page: the toggle must never be what a tap lands on when a tap was
+	 * aimed somewhere else.
+	 */
+	test('the Today card actions are still tappable under the floating menu', async ({
+		page,
+		baseURL
+	}) => {
+		await signInThroughApi(page, baseURL ?? '');
+		await page.goto('/');
+		await atNarrowPhone(page);
+		await openSampleJournal(page);
+
+		const toggle = page.getByRole('button', { name: 'Open menu' });
+		await expect(toggle).toBeVisible();
+		await expectFitsViewport(page, toggle);
+
+		// Its own tap target first: a button nobody can hit is no better than one
+		// that hides.
+		const toggleBox = await toggle.boundingBox();
+		expect(toggleBox, 'the menu toggle has no box to measure').not.toBeNull();
+		const { width, height } = toggleBox as { width: number; height: number };
+		expect(width, 'the menu toggle is narrower than its 44px tap target').toBeGreaterThanOrEqual(
+			44
+		);
+		expect(height, 'the menu toggle is shorter than its 44px tap target').toBeGreaterThanOrEqual(
+			44
+		);
+		await expectHittable(toggle);
+
+		const logFood = page.getByRole('region', { name: 'Energy' }).getByRole('button', {
+			name: 'Log food'
+		});
+		await expect(logFood).toBeVisible();
+		await expectHittable(logFood);
+
+		const logWeight = page.getByRole('button', { name: 'Log weight' });
+		await expect(logWeight).toBeVisible();
+		await expectHittable(logWeight);
+
+		// And at the foot of the page, which is where the clearance is spent: the
+		// last card's action must be scrollable clear of a button pinned to the
+		// bottom of the screen.
+		await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+		await expectHittable(page.getByRole('link', { name: 'Go to training' }));
+	});
+
+	test('the whole Today page still fits the narrow phone with the toggle on it', async ({
+		page,
+		baseURL
+	}) => {
+		await signInThroughApi(page, baseURL ?? '');
+		await page.goto('/');
+		await atNarrowPhone(page);
+		await openSampleJournal(page);
+
+		await expect(page.getByRole('button', { name: 'Open menu' })).toBeVisible();
+		await expectFitsViewport(page);
 	});
 
 	// GLP-1 mode used to swap the Energy card for a concentric ring cluster

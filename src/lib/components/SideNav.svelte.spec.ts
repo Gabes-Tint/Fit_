@@ -4,6 +4,7 @@ import { render } from 'vitest-browser-svelte';
 import { session } from '$lib/state/session.svelte';
 import { signedInSession } from '$lib/testing/fixtures';
 import { APP_VERSION } from '$lib/version';
+import { DRAWER_ID } from './MenuFab.svelte';
 import SideNav from './SideNav.svelte';
 
 const DESTINATIONS = ['Today', 'Progress', 'Exercise', 'Plan', 'You'];
@@ -73,12 +74,30 @@ describe('SideNav', () => {
 		expect(document.querySelector('a[href$="/"]')?.getAttribute('aria-current')).toBeNull();
 	});
 
-	it('closes from its close control', async () => {
-		const props = $state({ open: true, pathname: '/' });
-		await render(SideNav, { props });
-		await page.getByRole('button', { name: 'Close menu' }).click();
-		expect(props.open).toBe(false);
+	// The drawer carries no close button of its own since the menu became a
+	// floating toggle (`MenuFab`): that toggle stays on screen above this panel
+	// wearing an X, and it is the close control. A second button with the same
+	// name inside here would only make a screen reader ask which one it meant.
+	it('offers no close button of its own, because the toggle outside is the one', async () => {
+		await render(SideNav, { props: { open: true, pathname: '/' } });
+		expect(page.getByRole('button', { name: 'Close menu' }).elements()).toHaveLength(0);
 	});
+
+	it('answers to the name the toggle points at', async () => {
+		await render(SideNav, { props: { open: true, pathname: '/' } });
+		await expect.element(page.getByRole('dialog')).toHaveAttribute('id', DRAWER_ID);
+	});
+
+	// The toggle floats above this drawer's overlay, so `bits-ui` reads a tap on
+	// it as an outside interaction and would close on `pointerdown` — leaving the
+	// toggle's own click to reopen what had just shut. The drawer declines, and
+	// every other outside tap still closes it.
+	// Whether a tap on the floating toggle closes this drawer, and whether a tap
+	// anywhere else still does, is decided by real pointer events against a real
+	// stylesheet — the drawer only treats an interaction as "outside" after
+	// measuring where it landed relative to this panel, and this project renders
+	// components with no stylesheet to measure against. Both are asserted end to
+	// end in `menu-toggle.e2e.ts`.
 
 	it('carries the account block, which is where signing out lives', async () => {
 		// The drawer is inside the gate, so there is always somebody signed in to
