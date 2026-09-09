@@ -28,7 +28,8 @@
 		});
 		tend.addLogItems([item]);
 		toast(`Logged ${food.source.name} to ${meal}.`, {
-			action: { label: 'Undo', onClick: () => tend.removeLog(item.id) }
+			action: { label: 'Undo', onClick: () => tend.removeLog(item.id) },
+			dismissible: true
 		});
 	}
 </script>
