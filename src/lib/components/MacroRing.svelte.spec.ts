@@ -78,7 +78,7 @@ describe('MacroRing', () => {
 	it('draws the track in --color-secondary and the progress arc in --color-primary', async () => {
 		// Regression: the ring used to be drawn by a shared RingArc component;
 		// folding that arc math back into MacroRing must keep the same two
-		// colours, in the same track-then-progress order (#glp1-one-ring).
+		// colors, in the same track-then-progress order (#glp1-one-ring).
 		await render(MacroRing, {
 			props: { value: 50, target: 100, label: 'Protein', unit: 'g' }
 		});
