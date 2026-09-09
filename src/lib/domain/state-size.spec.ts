@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	payloadBytes,
 	refusedForSize,
 	refusedSize,
 	TOO_LARGE_MESSAGE,
@@ -35,6 +36,20 @@ describe('refusedForSize', () => {
 		['an error that is a bare string', { error: TOO_LARGE_REASON }]
 	])('answers no for %s', (_label, answer) => {
 		expect(refusedForSize(answer)).toBe(false);
+	});
+});
+
+describe('payloadBytes', () => {
+	it('counts what the wire carries, not what the string says it is', () => {
+		// An accented food or brand name is one code unit and two bytes, and the
+		// ceiling is named in bytes. A device measuring the other way concludes a
+		// document has grown when it has shrunk (#282).
+		expect('é'.length).toBe(1);
+		expect(payloadBytes('é')).toBe(2);
+	});
+
+	it('agrees with the string for a plain ASCII document, which is most of one', () => {
+		expect(payloadBytes('{"a":1}')).toBe(7);
 	});
 });
 
