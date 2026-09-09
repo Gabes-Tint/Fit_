@@ -42,7 +42,7 @@ your brief gives — both change per session, so never hardcode one.
 
 ## Pre-push
 
-Run `npm run check`, `npm run lint:changed` (or `npm run lint` until it exists), the unit/component specs for files you touched, and the affected e2e file once on one project. For changed files under `src/lib/domain`, `src/lib/server`, or `src/lib/state`, run the mutation lane only. Never the full e2e suite, never `verify` or `verify:deep`, never a full gate — CI is the authority.
+Run exactly the pre-push recipe in QUALITY.md (section "Pre-push"); CI is the authority and re-runs everything. Every gate, spec, e2e, mutation, CI-watch or deploy command runs in the foreground with timeout 600000; the repo's hook refuses run_in_background and Monitor. Never the full e2e suite, never verify or verify:deep locally.
 
 Report in under 150 words, evidence never cut for brevity: what changed, which files, the
 gate result, and anything you could not do.
