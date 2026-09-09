@@ -195,6 +195,36 @@ test.describe('at 360px', () => {
 		await expectFitsViewport(page, toast);
 	});
 
+	test('a toast with Undo and Dismiss stays inside the viewport', async ({ page, baseURL }) => {
+		// The one-tap-log toast is the widest of the two actions it can carry: at
+		// 360px "Undo" and "Dismiss" sit at the right end of the same row as a
+		// sentence naming the food and the meal, which is the shape most likely
+		// to spill (#152's pattern, one screen the earlier sweep did not cover).
+		// The longest branded name this file uses elsewhere (#152) is the food,
+		// so the sentence is as wide as one of these toasts gets.
+		const longName = 'Chocolate Chip Cookie Dough Bar, Family Size';
+		await signInThroughApi(page, baseURL ?? '');
+		await stubFoodSearch(page, [{ ...EGG_ROW, id: 903, name: longName, brand: 'KIND' }]);
+		await atNarrowPhone(page);
+		await openEmptyJournal(page);
+
+		await openLogSheet(page);
+		await page.getByRole('button', { name: 'Search', exact: true }).click();
+		await page.getByLabel('Search foods, brands, barcodes').fill('cookie dough');
+		await page.getByRole('button', { name: `Log ${longName}`, exact: true }).click();
+
+		const undo = page.getByRole('button', { name: 'Undo', exact: true });
+		const dismiss = page.getByRole('button', { name: 'Dismiss', exact: true });
+		await expect(undo).toBeVisible();
+		await expect(dismiss).toBeVisible();
+		// Meal is whichever `guessMeal` picks for the time the test runs, so the
+		// assertion only pins the food name and the sentence shape around it.
+		await expect(page.getByText(new RegExp(`^Logged ${longName} to \\w+\\.$`))).toBeVisible();
+
+		const toastBox = undo.locator('xpath=..');
+		await expectFitsViewport(page, toastBox);
+	});
+
 	test('the sync notice for a document too large to send stays inside the viewport', async ({
 		page,
 		baseURL
