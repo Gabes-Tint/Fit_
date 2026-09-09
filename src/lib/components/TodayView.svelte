@@ -1,5 +1,8 @@
 <script lang="ts">
 	import Plus from '@lucide/svelte/icons/plus';
+	import ArrowRight from '@lucide/svelte/icons/arrow-right';
+	import X from '@lucide/svelte/icons/x';
+	import { resolve } from '$app/paths';
 	import {
 		computeTargets,
 		loggedDatesSet,
@@ -14,6 +17,8 @@
 	import { todayISO, weekdayLong } from '$lib/domain/utils';
 	import { logUi } from '$lib/state/log-ui.svelte';
 	import { tend } from '$lib/state/tend.svelte';
+	import { cn } from '$lib/ui/cn';
+	import { BUTTON_BASE, BUTTON_SIZES, BUTTON_VARIANTS } from '$lib/ui/button-variants';
 	import LogRow from './LogRow.svelte';
 	import PageHeader from './PageHeader.svelte';
 	import GlpRingCluster from './GlpRingCluster.svelte';
@@ -21,9 +26,18 @@
 	import MiniStat from './MiniStat.svelte';
 	import WeekStrip from './WeekStrip.svelte';
 	import WeightChart from './WeightChart.svelte';
+	import WeightEntry from './WeightEntry.svelte';
 
 	let day = $state(todayISO());
 	let editing = $state<string | null>(null);
+	// Starts collapsed on every visit (#the today card actions issue): nothing
+	// persists it open across a reload.
+	let weightExpanded = $state(false);
+
+	// One round action button, reused for the Energy, Weight and Training card
+	// corners: computed once rather than re-run through `cn` at every call site.
+	const CARD_ACTION_CLASS = cn(BUTTON_BASE, BUTTON_VARIANTS.default, BUTTON_SIZES['icon-round']);
+	const CARD_CLOSE_CLASS = cn(BUTTON_BASE, BUTTON_VARIANTS.ghost, BUTTON_SIZES.icon);
 
 	const profile = $derived(tend.profile);
 
@@ -65,8 +79,12 @@
 
 		<WeekStrip {food} exercise={exerciseDays} weight={weightDays} bind:selected={day} />
 
-		<section class="bg-card rounded-3xl px-3 py-5 shadow-border">
-			<div class="flex items-start justify-center gap-3">
+		<section
+			class="bg-card relative rounded-3xl px-3 py-5 shadow-border"
+			aria-labelledby="today-energy-title"
+		>
+			<h2 id="today-energy-title" class="font-display px-1 text-xl tracking-tight">Energy</h2>
+			<div class="mt-2 flex items-start justify-center gap-3">
 				{#if primaryProtein}
 					<GlpRingCluster
 						energyValue={dayTotals.kcal}
@@ -85,19 +103,73 @@
 					</div>
 				{/if}
 			</div>
+			<button
+				type="button"
+				aria-label="Log food"
+				onclick={() => logUi.show()}
+				class={cn(CARD_ACTION_CLASS, 'absolute right-3 bottom-3')}
+			>
+				<Plus class="size-5" />
+			</button>
 		</section>
 
-		<section class="bg-card rounded-3xl p-4 shadow-border" role="group" aria-label="Weight trend">
-			<div class="h-44">
+		<section
+			class="bg-card relative rounded-3xl p-4 shadow-border"
+			aria-labelledby="today-weight-title"
+		>
+			<h2 id="today-weight-title" class="font-display px-1 text-xl tracking-tight">Weight</h2>
+			<div class="mt-1 h-44 pr-16">
 				<WeightChart weights={profile.weights} units={tend.state.units} />
 			</div>
+			{#if weightExpanded}
+				<!--
+					pb-20 clears the fixed `LogFab`: once this card expands and the page
+					scrolls to bring the form into view, the "Today" submit button can
+					otherwise land under the same screen position the floating log
+					button occupies, so a tap saves nothing and opens the food sheet
+					instead (#today-card-actions review). The FAB itself is untouched —
+					it stays reachable everywhere, this card just leaves it room.
+				-->
+				<div class="flex flex-col gap-2 px-1 pb-20">
+					<div class="flex items-center justify-end">
+						<button
+							type="button"
+							aria-label="Close"
+							onclick={() => (weightExpanded = false)}
+							class={CARD_CLOSE_CLASS}
+						>
+							<X class="size-4" />
+						</button>
+					</div>
+					<WeightEntry units={tend.state.units} />
+				</div>
+			{:else}
+				<button
+					type="button"
+					aria-label="Log weight"
+					onclick={() => (weightExpanded = true)}
+					class={cn(CARD_ACTION_CLASS, 'absolute right-3 bottom-3')}
+				>
+					<Plus class="size-5" />
+				</button>
+			{/if}
 		</section>
 
-		<section class="bg-card rounded-3xl px-4 py-3 shadow-border text-sm">
+		<section
+			class="bg-card relative rounded-3xl px-4 py-3 pr-16 shadow-border text-sm"
+			aria-labelledby="today-training-title"
+		>
+			<h2 id="today-training-title" class="font-display px-1 text-xl tracking-tight">Training</h2>
 			<div role="group" aria-label="This week's training">
-				<p class="text-muted-foreground text-xs">Training</p>
 				<p class="mt-0.5">{trainingText}</p>
 			</div>
+			<a
+				href={resolve('/exercise')}
+				aria-label="Go to training"
+				class={cn(CARD_ACTION_CLASS, 'absolute right-3 bottom-3')}
+			>
+				<ArrowRight class="size-5" />
+			</a>
 		</section>
 
 		{#each MEALS as meal (meal)}

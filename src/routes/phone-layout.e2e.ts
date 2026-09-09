@@ -7,6 +7,7 @@ import {
 	OLIVE_OIL_ROW,
 	atNarrowPhone,
 	expectFitsViewport,
+	expectHittable,
 	openEmptyJournal,
 	openLogCardFor,
 	openLogSheet,
@@ -88,8 +89,85 @@ test.describe('at 360px', () => {
 		await atNarrowPhone(page);
 		await openSampleJournal(page);
 
-		const weightCard = page.getByRole('group', { name: 'Weight trend' });
+		const weightCard = page.getByRole('region', { name: 'Weight' });
 		await expectFitsViewport(page, weightCard);
+
+		// The "Log weight" button sits over the chart's bottom-right corner; the
+		// chart reserves space there (like the Training card reserves space for
+		// its own arrow) so the newest point and its end-date label are not
+		// hidden under it (#today-card-actions review). Checked against the
+		// chart's own container box, not the SVG `<text>` node's — Safari's
+		// `getBoundingClientRect` on `text-anchor: end` SVG text is unreliable
+		// and produces false positives unrelated to any real overlap.
+		const chart = page.getByRole('img', { name: /Weight trend/ });
+		await expect(chart).toBeVisible();
+		const chartBox = await chart.boundingBox();
+		expect(chartBox, 'chart has no box to measure').not.toBeNull();
+		const { x, y, width, height } = chartBox as {
+			x: number;
+			y: number;
+			width: number;
+			height: number;
+		};
+		// A few px in from the corner the end-date label and newest point sit
+		// at, so the point lands on the chart's own content rather than its
+		// bare edge.
+		const corner = { x: x + width - 4, y: y + height - 8 };
+		const hit = await page.evaluate(
+			(point) => document.elementFromPoint(point.x, point.y)?.closest('svg') !== null,
+			corner
+		);
+		expect(
+			hit,
+			`something else covers the chart's bottom-right corner at (${corner.x}, ${corner.y})`
+		).toBe(true);
+	});
+
+	test('the Today weight trend card stays inside the viewport expanded', async ({
+		page,
+		baseURL
+	}) => {
+		await signInThroughApi(page, baseURL ?? '');
+		await page.goto('/');
+		await atNarrowPhone(page);
+		await openSampleJournal(page);
+
+		await page.getByRole('button', { name: 'Log weight' }).click();
+		const weightCard = page.getByRole('region', { name: 'Weight' });
+		await expect(page.getByLabel('Weight in kilograms')).toBeVisible();
+		await expectFitsViewport(page, weightCard);
+
+		// Scrolled one step down, the way reading past the expanded form
+		// naturally would: the fixed "Log food" button floats over the same
+		// bottom-right corner the "Today" submit button can land in at this
+		// scroll position, so a tap could open the food sheet instead of
+		// saving (#today-card-actions review). A direct scroll rather than a
+		// simulated wheel: Chromium's wheel-driven scroll can still be
+		// mid-flight (and occasionally double-applies) the instant after
+		// dispatch, which made this landing spot non-deterministic.
+		await page.evaluate(() => window.scrollBy(0, 400));
+		const submit = page.getByRole('button', { name: 'Today', exact: true });
+		await expectHittable(submit);
+	});
+
+	test('the Today energy card stays inside the viewport', async ({ page, baseURL }) => {
+		await signInThroughApi(page, baseURL ?? '');
+		await page.goto('/');
+		await atNarrowPhone(page);
+		await openSampleJournal(page);
+
+		const energyCard = page.getByRole('region', { name: 'Energy' });
+		await expectFitsViewport(page, energyCard);
+	});
+
+	test('the Today training card stays inside the viewport', async ({ page, baseURL }) => {
+		await signInThroughApi(page, baseURL ?? '');
+		await page.goto('/');
+		await atNarrowPhone(page);
+		await openSampleJournal(page);
+
+		const trainingCard = page.getByRole('region', { name: 'Training' });
+		await expectFitsViewport(page, trainingCard);
 	});
 
 	test('the Today weight trend card stays inside the viewport with a scrub selection showing', async ({
@@ -224,6 +302,36 @@ test.describe('at 360px', () => {
 		await expectFitsViewport(page, toast);
 	});
 
+	test('a toast with Undo and Dismiss stays inside the viewport', async ({ page, baseURL }) => {
+		// The one-tap-log toast is the widest of the two actions it can carry: at
+		// 360px "Undo" and "Dismiss" sit at the right end of the same row as a
+		// sentence naming the food and the meal, which is the shape most likely
+		// to spill (#152's pattern, one screen the earlier sweep did not cover).
+		// The longest branded name this file uses elsewhere (#152) is the food,
+		// so the sentence is as wide as one of these toasts gets.
+		const longName = 'Chocolate Chip Cookie Dough Bar, Family Size';
+		await signInThroughApi(page, baseURL ?? '');
+		await stubFoodSearch(page, [{ ...EGG_ROW, id: 903, name: longName, brand: 'KIND' }]);
+		await atNarrowPhone(page);
+		await openEmptyJournal(page);
+
+		await openLogSheet(page);
+		await page.getByRole('button', { name: 'Search', exact: true }).click();
+		await page.getByLabel('Search foods, brands, barcodes').fill('cookie dough');
+		await page.getByRole('button', { name: `Log ${longName}`, exact: true }).click();
+
+		const undo = page.getByRole('button', { name: 'Undo', exact: true });
+		const dismiss = page.getByRole('button', { name: 'Dismiss', exact: true });
+		await expect(undo).toBeVisible();
+		await expect(dismiss).toBeVisible();
+		// Meal is whichever `guessMeal` picks for the time the test runs, so the
+		// assertion only pins the food name and the sentence shape around it.
+		await expect(page.getByText(new RegExp(`^Logged ${longName} to \\w+\\.$`))).toBeVisible();
+
+		const toastBox = undo.locator('xpath=..');
+		await expectFitsViewport(page, toastBox);
+	});
+
 	test('the sync notice for a document too large to send stays inside the viewport', async ({
 		page,
 		baseURL
@@ -249,6 +357,38 @@ test.describe('at 360px', () => {
 		const notice = page.getByRole('status');
 		await expect(notice).toContainText(
 			'Your data has outgrown what the server accepts, so it is not being sent. It is still saved on this device \u2014 export a backup from the You page.'
+		);
+		await expectFitsViewport(page, notice);
+	});
+
+	test('the notice for a device with no room left stays inside the viewport', async ({
+		page,
+		baseURL
+	}) => {
+		// The other standing notice (#300). It is shown by the store rather than by
+		// sync, so it is reached by refusing the write instead of the request: a
+		// browser out of room throws `QuotaExceededError` out of `setItem`, and
+		// only for the document key, so signing in and onboarding still work.
+		await signInThroughApi(page, baseURL ?? '');
+		await page.addInitScript(() => {
+			// Read off the descriptor rather than as `Storage.prototype.setItem`,
+			// which is an unbound method and lints as one.
+			const write = Object.getOwnPropertyDescriptor(Storage.prototype, 'setItem')?.value as (
+				this: Storage,
+				key: string,
+				value: string
+			) => void;
+			Storage.prototype.setItem = function (this: Storage, key: string, value: string) {
+				if (key === 'tend.v1') throw new DOMException('quota', 'QuotaExceededError');
+				write.call(this, key, value);
+			};
+		});
+		await atNarrowPhone(page);
+		await openEmptyJournal(page);
+
+		const notice = page.getByRole('status');
+		await expect(notice).toContainText(
+			"This device's storage is full, so your latest changes are not saved on it. Export a backup from the You page."
 		);
 		await expectFitsViewport(page, notice);
 	});

@@ -2,7 +2,6 @@
 	import { sync } from '$lib/state/sync.svelte';
 	import { tend } from '$lib/state/tend.svelte';
 	import { cn } from '$lib/ui/cn';
-	import { OUTDATED_MESSAGE } from '$lib/domain/state-document';
 	import { TOO_LARGE_MESSAGE } from '$lib/domain/state-size';
 
 	/**
@@ -53,7 +52,11 @@
 	 * broken" — nothing is broken and nothing was lost.
 	 */
 	const halted = $derived(
-		tend.refusal?.message ?? (sync.status === 'outdated' ? OUTDATED_MESSAGE : null)
+		// A full device ranks above a build too old to talk to the server: those
+		// two below leave the changes safe on the phone, and this one is the phone
+		// saying it could not take them, so it is the only notice here asking for
+		// something to be done before the tab closes.
+		tend.refusal?.message ?? tend.storageNotice ?? sync.outdatedNotice
 	);
 
 	$effect(() => {

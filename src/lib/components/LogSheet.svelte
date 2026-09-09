@@ -271,7 +271,8 @@
 		const item = logFromCatalogFood(food, { servings, meal, date: todayISO(), source: 'manual' });
 		tend.addLogItems([item]);
 		toast(`Logged ${food.name} to ${meal}.`, {
-			action: { label: 'Undo', onClick: () => tend.removeLog(item.id) }
+			action: { label: 'Undo', onClick: () => tend.removeLog(item.id) },
+			dismissible: true
 		});
 	}
 

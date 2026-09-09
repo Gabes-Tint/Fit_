@@ -6,21 +6,11 @@
 		microTargets,
 		rollingAverages
 	} from '$lib/domain/tdee';
-	import {
-		displayWeight,
-		formatWeight,
-		weightToKg,
-		weightUnitAbbr,
-		weightUnitName
-	} from '$lib/domain/units';
-	import { addDaysISO, todayISO } from '$lib/domain/utils';
+	import { displayWeight, formatWeight, weightUnitAbbr, weightUnitName } from '$lib/domain/units';
 	import { tend } from '$lib/state/tend.svelte';
 	import AvgRow from '$lib/components/AvgRow.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import Button from '$lib/ui/Button.svelte';
-	import Input from '$lib/ui/Input.svelte';
-
-	let enteredWeight = $state('');
+	import WeightEntry from '$lib/components/WeightEntry.svelte';
 
 	const profile = $derived(tend.profile);
 	const targets = $derived(profile ? computeTargets(profile) : null);
@@ -30,18 +20,6 @@
 	const units = $derived(tend.state.units);
 	const weightAbbr = $derived(weightUnitAbbr(units));
 	const weightName = $derived(weightUnitName(units));
-
-	function saveFor(daysAgo: 0 | 1 | 2) {
-		const n = Number(enteredWeight);
-		if (!(n > 0)) return;
-		tend.addWeight(weightToKg(n, units), addDaysISO(todayISO(), -daysAgo));
-		enteredWeight = '';
-	}
-
-	function saveWeight(event: SubmitEvent) {
-		event.preventDefault();
-		saveFor(0);
-	}
 </script>
 
 <svelte:head>
@@ -64,24 +42,9 @@
 					<span aria-hidden="true">{weightAbbr}</span>
 				</p>
 			</div>
-			<form class="mt-3 flex flex-col gap-2" onsubmit={saveWeight}>
-				<Input
-					id="weight"
-					inputmode="decimal"
-					placeholder="Weight in {weightAbbr}"
-					aria-label="Weight in {weightName}"
-					bind:value={enteredWeight}
-				/>
-				<div class="flex gap-2">
-					<Button type="button" variant="secondary" class="flex-1" onclick={() => saveFor(2)}>
-						2 days ago
-					</Button>
-					<Button type="button" variant="secondary" class="flex-1" onclick={() => saveFor(1)}>
-						Yesterday
-					</Button>
-					<Button type="submit" class="flex-1">Today</Button>
-				</div>
-			</form>
+			<div class="mt-3">
+				<WeightEntry {units} />
+			</div>
 		</section>
 
 		<section class="bg-card rounded-3xl p-5 shadow-border">
