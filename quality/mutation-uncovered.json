@@ -148,6 +148,7 @@
 			"scripts/perf/phone-paint.run.ts",
 			"scripts/perf/prettier-format.ts",
 			"scripts/perf/report.ts",
+			"scripts/perf/route-render.run.ts",
 			"scripts/perf/server-latency-metrics.ts",
 			"scripts/perf/server-latency.ts",
 			"scripts/perf/source-resolver.ts",

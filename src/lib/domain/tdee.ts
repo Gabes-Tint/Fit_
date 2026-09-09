@@ -1,6 +1,6 @@
 import type { Activity, Goal, LogItem, Profile, WeightEntry } from './types';
 import { isGlp1 } from './profile';
-import { addDaysISO, lastNDates, parseISODate, startOfWeek, todayISO } from './utils';
+import { lastNDates, parseISODate, todayISO } from './utils';
 
 const ACTIVITY_FACTOR: Record<Activity, number> = {
 	sedentary: 1.2,
@@ -276,38 +276,115 @@ export function loggedDatesSet(log: LogItem[]) {
 	return new Set(log.map((i) => i.date));
 }
 
-const WEEK_OFFSETS = [0, 1, 2, 3, 4, 5, 6] as const;
+/** Milliseconds in a day, for turning two local midnights into a day count. */
+const DAY_MS = 86400000;
+
+/**
+ * A Monday, used only as the origin week indices are counted from. 1970-01-05
+ * is the first Monday of the epoch. Any Monday would do: the answer is a count
+ * of weeks that clear a bar, so where the numbering starts cannot change it.
+ */
+const WEEK_EPOCH = '1970-01-05';
+
+/**
+ * A zero-padded `YYYY-MM-DD` and nothing else around it — the only shape the
+ * app's own date helpers emit, and so the only shape the old `calmWeeks` could
+ * ever have matched when it looked dates up by their formatted form.
+ */
+const CANONICAL_DATE = /^\d{4}-(\d{2})-\d{2}$/;
 
 /**
  * Weeks (Mon–Sun) with at least `minDays` logged. Never resets on a miss.
  *
- * The week count is sized up front from the date span rather than walked
- * with a `while (cursor <= end)` loop stepped by a mutable cursor: a loop
- * bounded that way hangs forever under a mutation that drops the step, and
- * this codebase's mutation ledger charges that timeout as debt even though
- * the mutation runner itself scores a timeout as a kill. Iterating a
- * pre-sized array instead means every mutation to the loop body still
- * terminates in a fixed number of steps, so it fails fast on a wrong answer
- * instead of hanging.
+ * Each logged date is placed in its week by arithmetic, rather than each week
+ * asking whether any of its seven dates was logged. The two count the same
+ * thing — a date belongs to the week whose Monday is the last one at or before
+ * it — but the old shape built seven ISO strings per week through
+ * `addDaysISO`, so a three-year span paid for about eleven hundred date parses
+ * and re-formats to look up dates a `Set` already held. This pays one parse per
+ * *distinct logged date*, plus one for each end of the range, and formats
+ * nothing. See `perf:route-render`: it was 79% of a `/progress` render.
  *
- * No separate guard for a negative span (an `end` before the earliest
- * logged date): `totalWeeks` is then zero or negative, and `Array.from`
- * already treats a negative `length` as zero, so the loop below simply
- * does not run.
+ * The weeks are still walked from the first logged one to the last, rather than
+ * only the weeks something was logged in, because a week with nothing in it
+ * clears a `minDays` of zero and has to be counted — `minDays` is a parameter,
+ * and the empty weeks in between are part of the answer at the bottom of its
+ * range.
+ *
+ * The cut-off is a whole week rather than the day `end` falls on, as it was
+ * before: the old shape sized its weeks from `end` and then counted all seven
+ * days of the last one. So a date later in the same week as `end` still counts
+ * toward it — logging tomorrow's breakfast tonight does not vanish — while a
+ * date in a later week is dropped.
+ *
+ * A date the calendar could not have produced is skipped, which the old shape
+ * did too, though only as a side effect of looking dates up by their formatted
+ * form. See the guard in the loop.
+ *
+ * Every loop is bounded by a length fixed before it starts — the logged dates,
+ * then the weeks they span — rather than walked by a mutable cursor. A
+ * `while (cursor <= end)` loop hangs forever under a mutation that drops the
+ * step, and this codebase's mutation ledger charges that timeout as debt even
+ * though the runner scores a timeout as a kill. Fixed bounds mean every
+ * mutation still terminates, failing fast on a wrong answer instead of hanging.
+ *
+ * No separate guard for a range that runs backwards (every logged date after
+ * `end`), nor for an empty log: the length is then zero, negative or
+ * `-Infinity`, and `Array.from` treats any of those as zero, so the walk simply
+ * does not run and the answer is no calm weeks.
  */
 export function calmWeeks(log: LogItem[], minDays = 4, end = todayISO()) {
 	const dates = new Set(log.map((i) => i.date));
-	if (!dates.size) return 0;
-	const firstWeek = startOfWeek([...dates].sort()[0] ?? end);
-	const spanDays = Math.round(
-		(parseISODate(end).getTime() - parseISODate(firstWeek).getTime()) / 86400000
-	);
-	const totalWeeks = Math.floor(spanDays / 7) + 1;
+	const epochMs = parseISODate(WEEK_EPOCH).getTime();
+	/** The week index a day sits in, counting from `WEEK_EPOCH`. */
+	const weekAt = (ms: number) =>
+		// `Math.round` before the division because a daylight-saving shift leaves
+		// two local midnights an hour short of a whole number of days apart, and
+		// that hour must not move a date into the week beside it. Every Monday in
+		// the daylight half of the year is a week boundary that lands one week
+		// early without it — see `calm-weeks-dst.spec.ts`.
+		Math.floor(Math.round((ms - epochMs) / DAY_MS) / 7);
+
+	const lastWeek = weekAt(parseISODate(end).getTime());
+	// `Infinity` rather than the first week seen, so the running minimum needs no
+	// "have we started yet" branch. It is also what makes an empty log need no
+	// guard of its own: nothing replaces it, the range below comes out
+	// `-Infinity` long, and a negative length is an empty walk.
+	let firstWeek = Infinity;
+	const perWeek = new Map<number, number>();
+	// Distinct dates: a day is several meals, and the bar is days logged, not
+	// entries made. Deduping first also means one date parse per day rather
+	// than one per entry.
+	for (const date of dates) {
+		// Only a day the calendar could have produced counts. The old shape got
+		// this for free and silently: it asked `dates.has(addDaysISO(...))`, and
+		// `addDaysISO` only ever emits a zero-padded `YYYY-MM-DD`, so '2026-6-1',
+		// '2026-06-01 ' and '' could never match however the log came by them.
+		const shape = CANONICAL_DATE.exec(date);
+		if (!shape) continue;
+		const at = parseISODate(date);
+		// The shape being right does not make the day real: `parseISODate` rolls
+		// an impossible one over rather than rejecting it, so '2026-13-01' comes
+		// back as next January and '2026-02-30' as March 2nd. Reading the month
+		// back off the parsed date catches both — a day that overflows always
+		// carries into another month, so the month alone tells the whole story.
+		//
+		// The month comes from the match rather than a fixed offset into the
+		// string, so it is the month this date actually claims wherever it sits.
+		//
+		// Comparing a number rather than re-formatting the date is what keeps this
+		// to one parse and no string building per logged day. Formatting it back
+		// reads better and measured 0.665 ms against 0.468 ms at a year, which is
+		// most of what the rewrite bought.
+		if (at.getMonth() !== Number(shape[1]) - 1) continue;
+		const week = weekAt(at.getTime());
+		firstWeek = Math.min(firstWeek, week);
+		perWeek.set(week, (perWeek.get(week) ?? 0) + 1);
+	}
+
 	let count = 0;
-	for (const week of Array.from({ length: totalWeeks }, (_, w) => w)) {
-		const cursor = addDaysISO(firstWeek, week * 7);
-		const n = WEEK_OFFSETS.filter((offset) => dates.has(addDaysISO(cursor, offset))).length;
-		if (n >= minDays) count++;
+	for (const offset of Array.from({ length: lastWeek - firstWeek + 1 }, (_, w) => w)) {
+		if ((perWeek.get(firstWeek + offset) ?? 0) >= minDays) count++;
 	}
 	return count;
 }

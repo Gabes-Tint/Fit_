@@ -67,6 +67,7 @@
 		"perf:catalog-page": "node scripts/perf/catalog-page.run.ts",
 		"perf:sync-payload": "bun scripts/perf/sync-payload.run.ts",
 		"perf:today-log": "bun scripts/perf/today-log.run.ts",
+		"perf:route-render": "bun scripts/perf/route-render.run.ts",
 		"test:e2e": "playwright test",
 		"test:e2e:all": "E2E_ALL_BROWSERS=1 playwright test",
 		"test:e2e:security": "bun scripts/security/zap.ts",

@@ -561,6 +561,79 @@ describe('calmWeeks', () => {
 		expect(calmWeeks(log, 0, '2026-06-01')).toBe(0);
 	});
 
+	// A day is several meals. The bar is days logged, so three entries on one
+	// date are one day toward the minimum, not three.
+	it('counts a day once however many times it was logged', () => {
+		const log = [
+			entry('2026-06-01', 'coffee', 1, 'breakfast'),
+			entry('2026-06-01', 'chicken-breast', 2),
+			entry('2026-06-01', 'egg-large', 2, 'dinner'),
+			entry('2026-06-02', 'coffee', 1)
+		];
+		expect(calmWeeks(log, 4, '2026-06-07')).toBe(0);
+		expect(calmWeeks(log, 2, '2026-06-07')).toBe(1);
+	});
+
+	// The cut-off is the week `end` falls in, not the day: a date later in that
+	// same week still counts toward it, which is what logging the evening's meal
+	// against tomorrow looks like.
+	it('counts a date after end when it shares end\u2019s week', () => {
+		const log = [0, 1, 2, 3].map((i) => entry(addDaysISO('2026-06-01', i), 'coffee', 1));
+		expect(calmWeeks(log, 4, '2026-06-02')).toBe(1);
+	});
+
+	// ...but a date in a later week than `end` is out of range entirely.
+	it('ignores a week later than the one end falls in', () => {
+		const inRange = [0, 1, 2, 3].map((i) => entry(addDaysISO('2026-06-01', i), 'coffee', 1));
+		const ahead = [0, 1, 2, 3].map((i) => entry(addDaysISO('2026-06-08', i), 'coffee', 1));
+		expect(calmWeeks([...inRange, ...ahead], 4, '2026-06-07')).toBe(1);
+	});
+
+	// A date the calendar could not have produced is not a logged day. The old
+	// shape got this for free by looking dates up in their formatted form, so
+	// nothing but a bare zero-padded YYYY-MM-DD could ever match. Each string
+	// below is turned away by a different part of that: the shape, what sits
+	// around it, or the calendar itself.
+	it.each([
+		['a month and day that are not zero-padded', '2026-6-4'],
+		['a trailing space', '2026-06-04 '],
+		['a leading field', '5-2026-10-01'],
+		['a time suffix', '2026-06-04T00:00:00Z'],
+		['a month past December', '2026-13-01'],
+		['a day past the end of the month', '2026-02-30'],
+		['empty', '']
+	])('does not count %s as a logged day', (_why, date) => {
+		const real = [0, 1, 2].map((i) => entry(addDaysISO('2026-06-01', i), 'coffee', 1));
+		const junk = { ...entry('2026-06-04', 'coffee', 1), date };
+		// Three real days, and a fourth that is not a day at all.
+		expect(calmWeeks([...real, junk], 4, '2026-06-07')).toBe(0);
+		// The three real ones still count, so this is not passing by counting none.
+		expect(calmWeeks([...real, junk], 3, '2026-06-07')).toBe(1);
+	});
+
+	// A date is only a date if that is the whole of it, not merely how it ends.
+	// '1943-1002-06-06' is built to slip past a check that looks at the tail
+	// alone: it ends in a well-formed '1002-06-06', and the fields in front make
+	// `parseISODate` land on Saturday 6 June 2026 — inside the very week below,
+	// completing it. Anchoring the match at both ends is what turns it away.
+	it('does not count a date that merely ends in a well-formed one', () => {
+		const real = ['2026-06-02', '2026-06-03', '2026-06-04'].map((d) => entry(d, 'coffee', 1));
+		const junk = { ...entry('2026-06-06', 'coffee', 1), date: '1943-1002-06-06' };
+		expect(calmWeeks([...real, junk], 4, '2026-06-07')).toBe(0);
+		expect(calmWeeks([...real, junk], 3, '2026-06-07')).toBe(1);
+	});
+
+	// The month guard earns its place on a date that would otherwise land inside
+	// the very week being counted, rather than somewhere harmlessly far away.
+	it('does not let an impossible day roll into a week and complete it', () => {
+		const real = ['2026-06-02', '2026-06-03', '2026-06-04'].map((d) => entry(d, 'coffee', 1));
+		// `new Date(2026, 4, 32)` is June 1st — the Monday of that same week, so
+		// counting it would make three logged days look like four.
+		const junk = { ...entry('2026-06-01', 'coffee', 1), date: '2026-05-32' };
+		expect(calmWeeks([...real, junk], 4, '2026-06-07')).toBe(0);
+		expect(calmWeeks([...real, junk], 3, '2026-06-07')).toBe(1);
+	});
+
 	it('is zero for an empty log', () => {
 		expect(calmWeeks([], 4, END)).toBe(0);
 		// Even with no minimum to clear there is no week to count.
