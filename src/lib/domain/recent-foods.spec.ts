@@ -159,6 +159,19 @@ describe('mostRecentFoods', () => {
 		expect(mostRecentFoods([first, second], TODAY)[0]?.source.servings).toBe(2);
 	});
 
+	it('does not treat a same-day entry with an equal id as newer than the one already kept', () => {
+		// The tiebreak is `item.id > existing.latest.id`, strictly greater --
+		// only a later entry replaces the one already recorded. `LogItem.id` is
+		// just a string; nothing in the type stops two entries from sharing one,
+		// so this pins the boundary rather than trusting that ids never collide
+		// in practice.
+		const log = [
+			item({ id: 'l-5', name: 'Rice', servings: 1, date: TODAY }),
+			item({ id: 'l-5', name: 'Rice', servings: 9, date: TODAY })
+		];
+		expect(mostRecentFoods(log, TODAY)[0]?.source.servings).toBe(1);
+	});
+
 	it('derives kcal for one serving from the most recent entry', () => {
 		const log = [item({ id: 'l-1', name: 'Rice', servings: 2, kcal: 400 })];
 		expect(mostRecentFoods(log, TODAY)[0]?.kcalPerServing).toBe(200);
