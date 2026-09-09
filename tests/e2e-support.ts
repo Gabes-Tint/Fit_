@@ -271,12 +271,12 @@ export async function openLogSheetAndType(page: Page, what: string): Promise<voi
  * of re-deriving it.
  */
 export async function openLogSheet(page: Page): Promise<void> {
-	// Today's Energy card carries its own "Log food" button now, alongside the
-	// floating one every screen has — both open the same sheet on the same
-	// default tab, and the Energy card's sits earlier in the DOM, so `.first()`
-	// is a deterministic way to reach either without caring which screen this
-	// runs from.
-	await page.getByRole('button', { name: 'Log food' }).first().click();
+	// Today's Energy card carries the only "Log food" button now that the
+	// floating one is gone (#today-card-actions polish); scoped to the Energy
+	// region so a page that ever grows a second button with the same name
+	// still resolves to the one that actually opens the sheet.
+	const energyCard = page.getByRole('region', { name: 'Energy' });
+	await energyCard.getByRole('button', { name: 'Log food' }).click();
 	const sheet = page.getByRole('dialog');
 	await expect(sheet.getByRole('button', { name: 'Close' })).toBeFocused();
 }
@@ -383,14 +383,16 @@ export async function expectFitsViewport(page: Page, locator?: Locator): Promise
 }
 
 /**
- * Confirms `locator` — not something stacked on top of it, like the fixed
- * `LogFab` — is what a tap at the given point of its own box would actually
- * hit. `boundingBox` only proves geometry; a screen-fixed element with a
- * higher stacking context can sit inside that same rectangle and steal the
- * tap, which is exactly what #today-card-actions found at the expanded
- * Weight card's "Today" button. Checks both the point's centre and its right
- * edge, since a fixed element parked at a card's own bottom-right corner is
- * most likely to clip the right side first.
+ * Confirms `locator` — not something stacked on top of it — is what a tap at
+ * the given point of its own box would actually hit. `boundingBox` only
+ * proves geometry; a screen-fixed element with a higher stacking context can
+ * sit inside that same rectangle and steal the tap, which is exactly what
+ * #today-card-actions found at the expanded Weight card's "Today" button
+ * (the fixed `LogFab` that used to sit there is gone, but the check still
+ * matters for whatever else ends up fixed at the bottom of the screen).
+ * Checks both the point's centre and its right edge, since a fixed element
+ * parked at a card's own bottom-right corner is most likely to clip the
+ * right side first.
  */
 export async function expectHittable(locator: Locator): Promise<void> {
 	const box = await locator.boundingBox();

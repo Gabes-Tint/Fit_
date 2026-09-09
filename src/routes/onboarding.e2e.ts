@@ -172,7 +172,10 @@ test.describe('once onboarded', () => {
 	});
 
 	test('reaches the photo tab from the log sheet', async ({ page }) => {
-		await page.getByRole('button', { name: 'Log food' }).first().click();
+		await page
+			.getByRole('region', { name: 'Energy' })
+			.getByRole('button', { name: 'Log food' })
+			.click();
 		await expect(page.getByRole('dialog')).toBeVisible();
 		await page.getByRole('button', { name: 'Photo', exact: true }).click();
 		await expect(page.getByRole('button', { name: 'Photo', exact: true })).toHaveAttribute(
@@ -182,13 +185,19 @@ test.describe('once onboarded', () => {
 	});
 
 	test('offers the gallery as its own way in, beside the camera', async ({ page }) => {
-		await page.getByRole('button', { name: 'Log food' }).first().click();
+		await page
+			.getByRole('region', { name: 'Energy' })
+			.getByRole('button', { name: 'Log food' })
+			.click();
 		await page.getByRole('button', { name: 'Upload' }).click();
 		await expect(page.getByRole('button', { name: 'Choose a picture' })).toBeVisible();
 	});
 
 	test('offers typing as the way out of the photo tab', async ({ page }) => {
-		await page.getByRole('button', { name: 'Log food' }).first().click();
+		await page
+			.getByRole('region', { name: 'Energy' })
+			.getByRole('button', { name: 'Log food' })
+			.click();
 		await page.getByRole('button', { name: 'Photo', exact: true }).click();
 		await expect(page.getByRole('button', { name: 'Type it instead' })).toBeVisible();
 	});

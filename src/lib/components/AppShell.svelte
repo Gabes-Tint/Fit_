@@ -3,14 +3,12 @@
 	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { logUi } from '$lib/state/log-ui.svelte';
 	import { session } from '$lib/state/session.svelte';
 	import { sync } from '$lib/state/sync.svelte';
 	import { tend } from '$lib/state/tend.svelte';
 	import Toaster from '$lib/ui/Toaster.svelte';
 	import { AUTH_ROUTES, signInPath } from './auth/auth-routes';
 	import InitialSync from './InitialSync.svelte';
-	import LogFab from './LogFab.svelte';
 	import SyncStatusBadge from './SyncStatusBadge.svelte';
 	import TopBar from './TopBar.svelte';
 
@@ -20,10 +18,9 @@
 	 * How far below the top of the screen a toast sits.
 	 *
 	 * Enough to clear `TopBar`, which is `sticky top-0`: its own height, the
-	 * safe area it pads for, and a gap. Without it a toast covers the three
-	 * buttons that bar exists for — `Log food` among them — for as long as it
-	 * is up. Onboarding renders without that bar, so there a toast simply
-	 * begins a little lower down.
+	 * safe area it pads for, and a gap. Without it a toast covers the menu
+	 * button that bar carries for as long as it is up. Onboarding renders
+	 * without that bar, so there a toast simply begins a little lower down.
 	 */
 	const TOAST_OFFSET = 'calc(3.5rem + env(safe-area-inset-top) + 0.5rem)';
 
@@ -190,7 +187,7 @@
 				<div class="bg-background flex min-h-dvh w-full max-w-lg flex-col">
 					<TopBar {menuOpen} onmenu={() => (menuOpen = true)} />
 					<SyncStatusBadge />
-					<div class="flex-1 px-5 pt-5 pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
+					<div class="flex-1 px-5 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
 						{@render children()}
 					</div>
 					<!--
@@ -218,7 +215,6 @@
 					{#await import('./LogSheet.svelte') then { default: LogSheet }}
 						<LogSheet />
 					{/await}
-					<LogFab onlog={() => logUi.show()} />
 				</div>
 			{:else}
 				<!--
@@ -244,9 +240,9 @@
 			Top rather than the bottom corner a toast usually takes, because the
 			bottom of the screen is where this application puts things to press.
 			`Sheet` is `fixed bottom-0` and `LogSheet` raises six of these from
-			inside it; `Onboarding` pins its actions there with `sticky bottom-0`;
-			`LogFab` floats the log button there too. On a phone a toast is the
-			width of the column anyway, so a corner would be a corner in name only.
+			inside it; `Onboarding` pins its actions there with `sticky bottom-0`.
+			On a phone a toast is the width of the column anyway, so a corner would
+			be a corner in name only.
 		-->
 		<Toaster offset={TOAST_OFFSET} />
 	</div>

@@ -22,7 +22,6 @@
 			"src/lib/components/EmptyState.svelte",
 			"src/lib/components/FoodSearch.svelte",
 			"src/lib/components/InitialSync.svelte",
-			"src/lib/components/LogFab.svelte",
 			"src/lib/components/LogRow.svelte",
 			"src/lib/components/LogSheet.svelte",
 			"src/lib/components/MacroRing.svelte",

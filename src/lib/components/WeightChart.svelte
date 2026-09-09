@@ -5,7 +5,21 @@
 
 	let { weights, units = 'metric' }: { weights: WeightEntry[]; units?: UnitSystem } = $props();
 
-	const WIDTH = 320;
+	/**
+	 * The drawing height is fixed; the width tracks the box the card actually
+	 * gives the chart (`measuredWidth`, via `bind:clientWidth` below).
+	 *
+	 * A fixed 320-wide viewBox scaled to fit a narrower box (every phone this
+	 * card ships to) hits `preserveAspectRatio`'s default `xMidYMid meet`: the
+	 * drawing shrinks to the box's width and is centred in what is left over,
+	 * so the narrower the box, the bigger the empty band above and below the
+	 * plot. Matching the viewBox's width to the box's own measured width keeps
+	 * that scale factor at 1 and removes the band outright, at any width.
+	 * `measuredWidth` starts at 0 before the first layout pass; falling back to
+	 * 320 then avoids a degenerate zero-width viewBox for that one frame.
+	 */
+	let measuredWidth = $state(0);
+	const WIDTH = $derived(measuredWidth || 320);
 	const HEIGHT = 140;
 	/**
 	 * `top` carries the scrub label's own row on top of the usual clearance, so
@@ -150,6 +164,7 @@
 {#if geometry}
 	<svg
 		bind:this={svgEl}
+		bind:clientWidth={measuredWidth}
 		viewBox="0 0 {WIDTH} {HEIGHT}"
 		class="h-full w-full touch-none"
 		role="img"
