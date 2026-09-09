@@ -56,3 +56,80 @@ describe('WeightChart', () => {
 		expect(label).toMatch(/176\.4 to 174\.2 pounds/);
 	});
 });
+
+describe('WeightChart scrubbing', () => {
+	function svgRect(): DOMRect {
+		const svg = document.querySelector('svg');
+		if (!svg) throw new Error('no svg rendered');
+		return svg.getBoundingClientRect();
+	}
+
+	function pointerAt(type: string, clientX: number, options: Partial<PointerEventInit> = {}) {
+		const svg = document.querySelector('svg');
+		if (!svg) throw new Error('no svg rendered');
+		svg.dispatchEvent(
+			new PointerEvent(type, {
+				bubbles: true,
+				cancelable: true,
+				pointerId: 1,
+				clientX,
+				clientY: svgRect().top + svgRect().height / 2,
+				...options
+			})
+		);
+	}
+
+	/** The visible on-chart label, disambiguated from the sr-only live region carrying the same text. */
+	function chartLabel(text: string) {
+		return page.getByRole('img').getByText(text, { exact: true });
+	}
+
+	it('plots one dot per measurement point', async () => {
+		await render(WeightChart, { props: { weights: readings([80, 79.5, 79, 78.5]) } });
+		await expect.element(page.getByRole('img')).toBeInTheDocument();
+		expect(document.querySelectorAll('circle.dot')).toHaveLength(4);
+	});
+
+	it('selects the nearest point on pointermove and shows its date and weight', async () => {
+		await render(WeightChart, { props: { weights: readings([80, 79, 78]) } });
+		const rect = svgRect();
+
+		pointerAt('pointerdown', rect.left + rect.width - 1, { pointerType: 'mouse' });
+		pointerAt('pointermove', rect.left + rect.width - 1, { pointerType: 'mouse' });
+
+		await expect.element(chartLabel('Jun 3 · 78.0 kg')).toBeInTheDocument();
+	});
+
+	it('clears the selection on pointerleave from a mouse', async () => {
+		await render(WeightChart, { props: { weights: readings([80, 79, 78]) } });
+		const rect = svgRect();
+
+		pointerAt('pointerdown', rect.left + rect.width - 1, { pointerType: 'mouse' });
+		await expect.element(chartLabel('Jun 3 · 78.0 kg')).toBeInTheDocument();
+
+		pointerAt('pointerup', rect.left + rect.width - 1, { pointerType: 'mouse' });
+		pointerAt('pointerleave', rect.left + rect.width - 1, { pointerType: 'mouse' });
+
+		await expect.element(chartLabel('Jun 3 · 78.0 kg')).not.toBeInTheDocument();
+	});
+
+	it('clamps the label so it does not overflow the right edge when the nearest point is at the edge', async () => {
+		await render(WeightChart, { props: { weights: readings([80, 79, 78]) } });
+		const rect = svgRect();
+
+		pointerAt('pointerdown', rect.left + rect.width - 1, { pointerType: 'mouse' });
+		const label = chartLabel('Jun 3 · 78.0 kg');
+		await expect.element(label).toBeInTheDocument();
+
+		const labelBox = label.element().getBoundingClientRect();
+		expect(labelBox.right).toBeLessThanOrEqual(rect.right + 1);
+		expect(labelBox.left).toBeGreaterThanOrEqual(rect.left - 1);
+	});
+
+	it('describes the range on the root svg for screen readers', async () => {
+		await render(WeightChart, { props: { weights: readings([80, 79, 78]) } });
+		const label = document.querySelector('svg')?.getAttribute('aria-label');
+		expect(label).toMatch(/Weight trend from Jun 1 to Jun 3/);
+		expect(label).toMatch(/80 to 78 kilograms/);
+	});
+});
