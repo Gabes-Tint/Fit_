@@ -36,31 +36,57 @@ const PUSH_SUCCESS: CiRun = {
 	status: 'completed',
 	conclusion: 'success',
 	url: 'https://ci/1',
-	event: 'push'
+	event: 'push',
+	headBranch: 'main'
 };
 const PUSH_FAILURE: CiRun = {
 	status: 'completed',
 	conclusion: 'failure',
 	url: 'https://ci/2',
-	event: 'push'
+	event: 'push',
+	headBranch: 'main'
 };
 const PUSH_IN_PROGRESS: CiRun = {
 	status: 'in_progress',
 	conclusion: null,
 	url: 'https://ci/3',
-	event: 'push'
+	event: 'push',
+	headBranch: 'main'
 };
 const MERGE_GROUP_SUCCESS: CiRun = {
 	status: 'completed',
 	conclusion: 'success',
 	url: 'https://ci/4',
-	event: 'merge_group'
+	event: 'merge_group',
+	headBranch: 'gh-readonly-queue/main/pr-42-abc123'
 };
 const MERGE_GROUP_FAILURE: CiRun = {
 	status: 'completed',
 	conclusion: 'failure',
 	url: 'https://ci/5',
-	event: 'merge_group'
+	event: 'merge_group',
+	headBranch: 'gh-readonly-queue/main/pr-42-abc123'
+};
+const PUSH_SUCCESS_OTHER_BRANCH: CiRun = {
+	status: 'completed',
+	conclusion: 'success',
+	url: 'https://ci/6',
+	event: 'push',
+	headBranch: 'feature-x'
+};
+const PUSH_FAILURE_NEWER: CiRun = {
+	status: 'completed',
+	conclusion: 'failure',
+	url: 'https://ci/7',
+	event: 'push',
+	headBranch: 'main'
+};
+const PUSH_SUCCESS_OLDER: CiRun = {
+	status: 'completed',
+	conclusion: 'success',
+	url: 'https://ci/8',
+	event: 'push',
+	headBranch: 'main'
 };
 
 describe('the gate on deploying a commit whose CI on main might not be green', () => {
@@ -151,6 +177,28 @@ describe('the gate on deploying a commit whose CI on main might not be green', (
 			expect(state.logs).toEqual([
 				expect.stringMatching(/no push run on main for this commit.*https:\/\/ci\/4/s)
 			]);
+		});
+
+		it('refuses a green push run for this SHA found on another branch, as if no run exists, with the merge-group hint', async () => {
+			const { state, options } = harness([[PUSH_SUCCESS_OTHER_BRANCH]]);
+			await expect(mainCiGate(options)).rejects.toThrow(
+				/No ci\.yml run found on main.*merge-group run for this exact commit also counts/s
+			);
+			expect(state.waits).toEqual([]);
+		});
+
+		it('refuses a no-runs-at-all case without the merge-group hint', async () => {
+			const { options } = harness([[]]);
+			await expect(mainCiGate(options)).rejects.toThrow(
+				new Error('No ci.yml run found on main for this commit; refusing to deploy it.')
+			);
+		});
+
+		it('picks the newest push run: an older green push does not override a newer red one', async () => {
+			const { options } = harness([[PUSH_FAILURE_NEWER, PUSH_SUCCESS_OLDER]]);
+			await expect(mainCiGate(options)).rejects.toThrow(
+				/push run concluded "failure": https:\/\/ci\/7/
+			);
 		});
 	});
 });

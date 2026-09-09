@@ -23,12 +23,15 @@ const execFileAsync = promisify(execFile);
  * `push` run re-executes that same commit, and — because it enforces the
  * flake policy just as strictly — can go red on a retried flake the queue
  * run did not hit, blocking a deploy of a commit the queue already proved
- * green. So this gate accepts either: a successful `push` run for the
- * commit, or a successful `merge_group` run whose head SHA is that commit.
- * A failed (or missing) push run beside a successful merge-group run for
- * the same commit is accepted, with a note naming both runs. Neither green
- * is still refused — the flake policy is not weakened, only which run may
- * satisfy it is widened.
+ * green. So this gate accepts either: a successful `push` run on `main` for
+ * the commit, or a successful `merge_group` run on a `gh-readonly-queue/main/…`
+ * branch whose head SHA is that commit — `gh run list --commit` matches on
+ * SHA alone and can also return a run of the same commit on some other
+ * branch, so the branch is checked per event rather than dropped. A failed
+ * (or missing) push run beside a successful merge-group run for the same
+ * commit is accepted, with a note naming both runs. Neither green is still
+ * refused — the flake policy is not weakened, only which run may satisfy it
+ * is widened.
  *
  * The wait reuses `release-version.ts`'s ceiling: about two minutes is long
  * enough for a run already `in_progress` to finish, short enough not to turn
@@ -56,6 +59,9 @@ const PUSH_EVENT = 'push';
 /** The merge queue's run of the same commit, before it landed. */
 const MERGE_GROUP_EVENT = 'merge_group';
 
+/** The prefix every merge-group run's head branch carries, per GitHub's queue naming. */
+const MERGE_QUEUE_BRANCH_PREFIX = `gh-readonly-queue/${CI_BRANCH}/`;
+
 /** A hint appended to every refusal, so the reason a green merge-group run did not cover it is visible. */
 const MERGE_GROUP_HINT = 'A successful merge-group run for this exact commit also counts.';
 
@@ -64,6 +70,7 @@ export interface CiRun {
 	conclusion: string | null;
 	url: string;
 	event: string;
+	headBranch: string;
 }
 
 export interface MainCiGateOptions {
@@ -111,13 +118,18 @@ export async function mainCiGate(options: MainCiGateOptions): Promise<void> {
 
 	for (;;) {
 		const runs = await options.fetchRuns();
-		const pushRun = runs.find((run) => run.event === PUSH_EVENT);
-		const mergeGroupRun = runs.find((run) => run.event === MERGE_GROUP_EVENT);
+		// Newest first: the first match for each event is that event's latest run, so a
+		// later red push run overrides an earlier green one rather than being missed.
+		const pushRun = runs.find((run) => run.event === PUSH_EVENT && run.headBranch === CI_BRANCH);
+		const mergeGroupRun = runs.find(
+			(run) =>
+				run.event === MERGE_GROUP_EVENT && run.headBranch.startsWith(MERGE_QUEUE_BRANCH_PREFIX)
+		);
 
 		if (pushRun === undefined && mergeGroupRun === undefined) {
+			const hint = runs.length > 0 ? ` ${MERGE_GROUP_HINT}` : '';
 			throw new Error(
-				`No ${CI_WORKFLOW} run found on ${CI_BRANCH} for this commit; refusing to deploy it. ` +
-					MERGE_GROUP_HINT
+				`No ${CI_WORKFLOW} run found on ${CI_BRANCH} for this commit; refusing to deploy it.` + hint
 			);
 		}
 
@@ -182,7 +194,7 @@ async function fetchMainCiRuns(commit: string): Promise<CiRun[]> {
 		'--commit',
 		commit,
 		'--json',
-		'status,conclusion,url,event'
+		'status,conclusion,url,event,headBranch'
 	]);
 	return JSON.parse(output === '' ? '[]' : output) as CiRun[];
 }
