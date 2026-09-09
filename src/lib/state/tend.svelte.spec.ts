@@ -93,7 +93,7 @@ function writeSpy() {
  * that behaves differently has to be a different object — the same move the
  * no-storage tests make when they swap it for `undefined`.
  */
-function withStorage(stub: Storage, body: () => void) {
+function withStorage(stub: Storage | undefined, body: () => void) {
 	const real = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
 	Object.defineProperty(globalThis, 'localStorage', { value: stub, configurable: true });
 	try {
@@ -799,19 +799,15 @@ describe('a device with no room left', () => {
 
 	it('says nothing either way where there is no storage to be full', () => {
 		// A server render has no device to call full, and a write that reached no
-		// storage at all is no evidence that room has been found: clearing the
-		// warning on one would be the same lie in the other direction.
+		// storage at all is no evidence that room has been found either. Both
+		// directions, because reporting either one is a lie.
 		const store = onboarded();
-		withStorage(refusingStorage(quotaError()).storage, () => store.addWeight(80));
-		expect(store.storage).toBe('full');
+		withStorage(undefined, () => expect(() => store.addWeight(80)).not.toThrow());
+		expect(store.storage).toBe('ok');
 
-		const real = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
-		Object.defineProperty(globalThis, 'localStorage', { value: undefined, configurable: true });
-		try {
-			expect(() => store.addWeight(79)).not.toThrow();
-		} finally {
-			if (real) Object.defineProperty(globalThis, 'localStorage', real);
-		}
+		withStorage(refusingStorage(quotaError()).storage, () => store.addWeight(79));
+		expect(store.storage).toBe('full');
+		withStorage(undefined, () => store.addWeight(78));
 		expect(store.storage).toBe('full');
 	});
 
