@@ -81,13 +81,17 @@ export function volumeByGroup(workouts: Workout[], sinceISO: string): GroupVolum
 			if (done > 0) counts.set(exercise.group, (counts.get(exercise.group) ?? 0) + done);
 		}
 	}
+	// A group only ever lands in `counts` with a positive tally (the `done > 0`
+	// guard above), so `most` -- their max -- is always positive whenever there
+	// is an entry here to compute a share for; there is no zero-most case to
+	// guard against.
 	const most = Math.max(0, ...counts.values());
 	return [...counts.entries()]
 		.sort((a, b) => b[1] - a[1])
 		.map(([group, sets]) => ({
 			group,
 			sets,
-			pct: most === 0 ? 0 : Math.round((sets / most) * 100)
+			pct: Math.round((sets / most) * 100)
 		}));
 }
 
