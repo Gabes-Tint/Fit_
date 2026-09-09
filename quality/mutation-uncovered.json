@@ -165,6 +165,7 @@
 			"scripts/quality/bundle-budget.ts",
 			"scripts/quality/bundle-closure.ts",
 			"scripts/quality/bundle-headroom.ts",
+			"scripts/quality/changed-files.ts",
 			"scripts/quality/ci-contract.ts",
 			"scripts/quality/config-types.ts",
 			"scripts/quality/coverage-abort.ts",
