@@ -9,6 +9,7 @@ import {
 	evaluateMutationReport,
 	mutantFingerprint,
 	sourceWindowHash,
+	sourceWindowStatus,
 	verifyMutationFiles
 } from './mutation-verdict';
 
@@ -982,22 +983,139 @@ describe('mutation verdict', () => {
 		);
 	});
 
-	it('fingerprints a location the same way regardless of start/end key order', () => {
-		const stryker = {
-			file: 'src/a.ts',
-			mutatorName: 'UpdateOperator',
-			replacement: 'i++',
-			location: { end: { column: 3, line: 61 }, start: { column: 0, line: 61 } },
-			sourceHash: '0'.repeat(64)
-		};
-		const human = {
+	it('fingerprints a mutant by its code, not its location', () => {
+		// A line inserted above a mutant shifts every line number below it
+		// without touching the mutant's own text -- the fingerprint must not
+		// notice the shift, only a change to the code itself.
+		const before = {
 			file: 'src/a.ts',
 			mutatorName: 'UpdateOperator',
 			replacement: 'i++',
 			location: { start: { line: 61, column: 0 }, end: { line: 61, column: 3 } },
 			sourceHash: '0'.repeat(64)
 		};
-		expect(mutantFingerprint(stryker)).toBe(mutantFingerprint(human));
+		const afterInsertionAbove = {
+			file: 'src/a.ts',
+			mutatorName: 'UpdateOperator',
+			replacement: 'i++',
+			location: { start: { line: 65, column: 0 }, end: { line: 65, column: 3 } },
+			sourceHash: '0'.repeat(64)
+		};
+		expect(mutantFingerprint(before)).toBe(mutantFingerprint(afterInsertionAbove));
+
+		const differentCode = { ...before, sourceHash: '1'.repeat(64) };
+		expect(mutantFingerprint(before)).not.toBe(mutantFingerprint(differentCode));
+	});
+
+	it('keeps an accepted equivalence when a line is inserted above the mutant', async () => {
+		const { root, scope } = await fixture();
+		const originalSource =
+			'export function choose(value: boolean) {\n' +
+			'\treturn value ? 1 : 2;\n' +
+			'}\n' +
+			'\n' +
+			'export const unrelated = 1;\n';
+		const survivor = mutant('reviewed', 'Survived', 2);
+		const entry = {
+			file: 'src/a.ts',
+			mutatorName: survivor.mutatorName,
+			replacement: survivor.replacement,
+			location: survivor.location,
+			sourceHash: sourceWindowHash(originalSource, survivor.location),
+			classification: 'equivalent' as const,
+			rationale:
+				'The replacement returns the same externally observable value for every valid input.',
+			review: 'https://github.com/gabepsilva/Fit_/pull/5'
+		};
+		// A comment inserted above the function shifts the mutant from line 2
+		// to line 3, without changing a character of its own text.
+		const updatedSource = '// a new comment\n' + originalSource;
+		const shiftedSurvivor = mutant('reviewed', 'Survived', 3);
+		await writeFile(path.join(root, 'src/a.ts'), updatedSource);
+		const verdict = await evaluateMutationReport({
+			projectRoot: root,
+			lane: 'security',
+			scope,
+			policy,
+			ledger: { version: 1, entries: [{ ...entry, fingerprint: mutantFingerprint(entry) }] },
+			report: {
+				files: {
+					'src/a.ts': {
+						source: updatedSource,
+						mutants: [
+							shiftedSurvivor,
+							...Array.from({ length: 9 }, (_, index) => mutant(String(index), 'Killed', 3))
+						]
+					}
+				}
+			}
+		});
+		expect(verdict.reviewedSurvivors).toBe(1);
+		expect(verdict.failures).not.toEqual(
+			expect.arrayContaining([expect.stringContaining('stale or no longer survives')])
+		);
+	});
+
+	it('excuses every occurrence of an identical mutated window from one ledger entry', async () => {
+		const { root, scope } = await fixture();
+		// The same three lines, twice in a row, so the two survivors' windows
+		// -- each the mutated line plus one line of context on either side --
+		// hash identically. That is an ambiguity the fingerprint accepts
+		// rather than rejects, since identical code carries identical
+		// reasoning.
+		const block =
+			'export function choose(value: boolean) {\n' + '\treturn value ? 1 : 2;\n' + '}\n';
+		const source = block + block;
+		const first = mutant('first', 'Survived', 2);
+		const second = mutant('second', 'Survived', 5);
+		const entry = {
+			file: 'src/a.ts',
+			mutatorName: first.mutatorName,
+			replacement: first.replacement,
+			location: first.location,
+			sourceHash: sourceWindowHash(source, first.location),
+			classification: 'equivalent' as const,
+			rationale:
+				'The replacement returns the same externally observable value for every valid input.',
+			review: 'https://github.com/gabepsilva/Fit_/pull/5'
+		};
+		await writeFile(path.join(root, 'src/a.ts'), source);
+		const verdict = await evaluateMutationReport({
+			projectRoot: root,
+			lane: 'security',
+			scope,
+			policy,
+			ledger: { version: 1, entries: [{ ...entry, fingerprint: mutantFingerprint(entry) }] },
+			report: { files: { 'src/a.ts': { source, mutants: [first, second] } } }
+		});
+		expect(verdict.reviewedSurvivors).toBe(2);
+		expect(verdict.failures).not.toEqual(
+			expect.arrayContaining([expect.stringContaining('stale or no longer survives')])
+		);
+	});
+
+	it('locates a reviewed window by content: current, stale, or ambiguous', () => {
+		const survivor = mutant('reviewed', 'Survived', 2);
+		const originalSource =
+			'export function choose(value: boolean) {\n' + '\treturn value ? 1 : 2;\n' + '}\n';
+		const sourceHash = sourceWindowHash(originalSource, survivor.location);
+
+		// Current: an unrelated line inserted above shifts the mutant's line
+		// number, but its window text -- found by search, not by the entry's
+		// stale line number -- is unchanged and appears exactly once.
+		const shifted = '// a new comment\n' + originalSource;
+		expect(sourceWindowStatus(shifted, survivor.location, sourceHash)).toBe('current');
+
+		// Stale: the guarded expression itself changed, so the window text
+		// appears nowhere in the file any more.
+		const edited = originalSource.replace('value ? 1 : 2', 'value ? 3 : 4');
+		expect(sourceWindowStatus(edited, survivor.location, sourceHash)).toBe('stale');
+
+		// Ambiguous: the exact same window text now appears twice, so neither
+		// occurrence can be trusted to be the one that was reviewed -- and
+		// that is reported the same way as stale.
+		const duplicated = originalSource + originalSource;
+		expect(sourceWindowStatus(duplicated, survivor.location, sourceHash)).toBe('ambiguous');
 	});
 
 	it('preserves the historical Stryker score for the full-tree compatibility audit', async () => {

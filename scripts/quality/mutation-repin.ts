@@ -43,7 +43,7 @@ const location = {
 const projectRoot = new URL('../../', import.meta.url);
 const source = await readFile(path.join(projectRoot.pathname, file), 'utf8');
 const sourceHash = sourceWindowHash(source, location);
-const fingerprint = mutantFingerprint({ file, mutatorName, replacement, location, sourceHash });
+const fingerprint = mutantFingerprint({ file, mutatorName, replacement, sourceHash });
 
 console.log(
 	JSON.stringify({ file, mutatorName, replacement, location, sourceHash, fingerprint }, null, '\t')

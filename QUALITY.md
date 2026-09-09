@@ -276,18 +276,32 @@ Security and changed lanes use the **strict verdict**: only an explicit `Killed`
 positive. Timeouts, uncovered mutants, errors, stale or source-mismatched reports, wrong
 scope, omitted executable files, and an empty security scope all fail. A reviewed survivor is
 classified as exact equivalence or host-specific defense in depth and bound to an exact
-source/location/mutator/replacement fingerprint with a pull-request rationale. It is the sole
-changed-line exception, is disclosed separately from the 100 percent observable changed-mutant
-score, and is invalidated by source or report drift.
+file/mutator/replacement/source-window fingerprint with a pull-request rationale. It is the
+sole changed-line exception, is disclosed separately from the 100 percent observable
+changed-mutant score, and is invalidated by source or report drift.
 
 The `sourceHash` an entry pins is a hash of the mutated line plus one line of
 context on each side, not the whole file (`sourceWindowHash` in
-`scripts/quality/mutation-verdict.ts`). An edit anywhere else in the file -- a
+`scripts/quality/mutation-verdict.ts`). The fingerprint that identifies an
+entry hashes that window together with the file, mutator and replacement --
+deliberately not `location` — so a line inserted or removed above the mutant,
+which shifts its line number without touching its text, changes neither the
+window hash nor the fingerprint. An edit anywhere else in the file -- a
 comment, an unrelated function, a rename three hundred lines away -- leaves
 the window untouched and the acceptance stands; an edit that touches the
-mutated line or its immediate neighbors changes the hash, and the entry
-silently stops matching and is reported as a stale survivor on the next run.
-See issue #256 for why the key moved off the whole file.
+mutated line or its immediate neighbors changes the window hash, and the
+entry silently stops matching and is reported as a stale survivor on the next
+run. Two mutants whose windows hash identically -- the same few lines of
+code appearing twice in one file -- collapse onto one fingerprint by design:
+one review then excuses both, on the reasoning that identical code carries
+identical reasoning. `mutation-review-check.ts` cannot lean on an entry's
+own line number to find its window either, since that number goes stale the
+same way; it searches the current file for a window matching the entry's
+`sourceHash` instead (`sourceWindowStatus` in `mutation-verdict.ts`), and
+reports the entry current if that search finds the window exactly once,
+stale if it finds no match, and stale if it finds more than one — an
+ambiguous match is not trusted to be the reviewed one. See issue #256 for
+why the key moved off the whole file and off `location`.
 
 When a configuration, test, deletion, rename, or non-mutated runtime input forces a broad
 changed-lane fallback, actual changed production files retain the strict verdict. Unchanged

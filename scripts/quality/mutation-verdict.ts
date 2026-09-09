@@ -100,27 +100,6 @@ function declaredStatus(entry: ReviewedMutant): 'Survived' | 'Timeout' {
 	return entry.status ?? 'Survived';
 }
 
-/**
- * Sorts object keys recursively so a value's JSON serialization no longer
- * depends on the order its source wrote them in.
- *
- * A mutant's `location` reaches this hash from two different writers: Stryker's
- * own report, which puts `end` before `start`, and a human typing a ledger
- * entry, who naturally writes `start` first. Both describe the same location,
- * so both must fingerprint to the same hash — otherwise a correct re-pin looks
- * indistinguishable from a wrong one, and the honest fix (re-pin, keep the
- * judgement) is punished while deleting the entry is rewarded.
- */
-function canonicalize(value: unknown): unknown {
-	if (Array.isArray(value)) return value.map(canonicalize);
-	if (isRecord(value)) {
-		const sorted: Record<string, unknown> = {};
-		for (const key of Object.keys(value).sort()) sorted[key] = canonicalize(value[key]);
-		return sorted;
-	}
-	return value;
-}
-
 function isPosition(value: unknown): value is Position {
 	return (
 		isRecord(value) &&
@@ -182,11 +161,76 @@ export function sourceWindowHash(source: string, location: Mutant['location']): 
 	return sha256(lines.slice(start - 1, end).join('\n'));
 }
 
+/**
+ * Counts how many windows of the given span length, anywhere in `source`,
+ * hash to `targetHash` -- the search `mutation-review-check.ts` uses to find
+ * a reviewed mutant's window without trusting the ledger entry's own line
+ * numbers, which an edit above the mutant leaves pointing at the wrong text.
+ */
+export function sourceWindowOccurrences(
+	source: string,
+	spanLines: number,
+	targetHash: string
+): number {
+	const lines = source.split('\n');
+	let matches = 0;
+	for (let startLine = 1; startLine + spanLines - 1 <= lines.length; startLine++) {
+		const endLine = startLine + spanLines - 1;
+		const start = Math.max(1, startLine - SOURCE_WINDOW_CONTEXT_LINES);
+		const end = Math.min(lines.length, endLine + SOURCE_WINDOW_CONTEXT_LINES);
+		if (sha256(lines.slice(start - 1, end).join('\n')) === targetHash) matches += 1;
+	}
+	return matches;
+}
+
+/**
+ * Where a reviewed mutant's window stands in the current source: `'current'`
+ * when its exact window text appears exactly once, `'stale'` when it appears
+ * nowhere, and `'ambiguous'` -- treated as stale, since neither occurrence
+ * can be trusted to be the reviewed one -- when it appears more than once.
+ *
+ * This reads only the entry's span length (`end.line - start.line`, which
+ * survives a shift the same way the window hash does) from `location`, never
+ * its absolute line numbers, because an edit above the mutant leaves those
+ * numbers pointing at the wrong text.
+ */
+export function sourceWindowStatus(
+	source: string,
+	location: { start: Position; end: Position },
+	sourceHash: string
+): 'current' | 'stale' | 'ambiguous' {
+	const spanLines = location.end.line - location.start.line + 1;
+	const matches = sourceWindowOccurrences(source, spanLines, sourceHash);
+	if (matches === 0) return 'stale';
+	if (matches === 1) return 'current';
+	return 'ambiguous';
+}
+
+/**
+ * Identifies a reviewed mutant by its code, not its coordinates.
+ *
+ * `location` is deliberately left out of this hash. A line inserted above a
+ * mutant -- an unrelated import, a comment, a new function earlier in the
+ * file -- shifts every line number below it without touching the mutant's
+ * own text, and `sourceHash` (a window of that unchanged text) already
+ * proves nothing relevant moved. Hashing `location` on top of that would
+ * fingerprint the shift, not the code, and retire the acceptance for a
+ * reason it was never supposed to answer to. `location` still travels with
+ * the ledger entry for a human to read and `mutation-repin.ts` to update,
+ * it just never reaches this hash.
+ *
+ * The trade this accepts: two mutants in the same file, same mutator, same
+ * replacement, whose windows hash identically (the same few lines of code
+ * appearing twice) collapse onto one fingerprint. One review then excuses
+ * both. That is treated as correct rather than as an ambiguity to reject --
+ * identical code carries identical reasoning -- but it does mean a ledger
+ * entry can silently cover a second, unreviewed occurrence if one ever
+ * appears.
+ */
 export function mutantFingerprint(input: {
 	file: string;
 	mutatorName: string;
 	replacement: string;
-	location: Mutant['location'];
 	sourceHash: string;
 }): string {
 	return sha256(
@@ -194,7 +238,6 @@ export function mutantFingerprint(input: {
 			file: input.file,
 			mutatorName: input.mutatorName,
 			replacement: input.replacement,
-			location: canonicalize(input.location),
 			sourceHash: input.sourceHash
 		})
 	);
@@ -444,7 +487,6 @@ export async function evaluateMutationReport(options: {
 				file,
 				mutatorName: mutant.mutatorName,
 				replacement: mutant.replacement,
-				location: mutant.location,
 				sourceHash: sourceWindowHash(verifiedSource, mutant.location)
 			});
 			const reviewedEntry = reviewed.get(fingerprint);
