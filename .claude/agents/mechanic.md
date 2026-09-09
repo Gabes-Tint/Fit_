@@ -40,5 +40,9 @@ smoke-check lines verbatim; they are the only record the deploy leaves.
 If you commit, end the message with the `Co-Authored-By:` name and `Claude-Session:` URL
 your brief gives — both change per session, so never hardcode one.
 
+## Pre-push
+
+Run `npm run check`, `npm run lint:changed` (or `npm run lint` until it exists), the unit/component specs for files you touched, and the affected e2e file once on one project. For changed files under `src/lib/domain`, `src/lib/server`, or `src/lib/state`, run the mutation lane only. Never the full e2e suite, never `verify` or `verify:deep`, never a full gate — CI is the authority.
+
 Report in under 150 words, evidence never cut for brevity: what changed, which files, the
 gate result, and anything you could not do.

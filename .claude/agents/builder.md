@@ -59,6 +59,10 @@ code changed, and `Closes #n` when the slice finishes the issue.
 9. e2e waits on real state (aria-expanded, element absence, a data attribute set after a transition), never a sleep; one URL per `page.route`, released before any navigation or unroute.
 10. The PR body pastes gate result lines from reports/quality/gate-*.json and the bundle delta; a screen change adds or extends the 360px `expectFitsViewport` case.
 
+## Pre-push
+
+Run `npm run check`, `npm run lint:changed` (or `npm run lint` until it exists), the unit/component specs for files you touched, and the affected e2e file once on one project. For changed files under `src/lib/domain`, `src/lib/server`, or `src/lib/state`, run the mutation lane only. Never the full e2e suite, never `verify` or `verify:deep`, never a full gate — CI is the authority.
+
 Report in under 250 words, evidence never cut for brevity: what was built, the files
 touched, the gate result from `reports/quality/gate-<tier>.json` with any failing step and
 its per-file mutation verdict, decisions you had to make, and anything left undone.
