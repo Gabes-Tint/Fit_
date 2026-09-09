@@ -284,6 +284,18 @@ describe('rollingAverages', () => {
 	it('reports zero logged days for an empty log', () => {
 		expect(rollingAverages([], 7, END).loggedDays).toBe(0);
 	});
+
+	// A day is several meals, which is the normal case rather than an edge one:
+	// the window has to total every entry on a date, not one of them.
+	it('totals every entry on a day, not just one of them', () => {
+		const breakfast = entry(END, 'egg-large', 2, 'breakfast');
+		const lunch = entry(END, 'chicken-breast', 3);
+		const { avg, loggedDays } = rollingAverages([breakfast, lunch], 7, END);
+		expect(loggedDays).toBe(1);
+		expect(avg.count).toBe(2);
+		expect(avg.kcal).toBeCloseTo(breakfast.kcal + lunch.kcal, 6);
+		expect(avg.protein).toBeCloseTo(breakfast.protein + lunch.protein, 6);
+	});
 });
 
 describe('loggedDatesSet', () => {
