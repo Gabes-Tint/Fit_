@@ -11,8 +11,6 @@
 	import { AUTH_ROUTES, signInPath } from './auth/auth-routes';
 	import InitialSync from './InitialSync.svelte';
 	import LogFab from './LogFab.svelte';
-	import Onboarding from './Onboarding.svelte';
-	import SideNav from './SideNav.svelte';
 	import SyncStatusBadge from './SyncStatusBadge.svelte';
 	import TopBar from './TopBar.svelte';
 
@@ -195,7 +193,19 @@
 					<div class="flex-1 px-5 pt-5 pb-[calc(5.5rem+env(safe-area-inset-bottom))]">
 						{@render children()}
 					</div>
-					<SideNav bind:open={menuOpen} {pathname} />
+					<!--
+						Fetched after the shell, for the same reason as the log sheet below.
+						The drawer is the shell's only user of `bits-ui`, and `Dialog` brings
+						its portal, focus scope and `tabbable` with it — the largest thing
+						left in the root layout after the log sheet moved out, and none of it
+						is on screen until somebody taps the menu button. It is still fetched
+						on load rather than on the tap, so the drawer is ready long before a
+						hand can reach it; a tap that does land first simply opens the drawer
+						as it mounts, because `menuOpen` is already true by then.
+					-->
+					{#await import('./SideNav.svelte') then { default: SideNav }}
+						<SideNav bind:open={menuOpen} {pathname} />
+					{/await}
 					<!--
 						Fetched after the shell rather than inside it. The log sheet and
 						everything it can show — the search, the proposal rows, the photo
@@ -211,7 +221,16 @@
 					<LogFab onlog={() => logUi.show()} />
 				</div>
 			{:else}
-				<Onboarding />
+				<!--
+					Onboarding is the one screen here that a returning device never draws,
+					and it carries the whole profile form and its `bits-ui` switch. Fetching
+					it inside this branch means it is asked for only by a device that has
+					actually reached it — once, before there is an account to return to —
+					instead of by every load for the rest of that account's life.
+				-->
+				{#await import('./Onboarding.svelte') then { default: Onboarding }}
+					<Onboarding />
+				{/await}
 			{/if}
 		{/if}
 		<!--
