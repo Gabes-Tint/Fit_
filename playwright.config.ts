@@ -99,7 +99,8 @@ const reporter = env.E2E_BLOB_REPORT
 export default defineConfig({
 	globalSetup: './tests/e2e-build.ts',
 	testMatch: '**/*.e2e.{ts,js}',
-	reporter: [...reporter],
+	// #292 experiment instrument; see tests/action-timing-reporter.ts.
+	reporter: [...reporter, ['./tests/action-timing-reporter.ts']],
 	forbidOnly: true,
 	failOnFlakyTests: true,
 	retries: isCI ? 1 : 0,

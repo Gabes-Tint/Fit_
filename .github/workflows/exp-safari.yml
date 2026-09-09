@@ -1,0 +1,65 @@
+# Issue #292 measurement harness. Temporary: it lives only on the
+# `exp/safari-*` branches and must never reach `main`.
+#
+# `ci.yml` would answer the same question, but it runs fifteen jobs to get at
+# one shard. This runs the `mobile-safari` shard and nothing else, so each
+# variant in the one-variable-at-a-time experiment costs one job instead of a
+# full pull-request matrix, and the variants can be measured in parallel on
+# their own branches.
+name: Experiment (safari action cost)
+
+on:
+  push:
+    branches: ['exp/safari-**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: exp-safari-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  safari:
+    name: Experiment mobile-safari
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      E2E_PROJECT: mobile-safari
+      EXP_VARIANT: ${{ github.ref_name }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up the toolchain
+        uses: ./.github/actions/setup
+
+      - name: Restore Playwright browser cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-webkit-${{ hashFiles('bun.lock') }}
+
+      - name: Install browser runtimes
+        run: bunx playwright install --with-deps webkit
+
+      - name: Run the mobile-safari shard
+        run: bun scripts/quality/gate.ts ci --job e2e
+
+      - name: Report timings
+        if: always()
+        run: |
+          if [ -f reports/quality/action-timings.json ]; then
+            jq -c '.summary' reports/quality/action-timings.json
+            {
+              echo '### Action timings'
+              echo '```json'
+              jq '.summary' reports/quality/action-timings.json
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'no action-timings.json written'
+          fi
