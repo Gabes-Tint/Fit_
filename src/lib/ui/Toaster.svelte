@@ -13,11 +13,10 @@
 	/**
 	 * Take the toast away first, then do the thing.
 	 *
-	 * Undo is the only action there is so far, and one that leaves its own toast
-	 * standing reads as an undo that did not take. Dismissing first also means a
-	 * handler that throws still leaves the screen clear, and that the timer still
-	 * armed against this entry finds nothing left to remove — which `dismiss` is
-	 * written to tolerate.
+	 * One that leaves its own toast standing reads as an action that did not
+	 * take. Dismissing first also means a handler that throws still leaves the
+	 * screen clear, and that the timer still armed against this entry finds
+	 * nothing left to remove — which `dismiss` is written to tolerate.
 	 */
 	function act(item: Toast): void {
 		toasts.dismiss(item);
@@ -66,23 +65,42 @@
 				<!--
 					`pointer-events-auto` because the column above turns them off: these
 					float over the day's rows and must not eat taps meant for them, but
-					this one thing in the column is there to be tapped. `min-h-11` for
-					the same reason it is on the other one-tap targets — a thumb aiming
-					for "Undo" over a list it has just been tapping down needs the whole
-					44px.
+					the buttons in the column are there to be tapped. `min-h-11` for the
+					same reason it is on the other one-tap targets — a thumb aiming for
+					one of these over a list it has just been tapping down needs the
+					whole 44px.
 
-					The visible label is one word, and one word read on its own out of a
-					list of buttons says nothing about what it would undo, so the
-					accessible name carries the sentence with it. Sighted users get that
-					context from the text sitting next to it.
+					The accessible name is the same word shown on screen: with "Dismiss"
+					sitting right beside it, "Undo" on its own is no longer a word read
+					out of nowhere, and a caller-specific sentence in the name would make
+					two buttons that read differently for the same reason.
+
+					`text-destructive` is text only, no fill — the toast keeps its own
+					background, and this is the one action of the two that removes
+					something.
 				-->
 				<button
 					type="button"
-					aria-label={`${action.label}: ${item.message}`}
 					onclick={() => act(item)}
-					class="text-primary focus-visible:ring-ring pointer-events-auto -my-1 flex min-h-11 shrink-0 items-center rounded-full px-3 font-medium focus-visible:ring-2 focus-visible:outline-none"
+					class="text-destructive focus-visible:ring-ring pointer-events-auto -my-1 flex min-h-11 shrink-0 items-center rounded-full px-3 font-medium focus-visible:ring-2 focus-visible:outline-none"
 				>
 					{action.label}
+				</button>
+			{/if}
+			{#if item.dismissible}
+				<!--
+					The escape hatch next to the action: it takes the toast away without
+					doing anything else, so waving off a message that needs no undoing
+					costs a tap rather than a wait. Same hit target as the action beside
+					it, and the toast's own text color rather than a second accent —
+					there is nothing here to draw the eye to.
+				-->
+				<button
+					type="button"
+					onclick={() => toasts.dismiss(item)}
+					class="text-card-foreground focus-visible:ring-ring pointer-events-auto -my-1 flex min-h-11 shrink-0 items-center rounded-full px-3 font-medium focus-visible:ring-2 focus-visible:outline-none"
+				>
+					Dismiss
 				</button>
 			{/if}
 		</div>
