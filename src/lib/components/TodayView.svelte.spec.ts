@@ -137,7 +137,10 @@ describe('TodayView', () => {
 
 	it('leads with energy for a calorie-led profile', async () => {
 		await render(TodayView);
-		await expect.element(page.getByText(/of \d+\s*kcal/).first()).toBeInTheDocument();
+		// Only the calorie-led layout shows the Carbs/Fat MiniStats; the
+		// GLP-1 layout shows a Fiber ring instead and has no Carbs stat.
+		await expect.element(page.getByText('Carbs')).toBeInTheDocument();
+		await expect.element(page.getByText('Fiber')).not.toBeInTheDocument();
 	});
 
 	it('leads with protein on GLP-1', async () => {
