@@ -1,11 +1,20 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import { test } from '../../tests/preview-server';
 import {
+	EGG_ROW,
 	openEmptyJournal,
 	openLogSheet,
 	signInThroughApi,
 	stubFoodSearch
 } from '../../tests/e2e-support';
+
+/** Narrows Playwright's nullable `boundingBox()` result outside any test body. */
+function requireBoundingBox(
+	box: Awaited<ReturnType<Locator['boundingBox']>>
+): NonNullable<typeof box> {
+	if (!box) throw new Error('element has no bounding box');
+	return box;
+}
 
 /**
  * The Log sheet takes 95% of the phone screen (#162), not the whole thing:
@@ -86,6 +95,41 @@ test.describe('the Log sheet fills the screen on a phone', () => {
 		await page.keyboard.press('Escape');
 		await expect(page.getByRole('dialog')).toBeHidden();
 		await expect(page.getByRole('heading', { name: 'Today', level: 1 })).toBeVisible();
+	});
+});
+
+/**
+ * The search box moved above the History list (Gabriel: put search where a
+ * thumb reaches first, above the history it can otherwise search past). This
+ * proves it in pixels, not just DOM order: with the on-screen keyboard never
+ * up in a Playwright run, nothing pushes the field down to fight for thumb
+ * reach the way a real keyboard would, so a plain bounding-box comparison is
+ * enough here — the DOM-order case (assistive tech, no keyboard involved at
+ * all) is covered at the unit level in `LogSheet.svelte.spec.ts`.
+ */
+test.describe('the log sheet search box sits above History', () => {
+	test('the search field is positioned above the first history row', async ({ page, baseURL }) => {
+		await signInThroughApi(page, baseURL ?? '');
+		await stubFoodSearch(page, [EGG_ROW]);
+		await openEmptyJournal(page);
+
+		// Log one item from search so a history row exists to compare against.
+		await openLogSheet(page);
+		const sheet = page.getByRole('dialog');
+		await sheet.getByLabel('Search foods, brands, barcodes').fill('egg');
+		await sheet.getByRole('button', { name: 'Log Egg, large', exact: true }).click();
+
+		// Clear the query: with no query, the search box shows no results of its
+		// own, and the row below is unambiguously the History list's.
+		await sheet.getByLabel('Search foods, brands, barcodes').fill('');
+		const historyRow = sheet.getByRole('button', { name: /Egg, large/ });
+		await expect(historyRow).toBeVisible();
+
+		const inputBox = requireBoundingBox(
+			await sheet.getByLabel('Search foods, brands, barcodes').boundingBox()
+		);
+		const rowBox = requireBoundingBox(await historyRow.boundingBox());
+		expect(inputBox.y + inputBox.height).toBeLessThanOrEqual(rowBox.y);
 	});
 });
 
