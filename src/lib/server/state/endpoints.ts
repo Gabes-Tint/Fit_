@@ -9,6 +9,7 @@ import {
 	withinDeclaredLength
 } from '../api';
 import { isStateFormat, SCHEMA_VERSION, stateFormat } from '../../domain/state-document';
+import { MAX_STATE_BODY_BYTES, TOO_LARGE_REASON } from '../../domain/state-size';
 import type { Auth, Membership } from '../users/types';
 import { readDocument, writeDocument } from './document';
 
@@ -17,12 +18,6 @@ import { readDocument, writeDocument } from './document';
  * household that has nothing stored yet.
  */
 const STATE_FORMAT = stateFormat(SCHEMA_VERSION);
-
-/**
- * The document is the household's entire store, not a handful of text fields;
- * `readTextBody` in `api.ts` caps at 4 KB for that reason and does not fit here.
- */
-const MAX_STATE_BODY_BYTES = 4 * 1024 * 1024;
 
 /**
  * The part of SvelteKit's `RequestEvent` these handlers use — see `AuthEvent`
@@ -40,7 +35,12 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 export type ParsedStateBody =
 	| { ok: true; version: number; format: string; body: Record<string, unknown> }
 	| { ok: false; code: 'invalid-body' }
+	/** Refused for its size alone, which is the one refusal worth naming; see `state-size.ts`. */
+	| { ok: false; code: 'too-large' }
 	| { ok: false; code: 'invalid-input'; field: string; reason: string };
+
+/** A body this endpoint could not use. */
+type RefusedBody = Extract<ParsedStateBody, { ok: false }>;
 
 /**
  * The body as a JSON object, or `null` for a stream that failed, a body past
@@ -71,16 +71,23 @@ function isValidVersion(value: unknown): value is number {
 
 /**
  * The PUT payload: a JSON object carrying the household's whole document, up
- * to 4 MB. Checked twice against that ceiling — the declared `content-length`
- * before anything is read, and the text actually received — because the header
- * is only what the sender claims.
+ * to `MAX_STATE_BODY_BYTES`. Checked twice against that ceiling — the declared
+ * `content-length` before anything is read, and the text actually received —
+ * because the header is only what the sender claims.
+ *
+ * The declared length is the check that answers `too-large`, because it is the
+ * one a device that means well trips: a `fetch` with a string body always
+ * declares its length, so an honest client is told exactly why its document was
+ * refused without a byte of it being uploaded. A body that hides its length and
+ * then overruns is refused by the second check as an ordinary malformed body —
+ * at that point nothing the sender said about itself has been worth believing.
  */
 export async function readStateBody(request: Request): Promise<ParsedStateBody> {
-	if (
-		declaredMediaType(request) !== JSON_CONTENT_TYPE ||
-		!withinDeclaredLength(request, MAX_STATE_BODY_BYTES)
-	) {
+	if (declaredMediaType(request) !== JSON_CONTENT_TYPE) {
 		return { ok: false, code: 'invalid-body' };
+	}
+	if (!withinDeclaredLength(request, MAX_STATE_BODY_BYTES)) {
+		return { ok: false, code: 'too-large' };
 	}
 	const parsed = await readJsonObject(request);
 	if (parsed === null || !isPlainObject(parsed['body'])) {
@@ -101,6 +108,18 @@ export async function readStateBody(request: Request): Promise<ParsedStateBody> 
 		return { ok: false, code: 'invalid-input', field: 'format', reason: 'unsupported' };
 	}
 	return { ok: true, version, format, body: parsed['body'] };
+}
+
+/**
+ * The answer a body this endpoint could not use earns. A size refusal keeps the
+ * `invalid-body` code every client already knows and adds the reason, so an
+ * older client is refused exactly as it was and a current one can say what
+ * happened.
+ */
+function refusalFor(parsed: RefusedBody): Response {
+	if (parsed.code === 'too-large') return apiError('invalid-body', { reason: TOO_LARGE_REASON });
+	if (parsed.code === 'invalid-body') return apiError('invalid-body');
+	return apiError('invalid-input', { field: parsed.field, reason: parsed.reason });
 }
 
 /** The signed-in account and its first household, or `null` for no session. */
@@ -143,11 +162,7 @@ export async function writeState(db: DatabaseSync, event: StateEvent): Promise<R
 	const context = requireHousehold(event);
 	if (context === null) return apiError('unauthenticated');
 	const parsed = await readStateBody(event.request);
-	if (!parsed.ok) {
-		return parsed.code === 'invalid-body'
-			? apiError('invalid-body')
-			: apiError('invalid-input', { field: parsed.field, reason: parsed.reason });
-	}
+	if (!parsed.ok) return refusalFor(parsed);
 	const result = writeDocument(db, context.household.householdId, {
 		accountId: context.auth.account.id,
 		expectedVersion: parsed.version,
