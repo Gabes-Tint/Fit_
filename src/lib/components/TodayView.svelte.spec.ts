@@ -161,7 +161,7 @@ describe('TodayView', () => {
 		const cluster = page.getByRole('button', { name: /Energy/ });
 		expect(cluster.element().textContent?.trim()).toBe('');
 		await cluster.click();
-		await expect.element(page.getByText('Energy')).toBeInTheDocument();
+		await expect.element(cluster.getByText('Energy')).toBeInTheDocument();
 	});
 
 	it('drops the single Log something button in favor of per-meal buttons', async () => {
@@ -232,6 +232,91 @@ describe('TodayView', () => {
 	it('names the selected day above the heading', async () => {
 		await render(TodayView);
 		expect(document.body.textContent).toContain(weekdayLong(todayISO()));
+	});
+
+	describe('card titles', () => {
+		it('titles the Energy card', async () => {
+			await render(TodayView);
+			await expect
+				.element(page.getByRole('heading', { name: 'Energy', level: 2 }))
+				.toBeInTheDocument();
+		});
+
+		it('titles the Energy card the same way on the GLP-1 ring cluster layout', async () => {
+			onboard(true);
+			await render(TodayView);
+			await expect
+				.element(page.getByRole('heading', { name: 'Energy', level: 2 }))
+				.toBeInTheDocument();
+		});
+
+		it('titles the Weight card', async () => {
+			await render(TodayView);
+			await expect
+				.element(page.getByRole('heading', { name: 'Weight', level: 2 }))
+				.toBeInTheDocument();
+		});
+
+		it('titles the Training card', async () => {
+			await render(TodayView);
+			await expect
+				.element(page.getByRole('heading', { name: 'Training', level: 2 }))
+				.toBeInTheDocument();
+		});
+	});
+
+	describe('Energy card log action', () => {
+		it('opens the log sheet on the default tab from the Energy card', async () => {
+			await render(TodayView);
+			await page.getByRole('button', { name: 'Log food' }).click();
+			expect(logUi.open).toBe(true);
+			expect(logUi.tab).toBe('search');
+			expect(logUi.meal).toBe(null);
+		});
+	});
+
+	describe('Weight card entry', () => {
+		it('starts collapsed', async () => {
+			await render(TodayView);
+			await expect.element(page.getByLabelText('Weight in kilograms')).not.toBeInTheDocument();
+		});
+
+		it('expands to the weight-entry form from its Log weight button', async () => {
+			await render(TodayView);
+			await page.getByRole('button', { name: 'Log weight' }).click();
+			await expect.element(page.getByLabelText('Weight in kilograms')).toBeInTheDocument();
+			await expect
+				.element(page.getByRole('button', { name: 'Today', exact: true }))
+				.toBeInTheDocument();
+			await expect.element(page.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+		});
+
+		it('collapses again from its Close button', async () => {
+			await render(TodayView);
+			await page.getByRole('button', { name: 'Log weight' }).click();
+			await page.getByRole('button', { name: 'Close' }).click();
+			await expect.element(page.getByLabelText('Weight in kilograms')).not.toBeInTheDocument();
+			await expect.element(page.getByRole('button', { name: 'Log weight' })).toBeInTheDocument();
+		});
+
+		it('records a submitted entry against today', async () => {
+			await render(TodayView);
+			await page.getByRole('button', { name: 'Log weight' }).click();
+			await page.getByLabelText('Weight in kilograms').fill('81');
+			await page.getByRole('button', { name: 'Today', exact: true }).click();
+			expect(tend.profile?.weights.some((w) => w.kg === 81 && w.date === todayISO())).toBe(true);
+			// The section may stay open after a successful entry.
+			await expect.element(page.getByLabelText('Weight in kilograms')).toBeInTheDocument();
+		});
+	});
+
+	describe('Training card link', () => {
+		it('links to the exercise route', async () => {
+			await render(TodayView);
+			const link = page.getByRole('link', { name: 'Go to training' });
+			await expect.element(link).toBeInTheDocument();
+			expect(link.element().getAttribute('href')).toBe('/exercise');
+		});
 	});
 
 	describe('training tile and week strip', () => {

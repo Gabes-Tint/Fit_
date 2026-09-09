@@ -19,7 +19,6 @@
 	import { tend } from '$lib/state/tend.svelte';
 	import { cn } from '$lib/ui/cn';
 	import { BUTTON_BASE, BUTTON_SIZES, BUTTON_VARIANTS } from '$lib/ui/button-variants';
-	import Button from '$lib/ui/Button.svelte';
 	import LogRow from './LogRow.svelte';
 	import PageHeader from './PageHeader.svelte';
 	import GlpRingCluster from './GlpRingCluster.svelte';
@@ -34,6 +33,11 @@
 	// Starts collapsed on every visit (#the today card actions issue): nothing
 	// persists it open across a reload.
 	let weightExpanded = $state(false);
+
+	// One round action button, reused for the Energy, Weight and Training card
+	// corners: computed once rather than re-run through `cn` at every call site.
+	const CARD_ACTION_CLASS = cn(BUTTON_BASE, BUTTON_VARIANTS.default, BUTTON_SIZES['icon-round']);
+	const CARD_CLOSE_CLASS = cn(BUTTON_BASE, BUTTON_VARIANTS.ghost, BUTTON_SIZES.icon);
 
 	const profile = $derived(tend.profile);
 
@@ -75,9 +79,9 @@
 
 		<WeekStrip {food} exercise={exerciseDays} weight={weightDays} bind:selected={day} />
 
-		<section class="bg-card flex flex-col gap-2 rounded-3xl px-3 py-5 shadow-border">
+		<section class="bg-card relative rounded-3xl px-3 py-5 shadow-border">
 			<h2 class="font-display px-1 text-xl tracking-tight">Energy</h2>
-			<div class="flex items-start justify-center gap-3">
+			<div class="mt-2 flex items-start justify-center gap-3">
 				{#if primaryProtein}
 					<GlpRingCluster
 						energyValue={dayTotals.kcal}
@@ -96,59 +100,63 @@
 					</div>
 				{/if}
 			</div>
-			<div class="flex justify-end">
-				<Button size="icon-round" aria-label="Log food" onclick={() => logUi.show()}>
-					<Plus class="size-5" />
-				</Button>
-			</div>
+			<button
+				type="button"
+				aria-label="Log food"
+				onclick={() => logUi.show()}
+				class={cn(CARD_ACTION_CLASS, 'absolute right-3 bottom-3')}
+			>
+				<Plus class="size-5" />
+			</button>
 		</section>
 
 		<section
-			class="bg-card flex flex-col gap-2 rounded-3xl p-4 shadow-border"
+			class="bg-card relative rounded-3xl p-4 shadow-border"
 			role="group"
 			aria-label="Weight trend"
 		>
 			<h2 class="font-display px-1 text-xl tracking-tight">Weight</h2>
-			<div class="h-44">
+			<div class="mt-1 h-44">
 				<WeightChart weights={profile.weights} units={tend.state.units} />
 			</div>
 			{#if weightExpanded}
 				<div class="flex flex-col gap-2 px-1">
 					<div class="flex items-center justify-end">
-						<Button
-							variant="ghost"
-							size="icon"
+						<button
+							type="button"
 							aria-label="Close"
 							onclick={() => (weightExpanded = false)}
+							class={CARD_CLOSE_CLASS}
 						>
 							<X class="size-4" />
-						</Button>
+						</button>
 					</div>
 					<WeightEntry units={tend.state.units} />
 				</div>
 			{:else}
-				<div class="flex justify-end">
-					<Button size="icon-round" aria-label="Log weight" onclick={() => (weightExpanded = true)}>
-						<Plus class="size-5" />
-					</Button>
-				</div>
+				<button
+					type="button"
+					aria-label="Log weight"
+					onclick={() => (weightExpanded = true)}
+					class={cn(CARD_ACTION_CLASS, 'absolute right-3 bottom-3')}
+				>
+					<Plus class="size-5" />
+				</button>
 			{/if}
 		</section>
 
-		<section class="bg-card flex flex-col gap-2 rounded-3xl px-4 py-3 shadow-border text-sm">
+		<section class="bg-card relative rounded-3xl px-4 py-3 pr-16 shadow-border text-sm">
 			<h2 class="font-display px-1 text-xl tracking-tight">Training</h2>
 			<div role="group" aria-label="This week's training">
 				<p class="mt-0.5">{trainingText}</p>
 			</div>
-			<div class="flex justify-end">
-				<a
-					href={resolve('/exercise')}
-					aria-label="Go to training"
-					class={cn(BUTTON_BASE, BUTTON_VARIANTS.default, BUTTON_SIZES['icon-round'])}
-				>
-					<ArrowRight class="size-5" />
-				</a>
-			</div>
+			<a
+				href={resolve('/exercise')}
+				aria-label="Go to training"
+				class={cn(CARD_ACTION_CLASS, 'absolute right-3 bottom-3')}
+			>
+				<ArrowRight class="size-5" />
+			</a>
 		</section>
 
 		{#each MEALS as meal (meal)}

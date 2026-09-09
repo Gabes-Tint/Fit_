@@ -92,6 +92,41 @@ test.describe('at 360px', () => {
 		await expectFitsViewport(page, weightCard);
 	});
 
+	test('the Today weight trend card stays inside the viewport expanded', async ({
+		page,
+		baseURL
+	}) => {
+		await signInThroughApi(page, baseURL ?? '');
+		await page.goto('/');
+		await atNarrowPhone(page);
+		await openSampleJournal(page);
+
+		await page.getByRole('button', { name: 'Log weight' }).click();
+		const weightCard = page.getByRole('group', { name: 'Weight trend' });
+		await expect(page.getByLabel('Weight in kilograms')).toBeVisible();
+		await expectFitsViewport(page, weightCard);
+	});
+
+	test('the Today energy card stays inside the viewport', async ({ page, baseURL }) => {
+		await signInThroughApi(page, baseURL ?? '');
+		await page.goto('/');
+		await atNarrowPhone(page);
+		await openSampleJournal(page);
+
+		const energyCard = page.getByRole('heading', { name: 'Energy', level: 2 }).locator('..');
+		await expectFitsViewport(page, energyCard);
+	});
+
+	test('the Today training card stays inside the viewport', async ({ page, baseURL }) => {
+		await signInThroughApi(page, baseURL ?? '');
+		await page.goto('/');
+		await atNarrowPhone(page);
+		await openSampleJournal(page);
+
+		const trainingCard = page.getByRole('group', { name: "This week's training" }).locator('..');
+		await expectFitsViewport(page, trainingCard);
+	});
+
 	test('the exercise training strip stays inside the viewport', async ({ page, baseURL }) => {
 		await openExerciseTabEmpty(page, baseURL ?? '');
 		await pickFullBodyTemplate(page);
