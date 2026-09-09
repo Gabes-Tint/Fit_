@@ -57,10 +57,22 @@ test('opens and closes the drawer from the one button, in the one corner', async
 test('hands focus back to the toggle when the drawer closes', async ({ page, baseURL }) => {
 	await openTheJournal(page, baseURL ?? '');
 
-	await page.getByRole('button', { name: 'Open menu' }).click();
+	const toggle = page.getByRole('button', { name: 'Open menu' });
+	await toggle.click();
+	/*
+	 * The drawer has to be on screen before there is anything to close.
+	 * `SideNav` arrives in its own chunk, so between the two taps below there is
+	 * a window in which it has not mounted yet — and a second tap taken in that
+	 * window sets `menuOpen` back to false before the drawer ever appears.
+	 * Everything after it then holds for the wrong reason: no dialog was ever
+	 * created, and the toggle is focused because it was the thing just clicked.
+	 * Withholding the chunk outright is enough to make the point — without this
+	 * line the test passes with no drawer in the run at all.
+	 */
+	await expect(page.getByRole('dialog', { name: 'Fit_' })).toBeVisible();
 	await page.locator('[data-menu-fab]').click();
-	await expect(page.getByRole('dialog')).toBeHidden();
-	await expect(page.getByRole('button', { name: 'Open menu' })).toBeFocused();
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+	await expect(toggle).toBeFocused();
 });
 
 test('still closes on a tap outside the drawer', async ({ page, baseURL }) => {
@@ -74,7 +86,7 @@ test('still closes on a tap outside the drawer', async ({ page, baseURL }) => {
 	// and everywhere else must behave exactly as it did before.
 	const viewport = page.viewportSize();
 	await page.mouse.click((viewport?.width ?? 400) - 20, 20);
-	await expect(page.getByRole('dialog')).toBeHidden();
+	await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
 test('still closes on Escape', async ({ page, baseURL }) => {
@@ -83,7 +95,7 @@ test('still closes on Escape', async ({ page, baseURL }) => {
 	await page.getByRole('button', { name: 'Open menu' }).click();
 	await expect(page.getByRole('dialog')).toBeVisible();
 	await page.keyboard.press('Escape');
-	await expect(page.getByRole('dialog')).toBeHidden();
+	await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
 test('gives the top of the screen back, and keeps the wordmark in the drawer', async ({
@@ -152,7 +164,15 @@ test('disappears under an open sheet, and comes back when it closes', async ({ p
 
 	// Closed again, the toggle is back and works.
 	await page.getByRole('button', { name: 'Close' }).click();
-	await expect(sheet).toBeHidden();
+	/*
+	 * Gone from the document, not merely out of sight. The tap on the next line
+	 * is judged by `MenuFab`'s own guard, which asks whether any
+	 * `[data-dialog-content]` other than the drawer *exists* — it never consults
+	 * visibility. A sheet still in the DOM would therefore swallow the tap while
+	 * `toBeHidden` was already satisfied, so this waits on the predicate the
+	 * component actually reads rather than a weaker one that resembles it.
+	 */
+	await expect(sheet).toHaveCount(0);
 	await toggle.click();
 	await expect(page.getByRole('dialog', { name: 'Fit_' })).toBeVisible();
 });
