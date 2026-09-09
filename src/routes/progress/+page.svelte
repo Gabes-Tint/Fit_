@@ -17,7 +17,6 @@
 	import { tend } from '$lib/state/tend.svelte';
 	import AvgRow from '$lib/components/AvgRow.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import WeightChart from '$lib/components/WeightChart.svelte';
 	import Button from '$lib/ui/Button.svelte';
 	import Input from '$lib/ui/Input.svelte';
 
@@ -64,9 +63,6 @@
 					<span class="sr-only">{weightName}</span>
 					<span aria-hidden="true">{weightAbbr}</span>
 				</p>
-			</div>
-			<div class="mt-3 h-44">
-				<WeightChart weights={profile.weights} units={tend.state.units} />
 			</div>
 			<form class="mt-3 flex flex-col gap-2" onsubmit={saveWeight}>
 				<Input

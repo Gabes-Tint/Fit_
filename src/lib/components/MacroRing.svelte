@@ -4,14 +4,14 @@
 	let {
 		value,
 		target,
-		label,
+		label = '',
 		unit,
 		size = 132,
 		emphasis = false
 	}: {
 		value: number;
 		target: number;
-		label: string;
+		label?: string;
 		unit: string;
 		size?: number;
 		emphasis?: boolean;
@@ -21,8 +21,6 @@
 	const radius = $derived((size - stroke - 4) / 2);
 	const circumference = $derived(2 * Math.PI * radius);
 	const ratio = $derived(target > 0 ? Math.min(value / target, 1) : 0);
-	// A 5% margin, so rounding alone never reads as overshooting the target.
-	const over = $derived(target > 0 && value > target * 1.05);
 	const boxStyle = $derived(`width: ${size}px; height: ${size}px`);
 	const viewBox = $derived(`0 0 ${size} ${size}`);
 </script>
@@ -61,8 +59,7 @@
 			</span>
 		</div>
 	</div>
-	<p class="text-sm font-medium">{label}</p>
-	<p class="text-muted-foreground max-w-32 text-center text-xs">
-		{over ? 'A little over — information, not a verdict.' : 'On pace.'}
-	</p>
+	{#if label}
+		<p class="text-sm font-medium">{label}</p>
+	{/if}
 </div>
