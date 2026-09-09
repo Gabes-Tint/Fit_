@@ -143,15 +143,7 @@
 				<WeightChart weights={profile.weights} units={tend.state.units} />
 			</div>
 			{#if weightExpanded}
-				<!--
-					pb-20 clears the fixed `LogFab`: once this card expands and the page
-					scrolls to bring the form into view, the "Today" submit button can
-					otherwise land under the same screen position the floating log
-					button occupies, so a tap saves nothing and opens the food sheet
-					instead (#today-card-actions review). The FAB itself is untouched —
-					it stays reachable everywhere, this card just leaves it room.
-				-->
-				<div class="flex flex-col gap-2 px-1 pb-20">
+				<div class="flex flex-col gap-2 px-1">
 					<div class="flex items-center justify-end">
 						<button
 							type="button"
@@ -177,7 +169,7 @@
 		</section>
 
 		<section
-			class="bg-card relative rounded-3xl px-4 py-3 pr-16 shadow-border text-sm"
+			class="bg-card relative rounded-3xl px-4 pt-3 pb-6 pr-16 shadow-border text-sm"
 			aria-labelledby="today-training-title"
 		>
 			<h2 id="today-training-title" class="font-display px-1 text-xl tracking-tight">Training</h2>

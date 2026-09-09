@@ -123,6 +123,48 @@ test.describe('at 360px', () => {
 		).toBe(true);
 	});
 
+	/**
+	 * #today-polish: the chart's viewBox used to be a fixed 320x140 inside a
+	 * box that could be much narrower, so `preserveAspectRatio`'s default
+	 * `xMidYMid meet` shrank the drawing to the box's width and centred it,
+	 * leaving a growing empty band above and below as the box got narrower —
+	 * worst on the narrowest phone this ships to. The gridlines are a fixed
+	 * distance from the plot's own top and bottom edges regardless of the
+	 * data plotted, so they stand in for "where the plot actually starts and
+	 * ends" without depending on where any particular weigh-in landed.
+	 */
+	test('the Today weight trend chart fills its box at 320px wide', async ({ page, baseURL }) => {
+		await signInThroughApi(page, baseURL ?? '');
+		await page.goto('/');
+		await page.setViewportSize({ width: 320, height: 800 });
+		await openSampleJournal(page);
+
+		const chart = page.getByRole('img', { name: /Weight trend/ });
+		await expect(chart).toBeVisible();
+		const chartBox = await chart.boundingBox();
+		expect(chartBox, 'chart has no box to measure').not.toBeNull();
+		const { y, height } = chartBox as { y: number; height: number };
+
+		const gridlines = chart.locator('line');
+		const topBox = await gridlines.first().boundingBox();
+		const bottomBox = await gridlines.last().boundingBox();
+		expect(topBox, 'no gridline to measure').not.toBeNull();
+		expect(bottomBox, 'no gridline to measure').not.toBeNull();
+		const { y: topY } = topBox as { y: number };
+		const { y: bottomY, height: bottomHeight } = bottomBox as { y: number; height: number };
+
+		// A band wider than the label row's own reserved space means the plot
+		// has shrunk away from the box instead of filling it.
+		const LABEL_ROW = 40;
+		expect(topY - y, 'empty band above the plot is bigger than the label row').toBeLessThanOrEqual(
+			LABEL_ROW
+		);
+		expect(
+			y + height - (bottomY + bottomHeight),
+			'empty band below the plot is bigger than the label row'
+		).toBeLessThanOrEqual(LABEL_ROW);
+	});
+
 	test('the Today weight trend card stays inside the viewport expanded', async ({
 		page,
 		baseURL
@@ -138,11 +180,12 @@ test.describe('at 360px', () => {
 		await expectFitsViewport(page, weightCard);
 
 		// Scrolled one step down, the way reading past the expanded form
-		// naturally would: the fixed "Log food" button floats over the same
-		// bottom-right corner the "Today" submit button can land in at this
-		// scroll position, so a tap could open the food sheet instead of
-		// saving (#today-card-actions review). A direct scroll rather than a
-		// simulated wheel: Chromium's wheel-driven scroll can still be
+		// naturally would: this used to be the exact scroll position where the
+		// fixed "Log food" FAB sat over the "Today" submit button and stole its
+		// tap (#today-card-actions review). The FAB is gone (#today-polish), but
+		// the check stays as regression coverage against anything else that
+		// ends up fixed at the bottom of the screen. A direct scroll rather than
+		// a simulated wheel: Chromium's wheel-driven scroll can still be
 		// mid-flight (and occasionally double-applies) the instant after
 		// dispatch, which made this landing spot non-deterministic.
 		await page.evaluate(() => window.scrollBy(0, 400));

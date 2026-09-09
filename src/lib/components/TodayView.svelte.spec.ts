@@ -9,6 +9,7 @@ import { addDaysISO, todayISO, weekdayLong } from '$lib/domain/utils';
 import { dayStripAccessibleLabel } from '$lib/domain/week-strip';
 import { logUi } from '$lib/state/log-ui.svelte';
 import { tend } from '$lib/state/tend.svelte';
+import { BUTTON_SIZES } from '$lib/ui/button-variants';
 import TodayView from './TodayView.svelte';
 
 /** A finished session today, the minimum a workout needs to count as training. */
@@ -316,6 +317,25 @@ describe('TodayView', () => {
 			const link = page.getByRole('link', { name: 'Go to training' });
 			await expect.element(link).toBeInTheDocument();
 			expect(link.element().getAttribute('href')).toBe('/exercise');
+		});
+	});
+
+	describe('card action buttons', () => {
+		// #today-card-actions polish: the round corner action sat too close to
+		// the content above it, so it steps down one size (`icon-round-sm`
+		// rather than `icon-round`) while the 44px tap target is preserved
+		// through padding rather than the button's own box shrinking.
+		it('sizes the Energy, Weight and Training card actions down a step', async () => {
+			await render(TodayView);
+			const actions = [
+				page.getByRole('button', { name: 'Log food' }),
+				page.getByRole('button', { name: 'Log weight' }),
+				page.getByRole('link', { name: 'Go to training' })
+			];
+			for (const action of actions) {
+				await expect.element(action).toBeInTheDocument();
+				expect(action.element().className).toContain(BUTTON_SIZES['icon-round-sm']);
+			}
 		});
 	});
 

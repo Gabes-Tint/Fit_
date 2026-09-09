@@ -316,19 +316,11 @@ describe('AppShell, signed in', () => {
 
 	// Current-destination highlighting depends on real routing, so it is asserted end to end.
 
-	it('opens the log sheet from the top bar', async () => {
-		seedReturningVisit();
-		await render(AppShellHarness, { props: { body: 'Page body' } });
-		await page.getByRole('button', { name: 'Log food' }).click();
-		expect(logUi.open).toBe(true);
-	});
-
-	it('leaves the plain log action on the search tab', async () => {
-		seedReturningVisit();
-		await render(AppShellHarness, { props: { body: 'Page body' } });
-		await page.getByRole('button', { name: 'Log food' }).click();
-		expect(logUi.tab).toBe('search');
-	});
+	// The shell itself no longer carries a way to open the log sheet — that
+	// moved onto the Today page's own cards (#today-card-actions) when the
+	// floating `LogFab` button was removed. Opening the sheet is covered where
+	// a button for it now actually lives: `TodayView.svelte.spec.ts` and
+	// `today-card-actions.e2e.ts`.
 
 	it('closes the app the moment the session expires under it', async () => {
 		// The gate compares the expiry against a wall clock, and a clock is not

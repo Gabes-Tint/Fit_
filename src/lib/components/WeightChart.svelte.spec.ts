@@ -244,36 +244,42 @@ describe('WeightChart scrubbing', () => {
 	});
 
 	/**
-	 * The chart is `w-full h-full` inside its card, so its box is whatever the
-	 * card is — and `preserveAspectRatio` scales the 320:140 viewBox to fit a box
-	 * of a different shape, centring it in what is left over. On a box wider than
-	 * that ratio the drawing sits between two empty side bars, and mapping the
-	 * pointer by the box's own width instead of the SVG's matrix would select an
-	 * older reading than the one being pointed at.
+	 * #today-polish: the viewBox's width now tracks the box's own measured
+	 * `clientWidth` (`bind:clientWidth` in the component) instead of a fixed
+	 * 320, so a box of any width scales at 1 rather than being letterboxed by
+	 * `preserveAspectRatio`'s default `xMidYMid meet`. Height is set to match
+	 * the fixed drawing height exactly, so the box and the viewBox line up on
+	 * both axes and a click at the drawing's own edge lands on the point
+	 * actually there — no gutter to account for either way.
 	 */
-	it('selects by where the drawing actually is on a card wider than the viewBox', async () => {
+	it('matches the viewBox width to a wide measured container, so scrubbing lands on the real point', async () => {
 		await render(WeightChart, { props: { weights: readings([80, 79, 78]) } });
-		// Sized on the element itself: the component asks for `w-full h-full` and
-		// takes the card's box, but Tailwind's stylesheet is not loaded in this
-		// browser test, so without this the SVG falls back to its intrinsic 320:140
-		// and its box always matches the viewBox exactly.
 		const svg = document.querySelector('svg');
 		if (!svg) throw new Error('no chart rendered');
 		svg.style.width = '600px';
-		svg.style.height = '100px';
+		svg.style.height = '140px';
 
+		await expect.poll(() => svg.getAttribute('viewBox')).toBe('0 0 600 140');
 		const rect = svgRect();
 		expect(rect.width).toBeCloseTo(600, 0);
-		expect(rect.height).toBeCloseTo(100, 0);
 
-		// 100 / 140 is the tighter scale, so the drawing is 320 * (100 / 140) wide
-		// and centred: everything left of `gutter` and right of `gutter + drawn`
-		// is empty page, not chart.
-		const drawn = 320 * (100 / 140);
-		const gutter = (rect.width - drawn) / 2;
-		pointerAt('pointerdown', rect.left + gutter + drawn - 1, { pointerType: 'mouse' });
-
+		pointerAt('pointerdown', rect.left + rect.width - 1, { pointerType: 'mouse' });
 		await expect.element(chartLabel('Jun 3 \u00b7 78.0 kg')).toBeInTheDocument();
+	});
+
+	it('matches the viewBox width to a narrow measured container too', async () => {
+		await render(WeightChart, { props: { weights: readings([80, 79, 78]) } });
+		const svg = document.querySelector('svg');
+		if (!svg) throw new Error('no chart rendered');
+		svg.style.width = '200px';
+		svg.style.height = '140px';
+
+		await expect.poll(() => svg.getAttribute('viewBox')).toBe('0 0 200 140');
+		const rect = svgRect();
+		expect(rect.width).toBeCloseTo(200, 0);
+
+		pointerAt('pointerdown', rect.left + 1, { pointerType: 'mouse' });
+		await expect.element(chartLabel('Jun 1 \u00b7 80.0 kg')).toBeInTheDocument();
 	});
 
 	it('selects the leftmost point when the pointer starts there, exercising every candidate in the nearest-point scan', async () => {
