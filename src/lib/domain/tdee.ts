@@ -120,22 +120,21 @@ export type AdaptiveTdee = {
 /** Least-squares kg/day over the weigh-ins, plus their span; zero with fewer than four readings. */
 function weightTrend(weights: WeightEntry[]) {
 	const first = weights[0];
-	// `last` is read the same way `first` is: the length guard below already
-	// guarantees both are defined once weights.length >= 4, so this is a type
-	// narrowing, not a real fewer-than-four-elements case the optional chain
-	// on `points.at(-1)` used to guard against. `points` is `weights.map(...)`,
-	// so it always has `last`'s index too.
-	const last = weights[weights.length - 1];
-	if (weights.length < 4 || !first || !last) return { kgPerDay: 0, weightSpanDays: 0 };
+	if (weights.length < 4 || !first) return { kgPerDay: 0, weightSpanDays: 0 };
 	const t0 = parseISODate(first.date).getTime();
 	const points = weights.map((w) => ({
 		x: (parseISODate(w.date).getTime() - t0) / 86400000,
 		y: w.kg
 	}));
-	return {
-		kgPerDay: linearSlope(points),
-		weightSpanDays: (parseISODate(last.date).getTime() - t0) / 86400000
-	};
+	// weights arrives sorted ascending by date (adaptiveTdee sorts before
+	// calling), so the last point's x is also the largest -- reading it via
+	// reduce keeps weightSpanDays derived from the same points linearSlope
+	// uses, instead of recomputing the last date's offset independently,
+	// without adding an unreachable empty-points branch: reduce's own
+	// initial value already answers 0 for the empty case the length guard
+	// above rules out.
+	const weightSpanDays = points.reduce((max, p) => Math.max(max, p.x), 0);
+	return { kgPerDay: linearSlope(points), weightSpanDays };
 }
 
 export function adaptiveTdee(profile: Profile, end = todayISO()): AdaptiveTdee {
