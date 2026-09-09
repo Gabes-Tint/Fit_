@@ -3,8 +3,8 @@ import { render } from 'vitest-browser-svelte';
 import { toast, toasts } from './toast.svelte';
 import Toaster from './Toaster.svelte';
 
-/** What `AppShell` passes: `TopBar`'s height, its safe area, and a gap. */
-const OFFSET = 'calc(3.5rem + env(safe-area-inset-top) + 0.5rem)';
+/** What `AppShell` passes: the safe area the screen begins after, and a gap. */
+const OFFSET = 'calc(env(safe-area-inset-top) + 0.5rem)';
 
 function region(): HTMLElement {
 	const found = document.querySelector('[aria-live="polite"]');

@@ -115,15 +115,18 @@
 <!--
 	Fixed and out of document flow, so a notice appearing or clearing never
 	shifts the content underneath — the same reason a save every few hundred
-	milliseconds must not jump whatever someone is about to tap. Positioned
-	the way `AppShell`'s toaster is: below `TopBar`'s own height and safe area.
+	milliseconds must not jump whatever someone is about to tap.
+
+	This is the notice's home now that there is no top bar: pinned across the top
+	of every signed-in screen, at the same offset `AppShell` gives its toaster, so
+	sync still has somewhere permanent to speak from without a bar to sit in.
 -->
 <div
 	class={cn(
 		'pointer-events-none fixed inset-x-0 z-30 flex justify-center px-5 transition-opacity duration-150',
 		kind === 'none' && 'opacity-0'
 	)}
-	style="top: calc(3.5rem + env(safe-area-inset-top) + 0.5rem)"
+	style="top: calc(env(safe-area-inset-top) + 0.5rem)"
 >
 	<p role="status" class={cn('flex w-full max-w-lg items-center gap-2 text-sm', toneClass)}>
 		{#if kind === 'waiting'}

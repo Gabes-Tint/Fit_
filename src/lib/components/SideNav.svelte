@@ -5,10 +5,10 @@
 	import Home from '@lucide/svelte/icons/house';
 	import TrendingUp from '@lucide/svelte/icons/trending-up';
 	import UserRound from '@lucide/svelte/icons/user-round';
-	import X from '@lucide/svelte/icons/x';
 	import { resolve } from '$app/paths';
 	import { APP_VERSION } from '$lib/version';
 	import AccountMenu from './auth/AccountMenu.svelte';
+	import { DRAWER_ID, MENU_FAB_SELECTOR } from './MenuFab.svelte';
 	import NavLink from './NavLink.svelte';
 	import type { NavRoute } from './nav-routes';
 
@@ -28,22 +28,40 @@
 		destination('/plan', 'Plan', CalendarDays),
 		destination('/you', 'You', UserRound)
 	]);
+
+	/**
+	 * A tap on the floating toggle is not a tap outside.
+	 *
+	 * The toggle floats above this drawer's overlay, so `bits-ui` sees every tap
+	 * on it as an outside interaction and would close on `pointerdown` — leaving
+	 * the toggle's own `click`, which arrives afterwards, to reopen what had just
+	 * shut. Declining here leaves the toggle as the single thing that decides
+	 * whether the drawer is open, and every other tap outside still closes it.
+	 */
+	function keepOpenForTheToggle(event: PointerEvent) {
+		const target = event.target;
+		if (target instanceof Element && target.closest(MENU_FAB_SELECTOR) !== null)
+			event.preventDefault();
+	}
 </script>
 
 <Dialog.Root bind:open>
 	<Dialog.Portal>
 		<Dialog.Overlay class="bg-foreground/25 fixed inset-0 z-50" />
 		<Dialog.Content
+			id={DRAWER_ID}
+			onInteractOutside={keepOpenForTheToggle}
 			class="bg-card text-card-foreground fixed inset-y-0 left-0 z-50 flex w-[min(17rem,80vw)] flex-col rounded-r-3xl pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-border outline-none"
 		>
-			<div class="flex h-14 items-center justify-between gap-2 px-4">
+			<!--
+				The wordmark, which used to head the top bar and now heads the only
+				thing left that has a header. There is no close button beside it: the
+				floating toggle outside this panel is the close control, wearing an X
+				for as long as this is open, and a second control with the same name
+				would only make a screen reader ask which one it meant.
+			-->
+			<div class="flex h-14 items-center px-4">
 				<Dialog.Title class="font-display text-xl tracking-tight">Fit_</Dialog.Title>
-				<Dialog.Close
-					class="text-muted-foreground hover:bg-secondary flex size-10 items-center justify-center rounded-xl"
-				>
-					<X class="size-4" />
-					<span class="sr-only">Close menu</span>
-				</Dialog.Close>
 			</div>
 			<Dialog.Description class="text-muted-foreground px-4 pb-3 text-xs">
 				Everything stays on this device.
