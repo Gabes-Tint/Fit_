@@ -135,33 +135,33 @@ describe('TodayView', () => {
 		await expect.element(page.getByText(logName()).first()).toBeInTheDocument();
 	});
 
-	it('leads with energy for a calorie-led profile', async () => {
-		await render(TodayView);
-		// Only the calorie-led layout shows the Carbs/Fat MiniStats; the
-		// GLP-1 layout shows a Fiber ring instead and has no Carbs stat.
-		await expect.element(page.getByText('Carbs')).toBeInTheDocument();
-		await expect.element(page.getByText('Fiber')).not.toBeInTheDocument();
-	});
+	describe('Energy card layout', () => {
+		it('shows Protein, Carbs and Fat bars for a calorie-led profile, with one ring', async () => {
+			await render(TodayView);
+			expect(document.querySelectorAll('svg.-rotate-90')).toHaveLength(1);
+			await expect.element(page.getByText('Protein')).toBeInTheDocument();
+			await expect.element(page.getByText('Carbs')).toBeInTheDocument();
+			await expect.element(page.getByText('Fat')).toBeInTheDocument();
+			await expect.element(page.getByText('Fiber')).not.toBeInTheDocument();
+			expect(document.querySelector('.bg-destructive.h-full')).not.toBeNull();
+			expect(document.querySelector('.bg-foreground.h-full')).not.toBeNull();
+			expect(document.querySelector('.bg-ink-subtle.h-full')).not.toBeNull();
+			expect(document.querySelector('.bg-sage-soft.h-full')).toBeNull();
+		});
 
-	it("leads with protein on GLP-1, named in the ring cluster's accessible label", async () => {
-		onboard(true);
-		await render(TodayView);
-		await expect.element(page.getByRole('button', { name: /Protein/ })).toBeInTheDocument();
-	});
-
-	it("names fiber in the ring cluster's accessible label on GLP-1", async () => {
-		onboard(true);
-		await render(TodayView);
-		await expect.element(page.getByRole('button', { name: /Fiber/ })).toBeInTheDocument();
-	});
-
-	it("shows nothing at the ring cluster's centre until it is tapped, on GLP-1", async () => {
-		onboard(true);
-		await render(TodayView);
-		const cluster = page.getByRole('button', { name: /Energy/ });
-		expect(cluster.element().textContent?.trim()).toBe('');
-		await cluster.click();
-		await expect.element(cluster.getByText('Energy')).toBeInTheDocument();
+		it('shows Protein and Fiber bars for a GLP-1 profile, with one ring, and no Carbs/Fat', async () => {
+			onboard(true);
+			await render(TodayView);
+			expect(document.querySelectorAll('svg.-rotate-90')).toHaveLength(1);
+			await expect.element(page.getByText('Protein')).toBeInTheDocument();
+			await expect.element(page.getByText('Fiber')).toBeInTheDocument();
+			await expect.element(page.getByText('Carbs')).not.toBeInTheDocument();
+			await expect.element(page.getByText('Fat')).not.toBeInTheDocument();
+			expect(document.querySelector('.bg-destructive.h-full')).not.toBeNull();
+			expect(document.querySelector('.bg-sage-soft.h-full')).not.toBeNull();
+			expect(document.querySelector('.bg-foreground.h-full')).toBeNull();
+			expect(document.querySelector('.bg-ink-subtle.h-full')).toBeNull();
+		});
 	});
 
 	it('drops the single Log something button in favor of per-meal buttons', async () => {
@@ -242,7 +242,7 @@ describe('TodayView', () => {
 				.toBeInTheDocument();
 		});
 
-		it('titles the Energy card the same way on the GLP-1 ring cluster layout', async () => {
+		it('titles the Energy card the same way on the GLP-1 layout', async () => {
 			onboard(true);
 			await render(TodayView);
 			await expect
