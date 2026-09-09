@@ -53,8 +53,8 @@ describe('parseISODate', () => {
 	});
 
 	// Year, month and day of zero are real (if unusual) values, not a missing
-	// field: folding a missing part to NaN must not also catch zero, which
-	// `0 ?? NaN` preserves but `0 && NaN` would not.
+	// field: folding a missing part to NaN with `?? NaN` must not also catch
+	// zero, the way a truthiness-based fold (e.g. `0 || NaN`) would.
 	it('keeps a year, month or day of zero rather than treating it as missing', () => {
 		expect(todayISO(parseISODate('0000-01-05'))).not.toBe('1970-01-01');
 		expect(todayISO(parseISODate('2026-00-05'))).not.toBe('1970-01-01');
