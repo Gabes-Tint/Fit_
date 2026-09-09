@@ -64,6 +64,7 @@
 		"search:eval": "node scripts/eval/search-eval.ts",
 		"perf:measure": "node scripts/perf/measure.ts",
 		"check:perf-plans": "node scripts/perf/check-plans.ts",
+		"perf:catalog-page": "node scripts/perf/catalog-page.run.ts",
 		"perf:sync-payload": "bun scripts/perf/sync-payload.run.ts",
 		"test:e2e": "playwright test",
 		"test:e2e:all": "E2E_ALL_BROWSERS=1 playwright test",

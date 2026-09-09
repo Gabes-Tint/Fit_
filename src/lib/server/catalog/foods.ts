@@ -7,6 +7,7 @@ import { withServingOptions } from './serving-options';
 import { withUnitMeasure } from './unit-measure';
 import { searchTerms, singular } from './query';
 import { searchSql } from './ranking';
+import { servingRowsByFood } from './serving-rows';
 import { prepared } from './statements';
 
 /** Default page size for a search; the client shows a handful and scrolls. */
@@ -140,19 +141,31 @@ export function foodsByBarcode(db: DatabaseSync, barcode: string): CatalogFood[]
  * serving choices a picker can offer. One place to call all four, so search
  * results and `/api/foods/resolve` (which calls `searchFoods` itself) can
  * never see one without the others.
+ *
+ * All four are answers to one question of `food_serving` — every serving row
+ * of this page of foods — and this is where that question is asked, once. Each
+ * of the four used to ask it for itself, so a twenty-food search executed the
+ * identical statement four times and paid four crossings into SQLite and four
+ * result sets to reach the same rows. Measured on the live catalog, warm, over
+ * the 48 queries of `data/eval/search-queries.json`: one page's read costs
+ * 0.36 ms, so the three extra ones cost about 1.1 ms of a 27 ms search. The
+ * reason to fetch here rather than in each reader is not only that millisecond
+ * — it is that the four now demonstrably read the same rows, in the same
+ * order, rather than four statements that have to be kept identical by hand.
  */
 function finish(db: DatabaseSync, found: CatalogFood[]): CatalogFood[] {
-	const served = withDefaultServing(db, withPortions(db, found));
+	const rows = servingRowsByFood(db, [...new Set(found.map((food) => food.id))]);
+	const served = withDefaultServing(rows, withPortions(rows, found));
 	// Dropped when null rather than carried as `unit: null`, the same as
 	// `portions` is dropped when empty: most foods (~87%, #178) name no usable
 	// unit, and sending the key anyway would be a null on every one of them.
-	const withUnit = withUnitMeasure(db, served).map(({ unit, ...food }) =>
+	const withUnit = withUnitMeasure(rows, served).map(({ unit, ...food }) =>
 		unit ? { ...food, unit } : food
 	);
 	// Dropped when empty for the same reason: a food with no rows at all, or
 	// none plausible enough to survive `servingOptionsOf`, would otherwise
 	// send an empty `servingOptions: []` on every single one of them.
-	return withServingOptions(db, withUnit).map(({ servingOptions, ...food }) =>
+	return withServingOptions(rows, withUnit).map(({ servingOptions, ...food }) =>
 		servingOptions.length ? { ...food, servingOptions } : food
 	);
 }
