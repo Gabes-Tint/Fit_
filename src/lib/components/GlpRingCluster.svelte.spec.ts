@@ -91,6 +91,45 @@ describe('GlpRingCluster', () => {
 		await expect.element(page.getByText('Energy')).toBeInTheDocument();
 	});
 
+	it('treats ArrowUp the same as ArrowRight and ArrowDown the same as ArrowLeft', async () => {
+		await render(GlpRingCluster, { props: PROPS });
+		const cluster = page.getByRole('button');
+		cluster.element().focus();
+
+		cluster
+			.element()
+			.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+		await expect.element(page.getByText('Energy')).toBeInTheDocument();
+
+		cluster
+			.element()
+			.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+		await expect.element(page.getByText('Energy')).not.toBeInTheDocument();
+	});
+
+	it('ignores a key that is not one of the four arrows', async () => {
+		await render(GlpRingCluster, { props: PROPS });
+		const cluster = page.getByRole('button');
+		cluster.element().focus();
+
+		cluster.element().dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+		// Nothing to await for — assert directly that a non-arrow key never
+		// started the cycle away from empty.
+		expect(document.querySelector('button')?.textContent?.trim()).toBe('');
+	});
+
+	it('does not divide by a zero target', async () => {
+		await render(GlpRingCluster, { props: { ...PROPS, fiberTarget: 0, fiberValue: 3 } });
+		const cluster = page.getByRole('button');
+		expect(cluster.element().getAttribute('aria-label')).toContain('Fiber 3 of 0 g');
+
+		await cluster.click();
+		await cluster.click();
+		await cluster.click();
+		await expect.element(page.getByText('Fiber')).toBeInTheDocument();
+		await expect.element(page.getByText('of 0 g')).toBeInTheDocument();
+	});
+
 	it('reveals the hovered ring even while no ring is tapped, for a mouse pointer', async () => {
 		await render(GlpRingCluster, {
 			props: { ...PROPS, proteinValue: 80 }
@@ -120,6 +159,9 @@ describe('GlpRingCluster', () => {
 		// outer Energy ring — before the click that should advance the cycle.
 		energyGroup?.dispatchEvent(
 			new PointerEvent('pointerenter', { bubbles: true, pointerType: 'touch' })
+		);
+		energyGroup?.dispatchEvent(
+			new PointerEvent('pointerleave', { bubbles: true, pointerType: 'touch' })
 		);
 
 		await cluster.click();
