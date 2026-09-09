@@ -33,7 +33,7 @@ import {
 	type LoadRefusal
 } from '$lib/domain/state-document';
 import { displayLoad, loadToKg } from '$lib/domain/units';
-import { isStorageFull, type StorageStatus } from './storage-quota';
+import { isStorageFull, STORAGE_FULL_MESSAGE, type StorageStatus } from './storage-quota';
 import { todayISO, uid } from '$lib/domain/utils';
 import { currentExercise, workoutFromRoutine } from '$lib/domain/workout';
 import { buildWeekPlan, mealPool } from '$lib/domain/week-plan';
@@ -86,6 +86,17 @@ export class TendStore {
 	 * Cleared by the next write that lands.
 	 */
 	storage = $state<StorageStatus>('ok');
+
+	/**
+	 * What to say about this device's storage, or `null` when there is nothing
+	 * to say. The message is chosen here rather than in the badge so it is
+	 * decided beside the status it describes — and so the sentence itself is not
+	 * copied into every route chunk that renders a badge, which is what the
+	 * bundler does with a string constant a component reads directly.
+	 */
+	get storageNotice(): string | null {
+		return this.storage === 'full' ? STORAGE_FULL_MESSAGE : null;
+	}
 
 	private pendingWrite: ReturnType<typeof setTimeout> | null = null;
 	private lifecycleFlushBound = false;

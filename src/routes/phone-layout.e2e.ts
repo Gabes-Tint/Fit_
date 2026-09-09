@@ -251,7 +251,7 @@ test.describe('at 360px', () => {
 
 		const notice = page.getByRole('status');
 		await expect(notice).toContainText(
-			"This device's storage is full, so your latest changes are not saved on it. Export a backup from the You page before closing the app."
+			"This device's storage is full, so your latest changes are not saved on it. Export a backup from the You page."
 		);
 		await expectFitsViewport(page, notice);
 	});

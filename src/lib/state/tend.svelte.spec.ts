@@ -752,6 +752,18 @@ describe('a device with no room left', () => {
 		expect(pushes).toHaveBeenCalled();
 	});
 
+	it('has nothing to say about storage while there is room', () => {
+		// The badge asks the store what to say rather than working it out from the
+		// status, so the quiet answer has to come from here too.
+		expect(onboarded().storageNotice).toBeNull();
+	});
+
+	it('offers the sentence to say once there is not', () => {
+		const store = onboarded();
+		withStorage(refusingStorage(quotaError()).storage, () => store.addWeight(80));
+		expect(store.storageNotice).toContain('not saved on it');
+	});
+
 	it('takes the warning back down once a write lands again', () => {
 		const store = onboarded();
 		const full = refusingStorage(quotaError());

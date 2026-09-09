@@ -1033,6 +1033,20 @@ describe('a dropped request', () => {
 		}
 	});
 
+	it('has nothing to say about the build until the account is ahead of it', () => {
+		// The badge asks the client what to say rather than working it out from
+		// the status, so the quiet answer has to come from here too.
+		expect(syncFor(journal()).outdatedNotice).toBeNull();
+	});
+
+	it('offers the sentence to say once the account is ahead of it', async () => {
+		const fromANewerBuild = { ...remoteState('Robin'), schemaVersion: SCHEMA_VERSION + 1 };
+		server([documentAnswer(3, fromANewerBuild)]);
+		const sync = syncFor(journal());
+		await sync.start(HOUSEHOLD);
+		expect(sync.outdatedNotice).toBe(OUTDATED_MESSAGE);
+	});
+
 	it('is not tried again while the account holds a document a newer build wrote', async () => {
 		vi.useFakeTimers();
 		try {

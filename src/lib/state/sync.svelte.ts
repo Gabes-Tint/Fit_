@@ -746,6 +746,17 @@ export class SyncStore {
 	}
 
 	/**
+	 * What to say about a build older than the account's data, or `null` when
+	 * there is nothing to say. Beside the status for the same two reasons
+	 * `tend.storageNotice` is: the wording belongs with what it describes, and a
+	 * constant a component reads directly is copied into that component's chunk
+	 * as well as the one it is defined in.
+	 */
+	get outdatedNotice(): string | null {
+		return this.isOutdated() ? OUTDATED_MESSAGE : null;
+	}
+
+	/**
 	 * The account's document was written by a newer build than this one. The
 	 * conversation stops: nothing is adopted, nothing is sent, and what this
 	 * device is holding is left exactly as it is and still counted as unsent.

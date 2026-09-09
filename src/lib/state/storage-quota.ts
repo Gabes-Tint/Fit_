@@ -60,8 +60,8 @@ export type StorageStatus = 'ok' | 'full';
  * It leads with what happened rather than with reassurance, which is the
  * opposite of `TOO_LARGE_MESSAGE`: the server refusing a document leaves it
  * safe on the phone, and the phone refusing it leaves the newest changes in
- * this tab and nowhere else. Closing that tab is the thing to not do first, so
- * that is what the sentence ends on.
+ * this tab and nowhere else. The export is the only thing anybody can do about
+ * that, so it is the only thing the sentence asks for.
  */
 export const STORAGE_FULL_MESSAGE =
-	"This device's storage is full, so your latest changes are not saved on it. Export a backup from the You page before closing the app.";
+	"This device's storage is full, so your latest changes are not saved on it. Export a backup from the You page.";
