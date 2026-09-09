@@ -164,7 +164,7 @@ const SOURCE_WINDOW_CONTEXT_LINES = 1;
 /**
  * Hashes a small window of source around a mutant's location instead of the
  * whole file, so an accepted equivalence stays keyed to the reasoning that
- * justified it -- the mutated line and its immediate neighbours -- rather
+ * justified it -- the mutated line and its immediate neighbors -- rather
  * than to every other line in the file.
  *
  * A whole-file hash is honest about what it cannot see (issue #256's own

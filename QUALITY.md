@@ -285,7 +285,7 @@ context on each side, not the whole file (`sourceWindowHash` in
 `scripts/quality/mutation-verdict.ts`). An edit anywhere else in the file -- a
 comment, an unrelated function, a rename three hundred lines away -- leaves
 the window untouched and the acceptance stands; an edit that touches the
-mutated line or its immediate neighbours changes the hash, and the entry
+mutated line or its immediate neighbors changes the hash, and the entry
 silently stops matching and is reported as a stale survivor on the next run.
 See issue #256 for why the key moved off the whole file.
 
