@@ -383,6 +383,36 @@ export async function expectFitsViewport(page: Page, locator?: Locator): Promise
 }
 
 /**
+ * Confirms `locator` — not something stacked on top of it, like the fixed
+ * `LogFab` — is what a tap at the given point of its own box would actually
+ * hit. `boundingBox` only proves geometry; a screen-fixed element with a
+ * higher stacking context can sit inside that same rectangle and steal the
+ * tap, which is exactly what #today-card-actions found at the expanded
+ * Weight card's "Today" button. Checks both the point's centre and its right
+ * edge, since a fixed element parked at a card's own bottom-right corner is
+ * most likely to clip the right side first.
+ */
+export async function expectHittable(locator: Locator): Promise<void> {
+	const box = await locator.boundingBox();
+	expect(box, 'element has no box to measure — is it visible?').not.toBeNull();
+	const { x, y, width, height } = box as { x: number; y: number; width: number; height: number };
+	const points = [
+		{ x: x + width / 2, y: y + height / 2, label: 'centre' },
+		{ x: x + width - 1, y: y + height / 2, label: 'right edge' }
+	];
+	for (const { x: px, y: py, label } of points) {
+		const hit = await locator.evaluate(
+			(el, point) => {
+				const target = document.elementFromPoint(point.x, point.y);
+				return target !== null && (target === el || el.contains(target));
+			},
+			{ x: px, y: py }
+		);
+		expect(hit, `something else covers the element's ${label} at (${px}, ${py})`).toBe(true);
+	}
+}
+
+/**
  * 360×800: the width #133's day strip overflowed at and no project in
  * `scripts/quality/e2e-projects.ts` emulates by default (Pixel 7 is 412px,
  * iPhone 15 is 393px). #152.

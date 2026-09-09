@@ -7,6 +7,7 @@ import {
 	OLIVE_OIL_ROW,
 	atNarrowPhone,
 	expectFitsViewport,
+	expectHittable,
 	openEmptyJournal,
 	openLogCardFor,
 	openLogSheet,
@@ -90,6 +91,20 @@ test.describe('at 360px', () => {
 
 		const weightCard = page.getByRole('region', { name: 'Weight' });
 		await expectFitsViewport(page, weightCard);
+
+		// The "Log weight" button sits over the chart's bottom-right corner; the
+		// chart reserves space there (like the Training card reserves space for
+		// its own arrow) so the newest point and its end-date label are not
+		// hidden under it (#today-card-actions review). `toBeVisible` alone
+		// would not catch this — the label has a real box either way, it is
+		// just a button's box on top of it — so this checks what a tap (or a
+		// screen reader's touch exploration) would actually land on.
+		const endDateLabel = page
+			.getByRole('img', { name: /Weight trend/ })
+			.locator('text')
+			.last();
+		await expect(endDateLabel).toBeVisible();
+		await expectHittable(endDateLabel);
 	});
 
 	test('the Today weight trend card stays inside the viewport expanded', async ({
@@ -105,6 +120,18 @@ test.describe('at 360px', () => {
 		const weightCard = page.getByRole('region', { name: 'Weight' });
 		await expect(page.getByLabel('Weight in kilograms')).toBeVisible();
 		await expectFitsViewport(page, weightCard);
+
+		// Scrolled one step down, the way reading past the expanded form
+		// naturally would: the fixed "Log food" button floats over the same
+		// bottom-right corner the "Today" submit button can land in at this
+		// scroll position, so a tap could open the food sheet instead of
+		// saving (#today-card-actions review). A direct scroll rather than a
+		// simulated wheel: Chromium's wheel-driven scroll can still be
+		// mid-flight (and occasionally double-applies) the instant after
+		// dispatch, which made this landing spot non-deterministic.
+		await page.evaluate(() => window.scrollBy(0, 400));
+		const submit = page.getByRole('button', { name: 'Today', exact: true });
+		await expectHittable(submit);
 	});
 
 	test('the Today energy card stays inside the viewport', async ({ page, baseURL }) => {

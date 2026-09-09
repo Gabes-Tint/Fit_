@@ -118,11 +118,19 @@
 			aria-labelledby="today-weight-title"
 		>
 			<h2 id="today-weight-title" class="font-display px-1 text-xl tracking-tight">Weight</h2>
-			<div class="mt-1 h-44">
+			<div class="mt-1 h-44 pr-16">
 				<WeightChart weights={profile.weights} units={tend.state.units} />
 			</div>
 			{#if weightExpanded}
-				<div class="flex flex-col gap-2 px-1">
+				<!--
+					pb-20 clears the fixed `LogFab`: once this card expands and the page
+					scrolls to bring the form into view, the "Today" submit button can
+					otherwise land under the same screen position the floating log
+					button occupies, so a tap saves nothing and opens the food sheet
+					instead (#today-card-actions review). The FAB itself is untouched —
+					it stays reachable everywhere, this card just leaves it room.
+				-->
+				<div class="flex flex-col gap-2 px-1 pb-20">
 					<div class="flex items-center justify-end">
 						<button
 							type="button"
