@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { refusedForSize, refusedSize, TOO_LARGE_REASON, worthSending } from './state-size';
+import {
+	refusedForSize,
+	refusedSize,
+	TOO_LARGE_MESSAGE,
+	TOO_LARGE_REASON,
+	worthSending
+} from './state-size';
 
 describe('refusedForSize', () => {
 	it('reads the refusal the state endpoint answers an oversized document with', () => {
@@ -29,6 +35,18 @@ describe('refusedForSize', () => {
 		['an error that is a bare string', { error: TOO_LARGE_REASON }]
 	])('answers no for %s', (_label, answer) => {
 		expect(refusedForSize(answer)).toBe(false);
+	});
+});
+
+describe('what the app says about it', () => {
+	it('says the data is safe on the device, not only that something failed', () => {
+		// A red notice about somebody's journal raises exactly one question, and
+		// the answer to it has to be in the notice.
+		expect(TOO_LARGE_MESSAGE).toContain('still saved on this device');
+	});
+
+	it('says what to do about it', () => {
+		expect(TOO_LARGE_MESSAGE).toContain('export');
 	});
 });
 

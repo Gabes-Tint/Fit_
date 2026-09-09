@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase } from '../db';
 import { registerAccount } from '../users/accounts';
 import type { Account, Auth } from '../users/types';
-import { MAX_STATE_BODY_BYTES, TOO_LARGE_REASON } from '../../domain/state-size';
+import { MAX_STATE_BODY_BYTES } from '../../domain/state-size';
 import { readState, readStateBody, writeState } from './endpoints';
 import type { StateEvent } from './endpoints';
 
@@ -285,8 +285,10 @@ describe('writeState', () => {
 			)
 		);
 		expect(response.status).toBe(400);
+		// Spelled out rather than taken from the constant: this is the wire, and
+		// a client built before this server — or after it — matches on the text.
 		expect(await bodyOf(response)).toEqual({
-			error: { code: 'invalid-body', reason: TOO_LARGE_REASON }
+			error: { code: 'invalid-body', reason: 'too-large' }
 		});
 		expect(db.prepare('select count(*) as n from household_state').get()?.['n']).toBe(0);
 	});

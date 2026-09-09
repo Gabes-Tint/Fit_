@@ -560,36 +560,12 @@ export class SyncStore {
 	private async push(householdId: string, again = true): Promise<boolean> {
 		const body = storedDocument($state.snapshot(this.store.state));
 		const payload = envelope(this.version, body);
-		// Nothing has left this device since the server refused a document this
-		// size, and a document only grows, so this one would be refused too. It
-		// stays here, still counted as unsent, rather than costing several
-		// megabytes of somebody's mobile data to be told what is already known.
-		// The measure is the payload's code units, not its bytes: it is only ever
-		// compared with another measurement of the same kind, never with the
-		// server's ceiling.
-		if (!worthSending(this.refusedAt, payload.length)) {
-			this.status = 'too-large';
-			return false;
-		}
-		this.status = 'saving';
-		// Recorded before the request goes out and while the record still reads
-		// dirty, because the case this covers is the one where no answer ever
-		// arrives: the tab is reloaded or closed with the write in the air, and
-		// the next start has to be able to recognise it. Added to whatever is
-		// already unanswered rather than replacing it — a device that hears
-		// nothing goes on writing, and the write that landed is as likely to be
-		// an earlier one as this. See `outstanding-write.ts`.
-		this.outstanding = pendingWrite(this.outstanding, this.version, fingerprint(body));
-		this.save(householdId);
-		this.dirty = false;
-		const result = await writeRemote(payload);
+		const result = await this.send(householdId, body, payload);
 		// The account this write was for is no longer the one signed in here, so
 		// neither the version it created nor the document it was refused with
 		// belongs to whoever is.
 		if (this.householdId !== householdId) return false;
-		// Every outcome that carried no document back is a bare string; only a
-		// stored or refused version arrives as one.
-		if (typeof result === 'string') {
+		if (result === 'unreachable' || result === 'refused' || result === 'too-large') {
 			this.stalled(result, payload.length);
 			return false;
 		}
@@ -617,6 +593,40 @@ export class SyncStore {
 		this.save(householdId);
 		this.status = 'idle';
 		return this.dirty;
+	}
+
+	/**
+	 * The write itself: the bookkeeping a write in the air needs, and then the
+	 * request.
+	 *
+	 * A document already known to be too large never gets that far. The server
+	 * has turned down a document this size and this one is no smaller — a
+	 * document only grows — so the answer is known, and asking again would cost
+	 * megabytes of somebody's mobile data to hear it. Refusing it here rather
+	 * than after the bookkeeping is the point of doing it here at all: nothing
+	 * left the device, so nothing is recorded as an unanswered write. The size
+	 * measured is the payload's code units rather than its bytes, because it is
+	 * only ever compared with another measurement of the same kind and never
+	 * with the server's ceiling.
+	 */
+	private async send(
+		householdId: string,
+		body: StoredDocument,
+		payload: string
+	): Promise<WriteOutcome> {
+		if (!worthSending(this.refusedAt, payload.length)) return 'too-large';
+		this.status = 'saving';
+		// Recorded before the request goes out and while the record still reads
+		// dirty, because the case this covers is the one where no answer ever
+		// arrives: the tab is reloaded or closed with the write in the air, and
+		// the next start has to be able to recognise it. Added to whatever is
+		// already unanswered rather than replacing it — a device that hears
+		// nothing goes on writing, and the write that landed is as likely to be
+		// an earlier one as this. See `outstanding-write.ts`.
+		this.outstanding = pendingWrite(this.outstanding, this.version, fingerprint(body));
+		this.save(householdId);
+		this.dirty = false;
+		return writeRemote(payload);
 	}
 
 	/**
