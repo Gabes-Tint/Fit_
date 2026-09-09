@@ -16,6 +16,7 @@
 	import { tend } from '$lib/state/tend.svelte';
 	import LogRow from './LogRow.svelte';
 	import PageHeader from './PageHeader.svelte';
+	import GlpRingCluster from './GlpRingCluster.svelte';
 	import MacroRing from './MacroRing.svelte';
 	import MiniStat from './MiniStat.svelte';
 	import WeekStrip from './WeekStrip.svelte';
@@ -66,22 +67,14 @@
 		<section class="bg-card rounded-3xl px-3 py-5 shadow-border">
 			<div class="flex items-start justify-center gap-3">
 				{#if primaryProtein}
-					<MacroRing
-						value={dayTotals.protein}
-						target={targets.protein}
-						label="Protein"
-						unit="g"
-						emphasis
-						size={140}
+					<GlpRingCluster
+						energyValue={dayTotals.kcal}
+						energyTarget={targets.kcal}
+						proteinValue={dayTotals.protein}
+						proteinTarget={targets.protein}
+						fiberValue={dayTotals.fiber}
+						fiberTarget={targets.fiber}
 					/>
-					<MacroRing
-						value={dayTotals.fiber}
-						target={targets.fiber}
-						label="Fiber"
-						unit="g"
-						size={108}
-					/>
-					<MacroRing value={dayTotals.kcal} target={targets.kcal} unit="kcal" size={96} />
 				{:else}
 					<MacroRing value={dayTotals.kcal} target={targets.kcal} unit="kcal" emphasis size={148} />
 					<div class="flex flex-col justify-center gap-3 pt-2 text-sm">
