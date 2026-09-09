@@ -195,6 +195,30 @@ test.describe('at 360px', () => {
 		await expectFitsViewport(page, toast);
 	});
 
+	test('a toast with Undo and Dismiss stays inside the viewport', async ({ page, baseURL }) => {
+		// The one-tap-log toast is the widest of the two actions it can carry: at
+		// 360px "Undo" and "Dismiss" sit at the right end of the same row as a
+		// sentence naming the food and the meal, which is the shape most likely
+		// to spill (#152's pattern, one screen the earlier sweep did not cover).
+		await signInThroughApi(page, baseURL ?? '');
+		await stubFoodSearch(page, [EGG_ROW]);
+		await atNarrowPhone(page);
+		await openEmptyJournal(page);
+
+		await openLogSheet(page);
+		await page.getByRole('button', { name: 'Search', exact: true }).click();
+		await page.getByLabel('Search foods, brands, barcodes').fill('egg');
+		await page.getByRole('button', { name: /^Log Egg/ }).click();
+
+		const undo = page.getByRole('button', { name: 'Undo', exact: true });
+		const dismiss = page.getByRole('button', { name: 'Dismiss', exact: true });
+		await expect(undo).toBeVisible();
+		await expect(dismiss).toBeVisible();
+
+		const toastBox = undo.locator('xpath=..');
+		await expectFitsViewport(page, toastBox);
+	});
+
 	test('the sync notice for a document too large to send stays inside the viewport', async ({
 		page,
 		baseURL

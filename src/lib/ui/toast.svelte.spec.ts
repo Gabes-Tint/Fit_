@@ -105,38 +105,38 @@ describe('a toast with something to do about it', () => {
 		expect(onClick).toHaveBeenCalledOnce();
 	});
 
-	it('stays up well past the four seconds a plain message gets', () => {
+	it('stays up past the four seconds a plain message gets', () => {
 		// The whole point of the longer life: four seconds is a reading budget,
 		// and this one has to survive noticing, reading, deciding and reaching.
 		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
 		vi.advanceTimersByTime(4000);
 		expect(onScreen()).toEqual(['Logged Egg to breakfast.']);
 
-		vi.advanceTimersByTime(5999);
+		vi.advanceTimersByTime(999);
 		expect(onScreen()).toEqual(['Logged Egg to breakfast.']);
 	});
 
 	it('still takes itself away in the end', () => {
 		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
-		vi.advanceTimersByTime(10000);
+		vi.advanceTimersByTime(5000);
 		expect(onScreen()).toEqual([]);
 	});
 
 	it('does not lend its longer life to a plain message queued beside it', () => {
 		// Two timers, two lengths. A plain sentence raised alongside one that can
-		// be undone must not sit on the screen for ten seconds because of it.
+		// be undone must not sit on the screen for five seconds because of it.
 		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
 		toast('Height saved.');
 
 		vi.advanceTimersByTime(4000);
 		expect(onScreen()).toEqual(['Logged Egg to breakfast.']);
 
-		vi.advanceTimersByTime(6000);
+		vi.advanceTimersByTime(1000);
 		expect(onScreen()).toEqual([]);
 	});
 
 	it('does not let a dismissed toast’s timer carry off the one that replaced it', () => {
-		// Pressing the action dismisses the toast early, but the ten-second timer
+		// Pressing the action dismisses the toast early, but the five-second timer
 		// armed when it appeared still fires afterwards. By then the list has
 		// moved on, and the entry at that position belongs to someone else.
 		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
@@ -150,5 +150,18 @@ describe('a toast with something to do about it', () => {
 
 		vi.advanceTimersByTime(1000);
 		expect(onScreen()).toEqual([]);
+	});
+
+	it('says nothing about being dismissible when the caller did not ask for it', () => {
+		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
+		expect(only().dismissible).toBeUndefined();
+	});
+
+	it('carries the dismissible flag the caller gave it', () => {
+		toast('Logged Egg to breakfast.', {
+			action: { label: 'Undo', onClick: () => {} },
+			dismissible: true
+		});
+		expect(only().dismissible).toBe(true);
 	});
 });

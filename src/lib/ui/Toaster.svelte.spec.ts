@@ -23,6 +23,14 @@ function actionButton(): HTMLButtonElement | null {
 	return region().querySelector('button');
 }
 
+/** The explicit "Dismiss" button, found by its accessible name rather than position. */
+function dismissButton(): HTMLButtonElement | null {
+	const found = [...region().querySelectorAll('button')].find(
+		(button) => button.textContent?.trim() === 'Dismiss'
+	);
+	return found ?? null;
+}
+
 beforeEach(() => {
 	toasts.items = [];
 	vi.useFakeTimers();
@@ -112,15 +120,33 @@ describe('a toast that can be undone', () => {
 		expect(actionButton()?.textContent?.trim()).toBe('Undo');
 	});
 
-	it('names the button with the sentence it would undo', async () => {
-		// "Undo", read out of a list of buttons with nothing around it, says
-		// nothing about what would be undone. The sentence is right there on
-		// screen for anyone who can see it, so the accessible name carries it.
+	it('names the button with its plain label', async () => {
+		// "Undo" sitting next to "Dismiss" reads as a pair of choices about the
+		// same sentence above them, so the accessible name is the same word shown
+		// on screen rather than a caller-specific sentence.
 		await render(Toaster, { offset: OFFSET });
 		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
 		await vi.advanceTimersByTimeAsync(0);
 
-		expect(actionButton()?.getAttribute('aria-label')).toBe('Undo: Logged Egg to breakfast.');
+		expect(actionButton()?.getAttribute('aria-label')).toBe(null);
+		expect(actionButton()?.textContent?.trim()).toBe('Undo');
+	});
+
+	it('colors the action text with the destructive token and no fill', async () => {
+		await render(Toaster, { offset: OFFSET });
+		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(actionButton()?.className).toMatch(/\btext-destructive\b/);
+		expect(actionButton()?.className).not.toMatch(/\bbg-destructive\b/);
+	});
+
+	it('gives the action button the full 44px hit height', async () => {
+		await render(Toaster, { offset: OFFSET });
+		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(actionButton()?.className).toMatch(/\bmin-h-11\b/);
 	});
 
 	it('lets the button take a tap the column around it refuses', async () => {
@@ -166,7 +192,65 @@ describe('a toast that can be undone', () => {
 		await vi.advanceTimersByTimeAsync(4000);
 		expect(region().textContent).toContain('Logged Egg to breakfast.');
 
-		await vi.advanceTimersByTimeAsync(6000);
+		await vi.advanceTimersByTimeAsync(1000);
 		expect(region().textContent?.trim()).toBe('');
+	});
+});
+
+describe('a toast that offers an explicit dismiss', () => {
+	it('gives an action-only toast nothing to press beyond the action', async () => {
+		await render(Toaster, { offset: OFFSET });
+		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(dismissButton()).toBe(null);
+	});
+
+	it('adds a Dismiss button at the right end when the caller asks for one', async () => {
+		await render(Toaster, { offset: OFFSET });
+		toast('Logged Egg to breakfast.', {
+			action: { label: 'Undo', onClick: () => {} },
+			dismissible: true
+		});
+		await vi.advanceTimersByTimeAsync(0);
+
+		const buttons = [...region().querySelectorAll('button')];
+		expect(buttons.map((button) => button.textContent?.trim())).toEqual(['Undo', 'Dismiss']);
+	});
+
+	it('gives Dismiss the toast’s own text color rather than the destructive one', async () => {
+		await render(Toaster, { offset: OFFSET });
+		toast('Logged Egg to breakfast.', {
+			action: { label: 'Undo', onClick: () => {} },
+			dismissible: true
+		});
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(dismissButton()?.className).toMatch(/\btext-card-foreground\b/);
+		expect(dismissButton()?.className).not.toMatch(/\btext-destructive\b/);
+	});
+
+	it('gives the Dismiss button the full 44px hit height', async () => {
+		await render(Toaster, { offset: OFFSET });
+		toast('Logged Egg to breakfast.', {
+			action: { label: 'Undo', onClick: () => {} },
+			dismissible: true
+		});
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(dismissButton()?.className).toMatch(/\bmin-h-11\b/);
+	});
+
+	it('closes the toast without running the action', async () => {
+		const onClick = vi.fn();
+		await render(Toaster, { offset: OFFSET });
+		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick }, dismissible: true });
+		await vi.advanceTimersByTimeAsync(0);
+
+		dismissButton()?.click();
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(region().textContent?.trim()).toBe('');
+		expect(onClick).not.toHaveBeenCalled();
 	});
 });
