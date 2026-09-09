@@ -16,6 +16,7 @@ import {
 	pendingWrite,
 	type OutstandingWrite
 } from './outstanding-write';
+import { putItem } from './storage-quota';
 import { SyncRetry } from './sync-retry';
 import { STORAGE_KEY, tend } from './tend.svelte';
 import type { TendStore } from './tend.svelte';
@@ -266,6 +267,14 @@ export class SyncStore {
 
 	/** The version this device and the server last agreed on. */
 	version = $state(0);
+
+	/**
+	 * The version the copy stored on this device is at, which is what `save()`
+	 * records and what the next start will be reading against. The same as
+	 * `version` for as long as the device can store what it holds, and behind it
+	 * from the moment it cannot. See `save()`.
+	 */
+	private storedVersion = 0;
 
 	private readonly store: TendStore;
 
@@ -746,6 +755,17 @@ export class SyncStore {
 	}
 
 	/**
+	 * What to say about a build older than the account's data, or `null` when
+	 * there is nothing to say. Beside the status for the same two reasons
+	 * `tend.storageNotice` is: the wording belongs with what it describes, and a
+	 * constant a component reads directly is copied into that component's chunk
+	 * as well as the one it is defined in.
+	 */
+	get outdatedNotice(): string | null {
+		return this.isOutdated() ? OUTDATED_MESSAGE : null;
+	}
+
+	/**
 	 * The account's document was written by a newer build than this one. The
 	 * conversation stops: nothing is adopted, nothing is sent, and what this
 	 * device is holding is left exactly as it is and still counted as unsent.
@@ -766,15 +786,29 @@ export class SyncStore {
 	 * Record where this household has got to. The household is passed in rather
 	 * than read off the field, so a record can only ever be written for the
 	 * account whose answer produced it.
+	 *
+	 * What is written describes the copy a reload will find on the device, which
+	 * is not always the copy this exchange was about. A device that could not
+	 * store the document it just sent has the server holding those changes and
+	 * its own copy without them (#300); a record naming the version the exchange
+	 * reached would leave the next start believing that stale copy is the
+	 * account's, and the first edit after it would push it back over everybody
+	 * else's. So the version stops where the copy on the device stopped, and the
+	 * writes this device is still holding an answer for go with it: those exist
+	 * to stop it adopting away work newer than the server's (#247), and a device
+	 * whose own copy is behind has none — the newer copy is the one it is being
+	 * protected from.
 	 */
 	private save(householdId: string): void {
+		const behind = this.store.storage === 'full';
+		if (!behind) this.storedVersion = this.version;
 		const record: SyncRecord = {
 			householdId,
-			version: this.version,
+			version: this.storedVersion,
 			dirty: this.dirty,
-			outstanding: this.outstanding
+			outstanding: behind ? null : this.outstanding
 		};
-		globalThis.localStorage?.setItem(SYNC_STORAGE_KEY, JSON.stringify(record));
+		putItem(SYNC_STORAGE_KEY, JSON.stringify(record));
 	}
 }
 
