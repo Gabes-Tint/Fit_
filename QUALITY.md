@@ -248,19 +248,33 @@ goes red, this is which one you tripped and what it is for:
   look fine. A single 200 KB file and four small ones cost a phone far more than five even
   ones of the same sum, and neither JS number can tell them apart.
 
-Every budget sits a couple of percent above what the tree measures, on purpose. Two
-things move the count without a line of source changing: the version stamp costs a branch
-**eight bytes** (`main` is tagged on every merge and stamps `v0.0.NN`; a branch is ahead of
-its tag and stamps `v0.0.NN+<sha>`), and SvelteKit's random `__sveltekit_<token>` identifier
-varies by **four bytes** between builds of an identical tree. `check:bundle` prints both with
-every failure. A budget whose headroom is smaller than that is measuring the build rather
-than the code; `docs/bundle-audit.md` has the measurements.
+Every budget sits a couple of percent above what the tree measures, on purpose. One thing
+still moves the count without a line of source changing: SvelteKit's random
+`__sveltekit_<token>` identifier varies by **four bytes** between builds of an identical tree.
+`check:bundle` prints that noise note with every failure. A budget whose headroom is smaller
+than that is measuring the build rather than the code; `docs/bundle-audit.md` has the
+measurements.
 
-`bun run bundle:headroom` builds the current tree the same way `check:bundle` does and prints
-all four metrics against the budgets in `quality/bundle-budgets.json`, never against a stale
-report; add `--against <ref>` (default `origin/main`) to also print the delta and the top five
-changed chunks against another ref. A proposal to raise a budget in
-`quality/bundle-budgets.json` must quote this command's output as evidence.
+`check:bundle` always rebuilds before measuring — the `bun scripts/quality/bundle-budget.ts`
+that `npm run check:bundle` runs is never a report of whatever happened to be sitting in
+`.svelte-kit/output/client`, stale or otherwise. That rebuild also sets
+`FIT_BUNDLE_MEASURE_VERSION`, which makes `vite.config.ts` (via
+`scripts/build/bundle-measurement-version.ts`) embed a fixed-length placeholder for
+`__APP_VERSION__`/`__APP_COMMIT__` instead of the real, git-derived one. The real version's
+length is not stable — a tagged `main` stamps the short `v0.0.NN`, a branch ahead of its tag
+stamps the eight-characters-longer `v0.0.NN+<sha>`, and a shallow or differently-fetched
+checkout can see a different tag distance again — so without the placeholder, `check:bundle`'s
+number depended on which checkout produced it rather than on the code. `npm run build`, the
+deploy path, never sets that variable and keeps embedding the real version.
+
+`bun run bundle:headroom` also builds fresh and prints all four metrics against the budgets in
+`quality/bundle-budgets.json`, never against a stale report; add `--against <ref>` (default
+`origin/main`) to also print the delta and the top five changed chunks against another ref.
+Unlike `check:bundle`, it embeds the real version (it exists to answer "what would this branch
+actually ship"), so its number still carries that up-to-eight-byte version-stamp noise on top
+of the four-byte SvelteKit one — expect its total to differ slightly from `check:bundle`'s for
+the same tree. A proposal to raise a budget in `quality/bundle-budgets.json` must quote
+`check:bundle`'s output as evidence.
 
 ## Mutation lanes
 
