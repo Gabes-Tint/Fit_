@@ -68,15 +68,15 @@ describe('assertKeyPermissions', () => {
 
 describe('parseOwnerRepo', () => {
 	it('parses an ssh-style origin remote', () => {
-		expect(parseOwnerRepo('git@github.com:gabepsilva/Fit_.git')).toEqual({
-			owner: 'gabepsilva',
+		expect(parseOwnerRepo('git@github.com:Gabes-Tint/Fit_.git')).toEqual({
+			owner: 'Gabes-Tint',
 			repo: 'Fit_'
 		});
 	});
 
 	it('parses an https-style origin remote', () => {
-		expect(parseOwnerRepo('https://github.com/gabepsilva/Fit_.git')).toEqual({
-			owner: 'gabepsilva',
+		expect(parseOwnerRepo('https://github.com/Gabes-Tint/Fit_.git')).toEqual({
+			owner: 'Gabes-Tint',
 			repo: 'Fit_'
 		});
 	});
@@ -148,7 +148,7 @@ function fakeDependencies(overrides: Partial<Dependencies> = {}): {
 		statKeyFile: () => ({ mode: 0o100600 }),
 		fetchImpl: fetchImpl as unknown as typeof fetch,
 		spawnChild,
-		getOriginUrl: () => 'git@github.com:gabepsilva/Fit_.git',
+		getOriginUrl: () => 'git@github.com:Gabes-Tint/Fit_.git',
 		now: () => Date.now(),
 		...overrides
 	};
@@ -169,7 +169,7 @@ describe('run', () => {
 		const installationCall = defined(calls[0]);
 		const tokenCall = defined(calls[1]);
 		const revokeCall = defined(calls[2]);
-		expect(installationCall.url).toBe('https://api.github.com/repos/gabepsilva/Fit_/installation');
+		expect(installationCall.url).toBe('https://api.github.com/repos/Gabes-Tint/Fit_/installation');
 		expect(installationCall.init?.method ?? 'GET').toBe('GET');
 		expect(authorization(installationCall)).toMatch(/^Bearer /);
 		expect(tokenCall.url).toBe('https://api.github.com/app/installations/987/access_tokens');

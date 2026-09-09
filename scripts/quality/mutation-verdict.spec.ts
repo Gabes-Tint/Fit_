@@ -699,7 +699,7 @@ describe('mutation verdict', () => {
 			classification: 'equivalent' as const,
 			rationale:
 				'The replacement returns the same externally observable value for every valid input.',
-			review: 'https://github.com/gabepsilva/Fit_/pull/5'
+			review: 'https://github.com/Gabes-Tint/Fit_/pull/5'
 		};
 		const ledger: MutationReviewLedger = {
 			version: 1,
@@ -742,7 +742,7 @@ describe('mutation verdict', () => {
 			classification: 'equivalent' as const,
 			rationale:
 				'The old source made this replacement observationally identical for every valid input.',
-			review: 'https://github.com/gabepsilva/Fit_/pull/5'
+			review: 'https://github.com/Gabes-Tint/Fit_/pull/5'
 		};
 		await writeFile(
 			path.join(root, 'src/a.ts'),
@@ -782,7 +782,7 @@ describe('mutation verdict', () => {
 			classification: 'equivalent' as const,
 			rationale:
 				'The replacement returns the same externally observable value for every valid input.',
-			review: 'https://github.com/gabepsilva/Fit_/pull/5'
+			review: 'https://github.com/Gabes-Tint/Fit_/pull/5'
 		};
 		// Edited far from the mutated line -- an unrelated constant, not the
 		// guarded expression the acceptance reasons about.
@@ -830,7 +830,7 @@ describe('mutation verdict', () => {
 			classification: 'equivalent' as const,
 			rationale:
 				'The old reasoning was about this exact guarded expression, which the edit below changes.',
-			review: 'https://github.com/gabepsilva/Fit_/pull/5'
+			review: 'https://github.com/Gabes-Tint/Fit_/pull/5'
 		};
 		// Edited on the mutated line itself.
 		const updatedSource = originalSource.replace('value ? 1 : 2', 'value ? 3 : 4');
@@ -863,7 +863,7 @@ describe('mutation verdict', () => {
 			classification: 'equivalent' as const,
 			rationale:
 				'This mutation turns a countdown into a count-up, so the loop never terminates and Stryker can only ever time it out.',
-			review: 'https://github.com/gabepsilva/Fit_/pull/5',
+			review: 'https://github.com/Gabes-Tint/Fit_/pull/5',
 			status: 'Timeout' as const
 		};
 		const ledger: MutationReviewLedger = {
@@ -908,7 +908,7 @@ describe('mutation verdict', () => {
 			classification: 'equivalent' as const,
 			rationale:
 				'A deliberately mis-declared status: this mutant actually survives, not times out, and the check must reject it.',
-			review: 'https://github.com/gabepsilva/Fit_/pull/5',
+			review: 'https://github.com/Gabes-Tint/Fit_/pull/5',
 			status: 'Timeout' as const
 		};
 		const ledger: MutationReviewLedger = {
@@ -954,7 +954,7 @@ describe('mutation verdict', () => {
 			rationale:
 				'A default-status entry (no `status` field, so it excuses only Survived) pointed at a mutant that actually times out, which the check must reject rather than assume.'
 		};
-		const ledgerEntry = { ...entry, review: 'https://github.com/gabepsilva/Fit_/pull/5' };
+		const ledgerEntry = { ...entry, review: 'https://github.com/Gabes-Tint/Fit_/pull/5' };
 		const ledger: MutationReviewLedger = {
 			version: 1,
 			entries: [{ ...ledgerEntry, fingerprint: mutantFingerprint(ledgerEntry) }]
@@ -1025,7 +1025,7 @@ describe('mutation verdict', () => {
 			classification: 'equivalent' as const,
 			rationale:
 				'The replacement returns the same externally observable value for every valid input.',
-			review: 'https://github.com/gabepsilva/Fit_/pull/5'
+			review: 'https://github.com/Gabes-Tint/Fit_/pull/5'
 		};
 		// A comment inserted above the function shifts the mutant from line 2
 		// to line 3, without changing a character of its own text.
@@ -1077,7 +1077,7 @@ describe('mutation verdict', () => {
 			classification: 'equivalent' as const,
 			rationale:
 				'The replacement returns the same externally observable value for every valid input.',
-			review: 'https://github.com/gabepsilva/Fit_/pull/5'
+			review: 'https://github.com/Gabes-Tint/Fit_/pull/5'
 		};
 		await writeFile(path.join(root, 'src/a.ts'), source);
 		const verdict = await evaluateMutationReport({
@@ -1158,7 +1158,7 @@ describe('mutation verdict', () => {
 			sourceHash: '0'.repeat(64),
 			classification: 'equivalent' as const,
 			rationale: 'A deliberately invalid broad entry that must never classify a concrete survivor.',
-			review: 'https://github.com/gabepsilva/Fit_/pull/5'
+			review: 'https://github.com/Gabes-Tint/Fit_/pull/5'
 		};
 		const verdict = await evaluateMutationReport({
 			projectRoot: root,

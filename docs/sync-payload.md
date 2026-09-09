@@ -1,6 +1,6 @@
 # Sync payload size
 
-Issue [#130](https://github.com/gabepsilva/Fit_/issues/130), first lead: _the state document sync
+Issue [#130](https://github.com/Gabes-Tint/Fit_/issues/130), first lead: _the state document sync
 sends the whole blob; measure size per push and whether a diff or compression is worth it._
 
 This is the measurement, not a change to sync. Nothing in `src/lib/state/` or

@@ -19,7 +19,7 @@
 			"fingerprint": "4dc352ab036039d22b387c1ab3400502e55ce486bb3dd22b14f5f0bad35a3385",
 			"classification": "equivalent",
 			"rationale": "The `typeof body !== ‘object’` half only short-circuits a body that is a JSON string, number or boolean; each of those reads `.error` as undefined, so the very next guard returns the same `invalid-body`. Both halves reach one verdict and no response body can separate them.",
-			"review": "https://github.com/gabepsilva/Fit_/pull/5"
+			"review": "https://github.com/Gabes-Tint/Fit_/pull/5"
 		},
 		{
 			"file": "src/lib/auth/api.ts",
@@ -39,7 +39,7 @@
 			"fingerprint": "9025888e06f9fbcb628bcfa57c2855d7dd5fa587537e45c35ff5e3074e6f3b26",
 			"classification": "equivalent",
 			"rationale": "`CODES` is a set of strings, so `CODES.has(code)` is already false for every non-string value; the `typeof` guard narrows the type for the compiler and cannot change which branch runs.",
-			"review": "https://github.com/gabepsilva/Fit_/pull/5"
+			"review": "https://github.com/Gabes-Tint/Fit_/pull/5"
 		},
 		{
 			"file": "src/lib/auth/api.ts",
@@ -59,7 +59,7 @@
 			"fingerprint": "74ea2d021aeccb301f973be7a42aafcd612a6609d011ca3cc3e35c342f221154",
 			"classification": "equivalent",
 			"rationale": "The catch supplies the value `codeOf` and `textOf` then read. `undefined` fails `typeof body !== ‘object’` where `null` fails `body === null`, both returning `invalid-body`, and `?.error` is undefined for either. No caller can tell the two apart.",
-			"review": "https://github.com/gabepsilva/Fit_/pull/5"
+			"review": "https://github.com/Gabes-Tint/Fit_/pull/5"
 		},
 		{
 			"file": "src/lib/auth/api.ts",
@@ -79,7 +79,7 @@
 			"fingerprint": "0d050026d933414a698dc539b6d4bbbcfcf3627342030ae645a9c4bf776d842e",
 			"classification": "equivalent",
 			"rationale": "Same catch, in `sessionFrom`: the very next line rejects `undefined` on `typeof value !== ‘object’` and `null` on `value === null`, and both produce the identical `unreachable` failure.",
-			"review": "https://github.com/gabepsilva/Fit_/pull/5"
+			"review": "https://github.com/Gabes-Tint/Fit_/pull/5"
 		},
 		{
 			"file": "src/lib/auth/wording.ts",
@@ -99,7 +99,7 @@
 			"fingerprint": "3b0bafb182276f7ffc2d9899222ed949cdbb033d7672eb1e031faec4da01579b",
 			"classification": "equivalent",
 			"rationale": "The fallback is a lookup key for a reason that was not sent. No field record in `FIELD_WORDING` holds an empty key, so `‘’` and any other absent key alike miss the table and fall through to the same `UNRECOGNIZED_FIELD` sentence.",
-			"review": "https://github.com/gabepsilva/Fit_/pull/5"
+			"review": "https://github.com/Gabes-Tint/Fit_/pull/5"
 		},
 		{
 			"file": "src/lib/auth/wording.ts",
@@ -119,7 +119,7 @@
 			"fingerprint": "bc390533e2172a8a63fac2bcd5d35249e89373ed566757ddfd0f16a8edfc55c9",
 			"classification": "equivalent",
 			"rationale": "The fallback is a field name for a failure that named none. `FIELD_WORDING` has no empty-string field, so `‘’` and any other unlisted name both miss the table and produce the same `UNRECOGNIZED_FIELD` sentence.",
-			"review": "https://github.com/gabepsilva/Fit_/pull/5"
+			"review": "https://github.com/Gabes-Tint/Fit_/pull/5"
 		},
 		{
 			"file": "src/lib/server/api.ts",
@@ -139,7 +139,7 @@
 			"fingerprint": "0cd70a1b996807e560dd2e3285554b8f67a02e7a0f882e3b66cb7a8459df5852",
 			"classification": "equivalent",
 			"rationale": "Emptying the catch leaves parsed as undefined, which textFieldsOf already refuses because it is not an object, so a malformed body still answers null on both the guarded and the unguarded path. (Relocated by #163/#165: readTextBody now reads through readJsonText and declaredMediaType, moving this catch from line 96 to line 163 without changing its behavior; the sibling OptionalChaining review for the old `?.split(';')[0]?.trim` at line 90 is removed because that code no longer exists — declaredMediaType uses indexOf/slice instead.) (Re-pinned by #283 on the product owner’s instruction: the byte-vs-code-unit fix added a doc comment in readJsonText, six lines above, moving this catch from line 163 to line 169. The mutant is unchanged and still survives for the reason above.)",
-			"review": "https://github.com/gabepsilva/Fit_/pull/5"
+			"review": "https://github.com/Gabes-Tint/Fit_/pull/5"
 		},
 		{
 			"file": "src/lib/server/api.ts",
@@ -159,7 +159,7 @@
 			"fingerprint": "23e1420b0fc70daf267105e7236bb009bd694344528eb0a6f7587e0e58431e54",
 			"classification": "equivalent",
 			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null — it coerces to the string \"null\" and returns JS null — and the very next line, textFieldsOf's `parsed === null` check, refuses that the same way one step later. Both versions answer null for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away. (Re-pinned by #283 on the product owner’s instruction: the byte-vs-code-unit fix added a doc comment in readJsonText, six lines above, moving this guard from line 159 to line 165. The mutant is unchanged and still survives for the reason above.)",
-			"review": "https://github.com/gabepsilva/Fit_/pull/186"
+			"review": "https://github.com/Gabes-Tint/Fit_/pull/186"
 		},
 		{
 			"file": "src/lib/server/catalog/resolve-endpoint.ts",
@@ -179,7 +179,7 @@
 			"fingerprint": "4224c5e5eca40acf3645fbd1b0246d04bce9a55289d3651eb7ec7b8ce38818eb",
 			"classification": "equivalent",
 			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null — it coerces to the string \"null\" and returns JS null — and this function's own `parsed === null` refusal a few lines below catches that the same way one step later. Both versions answer REFUSED for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away.",
-			"review": "https://github.com/gabepsilva/Fit_/pull/186"
+			"review": "https://github.com/Gabes-Tint/Fit_/pull/186"
 		},
 		{
 			"file": "src/lib/server/photo/request.ts",
@@ -199,7 +199,7 @@
 			"fingerprint": "0717c6ad8d3fa99a7167d61af4e54a5a23314ca86703bf61849287e892b29275",
 			"classification": "equivalent",
 			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null — it coerces to the string \"null\" and returns JS null — and this function's own `parsed === null` refusal a few lines below catches that the same way one step later. Both versions answer REFUSED for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away.",
-			"review": "https://github.com/gabepsilva/Fit_/pull/186"
+			"review": "https://github.com/Gabes-Tint/Fit_/pull/186"
 		},
 		{
 			"file": "src/lib/server/state/endpoints.ts",
@@ -219,7 +219,7 @@
 			"fingerprint": "3f4e3b55d58d534af21db88f956fce2f29d69e4c2429a924150635f41e92e530",
 			"classification": "equivalent",
 			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null — it coerces to the string \"null\" and returns JS null — and the isPlainObject check on the very next line refuses that the same way one step later. Both versions answer null for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away.",
-			"review": "https://github.com/gabepsilva/Fit_/pull/186"
+			"review": "https://github.com/Gabes-Tint/Fit_/pull/186"
 		},
 		{
 			"file": "src/lib/server/auth-endpoints.ts",
@@ -239,7 +239,7 @@
 			"fingerprint": "159ffcd001fac478c0f5101dd813f4c8e42cce2e7feea3ae311a1c17044ce474",
 			"classification": "equivalent",
 			"rationale": "The fallback for an absent password field is only ever verified against a stored hash and never persisted, so any literal that is not somebody's password yields the same invalid-credentials answer; the upgrade candidate a longer literal would derive is discarded because verification failed. (Relocated by #163/#165: removing the file-local tooManyAttempts wrapper in favor of api.ts's shared retryAfter moved this line from 175 to 167 without changing it.)",
-			"review": "https://github.com/gabepsilva/Fit_/pull/5"
+			"review": "https://github.com/Gabes-Tint/Fit_/pull/5"
 		},
 		{
 			"file": "src/lib/server/db.ts",
@@ -259,7 +259,7 @@
 			"fingerprint": "23b3a9f95e4a94a625f1d1ce919bab03e16a1c7627c7a7fffb69d1834f0839c6",
 			"classification": "equivalent",
 			"rationale": "When database creation fails before assignment, forcing the db guard true only throws inside the deliberately swallowing close-error try/catch; the original opening error and file-hardening behavior remain identical.",
-			"review": "https://github.com/gabepsilva/Fit_/pull/5"
+			"review": "https://github.com/Gabes-Tint/Fit_/pull/5"
 		},
 		{
 			"file": "src/lib/server/request-auth.ts",
@@ -279,7 +279,7 @@
 			"fingerprint": "3ff57da6629cf4248dd62140fba5633e960d7f5d19636e4c78fa2f4d8d0853a6",
 			"classification": "equivalent",
 			"rationale": "RegExp.prototype.test stringifies a null argument to the four characters null, which the anchored bearer pattern cannot match, so dropping the null guard still answers false for a request carrying no Authorization header.",
-			"review": "https://github.com/gabepsilva/Fit_/pull/5"
+			"review": "https://github.com/Gabes-Tint/Fit_/pull/5"
 		},
 		{
 			"file": "src/lib/server/users/password.ts",
@@ -299,7 +299,7 @@
 			"fingerprint": "78142ae4318f3b9462da9cffb2959adb738cda9c76fd8b8414fb3c1b5f6cbb66",
 			"classification": "equivalent",
 			"rationale": "For a non-string stored credential, both the empty fallback and this exact replacement fail the anchored fixed-width serialized-hash grammar before any derivation or authentication. (sourceHash refreshed by #163/#165: password.ts changed elsewhere — the unused passwordHashNeedsUpgrade wrapper was deleted — this line is untouched.)",
-			"review": "https://github.com/gabepsilva/Fit_/pull/5"
+			"review": "https://github.com/Gabes-Tint/Fit_/pull/5"
 		},
 		{
 			"file": "src/lib/server/users/throttle.ts",
@@ -319,7 +319,7 @@
 			"fingerprint": "8396e883f0ebfa444e722f57b28f525e862a0acab6ea113abc0a8044b8130783",
 			"classification": "equivalent",
 			"rationale": "The mutated ternary reads locked_until from a STRICT text column, so the value is a string or null; the guard's false branch and the column's own null are the same value, and the typeof test only narrows an unknown row value for the type checker.",
-			"review": "https://github.com/gabepsilva/Fit_/pull/5"
+			"review": "https://github.com/Gabes-Tint/Fit_/pull/5"
 		},
 		{
 			"file": "src/lib/server/users/throttle.ts",
@@ -339,7 +339,7 @@
 			"fingerprint": "0e0c15109ffabfd49f3ace4d0e539c572ced3241e09871c90fc66249f416949b",
 			"classification": "equivalent",
 			"rationale": "Dropping the null check falls through to new Date(null), the epoch, so the subtraction is always negative for any clock after 1970 and Math.max(0, ...) clamps it to the same zero the guard returns.",
-			"review": "https://github.com/gabepsilva/Fit_/pull/5"
+			"review": "https://github.com/Gabes-Tint/Fit_/pull/5"
 		},
 		{
 			"file": "src/lib/state/session.svelte.ts",
@@ -359,7 +359,7 @@
 			"fingerprint": "cb9e6bb54c48422d88ce0328b7a95d7cb74167ac054ee38fe07d1605036bda7e",
 			"classification": "equivalent",
 			"rationale": "The guard is a short circuit, not a decision. Without it an absent record reaches `JSON.parse`, where `null`, `undefined` and `‘’` either parse to a value `isSession` rejects or throw into the catch beside it — every path returns the same `null`, and nothing is written.",
-			"review": "https://github.com/gabepsilva/Fit_/pull/5"
+			"review": "https://github.com/Gabes-Tint/Fit_/pull/5"
 		},
 		{
 			"file": "src/lib/domain/export-data.ts",
@@ -379,7 +379,7 @@
 			"fingerprint": "e2b44d53c2d51855644316d794034e8a714a9311594599acc59b450e16ec7ef0",
 			"classification": "equivalent",
 			"rationale": "The subject is raw.slice(0, 10), so it is at most ten characters, and the pattern matches exactly ten. A ten-character pattern can only match a ≤10-character string at offset 0 running to the end, so ‘matches somewhere’ and ‘matches the whole string’ are the same proposition here, and dropping ^ cannot change the verdict. The anchor stays in the code because it documents intent and would start mattering the moment the slice changes.",
-			"review": "https://github.com/gabepsilva/Fit_/pull/199"
+			"review": "https://github.com/Gabes-Tint/Fit_/pull/199"
 		},
 		{
 			"file": "src/lib/domain/export-data.ts",
@@ -399,7 +399,7 @@
 			"fingerprint": "6e2ef0287d7d9308e30c9a17515471d48246fdd1a9c3256f64d2ed13ee9ef2a2",
 			"classification": "equivalent",
 			"rationale": "Same slice, the other anchor: raw.slice(0, 10) is at most ten characters and the pattern matches exactly ten, so a match at offset 0 already runs to the end of whatever there is to match. Dropping $ cannot separate ‘matches somewhere’ from ‘matches the whole string’ given that slice. The anchor stays in the code because it documents intent and would start mattering the moment the slice changes.",
-			"review": "https://github.com/gabepsilva/Fit_/pull/199"
+			"review": "https://github.com/Gabes-Tint/Fit_/pull/199"
 		},
 		{
 			"file": "src/lib/domain/export-data.ts",
@@ -419,7 +419,7 @@
 			"fingerprint": "d7c10e364780f8205f79ef522380a560cc2ffeb95bc16abd12db54347d574092",
 			"classification": "equivalent",
 			"rationale": "splitCsv is private to the module — three references, all inside export-data.ts — and both the header line and every data row are split by the same function, so a constant prefix element shifts every column index by exactly one on both sides and the header-to-row alignment survives. A test pinning that alignment directly (a wide CSV, checking every field lands under its header, across every row) was tried first and still could not kill it: the junk cell is also the only new header cell, and ‘stryker was here’ contains none of the substrings idx() looks for (date, name/food/item, calor, protein, carb, fat, meal/folder), so it never captures a column and the shift stays symmetric. The call rests on today’s idx() keyword heuristics rather than a structural impossibility — a future keyword colliding with the junk string would invalidate it, and this entry’s own sourceHash, a window around line 122 only, would not catch that: idx() is defined in a different function elsewhere in this file, outside that window, so a future change to its keyword list will not retire this entry automatically. See issue/145 for the full discussion, and issue #256 for why the key no longer spans the whole file.",
-			"review": "https://github.com/gabepsilva/Fit_/pull/199"
+			"review": "https://github.com/Gabes-Tint/Fit_/pull/199"
 		},
 		{
 			"file": "src/lib/domain/utils.ts",
@@ -440,7 +440,7 @@
 			"classification": "equivalent",
 			"status": "Timeout",
 			"rationale": "lastNDates counts i down from n - 1 to 0 with i--; replacing it with i++ turns the countdown into a count-up that never reaches the loop's exit condition (i >= 0), so the loop runs forever and Stryker can only ever report Timeout for this mutant, never Survived. No assertion can kill it without asserting non-termination, which is not a test anyone should write. Gabriel accepted this as equivalent on 2026-09-07 (issue #145, proposal 1); recording required issue #200's status field because the mutant cannot report Survived. Re-pinned by #148's follow-up, which folded parseISODate's redundant undefined guard into the isFinite check (moving this line from 61 to 66) without changing it.",
-			"review": "https://github.com/gabepsilva/Fit_/pull/212"
+			"review": "https://github.com/Gabes-Tint/Fit_/pull/212"
 		}
 	]
 }

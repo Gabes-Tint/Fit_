@@ -1,6 +1,6 @@
 # Fit_
 
-[![CI](https://github.com/gabepsilva/Fit_/actions/workflows/ci.yml/badge.svg)](https://github.com/gabepsilva/Fit_/actions/workflows/ci.yml)
+[![CI](https://github.com/Gabes-Tint/Fit_/actions/workflows/ci.yml/badge.svg)](https://github.com/Gabes-Tint/Fit_/actions/workflows/ci.yml)
 
 A fitness application for Android and iOS, built on SvelteKit. Food logging, an adaptive
 calorie and macro model, a household meal plan, and progress tracking, behind a set of
