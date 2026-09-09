@@ -6,12 +6,14 @@ import { pathToFileURL } from 'node:url';
  * The half of instrument 4 that a parser cannot do: the statements this tree
  * builds with a function.
  *
- * `sql-statements.ts` reads literals, and three of the catalog's call sites are
- * not literals — `searchSql(FOOD_COLUMNS)` in `foods.ts` and `servingRowsSql(ids.length)`
- * in both `portions.ts` and `serving-rows.ts`. Those are the ranked search and
- * both reads of the 3.5-million-row `food_serving`
- * table: the three statements a plan regression would most likely appear in,
- * and the three the report could not answer for. Their plans were typed into
+ * `sql-statements.ts` reads literals, and two of the catalog's call sites are
+ * not literals — `searchSql(FOOD_COLUMNS)` in `foods.ts` and
+ * `servingRowsSql(ids.length)` in `serving-rows.ts`. Those are the ranked
+ * search and the one read of the 3.5-million-row `food_serving` table: the two
+ * statements a plan regression would most likely appear in, and the two the
+ * report could not answer for. `portions.ts` was a third until it stopped
+ * running a copy of the `food_serving` statement for itself and started
+ * reading the map `foods.ts` fetches once per page. Their plans were typed into
  * `quality/perf-plans-manual.md` by hand instead, which made them numbers no
  * command regenerates — and `serving-rows.ts` arrived afterwards (#178) and was
  * never recorded at all, in either file, with nothing to say so.
@@ -62,7 +64,6 @@ const PROBE_QUERY = 'milk';
 
 type SearchFoods = (db: Preparing, typed: string, limit: number) => unknown;
 type PageSize = (requested: string | null) => number;
-type WithPortions = (db: Preparing, foods: readonly { id: number }[]) => unknown;
 type ServingRowsByFood = (db: Preparing, ids: readonly number[]) => unknown;
 
 /** One named export, checked to be callable so a moved call site fails loudly. */
@@ -92,16 +93,6 @@ export const DYNAMIC_PROBES: readonly DynamicProbe[] = [
 		label: 'searchFoods',
 		run: (loaded, db, page) => {
 			callable<SearchFoods>(loaded, 'searchFoods')(db, PROBE_QUERY, page);
-		}
-	},
-	{
-		file: 'src/lib/server/catalog/portions.ts',
-		label: 'volumesByFood',
-		run: (loaded, db, page) => {
-			callable<WithPortions>(loaded, 'withPortions')(
-				db,
-				idsOfSize(page).map((id) => ({ id }))
-			);
 		}
 	},
 	{

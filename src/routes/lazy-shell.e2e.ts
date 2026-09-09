@@ -1,6 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 import { test } from '../../tests/preview-server';
 import { openEmptyJournal, signInThroughApi } from '../../tests/e2e-support';
+import { builtChunkPathContaining } from '../../tests/built-chunk';
 
 /**
  * The shell fetches its drawer after it has drawn, not before.
@@ -27,35 +28,44 @@ import { openEmptyJournal, signInThroughApi } from '../../tests/e2e-support';
 const DRAWER_MARKER = 'Everything stays on this device.';
 
 /**
- * Stall the drawer's chunk until the returned function is called. Every other
- * request is passed straight through, so only this one thing is late.
+ * Stall the drawer's chunk until the returned function is called. Nothing else
+ * is intercepted, so only this one thing is late.
  *
- * Recognizing the chunk costs an interception of every script the app asks
- * for, and the app keeps asking after the last assertion has been made: the
- * log sheet, the onboarding screen and the route chunks behind the drawer's
- * own links all arrive on their own schedule. One of those was still inside
- * `route.fetch()` when this test ended in run 34293608030, which fails the
- * whole shard under `failOnFlakyTests` -- not because anything about the
- * drawer was wrong, but because an interception outlived what it was for.
+ * The chunk is found by its marker in the build on disk rather than by
+ * intercepting every script and reading each body, which is what this used to
+ * do. That cost more than the round trips. `page.unrouteAll` empties its own
+ * list of handlers first and only then waits for the handlers already running —
+ * and each of those, as it finishes, sees the empty list and tells the browser
+ * to stop intercepting, without waiting for its siblings. The first such
+ * message lands while the others are still parked inside `route.fetch()`, and
+ * Playwright answers it by continuing every request still held in a handler
+ * itself. The next one to reach `route.fulfill` was then fulfilling a request
+ * Playwright had already answered: `Route is already handled!`, and a red shard
+ * for a drawer that worked (#303).
  *
- * So releasing also takes the interception down: `unrouteAll` waits for the
- * handler this just let go of to finish fulfilling, and every script asked for
- * afterwards is served without passing through here at all.
+ * With one URL intercepted there is one request in the handler and no sibling
+ * to be continued out from under it. Releasing lets that request through and
+ * waits for it before taking the interception down, so the teardown can only
+ * ever run with nothing in flight.
  */
 async function holdBackTheDrawer(page: Page): Promise<() => Promise<void>> {
 	let release = (): void => {};
 	const held = new Promise<void>((resolve) => {
 		release = resolve;
 	});
-	await page.route('**/_app/immutable/**/*.js', async (route) => {
-		const response = await route.fetch();
-		const body = await response.text();
-		if (body.includes(DRAWER_MARKER)) await held;
-		await route.fulfill({ response, body });
+	const letThrough: Promise<void>[] = [];
+	await page.route(`**${builtChunkPathContaining(DRAWER_MARKER)}`, async (route) => {
+		const passed = held.then(() => route.continue());
+		letThrough.push(passed);
+		await passed;
 	});
 	return async () => {
 		release();
+		await Promise.all(letThrough);
 		await page.unrouteAll({ behavior: 'wait' });
+		// A hold that intercepted nothing would leave both tests asserting the
+		// ordinary case, in silence: the drawer that arrived on time.
+		expect(letThrough.length, 'the drawer chunk was never requested').toBeGreaterThan(0);
 	};
 }
 
