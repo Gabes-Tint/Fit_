@@ -595,7 +595,7 @@ describe('calmWeeks', () => {
 	// below is turned away by a different part of that: the shape, what sits
 	// around it, or the calendar itself.
 	it.each([
-		['unpadded', '2026-6-4'],
+		['a month and day that are not zero-padded', '2026-6-4'],
 		['a trailing space', '2026-06-04 '],
 		['a leading field', '5-2026-10-01'],
 		['a time suffix', '2026-06-04T00:00:00Z'],
