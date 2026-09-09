@@ -202,6 +202,23 @@ describe('AppShell, on the sign-in form itself', () => {
 	});
 });
 
+/**
+ * Close the drawer from the floating toggle.
+ *
+ * The click is dispatched rather than driven through a real tap: the toggle
+ * only sits above the drawer's overlay because of the stylesheet, and this
+ * project renders components without one, so a real tap here is intercepted by
+ * the overlay. That the toggle is genuinely reachable above an open drawer, and
+ * that the drawer does not reopen behind the tap, are asserted against the
+ * built app in `menu-toggle.e2e.ts`.
+ */
+function tapTheToggle() {
+	// The marked one: while the drawer is open its own close carries the same
+	// name, and inside a modal that is the one a screen reader is offered. This
+	// is the floating button outside it.
+	(document.querySelector('[data-menu-fab]') as HTMLElement).click();
+}
+
 describe('AppShell, signed in', () => {
 	it('shows onboarding to someone who has not onboarded', async () => {
 		seedSessionStorage();
@@ -306,12 +323,61 @@ describe('AppShell, signed in', () => {
 		}
 	});
 
-	it('closes the menu again from its close control', async () => {
+	// The floating toggle is a toggle: the same button in the same corner, one
+	// tap to open and the next to close. It is the only close control there is
+	// now — the drawer carries none of its own — so this is the whole of the way
+	// out short of Escape or a tap on the overlay.
+	it('closes the menu again from the same button that opened it', async () => {
 		seedReturningVisit();
 		await render(AppShellHarness, { props: { body: 'Page body' } });
 		await page.getByRole('button', { name: 'Open menu' }).click();
-		await page.getByRole('button', { name: 'Close menu' }).click();
+		tapTheToggle();
 		await expect.element(page.getByRole('dialog')).not.toBeInTheDocument();
+	});
+
+	it('hands focus back to the toggle when the menu closes', async () => {
+		seedReturningVisit();
+		await render(AppShellHarness, { props: { body: 'Page body' } });
+		await page.getByRole('button', { name: 'Open menu' }).click();
+		tapTheToggle();
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(page.getByRole('button', { name: 'Open menu' }).element())
+		);
+	});
+
+	// The top bar is gone and its two passengers had to land somewhere: the
+	// wordmark heads the drawer, and the sync notice keeps a permanent home
+	// across the top of every signed-in screen.
+	it('carries no top bar for the journal to start below', async () => {
+		seedReturningVisit();
+		await render(AppShellHarness, { props: { body: 'Page body' } });
+		await expect.element(page.getByText('Page body')).toBeInTheDocument();
+		expect(page.getByRole('banner').elements()).toHaveLength(0);
+	});
+
+	it('keeps the sync notice on screen, with no bar left to sit in', async () => {
+		seedReturningVisit();
+		await render(AppShellHarness, { props: { body: 'Page body' } });
+		await expect.element(page.getByRole('status')).toBeInTheDocument();
+		const strip = page.getByRole('status').element().closest('div.fixed');
+		expect(strip).not.toBeNull();
+		// A bar's height (3.5rem, 56px) is no longer reserved above it.
+		expect(Number.parseFloat(getComputedStyle(strip as Element).top)).toBeLessThan(56);
+	});
+
+	it('carries a close inside the drawer too, for anyone not using a thumb', async () => {
+		seedReturningVisit();
+		await render(AppShellHarness, { props: { body: 'Page body' } });
+		await page.getByRole('button', { name: 'Open menu' }).click();
+		const drawer = page.getByRole('dialog');
+		await expect.element(drawer.getByRole('button', { name: 'Close menu' })).toBeInTheDocument();
+	});
+
+	it('names the wordmark in the drawer, which is where it went', async () => {
+		seedReturningVisit();
+		await render(AppShellHarness, { props: { body: 'Page body' } });
+		await page.getByRole('button', { name: 'Open menu' }).click();
+		await expect.element(page.getByRole('dialog', { name: 'Fit_' })).toBeInTheDocument();
 	});
 
 	// Current-destination highlighting depends on real routing, so it is asserted end to end.

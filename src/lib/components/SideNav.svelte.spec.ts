@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import { session } from '$lib/state/session.svelte';
 import { signedInSession } from '$lib/testing/fixtures';
 import { APP_VERSION } from '$lib/version';
+import { DRAWER_ID } from './MenuFab.svelte';
 import SideNav from './SideNav.svelte';
 
 const DESTINATIONS = ['Today', 'Progress', 'Exercise', 'Plan', 'You'];
@@ -73,11 +74,89 @@ describe('SideNav', () => {
 		expect(document.querySelector('a[href$="/"]')?.getAttribute('aria-current')).toBeNull();
 	});
 
-	it('closes from its close control', async () => {
+	// The floating toggle is outside this panel and a modal traps the tab ring
+	// inside it, so without a close of its own the keyboard would have only
+	// Escape. This is that way out, and it is first in the ring.
+	it('closes from its own close control', async () => {
 		const props = $state({ open: true, pathname: '/' });
 		await render(SideNav, { props });
 		await page.getByRole('button', { name: 'Close menu' }).click();
 		expect(props.open).toBe(false);
+	});
+
+	it('puts that close first, so the keyboard lands on the way out', async () => {
+		await render(SideNav, { props: { open: true, pathname: '/' } });
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(
+				page.getByRole('button', { name: 'Close menu' }).element()
+			)
+		);
+	});
+
+	it('answers to the name the toggle points at', async () => {
+		await render(SideNav, { props: { open: true, pathname: '/' } });
+		await expect.element(page.getByRole('dialog')).toHaveAttribute('id', DRAWER_ID);
+	});
+
+	// The toggle floats above this drawer's overlay, so `bits-ui` reads a tap on
+	// it as an outside interaction and would close on `pointerdown` — leaving the
+	// toggle's own click to reopen what had just shut. The drawer declines, and
+	// every other outside tap still closes it.
+	/**
+	 * A pointer coming down somewhere the drawer will agree is outside it.
+	 *
+	 * Two waits, both load-bearing. The drawer attaches its outside-interaction
+	 * listeners a tick after it mounts, so a pointer that came down the instant
+	 * after `render` would find nothing listening; and it debounces what it hears
+	 * by 10ms before deciding. The coordinates matter for the same reason the
+	 * element does not: the drawer measures where the pointer landed against its
+	 * own box, and this is well clear of it.
+	 */
+	async function pointerDownFarAway(on: Element) {
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		// `cancelable` is what a real pointerdown is, and what lets the drawer
+		// decline to close: `preventDefault` on an event that is not cancelable does nothing.
+		on.dispatchEvent(
+			new PointerEvent('pointerdown', {
+				bubbles: true,
+				cancelable: true,
+				clientX: 5000,
+				clientY: 5000
+			})
+		);
+		await new Promise((resolve) => setTimeout(resolve, 50));
+	}
+
+	async function withButton(attribute: string | null, run: (button: Element) => Promise<void>) {
+		const button = document.createElement('button');
+		if (attribute !== null) button.setAttribute(attribute, '');
+		document.body.append(button);
+		try {
+			await run(button);
+		} finally {
+			button.remove();
+		}
+	}
+
+	// The toggle floats above this drawer's overlay, so `bits-ui` reads a tap on
+	// it as an outside interaction and would close on `pointerdown` — leaving the
+	// toggle's own click to reopen what had just shut.
+	it('stays open for a pointer that came down on the toggle', async () => {
+		const props = $state({ open: true, pathname: '/' });
+		await render(SideNav, { props });
+		await withButton('data-menu-fab', async (button) => {
+			await pointerDownFarAway(button);
+			expect(props.open).toBe(true);
+		});
+	});
+
+	it('still closes for a pointer that came down anywhere else', async () => {
+		const props = $state({ open: true, pathname: '/' });
+		await render(SideNav, { props });
+		await withButton(null, async (button) => {
+			await pointerDownFarAway(button);
+			expect(props.open).toBe(false);
+		});
 	});
 
 	it('carries the account block, which is where signing out lives', async () => {

@@ -5,7 +5,7 @@
 		/**
 		 * How far below the top of the screen the stack begins, as a CSS length.
 		 * The caller owns it because the caller is what the toasts have to clear;
-		 * `AppShell` derives it from `TopBar`'s height and safe area.
+		 * `AppShell` derives it from the safe area the screen begins after.
 		 */
 		offset
 	}: { offset: string } = $props();

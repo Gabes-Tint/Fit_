@@ -9,22 +9,32 @@
 	import Toaster from '$lib/ui/Toaster.svelte';
 	import { AUTH_ROUTES, signInPath } from './auth/auth-routes';
 	import InitialSync from './InitialSync.svelte';
+	import MenuFab from './MenuFab.svelte';
 	import SyncStatusBadge from './SyncStatusBadge.svelte';
-	import TopBar from './TopBar.svelte';
 
 	let { children }: { children: Snippet } = $props();
 
 	/**
 	 * How far below the top of the screen a toast sits.
 	 *
-	 * Enough to clear `TopBar`, which is `sticky top-0`: its own height, the
-	 * safe area it pads for, and a gap. Without it a toast covers the menu
-	 * button that bar carries for as long as it is up. Onboarding renders
-	 * without that bar, so there a toast simply begins a little lower down.
+	 * The safe area the screen begins after, and a gap. There is no bar left to
+	 * clear — the menu moved to a floating toggle at the bottom of the screen and
+	 * the top of it went back to the journal — so a toast now starts as high as
+	 * the hardware allows and nothing it could cover is up there any more.
 	 */
-	const TOAST_OFFSET = 'calc(3.5rem + env(safe-area-inset-top) + 0.5rem)';
+	const TOAST_OFFSET = 'calc(env(safe-area-inset-top) + 0.5rem)';
 
 	let menuOpen = $state(false);
+
+	/**
+	 * How tall the sync notice is right now, and zero whenever there is none.
+	 *
+	 * Reserved at the top of the page rather than ignored: the notice is a fixed
+	 * strip, and with no top bar left above it there is nothing between it and
+	 * the page's own header. It reads as zero for almost all of a session, so
+	 * almost all of the time this reserves nothing at all.
+	 */
+	let noticeHeight = $state(0);
 
 	onMount(() => {
 		// The store reads `localStorage`, so hydrate waits for the client; nothing renders before then.
@@ -185,9 +195,24 @@
 				/>
 			{:else if tend.state.onboarded}
 				<div class="bg-background flex min-h-dvh w-full max-w-lg flex-col">
-					<TopBar {menuOpen} onmenu={() => (menuOpen = true)} />
-					<SyncStatusBadge />
-					<div class="flex-1 px-5 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
+					<SyncStatusBadge bind:height={noticeHeight} />
+					<!--
+						The journal starts at the top of the screen: the gap, whatever the
+						hardware reserves, and the sync notice's own height when there is
+						one — no bar sits in between any more, and nothing but that notice
+						is ever above the page's header.
+
+						`pb` is the room the floating toggle needs. It is 5.5rem rather
+						than the gap alone so the last thing on the page can be scrolled
+						clear of a button that never leaves the corner — the Today cards
+						put their own actions in exactly that corner, and one of them
+						being permanently unreachable at the foot of the page is the
+						failure this padding exists to prevent.
+					-->
+					<div
+						class="flex-1 px-5 pb-[calc(5.5rem+env(safe-area-inset-bottom))]"
+						style:padding-top="calc(1.25rem + env(safe-area-inset-top) + {noticeHeight}px)"
+					>
 						{@render children()}
 					</div>
 					<!--
@@ -203,6 +228,15 @@
 					{#await import('./SideNav.svelte') then { default: SideNav }}
 						<SideNav bind:open={menuOpen} {pathname} />
 					{/await}
+					<!--
+						Rendered outside the drawer and never with it: the toggle is the
+						one control that is always on screen, and it wears an X while the
+						drawer is open so the thumb that opened it closes it again without
+						moving. Not inside the `{#await}` above, because the button has to
+						be there to be tapped before the drawer's chunk has landed —
+						`menuOpen` is simply already true when it does.
+					-->
+					<MenuFab open={menuOpen} ontoggle={() => (menuOpen = !menuOpen)} />
 					<!--
 						Fetched after the shell rather than inside it. The log sheet and
 						everything it can show — the search, the proposal rows, the photo

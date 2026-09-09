@@ -16,6 +16,16 @@
 	const NOTICE_DELAY_MS = 400;
 
 	/**
+	 * How tall this notice currently is, or zero when there is none.
+	 *
+	 * Read by `AppShell`, which reserves exactly this much at the top of the
+	 * page. The strip is fixed, so without the reservation it prints over
+	 * whatever the page starts with — which, since the top bar went, is the
+	 * page's own header.
+	 */
+	let { height = $bindable(0) }: { height?: number } = $props();
+
+	/**
 	 * How long a notice stays up once shown, even if the state behind it has
 	 * already resolved.
 	 *
@@ -113,19 +123,34 @@
 </script>
 
 <!--
-	Fixed and out of document flow, so a notice appearing or clearing never
-	shifts the content underneath — the same reason a save every few hundred
-	milliseconds must not jump whatever someone is about to tap. Positioned
-	the way `AppShell`'s toaster is: below `TopBar`'s own height and safe area.
+	Fixed rather than in the flow, so a notice already up stays where it is while
+	the page scrolls under it, and so the pill's own text reflowing does not move
+	the page.
+
+	This is the notice's home now that there is no top bar: pinned across the top
+	of every signed-in screen, at the same offset `AppShell` gives its toaster, so
+	sync still has somewhere permanent to speak from without a bar to sit in.
+
+	Its height is reported upward and reserved by `AppShell`. A fixed strip that
+	reserved nothing printed straight over the page's own header — the top bar
+	used to hold this clear of it, and nothing does now. That reservation is a
+	shift when a notice arrives, which is the cost this component was originally
+	written to avoid; it is paid deliberately, because covering the heading of
+	the page someone is reading is worse, and because `NOTICE_DELAY_MS` and
+	`MIN_VISIBLE_MS` already exist to keep the arrivals rare.
 -->
 <div
 	class={cn(
 		'pointer-events-none fixed inset-x-0 z-30 flex justify-center px-5 transition-opacity duration-150',
 		kind === 'none' && 'opacity-0'
 	)}
-	style="top: calc(3.5rem + env(safe-area-inset-top) + 0.5rem)"
+	style="top: calc(env(safe-area-inset-top) + 0.5rem)"
 >
-	<p role="status" class={cn('flex w-full max-w-lg items-center gap-2 text-sm', toneClass)}>
+	<p
+		role="status"
+		bind:clientHeight={height}
+		class={cn('flex w-full max-w-lg items-center gap-2 text-sm', toneClass)}
+	>
 		{#if kind === 'waiting'}
 			<span
 				class="border-secondary-foreground/70 size-2 shrink-0 rounded-full border-2"

@@ -9,6 +9,7 @@
 	import { resolve } from '$app/paths';
 	import { APP_VERSION } from '$lib/version';
 	import AccountMenu from './auth/AccountMenu.svelte';
+	import { DRAWER_ID, MENU_FAB_SELECTOR } from './MenuFab.svelte';
 	import NavLink from './NavLink.svelte';
 	import type { NavRoute } from './nav-routes';
 
@@ -28,14 +29,48 @@
 		destination('/plan', 'Plan', CalendarDays),
 		destination('/you', 'You', UserRound)
 	]);
+
+	/**
+	 * A tap on the floating toggle is not a tap outside.
+	 *
+	 * The toggle floats above this drawer's overlay, so `bits-ui` sees every tap
+	 * on it as an outside interaction and would close on `pointerdown` — leaving
+	 * the toggle's own `click`, which arrives afterwards, to reopen what had just
+	 * shut. Declining here leaves the toggle as the single thing that decides
+	 * whether the drawer is open, and every other tap outside still closes it.
+	 */
+	function keepOpenForTheToggle(event: PointerEvent) {
+		// The target is an element by the time this is called: `bits-ui` does not
+		// count an interaction whose target is anything else as an outside one at
+		// all, so it never reaches here.
+		const target = event.target as Element;
+		if (target.closest(MENU_FAB_SELECTOR) !== null) event.preventDefault();
+	}
 </script>
 
 <Dialog.Root bind:open>
 	<Dialog.Portal>
-		<Dialog.Overlay class="bg-foreground/25 fixed inset-0 z-50" />
+		<Dialog.Overlay class="bg-foreground/25 fixed inset-0 z-40" />
 		<Dialog.Content
-			class="bg-card text-card-foreground fixed inset-y-0 left-0 z-50 flex w-[min(17rem,80vw)] flex-col rounded-r-3xl pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-border outline-none"
+			id={DRAWER_ID}
+			onInteractOutside={keepOpenForTheToggle}
+			class="bg-card text-card-foreground fixed inset-y-0 left-0 z-40 flex w-[min(17rem,80vw)] flex-col rounded-r-3xl pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-border outline-none"
 		>
+			<!--
+				The way out for anyone not using a thumb.
+
+				The floating toggle is the close control a thumb reaches for, and it
+				stays on screen wearing an X — but it is outside this panel, and a
+				modal traps the tab ring inside itself, so Tab never reaches it and
+				Escape would otherwise be the whole of the keyboard. This is the same
+				exit by another route, in the tab ring and in the drawer's own header
+				where a dialog's close belongs.
+
+				Two controls end up named "Close menu" while the drawer is open, and
+				that is less ambiguous than it looks: this is the only one inside the
+				dialog, and a screen reader working a modal is scoped to the dialog,
+				so it is the only one such a reader is offered.
+			-->
 			<div class="flex h-14 items-center justify-between gap-2 px-4">
 				<Dialog.Title class="font-display text-xl tracking-tight">Fit_</Dialog.Title>
 				<Dialog.Close
