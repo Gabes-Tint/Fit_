@@ -215,10 +215,10 @@
 					"line": 53
 				}
 			},
-			"sourceHash": "1c1d0159300857a27ea636fe7093d1fc1a4de4159f33d1a61b9464958e9c4465",
-			"fingerprint": "5fff05600127abd27b5a62f90ad913b01f226add5c176719db2c2bc52e2fec40",
+			"sourceHash": "20b01a345478ea4f5ada695904184d445fa5efbc25355ca043fd6f03476e2f61",
+			"fingerprint": "c3fafea3936a56db8ed3b13dbf4cb660501a0b3d7099c463118fedb2b44a8033",
 			"classification": "equivalent",
-			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null \u2014 it coerces to the string \"null\" and returns JS null \u2014 and the isPlainObject check on the very next line refuses that the same way one step later. Both versions answer null for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away.",
+			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null \u2014 it coerces to the string \"null\" and returns JS null \u2014 and the isPlainObject check on the very next line refuses that the same way one step later. Both versions answer null for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away. (Re-pinned by #282: the mutant is unchanged and still at line 53, columns 6 to 18; the whole-file sourceHash moved because the ceiling constant left this file and the size refusal was added elsewhere in it.)",
 			"review": "https://github.com/gabepsilva/Fit_/pull/186"
 		},
 		{

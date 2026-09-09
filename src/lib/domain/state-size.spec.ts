@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { refusedForSize, refusedSize, TOO_LARGE_REASON, worthSending } from './state-size';
 
 describe('refusedForSize', () => {
-	it('recognises the refusal the state endpoint answers an oversized document with', () => {
+	it('reads the refusal the state endpoint answers an oversized document with', () => {
 		expect(refusedForSize({ error: { code: 'invalid-body', reason: TOO_LARGE_REASON } })).toBe(
 			true
 		);
