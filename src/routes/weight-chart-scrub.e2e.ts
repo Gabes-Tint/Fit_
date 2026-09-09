@@ -53,4 +53,43 @@ test.describe('weight chart scrubbing', () => {
 		const label = page.getByText(/^[A-Z][a-z]{2} \d{1,2} · \d+\.\d (kg|lb)$/).first();
 		await expect(label).toBeVisible();
 	});
+
+	test('a real pointer drag across the chart shows the reading under it', async ({
+		page,
+		baseURL
+	}) => {
+		await signInThroughApi(page, baseURL ?? '');
+		await page.goto('/');
+		await openSampleJournal(page);
+
+		const chart = page.getByRole('img', { name: /Weight trend from/ });
+		await expect(chart).toBeVisible();
+		await chart.scrollIntoViewIfNeeded();
+		const box = await chart.boundingBox();
+		expect(box, 'chart has no box to drag across').not.toBeNull();
+		const { x, y, width, height } = box as {
+			x: number;
+			y: number;
+			width: number;
+			height: number;
+		};
+		const midY = y + height / 2;
+
+		// The browser's own input plumbing rather than a dispatched event: pointer
+		// capture, the coalescing of a moving pointer, and the client-to-viewBox
+		// mapping the chart reads off `getScreenCTM` are all the engine's here, and
+		// none of them is exercised by a `dispatchEvent`. The assertion is on the
+		// reading appearing, not on what happens after release, because these events
+		// do not arrive as the same kind of pointer everywhere: Chromium's mobile
+		// emulation turns driven mouse input into touch, which the chart
+		// deliberately treats differently on lift.
+		await page.mouse.move(x + width * 0.2, midY);
+		await page.mouse.down();
+		await page.mouse.move(x + width * 0.5, midY, { steps: 5 });
+		await page.mouse.move(x + width * 0.85, midY, { steps: 5 });
+
+		await expect(page.getByText(/^[A-Z][a-z]{2} \d{1,2} · \d+\.\d (kg|lb)$/).first()).toBeVisible();
+
+		await page.mouse.up();
+	});
 });

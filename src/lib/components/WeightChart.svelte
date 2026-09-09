@@ -72,12 +72,23 @@
 		return Math.min(Math.max(selected.x, min), max);
 	});
 
-	/** Nearest measurement point to a pointer's x, in the SVG's own coordinate space. */
-	function nearestIndex(clientX: number): number | null {
+	/**
+	 * Nearest measurement point to a pointer, in the SVG's own coordinate space.
+	 *
+	 * Mapped through `getScreenCTM`, not through the element's bounding box: with
+	 * `preserveAspectRatio` at its default of `xMidYMid meet`, the viewBox is
+	 * scaled to fit whatever box the card gives the chart and centred in what is
+	 * left over. On a card wider than the 320:140 viewBox the drawing therefore
+	 * sits between two empty side bars, and dividing by the element's own width
+	 * would pull every reading toward the middle — pointing at the newest
+	 * weigh-in would select an older one.
+	 */
+	function nearestIndex(event: PointerEvent): number | null {
 		if (!geometry || !svgEl) return null;
-		const rect = svgEl.getBoundingClientRect();
-		if (rect.width === 0) return null;
-		const x = ((clientX - rect.left) / rect.width) * WIDTH;
+		const screenToUser = svgEl.getScreenCTM();
+		// A chart with no layout box yet scales by zero, and that matrix has no inverse.
+		if (!screenToUser?.a) return null;
+		const x = new DOMPoint(event.clientX, event.clientY).matrixTransform(screenToUser.inverse()).x;
 		let best = 0;
 		let bestDist = Infinity;
 		geometry.xy.forEach((p, i) => {
@@ -92,7 +103,7 @@
 
 	function handlePointerDown(event: PointerEvent) {
 		activePointerId = event.pointerId;
-		selectedIndex = nearestIndex(event.clientX);
+		selectedIndex = nearestIndex(event);
 		// Capture keeps a drag alive once the finger or cursor leaves the SVG's own box.
 		// A synthetic pointer, as the component specs dispatch, has no live hardware behind
 		// it, so a real browser refuses to capture it — harmless here, since a single
@@ -106,7 +117,7 @@
 
 	function handlePointerMove(event: PointerEvent) {
 		if (activePointerId === null || event.pointerId !== activePointerId) return;
-		selectedIndex = nearestIndex(event.clientX);
+		selectedIndex = nearestIndex(event);
 	}
 
 	/**
@@ -116,6 +127,12 @@
 	 * chart — `handlePointerDown` above already re-selects on every pointerdown,
 	 * touch included, so nothing further is needed to make "a new touch starts
 	 * elsewhere on the chart" replace the old reading with the new one.
+	 *
+	 * Bound to `pointercancel` as well as `pointerup`: a system gesture or a
+	 * second finger takes the pointer away without ever sending an up event, and
+	 * leaving `activePointerId` set would make the chart ignore every later move
+	 * from a fresh pointer. The same rule applies either way — a mouse or pen
+	 * loses its reading, a finger keeps it.
 	 */
 	function handlePointerUp(event: PointerEvent) {
 		if (activePointerId === null || event.pointerId !== activePointerId) return;
@@ -140,6 +157,7 @@
 		onpointerdown={handlePointerDown}
 		onpointermove={handlePointerMove}
 		onpointerup={handlePointerUp}
+		onpointercancel={handlePointerUp}
 		onpointerleave={handlePointerLeave}
 	>
 		{#each geometry.gridlines as line (line.y)}
