@@ -287,6 +287,13 @@ const DAY_MS = 86400000;
 const WEEK_EPOCH = '1970-01-05';
 
 /**
+ * A zero-padded `YYYY-MM-DD` and nothing else around it — the only shape the
+ * app's own date helpers emit, and so the only shape the old `calmWeeks` could
+ * ever have matched when it looked dates up by their formatted form.
+ */
+const CANONICAL_DATE = /^\d{4}-(\d{2})-\d{2}$/;
+
+/**
  * Weeks (Mon–Sun) with at least `minDays` logged. Never resets on a miss.
  *
  * Each logged date is placed in its week by arithmetic, rather than each week
@@ -310,6 +317,10 @@ const WEEK_EPOCH = '1970-01-05';
  * toward it — logging tomorrow's breakfast tonight does not vanish — while a
  * date in a later week is dropped.
  *
+ * A date the calendar could not have produced is skipped, which the old shape
+ * did too, though only as a side effect of looking dates up by their formatted
+ * form. See the guard in the loop.
+ *
  * Every loop is bounded by a length fixed before it starts — the logged dates,
  * then the weeks they span — rather than walked by a mutable cursor. A
  * `while (cursor <= end)` loop hangs forever under a mutation that drops the
@@ -325,14 +336,16 @@ const WEEK_EPOCH = '1970-01-05';
 export function calmWeeks(log: LogItem[], minDays = 4, end = todayISO()) {
 	const dates = new Set(log.map((i) => i.date));
 	const epochMs = parseISODate(WEEK_EPOCH).getTime();
-	/** The week index a date falls in, counting from `WEEK_EPOCH`. */
-	const weekOf = (iso: string) =>
+	/** The week index a day sits in, counting from `WEEK_EPOCH`. */
+	const weekAt = (ms: number) =>
 		// `Math.round` before the division because a daylight-saving shift leaves
 		// two local midnights an hour short of a whole number of days apart, and
-		// that hour must not move a date into the week beside it.
-		Math.floor(Math.round((parseISODate(iso).getTime() - epochMs) / DAY_MS) / 7);
+		// that hour must not move a date into the week beside it. Every Monday in
+		// the daylight half of the year is a week boundary that lands one week
+		// early without it — see `calm-weeks-dst.spec.ts`.
+		Math.floor(Math.round((ms - epochMs) / DAY_MS) / 7);
 
-	const lastWeek = weekOf(end);
+	const lastWeek = weekAt(parseISODate(end).getTime());
 	// `Infinity` rather than the first week seen, so the running minimum needs no
 	// "have we started yet" branch. It is also what makes an empty log need no
 	// guard of its own: nothing replaces it, the range below comes out
@@ -343,7 +356,28 @@ export function calmWeeks(log: LogItem[], minDays = 4, end = todayISO()) {
 	// entries made. Deduping first also means one date parse per day rather
 	// than one per entry.
 	for (const date of dates) {
-		const week = weekOf(date);
+		// Only a day the calendar could have produced counts. The old shape got
+		// this for free and silently: it asked `dates.has(addDaysISO(...))`, and
+		// `addDaysISO` only ever emits a zero-padded `YYYY-MM-DD`, so '2026-6-1',
+		// '2026-06-01 ' and '' could never match however the log came by them.
+		const shape = CANONICAL_DATE.exec(date);
+		if (!shape) continue;
+		const at = parseISODate(date);
+		// The shape being right does not make the day real: `parseISODate` rolls
+		// an impossible one over rather than rejecting it, so '2026-13-01' comes
+		// back as next January and '2026-02-30' as March 2nd. Reading the month
+		// back off the parsed date catches both — a day that overflows always
+		// carries into another month, so the month alone tells the whole story.
+		//
+		// The month comes from the match rather than a fixed offset into the
+		// string, so it is the month this date actually claims wherever it sits.
+		//
+		// Comparing a number rather than re-formatting the date is what keeps this
+		// to one parse and no string building per logged day. Formatting it back
+		// reads better and measured 0.665 ms against 0.468 ms at a year, which is
+		// most of what the rewrite bought.
+		if (at.getMonth() !== Number(shape[1]) - 1) continue;
+		const week = weekAt(at.getTime());
 		firstWeek = Math.min(firstWeek, week);
 		perWeek.set(week, (perWeek.get(week) ?? 0) + 1);
 	}
