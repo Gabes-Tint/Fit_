@@ -6,11 +6,7 @@
 	import Button from '$lib/ui/Button.svelte';
 	import Input from '$lib/ui/Input.svelte';
 
-	let {
-		units,
-		id = 'weight',
-		onsaved
-	}: { units: UnitSystem; id?: string; onsaved?: () => void } = $props();
+	let { units, id = 'weight' }: { units: UnitSystem; id?: string } = $props();
 
 	let enteredWeight = $state('');
 
@@ -22,7 +18,6 @@
 		if (!(n > 0)) return;
 		tend.addWeight(weightToKg(n, units), addDaysISO(todayISO(), -daysAgo));
 		enteredWeight = '';
-		onsaved?.();
 	}
 
 	function saveWeight(event: SubmitEvent) {
