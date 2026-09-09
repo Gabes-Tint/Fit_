@@ -97,12 +97,11 @@ takes eight to eighteen minutes because one machine runs the lanes in sequence. 
 the local half is the expensive one: an agent waiting on it is billing tokens to poll a
 process that a hosted runner is about to repeat for free.
 
-So the rule is: run `verify:fast` before pushing — it takes about twenty-five seconds and
-catches formatting, lint, spelling and typecheck, which is what actually fails most often —
-then push and let the hosted matrix run the full tier. Read the verdict from
-`gh pr checks`, not from a local report. Two exceptions stay local: the deploy scripts,
-which need the real machine, and tight iteration on one failing lane, where
-`gate.ts ci --job <name>` beats a four-and-a-half-minute round trip.
+So the rule is: run a diff-sized set of checks before pushing, not a full tier — see
+"Pre-push" below for the exact recipe — then push and let the hosted matrix run the full
+tier. Read the verdict from `gh pr checks`, not from a local report. Two exceptions stay
+local: the deploy scripts, which need the real machine, and tight iteration on one failing
+lane, where `gate.ts ci --job <name>` beats a four-and-a-half-minute round trip.
 
 **`bun run verify:changed`** sizes a gate run to the diff instead of guessing a tier:
 static checks always, plus only the specs, the route or component end-to-end files, the
@@ -116,6 +115,56 @@ every fixture is unchanged, and a red hosted check blocks a merge exactly as a r
 one did. The trade accepted deliberately is that a mutation or end-to-end failure is caught
 after the push rather than before it; since a local full run costs more wall clock than the
 hosted one, that costs no time, only the tidiness of never pushing red.
+
+### Pre-push
+
+`bun run lint:changed` (issue #128) lints only what a push would actually add: files
+committed since `HEAD` diverged from `origin/main`, plus whatever is staged, unstaged or
+untracked in the working tree right now, filtered to the extensions `eslint.config.js`
+actually covers (`.ts`, `.svelte`, `.js`, `.mjs`) and to paths that still exist on disk — a
+path can pass both those filters and still be gone, for example a file this branch added or
+modified since the merge-base that was later removed from the working tree without staging
+that removal, and a stale path makes ESLint exit 2 instead of reporting 0 problems for it.
+`--base <ref>` overrides the merge-base target the same way `verify:changed`'s does; an
+empty match prints `lint: nothing to lint.` and exits 0 rather than skipping silently.
+`lint:staged` is its staged-only sibling for the pre-commit hook: it lints the _current
+working-tree contents_ of whatever paths are staged, not a checkout of the index, so an
+edit made after `git add` but before the commit is what actually gets linted — narrower
+than what the eventual commit captures, never broader. Both are one mode inside
+`scripts/quality/eslint.ts` (`--changed` / `--staged`), reusing the same ESLint invocation,
+concurrency and memory-budget code the full `lint` script runs — `scripts/quality/changed-files.ts`
+is the one place staged/unstaged/untracked/committed-since-merge-base file selection and the
+exists-on-disk filter are computed, and `verify:changed.ts`'s own `lint` step now calls
+`lint:changed` against the same merge-base instead of re-linting the whole tree on top of
+what CI already re-lints for the full diff.
+
+The pre-commit hook (`bun run precommit`, wired in by `git config core.hooksPath .githooks`)
+used to run full `lint` on every commit — a type-aware pass over the whole tree, ~75s and up
+to 9GB resident. It now runs `format:check` and `check:suppressions` unscoped (both cheap:
+`format:check` is Prettier with its own file cache and was already near-instant on a warm
+one) plus `lint:staged` in place of full `lint`. Measured on a one-line comment-only change,
+staged and committed: **before, 76.5s** (`lint` alone took 75.3s of that); **after, 6.3s**.
+
+Before pushing, run this recipe — every command in the foreground with a long timeout;
+never `run_in_background`, never `Monitor` against these, since the harness can't tell a
+gate that hung from one that is just slow that way:
+
+- `npm run check`
+- `npm run lint:changed`
+- the unit/component specs for the files actually touched, e.g. `bunx vitest run
+src/lib/domain/tdee.spec.ts`
+- the affected `*.e2e.ts` file once, on one project: `E2E_PROJECT=mobile-chrome bunx
+playwright test src/routes/today/today.e2e.ts`
+- the mutation lane, only when the touched files sit under `src/lib/domain`,
+  `src/lib/server`, or `src/lib/state`: `bun run test:mutation:changed:node` for
+  server/domain code, `bun run test:mutation:changed:client` for client-side state
+
+Never run the full end-to-end suite (`test:e2e`, `test:e2e:all`) and never run `verify` or
+`verify:deep` locally before a push — CI is the authority on all three, and re-running them
+on a workstation only pays wall clock twice for the answer the hosted matrix already gives.
+`bun run verify:changed` already automates this exact diff-sizing in one command and is the
+preferred way to run it; the bulleted recipe above is what that command does internally,
+spelled out for a brief that needs the pieces named.
 
 `check:ci-contract` proves every declared local CI slice is hosted and every hosted gate job
 is listed in `all-green.needs`; a job outside that protected aggregator is not a merge gate.

@@ -4,6 +4,7 @@ import { availableParallelism } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { captureStatus, readJsonFile } from '../security/shared';
+import { changedFilesForLint, runGit, stagedFilesForLint } from './changed-files';
 import { lintNodeOptions, lintWorkerCount } from './lint-memory';
 
 interface LintMessage {
@@ -21,9 +22,49 @@ interface LintResult {
 	warningCount: number;
 }
 
+interface Options {
+	/** Merge-base with `origin/main`, plus staged/unstaged, filtered to linted extensions. */
+	changed: boolean;
+	/** Just what's staged — for the pre-commit hook. */
+	staged: boolean;
+	/** Overrides `origin/main` for `--changed`'s merge-base. */
+	base: string | undefined;
+}
+
+function parseArguments(argv: string[]): Options {
+	let changed = false;
+	let staged = false;
+	let base: string | undefined;
+	for (let index = 0; index < argv.length; index += 1) {
+		const argument = argv[index];
+		if (argument === '--changed') changed = true;
+		else if (argument === '--staged') staged = true;
+		else if (argument === '--base') {
+			const value = argv[index + 1];
+			if (value === undefined) throw new Error('--base requires a git ref.');
+			base = value;
+			index += 1;
+		} else throw new Error(`Unknown argument: ${argument ?? ''}`);
+	}
+	if (changed && staged) throw new Error('--changed and --staged are mutually exclusive.');
+	if (base !== undefined && !changed) throw new Error('--base only applies with --changed.');
+	return { changed, staged, base };
+}
+
+const options = parseArguments(process.argv.slice(2));
+
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 const reportPath = path.join(projectRoot, 'reports', 'quality', 'eslint.json');
 await mkdir(path.dirname(reportPath), { recursive: true });
+
+let targets: string[] | undefined;
+if (options.changed) targets = await changedFilesForLint(runGit, options.base ?? 'origin/main');
+else if (options.staged) targets = await stagedFilesForLint(runGit);
+
+if (targets !== undefined && targets.length === 0) {
+	console.log('lint: nothing to lint.');
+	process.exit(0);
+}
 
 // ESLint takes one formatter per run, so emit the machine-readable one and
 // render it for humans here.
@@ -37,7 +78,7 @@ const concurrency = lintWorkerCount(availableParallelism());
 const { exitCode } = await captureStatus(
 	path.join(projectRoot, 'node_modules', '.bin', 'eslint'),
 	[
-		'.',
+		...(targets ?? ['.']),
 		'--max-warnings',
 		'0',
 		'--concurrency',

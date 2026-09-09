@@ -309,8 +309,14 @@ async function main(): Promise<void> {
 
 	for (const step of resolvedPlan.steps) {
 		if (step.category === 'static') {
-			const run = await runLoggedStep(step.name, 'bun', ['run', step.name], logDirectory);
-			record(step.name, `bun run ${step.name}`, run);
+			// `lint` here is the same diff `base` already sizes everything else
+			// to, so it runs `lint:changed` against that same ref instead of
+			// linting the whole tree a second time on top of what CI already
+			// covers for the full PR diff.
+			const args =
+				step.name === 'lint' ? ['run', 'lint:changed', '--', '--base', base] : ['run', step.name];
+			const run = await runLoggedStep(step.name, 'bun', args, logDirectory);
+			record(step.name, `bun ${args.join(' ')}`, run);
 		}
 	}
 	const specSteps = resolvedPlan.steps.filter((step) => step.category === 'spec');
