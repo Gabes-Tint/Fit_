@@ -170,6 +170,35 @@ test.describe('at 360px', () => {
 		await expectFitsViewport(page, trainingCard);
 	});
 
+	test('the Today weight trend card stays inside the viewport with a scrub selection showing', async ({
+		page,
+		baseURL
+	}) => {
+		await signInThroughApi(page, baseURL ?? '');
+		await page.goto('/');
+		await atNarrowPhone(page);
+		await openSampleJournal(page);
+
+		const weightCard = page.getByRole('region', { name: 'Weight' });
+		const chart = weightCard.getByRole('img', { name: /Weight trend from/ });
+		await chart.evaluate((el) => {
+			const rect = el.getBoundingClientRect();
+			el.dispatchEvent(
+				new PointerEvent('pointerdown', {
+					bubbles: true,
+					cancelable: true,
+					pointerId: 7,
+					pointerType: 'touch',
+					clientX: rect.left + rect.width * 0.85,
+					clientY: rect.top + rect.height / 2
+				})
+			);
+		});
+		await expect(page.getByText(/^[A-Z][a-z]{2} \d{1,2} · \d+\.\d (kg|lb)$/).first()).toBeVisible();
+
+		await expectFitsViewport(page, weightCard);
+	});
+
 	test('the exercise training strip stays inside the viewport', async ({ page, baseURL }) => {
 		await openExerciseTabEmpty(page, baseURL ?? '');
 		await pickFullBodyTemplate(page);
