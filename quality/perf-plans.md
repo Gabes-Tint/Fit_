@@ -132,20 +132,6 @@ Plan:
 - SEARCH f USING INDEX idx_food_id (food_id=?)
 - USE TEMP B-TREE FOR ORDER BY
 
-### src/lib/server/catalog/portions.ts — volumesByFood (built at run time)
-
-```sql
-select food_id, label, grams from food_serving
-		where food_id in (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			and typeof(label) = 'text' and typeof(grams) in ('real', 'integer')
-		order by food_id, is_default desc, label
-```
-
-Plan:
-
-- SEARCH food_serving USING INDEX idx_serving_food (food_id=?)
-- USE TEMP B-TREE FOR LAST 2 TERMS OF ORDER BY
-
 ### src/lib/server/catalog/serving-rows.ts — servingRowsByFood (built at run time)
 
 ```sql

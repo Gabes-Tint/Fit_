@@ -138,6 +138,7 @@
 			"scripts/eval/search-eval.ts",
 			"scripts/github/as-owen.ts",
 			"scripts/perf/bundle.ts",
+			"scripts/perf/catalog-page.run.ts",
 			"scripts/perf/check-plans.ts",
 			"scripts/perf/compare.ts",
 			"scripts/perf/measure.ts",

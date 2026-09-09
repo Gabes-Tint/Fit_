@@ -1,6 +1,7 @@
-import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
+import { DatabaseSync } from 'node:sqlite';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { withPortions } from './portions';
+import { servingRowsByFood } from './serving-rows';
 
 /** A catalog holding nothing but the serving rows a case needs. */
 function catalogOf(rows: [id: number, label: unknown, grams: unknown, isDefault: number][]) {
@@ -17,36 +18,21 @@ function catalogOf(rows: [id: number, label: unknown, grams: unknown, isDefault:
 	return db;
 }
 
-/** The portions of each id, in the order asked, as `withPortions` answers them. */
-function portionsOf(db: DatabaseSync, ids: number[]) {
-	return withPortions(
-		db,
-		ids.map((id) => ({ id }))
-	).map((food) => food.portions);
+/**
+ * The page's serving rows, as `foods.ts` fetches them once and hands them to
+ * this module. Read through `servingRowsByFood` rather than built by hand, so
+ * these cases still run against the statement the server really asks — the
+ * `typeof` filters and the `is_default desc, label` order the picks below
+ * depend on live there, not here.
+ */
+function rowsFor(db: DatabaseSync, foods: readonly { id: number }[]) {
+	return servingRowsByFood(db, [...new Set(foods.map((food) => food.id))]);
 }
 
-/**
- * The catalog, counting how many times a statement is read.
- *
- * `withPortions` only ever calls `prepare`, so standing in for the connection
- * is a one-method object. Counting reads rather than prepares is the point: the
- * per-food version this replaced prepared once too, and paid its cost in a
- * `.all()` per food.
- */
-function countingReads(db: DatabaseSync) {
-	const counted = { reads: 0 };
-	const catalog = {
-		prepare: (sql: string) => {
-			const statement = db.prepare(sql);
-			return {
-				all: (...values: SQLInputValue[]) => {
-					counted.reads += 1;
-					return statement.all(...values);
-				}
-			};
-		}
-	};
-	return { counted, catalog: catalog as unknown as DatabaseSync };
+/** The portions of each id, in the order asked, as `withPortions` answers them. */
+function portionsOf(db: DatabaseSync, ids: number[]) {
+	const foods = ids.map((id) => ({ id }));
+	return withPortions(rowsFor(db, foods), foods).map((food) => food.portions);
 }
 
 describe('withPortions', () => {
@@ -72,7 +58,8 @@ describe('withPortions', () => {
 	});
 
 	it('keeps every other column of the food it was given', () => {
-		expect(withPortions(db, [{ id: 2, name: 'PUDDING' }])).toEqual([
+		const foods = [{ id: 2, name: 'PUDDING' }];
+		expect(withPortions(rowsFor(db, foods), foods)).toEqual([
 			{ id: 2, name: 'PUDDING', portions: [] }
 		]);
 	});
@@ -88,43 +75,20 @@ describe('withPortions', () => {
 		]);
 	});
 
-	it('reads the whole page in one statement rather than one per food', () => {
-		// The regression: a twenty-food search page crossed into SQLite twenty
-		// times for portions, once per row it had already found.
-		const { counted, catalog } = countingReads(db);
-		withPortions(catalog, [{ id: 1 }, { id: 2 }, { id: 99 }]);
-		expect(counted.reads).toBe(1);
-	});
-
 	it('reads a food named twice on one page once, and answers for both', () => {
-		const { counted, catalog } = countingReads(db);
-		expect(withPortions(catalog, [{ id: 1 }, { id: 1 }])).toEqual([
-			{
-				id: 1,
-				portions: [
-					{ unit: 'tbsp', grams: 13.5 },
-					{ unit: 'tsp', grams: 4.5 }
-				]
-			},
-			{
-				id: 1,
-				portions: [
-					{ unit: 'tbsp', grams: 13.5 },
-					{ unit: 'tsp', grams: 4.5 }
-				]
-			}
+		const foods = [{ id: 1 }, { id: 1 }];
+		const portions = [
+			{ unit: 'tbsp', grams: 13.5 },
+			{ unit: 'tsp', grams: 4.5 }
+		];
+		expect(withPortions(rowsFor(db, foods), foods)).toEqual([
+			{ id: 1, portions },
+			{ id: 1, portions }
 		]);
-		expect(counted.reads).toBe(1);
-	});
-
-	it('asks nothing of the catalog when there are no foods to ask about', () => {
-		const { counted, catalog } = countingReads(db);
-		expect(withPortions(catalog, [])).toEqual([]);
-		expect(counted.reads).toBe(0);
 	});
 
 	it('answers nothing when there are no foods to ask about', () => {
-		expect(withPortions(db, [])).toEqual([]);
+		expect(withPortions(rowsFor(db, []), [])).toEqual([]);
 	});
 
 	it('keeps the food’s own default serving over another row naming the same unit', () => {
