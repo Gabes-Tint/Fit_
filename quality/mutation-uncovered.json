@@ -211,6 +211,7 @@
 			"scripts/security/zap.ts"
 		],
 		"e2e-harness": [
+			"tests/built-chunk.ts",
 			"tests/catalog-fixture.ts",
 			"tests/e2e-build.ts",
 			"tests/e2e-support.ts",
