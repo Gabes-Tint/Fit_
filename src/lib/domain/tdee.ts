@@ -126,7 +126,15 @@ function weightTrend(weights: WeightEntry[]) {
 		x: (parseISODate(w.date).getTime() - t0) / 86400000,
 		y: w.kg
 	}));
-	return { kgPerDay: linearSlope(points), weightSpanDays: points.at(-1)?.x ?? 0 };
+	// weights arrives sorted ascending by date (adaptiveTdee sorts before
+	// calling), so the last point's x is also the largest -- reading it via
+	// reduce keeps weightSpanDays derived from the same points linearSlope
+	// uses, instead of recomputing the last date's offset independently,
+	// without adding an unreachable empty-points branch: reduce's own
+	// initial value already answers 0 for the empty case the length guard
+	// above rules out.
+	const weightSpanDays = points.reduce((max, p) => Math.max(max, p.x), 0);
+	return { kgPerDay: linearSlope(points), weightSpanDays };
 }
 
 export function adaptiveTdee(profile: Profile, end = todayISO()): AdaptiveTdee {
@@ -147,7 +155,10 @@ export function adaptiveTdee(profile: Profile, end = todayISO()): AdaptiveTdee {
 
 	const { kgPerDay, weightSpanDays } = weightTrend(weights);
 
-	const enough = logged.length >= 7 && weights.length >= 4 && weightSpanDays >= 10;
+	// No separate weights.length >= 4 check: weightTrend only ever reports a
+	// nonzero weightSpanDays when it had at least four weigh-ins to trend
+	// (see its own guard above), so weightSpanDays >= 10 already implies it.
+	const enough = logged.length >= 7 && weightSpanDays >= 10;
 
 	const surplusKcalPerDay = kgPerDay * KCAL_PER_KG;
 	const inferredRaw = avgIntake - surplusKcalPerDay;
