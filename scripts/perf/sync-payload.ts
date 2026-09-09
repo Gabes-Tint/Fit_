@@ -9,6 +9,7 @@ import {
 	stateFormat,
 	storedDocument
 } from '../../src/lib/domain/state-document.ts';
+import { MAX_STATE_BODY_BYTES } from '../../src/lib/domain/state-size.ts';
 import { buildWeekPlan } from '../../src/lib/domain/week-plan.ts';
 import { workoutFromRoutine } from '../../src/lib/domain/workout.ts';
 import { addDaysISO } from '../../src/lib/domain/utils.ts';
@@ -43,12 +44,12 @@ import type { LogItem, Profile, Routine, TendState, Workout } from '../../src/li
 export const ANCHOR_DATE = '2026-06-30';
 
 /**
- * The ceiling `src/lib/server/state/endpoints.ts` refuses a body over. Read
- * from the number the server actually enforces rather than restated, because
- * the interesting figure this instrument reports is how long an account takes
- * to reach it.
+ * The ceiling the state endpoint refuses a body over, imported rather than
+ * restated: the interesting figure this instrument reports is how long an
+ * account takes to reach it, and a second copy of the number would report a
+ * distance to a wall that is not there. It used to be a copy (#282).
  */
-export const MAX_STATE_BODY_BYTES = 4 * 1024 * 1024;
+export { MAX_STATE_BODY_BYTES };
 
 /** One measured document. */
 export interface PayloadRow {
@@ -379,7 +380,7 @@ export function formatSyncPayload(rows: PayloadRow[]): string {
 				.trim()
 		),
 		'',
-		`Server ceiling: ${MAX_STATE_BODY_BYTES} bytes (\`MAX_STATE_BODY_BYTES\`, \`src/lib/server/state/endpoints.ts\`).`,
+		`Server ceiling: ${MAX_STATE_BODY_BYTES} bytes (\`MAX_STATE_BODY_BYTES\`, \`src/lib/domain/state-size.ts\`).`,
 		year === undefined
 			? 'No one-year row was measured.'
 			: `A year of food and training is ${kilobytes(year.putBytes)} per push, and reaches that ceiling after about ${daysToCeiling(year)} days.`,

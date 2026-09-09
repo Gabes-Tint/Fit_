@@ -195,6 +195,35 @@ test.describe('at 360px', () => {
 		await expectFitsViewport(page, toast);
 	});
 
+	test('the sync notice for a document too large to send stays inside the viewport', async ({
+		page,
+		baseURL
+	}) => {
+		// The longest string the badge can show \u2014 152 characters, against the
+		// offline notice's 88 \u2014 and the one that stays up rather than clearing
+		// itself, so a phone that cannot fit it would be showing the overflow for
+		// as long as the condition lasts (#282).
+		await signInThroughApi(page, baseURL ?? '');
+		await page.route('**/api/state', async (route) => {
+			if (route.request().method() !== 'PUT') return route.continue();
+			await route.fulfill({
+				status: 400,
+				contentType: 'application/json',
+				body: JSON.stringify({ error: { code: 'invalid-body', reason: 'too-large' } })
+			});
+		});
+		await atNarrowPhone(page);
+		await openEmptyJournal(page);
+
+		// The badge is one live region whose text is swapped in and out, so the
+		// region is the element to measure rather than a node matched on wording.
+		const notice = page.getByRole('status');
+		await expect(notice).toContainText(
+			'Your data has outgrown what the server accepts, so it is not being sent. It is still saved on this device \u2014 export a backup from the You page.'
+		);
+		await expectFitsViewport(page, notice);
+	});
+
 	test('the Scan tab stays inside the viewport', async ({ page, baseURL }) => {
 		await signInThroughApi(page, baseURL ?? '');
 		await atNarrowPhone(page);
