@@ -22,8 +22,8 @@ import {
  * The two screens by address, rather than by walking the drawer to each one.
  *
  * The drawer is not what this spec proves, and it is covered on its own by
- * `version.e2e.ts`, `lazy-shell.e2e.ts`, `phone-layout.e2e.ts` and by the
- * reload test at the foot of this file. What it cost here was the budget. The
+ * `version.e2e.ts`, `lazy-shell.e2e.ts`, `phone-layout.e2e.ts` and
+ * `signin.e2e.ts`. What it cost here was the budget. The
  * round-trip test below alternates between `/you` and `/progress` six times,
  * and a drawer trip is two clicks: one to open it, one for the link. On the
  * `mobile-safari` shard a click spends one to two and a half seconds inside
@@ -118,11 +118,9 @@ test.describe('the units preference, read on Progress and set on You', () => {
 
 	test('persists the units preference across a reload', async ({ page }) => {
 		await switchUnits(page, 'Imperial');
+		// The reload lands back on `/you`, which is where the toggle is: what has
+		// to survive it is the preference, not the way anyone got to the screen.
 		await page.reload();
-		// The one drawer trip this spec keeps: the route a person actually takes
-		// to the preference, walked once, on the cheapest test here.
-		await page.getByRole('button', { name: 'Open menu' }).click();
-		await page.getByRole('link', { name: 'You' }).click();
 		await expect(page.getByRole('button', { name: 'Imperial' })).toHaveAttribute(
 			'aria-pressed',
 			'true'
