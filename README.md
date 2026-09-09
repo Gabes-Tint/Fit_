@@ -369,6 +369,18 @@ CI runs its gates as parallel jobs, so a formatting failure surfaces in about a 
 than behind half an hour of browser and container work. The `main` branch is protected by the
 hosted `CI / Quality and security` check, which passes only when every parallel gate succeeds.
 
+`main` merges through a GitHub merge queue rather than a direct merge. Adding a pull request
+to the queue does not land it immediately: GitHub builds it onto the current `main` plus
+whatever else is already queued ahead of it, reruns `CI / Quality and security` against that
+combined tree, and only then fast-forwards `main` — so a merge is asynchronous and its result
+shows up later as a run against `gh-readonly-queue/…`, not against the pull request's own
+branch. Queued pull requests are batched and tested together; when a batch goes red, the
+queue bisects it, drops whichever pull request failed, and re-tests the rest without it, so
+one broken PR does not block the others queued alongside it. A pull request only needs to be
+green and approved to enter the queue — there is no separate requirement to rebase it onto
+`main` first, and `gh pr update-branch` has no role in this flow. If GitHub reports a
+conflict putting a pull request on the queue, that still needs a manual rebase and push.
+
 Repository-specific agent and review rules live in `AGENTS.md`. `QUALITY.md` is the control
 inventory: what each area currently enforces, what is deliberately absent, and the gate and
 mutation-lane policy behind the numbers.
