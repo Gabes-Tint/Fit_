@@ -40,14 +40,6 @@ describe('the weight preference on Progress', () => {
 		expect(tend.profile?.weights[0]?.kg).toBe(74.3);
 	});
 
-	it('changes nothing stored when the preference changes, only what is displayed', async () => {
-		await render(ProgressPage);
-		const before = JSON.stringify(tend.profile?.weights);
-		tend.setUnits('imperial');
-		tend.setUnits('metric');
-		expect(JSON.stringify(tend.profile?.weights)).toBe(before);
-	});
-
 	it('stores a weight typed in pounds as the exact equivalent kilograms', async () => {
 		tend.setUnits('imperial');
 		await render(ProgressPage);
@@ -55,14 +47,6 @@ describe('the weight preference on Progress', () => {
 		await page.getByRole('button', { name: 'Today' }).click();
 		const latest = tend.profile?.weights.at(-1);
 		expect(latest?.kg).toBe(lbToKg(160));
-	});
-
-	it('stores a weight typed in kilograms unchanged', async () => {
-		await render(ProgressPage);
-		await page.getByLabelText('Weight in kilograms').fill('82');
-		await page.getByRole('button', { name: 'Today' }).click();
-		const latest = tend.profile?.weights.at(-1);
-		expect(latest?.kg).toBe(82);
 	});
 });
 

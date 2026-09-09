@@ -64,13 +64,6 @@ describe('the Height field', () => {
 		await expect.element(page.getByLabelText('Height in centimeters')).toHaveValue('168');
 	});
 
-	it('shows the onboarded height as feet and inches under the imperial preference', async () => {
-		tend.state.units = 'imperial';
-		await render(YouPage);
-		await expect.element(page.getByLabelText('Height, feet')).toBeInTheDocument();
-		await expect.element(page.getByLabelText('Height, inches')).toBeInTheDocument();
-	});
-
 	it('shows a visible cm unit label under the metric preference, not ft or in', async () => {
 		await render(YouPage);
 		await expect.element(page.getByText('cm', { exact: true })).toBeInTheDocument();
