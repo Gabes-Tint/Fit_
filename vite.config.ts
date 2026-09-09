@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitest/config';
 import thresholds from './quality/thresholds.json' with { type: 'json' };
-import { readBuildVersion } from './scripts/build/app-version.ts';
+import { resolveBuildVersion } from './scripts/build/bundle-measurement-version.ts';
 import { previewKeepAlive } from './scripts/build/preview-keep-alive.ts';
 import { DOM_FREE_CLIENT_SPECS } from './quality/dom-free-client-specs.mjs';
 import {
@@ -160,9 +160,13 @@ const DEV_HOSTS = (process.env.FIT_DEV_HOSTS ?? '')
  * The version this build carries, read once here and substituted into the
  * bundle by `define` below, so the shell, the Capacitor build and
  * `/api/version` all answer with the same string. `scripts/build/app-version.ts`
- * has where it comes from.
+ * has where it comes from; `scripts/build/bundle-measurement-version.ts` has
+ * why this calls `resolveBuildVersion` rather than `readBuildVersion`
+ * directly — a measurement build (`check:bundle`) substitutes a fixed-length
+ * placeholder so the byte count it reports never depends on how long the
+ * real git-derived version string happens to be.
  */
-const build = readBuildVersion();
+const build = resolveBuildVersion();
 
 export default defineConfig({
 	define: {

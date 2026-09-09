@@ -1,9 +1,10 @@
 import { writeFile, mkdir, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { readJsonFile } from '../security/shared';
+import { readJsonFile, run } from '../security/shared';
 import { collectAssets, measure } from './bundle-assets';
 import { collectAlwaysLoadedAssets } from './bundle-closure';
+import { BUNDLE_MEASUREMENT_ENV } from '../build/bundle-measurement-version';
 import type { BundleBudgets } from './config-types';
 
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
@@ -17,17 +18,31 @@ const budgets = await readJsonFile<BundleBudgets>(
 /**
  * Printed with every failure because a handful of bytes is not signal, and
  * without this note the first move on a near-miss is to go looking for them in
- * the diff. Both numbers are measured in `docs/bundle-audit.md`.
+ * the diff. Measured in `docs/bundle-audit.md`.
  */
 const MEASUREMENT_NOISE = [
 	'Before hunting a small delta in the diff, subtract the noise:',
-	'  8 bytes — the version stamp. main is tagged on every merge and stamps `v0.0.NN`;',
-	'    a branch is ahead of its tag and stamps `v0.0.NN+<sha>`, eight characters longer.',
-	'    Every branch build therefore starts eight bytes above the main it is compared to.',
 	"  4 bytes — SvelteKit's random `__sveltekit_<token>` identifier, which is six or seven",
 	'    characters and appears four times, so two builds of one identical tree differ by four.',
 	'Treat a change of about a dozen bytes as measuring the build, not the code.'
 ].join('\n');
+
+/**
+ * This gate used to measure whatever `.svelte-kit/output/client` already
+ * held, so a stale build left over from a previous run — or one built with a
+ * different, variably-long `git describe` version string — could get
+ * measured instead of the tree at HEAD. Building fresh every time, with
+ * `BUNDLE_MEASUREMENT_ENV` set, fixes both: the client bundle measured here
+ * is always the one this checkout would produce right now, and it always
+ * embeds the fixed-length placeholder version from
+ * `bundle-measurement-version.ts` rather than the real one, so the byte
+ * count never depends on how long the current tag distance happens to be.
+ * See `docs/bundle-audit.md`.
+ */
+console.log('Building for measurement...');
+await run('bun', ['run', 'build'], {
+	env: { ...process.env, [BUNDLE_MEASUREMENT_ENV]: '1' }
+});
 
 const { assets, javascriptBytes, cssBytes, largestAsset } = measure(
 	await collectAssets(assetRoot, projectRoot)

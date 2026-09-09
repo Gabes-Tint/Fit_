@@ -439,8 +439,8 @@
 		{:else if logUi.tab === 'scan'}
 			<BarcodeScan onpick={pickFood} onsearch={() => (logUi.tab = 'search')} />
 		{:else}
-			<RecentFoodList {meal} />
 			<FoodSearch onpick={pickFood} ondirectlog={logDirect} />
+			<RecentFoodList {meal} />
 		{/if}
 
 		{#if proposals.length > 0}

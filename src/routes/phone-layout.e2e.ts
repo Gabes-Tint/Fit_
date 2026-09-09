@@ -92,35 +92,49 @@ test.describe('at 360px', () => {
 		const weightCard = page.getByRole('region', { name: 'Weight' });
 		await expectFitsViewport(page, weightCard);
 
-		// The "Log weight" button sits over the chart's bottom-right corner; the
-		// chart reserves space there (like the Training card reserves space for
-		// its own arrow) so the newest point and its end-date label are not
-		// hidden under it (#today-card-actions review). Checked against the
-		// chart's own container box, not the SVG `<text>` node's — Safari's
-		// `getBoundingClientRect` on `text-anchor: end` SVG text is unreliable
-		// and produces false positives unrelated to any real overlap.
+		// The "Log weight" button used to sit over the chart's bottom-right
+		// corner, and the chart reserved a right-hand gutter (`pr-16`) so its
+		// newest point and end-date label were not hidden under it
+		// (#today-card-actions review). The button now sits in its own row
+		// below the chart, so the chart no longer needs to reserve that gutter
+		// and should reach right up to the card's own padding.
 		const chart = page.getByRole('img', { name: /Weight trend/ });
 		await expect(chart).toBeVisible();
 		const chartBox = await chart.boundingBox();
+		const cardBox = await weightCard.boundingBox();
 		expect(chartBox, 'chart has no box to measure').not.toBeNull();
-		const { x, y, width, height } = chartBox as {
-			x: number;
-			y: number;
-			width: number;
-			height: number;
-		};
-		// A few px in from the corner the end-date label and newest point sit
-		// at, so the point lands on the chart's own content rather than its
-		// bare edge.
-		const corner = { x: x + width - 4, y: y + height - 8 };
-		const hit = await page.evaluate(
-			(point) => document.elementFromPoint(point.x, point.y)?.closest('svg') !== null,
-			corner
-		);
+		expect(cardBox, 'weight card has no box to measure').not.toBeNull();
+		const { x: chartX, width: chartWidth } = chartBox as { x: number; width: number };
+		const { x: cardX, width: cardWidth } = cardBox as { x: number; width: number };
+		const chartRight = chartX + chartWidth;
+		const cardRight = cardX + cardWidth;
+		// The card's own horizontal padding (`px-4`, 16px) is the only gap that
+		// should remain between the plot's right edge and the card's own right
+		// edge — a few px of slack for subpixel layout, well short of the
+		// ~64px a reserved `pr-16` gutter used to leave.
 		expect(
-			hit,
-			`something else covers the chart's bottom-right corner at (${corner.x}, ${corner.y})`
-		).toBe(true);
+			cardRight - chartRight,
+			`chart's right edge is ${cardRight - chartRight}px short of the card's right edge — a gutter is still reserved`
+		).toBeLessThanOrEqual(20);
+
+		// The "Log weight" button now sits below the chart, right-aligned, and
+		// still meets its 44px tap target with nothing else covering it.
+		const logWeight = page.getByRole('button', { name: 'Log weight' });
+		await expect(logWeight).toBeVisible();
+		const buttonBox = await logWeight.boundingBox();
+		expect(buttonBox, 'Log weight button has no box to measure').not.toBeNull();
+		const { y: buttonY, height: buttonHeight } = buttonBox as { y: number; height: number };
+		expect(
+			buttonHeight,
+			'Log weight button is shorter than its 44px tap target'
+		).toBeGreaterThanOrEqual(44);
+		// It sits below the chart's own bottom edge, not layered over it.
+		const { y: chartY, height: chartHeight } = chartBox as { y: number; height: number };
+		expect(
+			buttonY,
+			'Log weight button overlaps the chart instead of sitting below it'
+		).toBeGreaterThanOrEqual(chartY + chartHeight - 1);
+		await expectHittable(logWeight);
 	});
 
 	/**
