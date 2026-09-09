@@ -6,15 +6,29 @@ import { capture } from '../security/shared';
 const execFileAsync = promisify(execFile);
 
 /**
- * Refuses to ship a commit whose own CI run on `main` is not green.
+ * Refuses to ship a commit whose own CI is not green.
  *
  * The incident this exists for: PR #120 and PR #121 were each green on their
  * own branch, based on the same commit, and merged back to back. Main's CI
  * for the merged result then failed `check:bundle` by 8 bytes (run
  * 33941127559) — a state neither PR's green run ever tested — and that
  * failing commit was deployed anyway as v0.0.10, because nothing asked main.
- * A PR's checks answer for its branch; only the run keyed to the exact commit
- * on `main` answers for what is about to ship.
+ * A PR's checks answer for its branch; only a run keyed to the exact commit
+ * that landed answers for what is about to ship.
+ *
+ * Since main started landing through a merge queue, that run can come from
+ * either of two places. Every commit that lands is first built and tested
+ * by a `merge_group` run against `gh-readonly-queue/main/pr-<n>-<sha>`,
+ * whose head SHA is the exact commit that then lands unchanged. Main's own
+ * `push` run re-executes that same commit, and — because it enforces the
+ * flake policy just as strictly — can go red on a retried flake the queue
+ * run did not hit, blocking a deploy of a commit the queue already proved
+ * green. So this gate accepts either: a successful `push` run for the
+ * commit, or a successful `merge_group` run whose head SHA is that commit.
+ * A failed (or missing) push run beside a successful merge-group run for
+ * the same commit is accepted, with a note naming both runs. Neither green
+ * is still refused — the flake policy is not weakened, only which run may
+ * satisfy it is widened.
  *
  * The wait reuses `release-version.ts`'s ceiling: about two minutes is long
  * enough for a run already `in_progress` to finish, short enough not to turn
@@ -33,17 +47,27 @@ export const ALLOW_RED_MAIN_VARIABLE = 'FIT_DEPLOY_ALLOW_RED_MAIN';
 /** The one workflow this check looks for a run of. */
 const CI_WORKFLOW = 'ci.yml';
 
-/** The branch a deploy's commit must have a green run on. */
+/** The branch a deploy's commit must have landed on. */
 const CI_BRANCH = 'main';
+
+/** Main's own re-run of the commit that just landed. */
+const PUSH_EVENT = 'push';
+
+/** The merge queue's run of the same commit, before it landed. */
+const MERGE_GROUP_EVENT = 'merge_group';
+
+/** A hint appended to every refusal, so the reason a green merge-group run did not cover it is visible. */
+const MERGE_GROUP_HINT = 'A successful merge-group run for this exact commit also counts.';
 
 export interface CiRun {
 	status: string;
 	conclusion: string | null;
 	url: string;
+	event: string;
 }
 
 export interface MainCiGateOptions {
-	/** The runs GitHub reports for this commit, this workflow, this branch — newest first. */
+	/** The runs GitHub reports for this commit, across events, newest first. */
 	fetchRuns: () => Promise<CiRun[]>;
 	/** Milliseconds since some fixed point; injected so a spec need not sleep. */
 	now: () => number;
@@ -53,6 +77,14 @@ export interface MainCiGateOptions {
 	allowRedMain?: boolean;
 	timeoutMs?: number;
 	pollMs?: number;
+}
+
+function isGreen(run: CiRun | undefined): boolean {
+	return run !== undefined && run.status === 'completed' && run.conclusion === 'success';
+}
+
+function isPending(run: CiRun | undefined): boolean {
+	return run !== undefined && run.status !== 'completed';
 }
 
 /**
@@ -79,22 +111,52 @@ export async function mainCiGate(options: MainCiGateOptions): Promise<void> {
 
 	for (;;) {
 		const runs = await options.fetchRuns();
-		const run = runs[0];
-		if (run === undefined) {
+		const pushRun = runs.find((run) => run.event === PUSH_EVENT);
+		const mergeGroupRun = runs.find((run) => run.event === MERGE_GROUP_EVENT);
+
+		if (pushRun === undefined && mergeGroupRun === undefined) {
 			throw new Error(
-				`No ${CI_WORKFLOW} run found on ${CI_BRANCH} for this commit; refusing to deploy it.`
+				`No ${CI_WORKFLOW} run found on ${CI_BRANCH} for this commit; refusing to deploy it. ` +
+					MERGE_GROUP_HINT
 			);
 		}
-		if (run.status === 'completed') {
-			if (run.conclusion === 'success') return;
+
+		if (isGreen(pushRun)) return;
+
+		if (mergeGroupRun !== undefined && isGreen(mergeGroupRun)) {
+			const pushNote =
+				pushRun === undefined
+					? 'no push run on main for this commit'
+					: `push run concluded "${pushRun.conclusion}": ${pushRun.url}`;
+			options.log(
+				`CI on ${CI_BRANCH} for this commit is not green from its push run (${pushNote}), ` +
+					`but the merge queue already verified this exact commit: ${mergeGroupRun.url}`
+			);
+			return;
+		}
+
+		if (!isPending(pushRun) && !isPending(mergeGroupRun)) {
+			const parts: string[] = [];
+			if (pushRun !== undefined) {
+				parts.push(`push run concluded "${pushRun.conclusion}": ${pushRun.url}`);
+			}
+			if (mergeGroupRun !== undefined) {
+				parts.push(`merge-group run concluded "${mergeGroupRun.conclusion}": ${mergeGroupRun.url}`);
+			}
 			throw new Error(
-				`CI on ${CI_BRANCH} for this commit concluded "${run.conclusion}", not success: ${run.url}`
+				`CI on ${CI_BRANCH} for this commit concluded without success (${parts.join('; ')}); ` +
+					`refusing to deploy it. ${MERGE_GROUP_HINT}`
 			);
 		}
+
 		if (options.now() >= deadline) {
+			const pending = [pushRun, mergeGroupRun].filter(
+				(run): run is CiRun => run !== undefined && isPending(run)
+			);
+			const urls = pending.map((run) => `${run.event} run ${run.url}`).join(', ');
 			throw new Error(
-				`CI on ${CI_BRANCH} for this commit is still "${run.status}" after ` +
-					`${Math.round(timeout / 1000)}s; refusing to deploy it: ${run.url}`
+				`CI on ${CI_BRANCH} for this commit is still running after ` +
+					`${Math.round(timeout / 1000)}s; refusing to deploy it: ${urls}`
 			);
 		}
 		await options.wait(poll);
@@ -119,10 +181,8 @@ async function fetchMainCiRuns(commit: string): Promise<CiRun[]> {
 		CI_WORKFLOW,
 		'--commit',
 		commit,
-		'--branch',
-		CI_BRANCH,
 		'--json',
-		'status,conclusion,url'
+		'status,conclusion,url,event'
 	]);
 	return JSON.parse(output === '' ? '[]' : output) as CiRun[];
 }

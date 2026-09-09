@@ -96,6 +96,17 @@ production `node_modules` resolved from `bun.lock`. It installs the Node pinned 
 in `/opt/fit/releases/<commit>/`, switches `/opt/fit/current`, restarts `fit.service`, and
 runs the smoke check. The tree must be clean: a release is named for its commit.
 
+Before any of that, `scripts/deploy/main-ci-gate.ts` refuses to ship a commit that is not
+proven green: it accepts either a successful `push` run of `ci.yml` on `main` for that
+commit, or a successful `merge_group` run whose head SHA is that same commit — main lands
+through a merge queue, so every commit that lands was already built and tested by a
+`merge_group` run before the queue fast-forwarded it, and main's own `push` run is a second,
+strict re-execution of the same commit that can go red on a retried flake the queue run never
+hit. A red or missing push run beside a green merge-group run for the exact commit is
+accepted, with both runs named in the log; neither green refuses the deploy. Waits up to
+`CI_WAIT_MS` (about two minutes) for a run still in progress, and `FIT_DEPLOY_ALLOW_RED_MAIN=1`
+skips the check entirely, loudly, for the day the check itself is broken.
+
 The host is deliberately not in this repository. Without `FIT_DEPLOY_HOST` the script stops.
 `FIT_PUBLIC_ORIGIN` is required as well, and names the origin that machine answers under —
 it is what the smoke check aims at and what the deploy prints, and it has no default for the
