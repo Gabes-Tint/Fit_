@@ -35,7 +35,12 @@
 
 	// One round action button, reused for the Energy, Weight and Training card
 	// corners: computed once rather than re-run through `cn` at every call site.
-	const CARD_ACTION_CLASS = cn(BUTTON_BASE, BUTTON_VARIANTS.default, BUTTON_SIZES['icon-round']);
+	// `icon-round-sm` rather than `icon-round`: the plain full-size circle sat
+	// too close to the ring, the macro bars and the training text above it
+	// (#today-card-actions polish), so the visible circle steps down while the
+	// card padding below grows to give it room, and the tap target stays 44px
+	// regardless.
+	const CARD_ACTION_CLASS = cn(BUTTON_BASE, BUTTON_VARIANTS.default, BUTTON_SIZES['icon-round-sm']);
 	const CARD_CLOSE_CLASS = cn(BUTTON_BASE, BUTTON_VARIANTS.ghost, BUTTON_SIZES.icon);
 
 	const profile = $derived(tend.profile);
@@ -79,7 +84,7 @@
 		<WeekStrip {food} exercise={exerciseDays} weight={weightDays} bind:selected={day} />
 
 		<section
-			class="bg-card relative rounded-3xl px-3 py-5 shadow-border"
+			class="bg-card relative rounded-3xl px-3 pt-5 pb-8 shadow-border"
 			aria-labelledby="today-energy-title"
 		>
 			<h2 id="today-energy-title" class="font-display px-1 text-xl tracking-tight">Energy</h2>
@@ -130,11 +135,11 @@
 		</section>
 
 		<section
-			class="bg-card relative rounded-3xl p-4 shadow-border"
+			class="bg-card relative rounded-3xl px-4 pt-4 pb-8 shadow-border"
 			aria-labelledby="today-weight-title"
 		>
 			<h2 id="today-weight-title" class="font-display px-1 text-xl tracking-tight">Weight</h2>
-			<div class="mt-1 h-44 pr-16">
+			<div class="mt-1 h-[140px] pr-16">
 				<WeightChart weights={profile.weights} units={tend.state.units} />
 			</div>
 			{#if weightExpanded}
