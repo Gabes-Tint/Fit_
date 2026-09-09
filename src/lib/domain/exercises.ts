@@ -37,7 +37,9 @@ export function libraryFor(group: MuscleGroup | null): LibraryExercise[] {
  */
 export function searchLibrary(query: string, group: MuscleGroup | null): LibraryExercise[] {
 	const needle = query.trim().toLowerCase();
-	if (needle === '') return libraryFor(group);
+	// No early return for an empty needle: `String.prototype.includes('')` is
+	// always true, so the filter below already keeps every entry -- the same
+	// list `libraryFor(group)` returns on its own for a blank query.
 	return libraryFor(group).filter((e) => e.name.toLowerCase().includes(needle));
 }
 
@@ -47,7 +49,10 @@ export function searchLibrary(query: string, group: MuscleGroup | null): Library
  */
 export function alternativesTo(name: string): LibraryExercise[] {
 	const group = LIBRARY_BY_NAME[name]?.group;
-	if (!group) return [];
+	// No early return for an unknown name: every catalog entry's `group` is one
+	// of the non-empty `MUSCLE_GROUPS` strings, so `e.group === group` is
+	// already false for every entry when `group` is `undefined` -- the filter
+	// below returns the same empty list the guard used to short-circuit to.
 	return EXERCISE_LIBRARY.filter((e) => e.group === group && e.name !== name);
 }
 
