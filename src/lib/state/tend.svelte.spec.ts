@@ -16,7 +16,8 @@ import { DEFAULT_REST_SECONDS, PLANNED_MEALS, ZERO_MICROS } from '$lib/domain/ty
 import { displayLoad } from '$lib/domain/units';
 import { todayISO } from '$lib/domain/utils';
 import { countsAsTraining } from '$lib/domain/workout';
-import { emptyState, SCHEMA_VERSION } from '$lib/domain/state-document';
+import { emptyState, SCHEMA_VERSION, storedDocument } from '$lib/domain/state-document';
+import { STORAGE_FULL_MESSAGE } from './storage-quota';
 import { REFUSED_STORAGE_KEY, STORAGE_KEY, TendStore } from './tend.svelte';
 
 function freshStore() {
@@ -83,6 +84,57 @@ function persistSpy() {
 
 function writeSpy() {
 	return vi.spyOn(TendStore.prototype as unknown as { write: () => void }, 'write');
+}
+
+/**
+ * Run `body` with `globalThis.localStorage` swapped for `stub`, then put the
+ * real one back. jsdom's `Storage` is a legacy platform object whose `setItem`
+ * a `vi.spyOn` never actually reaches (see `persistSpy` above), so a storage
+ * that behaves differently has to be a different object — the same move the
+ * no-storage tests make when they swap it for `undefined`.
+ */
+function withStorage(stub: Storage, body: () => void) {
+	const real = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+	Object.defineProperty(globalThis, 'localStorage', { value: stub, configurable: true });
+	try {
+		body();
+	} finally {
+		if (real) Object.defineProperty(globalThis, 'localStorage', real);
+	}
+}
+
+/**
+ * A device whose writes fail with `error` until `allow()` is called, and which
+ * keeps what it accepts in `kept` so a write that lands can be read back.
+ */
+function refusingStorage(error: unknown) {
+	const kept = new Map<string, string>();
+	let refusing = true;
+	const storage = {
+		getItem: (key: string) => kept.get(key) ?? null,
+		setItem: (key: string, value: string) => {
+			if (refusing) throw error;
+			kept.set(key, value);
+		},
+		removeItem: (key: string) => void kept.delete(key),
+		clear: () => kept.clear(),
+		key: () => null,
+		get length() {
+			return kept.size;
+		}
+	};
+	return {
+		kept,
+		storage: storage as unknown as Storage,
+		allow: () => {
+			refusing = false;
+		}
+	};
+}
+
+/** What a browser out of room throws. */
+function quotaError(): DOMException {
+	return new DOMException('exceeded the quota', 'QuotaExceededError');
 }
 
 function customEntry(overrides: Partial<LogItem> = {}): LogItem {
@@ -654,6 +706,97 @@ describe('whole-state operations', () => {
 		expect(next.state.profiles[0]?.weights[0]?.kg).toBe(80);
 		expect(next.state.pantry).toEqual(['oats']);
 		expect(next.state.weekPlan).toHaveLength(21);
+	});
+});
+
+describe('a device with no room left', () => {
+	it('completes the action rather than throwing out of it', () => {
+		// The whole point of #300: the quota wall used to arrive as an exception
+		// out of whatever the person had just tapped.
+		const store = onboarded();
+		const full = refusingStorage(quotaError());
+		withStorage(full.storage, () => {
+			expect(() => store.addWeight(80)).not.toThrow();
+		});
+		expect(store.profile?.weights.at(-1)?.kg).toBe(80);
+	});
+
+	it('says so, because a phone that quietly stops saving is the worse failure', () => {
+		const store = onboarded();
+		expect(store.storage).toBe('ok');
+		withStorage(refusingStorage(quotaError()).storage, () => store.addWeight(80));
+		expect(store.storage).toBe('full');
+	});
+
+	it('says the same for the name Firefox raises instead', () => {
+		const store = onboarded();
+		const firefox = new DOMException('persistent storage', 'NS_ERROR_DOM_QUOTA_REACHED');
+		withStorage(refusingStorage(firefox).storage, () => store.addWeight(80));
+		expect(store.storage).toBe('full');
+	});
+
+	it('still offers the change to the server, which is where it can still be kept', () => {
+		// A device out of room is exactly the case where the copy on the server is
+		// the only copy there is going to be, so the push is the last thing to
+		// give up on rather than the first.
+		const store = onboarded();
+		const pushes = vi.fn();
+		store.watch(pushes);
+		withStorage(refusingStorage(quotaError()).storage, () => store.addWeight(80));
+		expect(pushes).toHaveBeenCalled();
+	});
+
+	it('takes the warning back down once a write lands again', () => {
+		const store = onboarded();
+		const full = refusingStorage(quotaError());
+		withStorage(full.storage, () => {
+			store.addWeight(80);
+			expect(store.storage).toBe('full');
+			full.allow();
+			store.addWeight(79);
+			expect(store.storage).toBe('ok');
+			expect(full.kept.get(STORAGE_KEY)).toContain('79');
+		});
+	});
+
+	it('takes it back down when signing out frees the room', () => {
+		const store = onboarded();
+		withStorage(refusingStorage(quotaError()).storage, () => store.addWeight(80));
+		expect(store.storage).toBe('full');
+		store.clear();
+		expect(store.storage).toBe('ok');
+	});
+
+	it('keeps a document it had to refuse, rather than throwing over it', () => {
+		// `setAside` writes too, and a full device is the likeliest moment for a
+		// server document to arrive over one this build could not read.
+		const store = onboarded();
+		store.refusal = { ok: false, reason: 'future', message: 'Update the app to load it.' };
+		const full = refusingStorage(quotaError());
+		withStorage(full.storage, () => {
+			expect(store.replace(storedDocument(emptyState()))).toBe(true);
+		});
+		expect(store.storage).toBe('full');
+	});
+
+	it('lets a failure that is not the quota wall through instead of blaming the device', () => {
+		// Reporting a full phone for every storage failure would be the same
+		// silence in a different colour: nothing would ever be looked into.
+		const store = onboarded();
+		withStorage(refusingStorage(new TypeError('storage is broken')).storage, () => {
+			expect(() => store.addWeight(80)).toThrow(TypeError);
+		});
+		expect(store.storage).toBe('ok');
+	});
+});
+
+describe('what the app says about a full device', () => {
+	it('says the changes are not saved on it, rather than only that something failed', () => {
+		expect(STORAGE_FULL_MESSAGE).toContain('not saved on it');
+	});
+
+	it('says what to do about it, since waiting is not it', () => {
+		expect(STORAGE_FULL_MESSAGE).toContain('Export a backup');
 	});
 });
 
