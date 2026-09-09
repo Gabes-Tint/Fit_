@@ -50,10 +50,33 @@ function emptyDay() {
 
 export type DayNutrition = ReturnType<typeof emptyDay>;
 
-/** Null rather than zeroes for an unlogged day: the two must never read alike. */
-function dayTotals(log: LogItem[], date: string): DayNutrition | null {
-	const items = log.filter((i) => i.date === date);
-	if (!items.length) return null;
+/**
+ * The journal indexed by date, in one pass, entries within a date keeping the
+ * order the journal gave them.
+ *
+ * Exists because the windowed readers used to total each date by filtering
+ * the whole journal for it, once per date in the window:
+ * `adaptiveTdee`'s twenty-one day window cost twenty-one passes
+ * over a journal that only grows, and `rollingAverages`' week cost seven.
+ * Grouping once and reading the buckets is the same arithmetic over the same
+ * entries in the same order — see `perf:today-log`.
+ */
+function byDate(log: LogItem[]): Map<string, LogItem[]> {
+	const days = new Map<string, LogItem[]>();
+	for (const item of log) {
+		const day = days.get(item.date);
+		if (day) day.push(item);
+		else days.set(item.date, [item]);
+	}
+	return days;
+}
+
+/**
+ * Null rather than zeroes for a day with nothing logged: an untouched day and
+ * a day that came to zero must never read alike.
+ */
+function totalOf(items: LogItem[] | undefined): DayNutrition | null {
+	if (!items?.length) return null;
 	return items.reduce((acc, i) => {
 		acc.kcal += i.kcal;
 		acc.protein += i.protein;
@@ -143,8 +166,9 @@ export function adaptiveTdee(profile: Profile, end = todayISO()): AdaptiveTdee {
 	const dates = lastNDates(windowDays, end);
 	const start = dates[0] ?? end;
 
+	const grouped = byDate(profile.log);
 	const logged = dates
-		.map((d) => dayTotals(profile.log, d))
+		.map((d) => totalOf(grouped.get(d)))
 		.filter((x): x is NonNullable<typeof x> => x !== null);
 
 	const weights = profile.weights
@@ -222,7 +246,7 @@ export function computeTargets(profile: Profile): Targets {
 }
 
 export function nutritionForDay(log: LogItem[], date: string): DayNutrition {
-	return dayTotals(log, date) ?? emptyDay();
+	return totalOf(log.filter((i) => i.date === date)) ?? emptyDay();
 }
 
 /**
@@ -231,7 +255,10 @@ export function nutritionForDay(log: LogItem[], date: string): DayNutrition {
  */
 export function rollingAverages(log: LogItem[], days: number, end = todayISO()) {
 	const dates = lastNDates(days, end);
-	const logged = dates.map((d) => dayTotals(log, d)).filter((x): x is DayNutrition => x !== null);
+	const grouped = byDate(log);
+	const logged = dates
+		.map((d) => totalOf(grouped.get(d)))
+		.filter((x): x is DayNutrition => x !== null);
 	const sum = logged.reduce((acc, d) => {
 		for (const k of Object.keys(acc) as (keyof DayNutrition)[]) {
 			acc[k] += d[k];
