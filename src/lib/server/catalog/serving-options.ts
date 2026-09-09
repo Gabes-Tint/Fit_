@@ -1,6 +1,4 @@
-import type { DatabaseSync } from 'node:sqlite';
 import type { ServingRow } from '$lib/domain/default-serving';
-import { servingRowsByFood } from './serving-rows';
 
 /**
  * The serving choices a food's `food_serving` rows offer, reported exactly as
@@ -8,7 +6,7 @@ import { servingRowsByFood } from './serving-rows';
  * "1.0 medium breast" / "100 g" options, before any later slice does the
  * arithmetic that turns a choice plus a multiplier into a weight.
  *
- * A fourth question over the rows `servingRowsByFood` fetches, alongside
+ * A fourth question over the rows `foods.ts` fetches once per page, alongside
  * `default-serving.ts`'s, `unit-measure.ts`'s and `portions.ts`'s: where those
  * three each collapse a food's rows to the single row their own purpose needs,
  * this one is the odd member out — it keeps every row, because showing the
@@ -73,7 +71,7 @@ const MAX_OPTIONS = 10;
 
 /**
  * A food's serving rows, reported verbatim as `{ label, grams }` in the
- * catalog's own order (`servingRowsByFood`'s `is_default desc, label`),
+ * catalog's own order (`servingRowsSql`'s `is_default desc, label`),
  * implausible weights dropped, same-named rows collapsed to the first, and
  * capped at `MAX_OPTIONS`.
  *
@@ -99,19 +97,18 @@ function servingOptionsOf(rows: readonly ServingRow[]): ServingOption[] {
 /**
  * Every food, carrying the serving choices its rows named.
  *
- * Ids are deduplicated on the way into the query and matched back by id on the
- * way out, the same as `withPortions` does, so a page holding the same food
- * twice reads it once and both copies still answer.
+ * Read from the map `foods.ts` fetches once for the page, the same as
+ * `withPortions` does, so a page holding the same food twice reads one entry
+ * twice and both copies still answer.
  */
 export function withServingOptions<T extends Servable>(
-	catalog: DatabaseSync,
+	rowsByFood: ReadonlyMap<number, ServingRow[]>,
 	foods: readonly T[]
 ): (T & { servingOptions: ServingOption[] })[] {
-	const byFood = servingRowsByFood(catalog, [...new Set(foods.map((food) => food.id))]);
 	return foods.map((food) => {
-		const rows = byFood.get(food.id);
-		// `servingRowsByFood` only sets an entry for an id that had at least one
-		// row (see its own doc comment), so a miss here means zero rows, not a
+		const rows = rowsByFood.get(food.id);
+		// `servingRowsByFood` only sets an entry for an id that had at least
+		// one row (see `serving-rows.ts`), so a miss here means zero rows, not a
 		// row to run past `servingOptionsOf`'s filters — reported directly as no
 		// choices, the same answer filtering every row out would reach anyway.
 		return { ...food, servingOptions: rows === undefined ? [] : servingOptionsOf(rows) };

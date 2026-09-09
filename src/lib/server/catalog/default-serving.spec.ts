@@ -1,7 +1,8 @@
-import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
+import { DatabaseSync } from 'node:sqlite';
 import * as defaultServingDomain from '$lib/domain/default-serving';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { withDefaultServing } from './default-serving';
+import { servingRowsByFood } from './serving-rows';
 
 /** A catalog holding nothing but the serving rows a case needs. */
 function catalogOf(rows: [id: number, label: unknown, grams: unknown, isDefault: number][]) {
@@ -19,6 +20,16 @@ function catalogOf(rows: [id: number, label: unknown, grams: unknown, isDefault:
 }
 
 type Food = { id: number; serving: { label: string | null; grams: number | null } };
+
+/**
+ * The page's serving rows, as `foods.ts` fetches them once and hands them to
+ * this module. Read through `servingRowsByFood` rather than built by hand, so
+ * these cases still run against the statement the server really asks — the
+ * filters and the `is_default desc, label` order the picks below depend on.
+ */
+function rowsFor(db: DatabaseSync, foods: readonly { id: number }[]) {
+	return servingRowsByFood(db, [...new Set(foods.map((food) => food.id))]);
+}
 
 describe('withDefaultServing', () => {
 	let db: DatabaseSync;
@@ -39,72 +50,37 @@ describe('withDefaultServing', () => {
 
 	it('prefers a whole-item measure for a food with no serving of its own', () => {
 		const foods: Food[] = [{ id: 1, serving: { label: null, grams: null } }];
-		expect(withDefaultServing(db, foods)).toEqual([
+		expect(withDefaultServing(rowsFor(db, foods), foods)).toEqual([
 			{ id: 1, serving: { label: '1.0 item 7.6 oz', grams: 219 } }
 		]);
 	});
 
 	it('falls back to the first household measure when no whole-item measure names itself', () => {
 		const foods: Food[] = [{ id: 2, serving: { label: null, grams: null } }];
-		expect(withDefaultServing(db, foods)).toEqual([
+		expect(withDefaultServing(rowsFor(db, foods), foods)).toEqual([
 			{ id: 2, serving: { label: '60190', grams: 205 } }
 		]);
 	});
 
 	it('falls back to an explicit "per 100 g" when only the catch-all row exists', () => {
 		const foods: Food[] = [{ id: 3, serving: { label: null, grams: null } }];
-		expect(withDefaultServing(db, foods)).toEqual([
+		expect(withDefaultServing(rowsFor(db, foods), foods)).toEqual([
 			{ id: 3, serving: { label: 'per 100 g', grams: null } }
 		]);
 	});
 
 	it('falls back to "per 100 g" for a food with no food_serving rows at all', () => {
 		const foods: Food[] = [{ id: 999, serving: { label: null, grams: null } }];
-		expect(withDefaultServing(db, foods)).toEqual([
+		expect(withDefaultServing(rowsFor(db, foods), foods)).toEqual([
 			{ id: 999, serving: { label: 'per 100 g', grams: null } }
 		]);
 	});
 
 	it('leaves a food that already names its own serving untouched', () => {
 		const foods: Food[] = [{ id: 1, serving: { label: '1 PACKET', grams: 32 } }];
-		expect(withDefaultServing(db, foods)).toEqual([
+		expect(withDefaultServing(rowsFor(db, foods), foods)).toEqual([
 			{ id: 1, serving: { label: '1 PACKET', grams: 32 } }
 		]);
-	});
-
-	it('answers every food on the page in one statement rather than one per food', () => {
-		const counted = { reads: 0 };
-		const catalog = {
-			prepare: (sql: string) => {
-				const statement = db.prepare(sql);
-				return {
-					all: (...values: SQLInputValue[]) => ((counted.reads += 1), statement.all(...values))
-				};
-			}
-		} as unknown as DatabaseSync;
-		const foods: Food[] = [
-			{ id: 1, serving: { label: null, grams: null } },
-			{ id: 2, serving: { label: null, grams: null } },
-			{ id: 3, serving: { label: null, grams: null } }
-		];
-		withDefaultServing(catalog, foods);
-		expect(counted.reads).toBe(1);
-	});
-
-	it('asks the catalog nothing when every food already names its own serving', () => {
-		const counted = { reads: 0 };
-		const catalog = {
-			prepare: (sql: string) => {
-				const statement = db.prepare(sql);
-				return {
-					all: (...values: SQLInputValue[]) => ((counted.reads += 1), statement.all(...values))
-				};
-			}
-		} as unknown as DatabaseSync;
-		expect(
-			withDefaultServing(catalog, [{ id: 1, serving: { label: '1 PACKET', grams: 32 } }])
-		).toEqual([{ id: 1, serving: { label: '1 PACKET', grams: 32 } }]);
-		expect(counted.reads).toBe(0);
 	});
 
 	it('asks the picker with a real empty array, not a non-empty placeholder, for a food with no rows', () => {
@@ -113,7 +89,8 @@ describe('withDefaultServing', () => {
 		// some non-empty stand-in that happens to filter down to the same
 		// answer.
 		const spy = vi.spyOn(defaultServingDomain, 'pickDefaultServing');
-		withDefaultServing(db, [{ id: 999, serving: { label: null, grams: null } }]);
+		const missing: Food[] = [{ id: 999, serving: { label: null, grams: null } }];
+		withDefaultServing(rowsFor(db, missing), missing);
 		expect(spy).toHaveBeenCalledWith([]);
 		spy.mockRestore();
 	});
@@ -123,7 +100,7 @@ describe('withDefaultServing', () => {
 			{ id: 1, serving: { label: null, grams: null } },
 			{ id: 999, serving: { label: null, grams: null } }
 		];
-		expect(withDefaultServing(db, foods)).toEqual([
+		expect(withDefaultServing(rowsFor(db, foods), foods)).toEqual([
 			{ id: 1, serving: { label: '1.0 item 7.6 oz', grams: 219 } },
 			{ id: 999, serving: { label: 'per 100 g', grams: null } }
 		]);
