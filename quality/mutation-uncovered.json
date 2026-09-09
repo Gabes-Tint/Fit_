@@ -118,6 +118,7 @@
 			"scripts/android/release-plan.ts",
 			"scripts/android/toolchain.ts",
 			"scripts/build/app-version.ts",
+			"scripts/build/bundle-measurement-version.ts",
 			"scripts/build/next-version.ts",
 			"scripts/build/preview-keep-alive.ts",
 			"scripts/ci/rerun-failed.ts",
