@@ -259,6 +259,38 @@ test.describe('at 360px', () => {
 		await expectFitsViewport(page, notice);
 	});
 
+	test('the notice for a device with no room left stays inside the viewport', async ({
+		page,
+		baseURL
+	}) => {
+		// The other standing notice (#300). It is shown by the store rather than by
+		// sync, so it is reached by refusing the write instead of the request: a
+		// browser out of room throws `QuotaExceededError` out of `setItem`, and
+		// only for the document key, so signing in and onboarding still work.
+		await signInThroughApi(page, baseURL ?? '');
+		await page.addInitScript(() => {
+			// Read off the descriptor rather than as `Storage.prototype.setItem`,
+			// which is an unbound method and lints as one.
+			const write = Object.getOwnPropertyDescriptor(Storage.prototype, 'setItem')?.value as (
+				this: Storage,
+				key: string,
+				value: string
+			) => void;
+			Storage.prototype.setItem = function (this: Storage, key: string, value: string) {
+				if (key === 'tend.v1') throw new DOMException('quota', 'QuotaExceededError');
+				write.call(this, key, value);
+			};
+		});
+		await atNarrowPhone(page);
+		await openEmptyJournal(page);
+
+		const notice = page.getByRole('status');
+		await expect(notice).toContainText(
+			"This device's storage is full, so your latest changes are not saved on it. Export a backup from the You page."
+		);
+		await expectFitsViewport(page, notice);
+	});
+
 	test('the Scan tab stays inside the viewport', async ({ page, baseURL }) => {
 		await signInThroughApi(page, baseURL ?? '');
 		await atNarrowPhone(page);
