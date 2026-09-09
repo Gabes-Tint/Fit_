@@ -39,9 +39,11 @@
 	 * whether the drawer is open, and every other tap outside still closes it.
 	 */
 	function keepOpenForTheToggle(event: PointerEvent) {
-		const target = event.target;
-		if (target instanceof Element && target.closest(MENU_FAB_SELECTOR) !== null)
-			event.preventDefault();
+		// The target is an element by the time this is called: `bits-ui` does not
+		// count an interaction whose target is anything else as an outside one at
+		// all, so it never reaches here.
+		const target = event.target as Element;
+		if (target.closest(MENU_FAB_SELECTOR) !== null) event.preventDefault();
 	}
 </script>
 
