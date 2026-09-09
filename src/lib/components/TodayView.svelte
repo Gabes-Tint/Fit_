@@ -102,7 +102,7 @@
 			</div>
 		</section>
 
-		<section class="bg-card rounded-3xl p-4 shadow-border">
+		<section class="bg-card rounded-3xl p-4 shadow-border" role="group" aria-label="Weight trend">
 			<div class="h-44">
 				<WeightChart weights={profile.weights} units={tend.state.units} />
 			</div>

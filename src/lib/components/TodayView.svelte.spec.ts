@@ -278,7 +278,9 @@ describe('TodayView', () => {
 			await expect
 				.element(page.getByRole('group', { name: "This week's training" }))
 				.toBeInTheDocument();
-			await expect.element(page.getByRole('group', { name: 'Weight' })).toBeInTheDocument();
+			await expect
+				.element(page.getByRole('group', { name: 'Weight', exact: true }))
+				.toBeInTheDocument();
 		});
 
 		it('marks each week-strip day with what was logged that day', async () => {

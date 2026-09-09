@@ -96,18 +96,17 @@ test.describe('once onboarded', () => {
 	 * line, so its accessible name carries the "Weight trend" caption instead
 	 * of the empty-state invitation.
 	 */
-	test('plots the weight trend under the Energy card', async ({ page }) => {
+	test('plots the weight trend directly under the Energy card', async ({ page }) => {
 		const energyCard = page.getByText(/of \d+\s*kcal/).first();
 		await expect(energyCard).toBeVisible();
-		const chart = page.getByRole('img', { name: /Weight trend/ });
+		const weightSection = page.getByRole('group', { name: 'Weight trend' });
+		const chart = weightSection.getByRole('img', { name: /Weight trend/ });
 		await expect(chart).toBeVisible();
-		const [energyBox, chartBox] = await Promise.all([
-			energyCard.boundingBox(),
-			chart.boundingBox()
-		]);
-		expect(energyBox).not.toBeNull();
-		expect(chartBox).not.toBeNull();
-		expect(chartBox?.y).toBeGreaterThan(energyBox?.y ?? Infinity);
+		// Proves adjacency rather than "somewhere below": the weight section's
+		// immediately preceding sibling in the DOM must be the Energy card's own
+		// section, not just any section above it.
+		const precedingSection = weightSection.locator('xpath=preceding-sibling::section[1]');
+		await expect(precedingSection.getByText(/of \d+\s*kcal/).first()).toBeVisible();
 	});
 
 	test('keeps the destinations behind the menu button', async ({ page }) => {
