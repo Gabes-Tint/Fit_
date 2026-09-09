@@ -119,7 +119,7 @@
 							value={dayTotals.fat}
 							target={targets.fat}
 							unit="g"
-							color="bg-ink-subtle"
+							color="bg-muted-foreground"
 						/>
 					{/if}
 				</div>
@@ -135,54 +135,58 @@
 		</section>
 
 		<section
-			class="bg-card relative rounded-3xl px-4 pt-4 pb-8 shadow-border"
+			class="bg-card rounded-3xl px-4 pt-3 pb-3 shadow-border"
 			aria-labelledby="today-weight-title"
 		>
 			<h2 id="today-weight-title" class="font-display px-1 text-xl tracking-tight">Weight</h2>
-			<div class="mt-1 h-[140px] pr-16">
+			<div class="mt-1 h-[140px]">
 				<WeightChart weights={profile.weights} units={tend.state.units} />
 			</div>
 			{#if weightExpanded}
+				<div class="mt-3 flex items-center justify-end px-1">
+					<button
+						type="button"
+						aria-label="Close"
+						onclick={() => (weightExpanded = false)}
+						class={CARD_CLOSE_CLASS}
+					>
+						<X class="size-4" />
+					</button>
+				</div>
 				<div class="flex flex-col gap-2 px-1">
-					<div class="flex items-center justify-end">
-						<button
-							type="button"
-							aria-label="Close"
-							onclick={() => (weightExpanded = false)}
-							class={CARD_CLOSE_CLASS}
-						>
-							<X class="size-4" />
-						</button>
-					</div>
 					<WeightEntry units={tend.state.units} />
 				</div>
 			{:else}
-				<button
-					type="button"
-					aria-label="Log weight"
-					onclick={() => (weightExpanded = true)}
-					class={cn(CARD_ACTION_CLASS, 'absolute right-3 bottom-3')}
-				>
-					<Plus class="size-5" />
-				</button>
+				<div class="mt-1 flex justify-end">
+					<button
+						type="button"
+						aria-label="Log weight"
+						onclick={() => (weightExpanded = true)}
+						class={CARD_ACTION_CLASS}
+					>
+						<Plus class="size-5" />
+					</button>
+				</div>
 			{/if}
 		</section>
 
 		<section
-			class="bg-card relative rounded-3xl px-4 pt-3 pb-6 pr-16 shadow-border text-sm"
+			class="bg-card rounded-3xl px-4 pt-3 pb-6 shadow-border text-sm"
 			aria-labelledby="today-training-title"
 		>
-			<h2 id="today-training-title" class="font-display px-1 text-xl tracking-tight">Training</h2>
-			<div role="group" aria-label="This week's training">
-				<p class="mt-0.5">{trainingText}</p>
+			<div class="flex items-center justify-between gap-3">
+				<div class="min-w-0 flex-1">
+					<h2 id="today-training-title" class="font-display px-1 text-xl tracking-tight">
+						Training
+					</h2>
+					<div role="group" aria-label="This week's training">
+						<p class="mt-0.5">{trainingText}</p>
+					</div>
+				</div>
+				<a href={resolve('/exercise')} aria-label="Go to training" class={CARD_ACTION_CLASS}>
+					<ArrowRight class="size-5" />
+				</a>
 			</div>
-			<a
-				href={resolve('/exercise')}
-				aria-label="Go to training"
-				class={cn(CARD_ACTION_CLASS, 'absolute right-3 bottom-3')}
-			>
-				<ArrowRight class="size-5" />
-			</a>
 		</section>
 
 		{#each MEALS as meal (meal)}
