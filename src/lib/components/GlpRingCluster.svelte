@@ -108,7 +108,7 @@
 		hovered = key;
 	}
 
-	function unhover() {
+	function clearHover() {
 		hovered = null;
 	}
 </script>
@@ -123,7 +123,7 @@
 >
 	<svg width={size} height={size} {viewBox} class="-rotate-90" aria-hidden="true">
 		{#each rings as ring (ring.key)}
-			<g role="presentation" onmouseenter={() => hover(ring.key)} onmouseleave={unhover}>
+			<g role="presentation" onmouseenter={() => hover(ring.key)} onmouseleave={clearHover}>
 				<RingArc
 					cx={size / 2}
 					cy={size / 2}
