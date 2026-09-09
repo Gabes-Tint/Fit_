@@ -413,6 +413,24 @@ describe('writeState', () => {
 		expect(refused.status).toBe(400);
 	});
 
+	it('refuses a document over the ceiling in bytes though under it in code units', async () => {
+		const MAX_STATE_BODY_BYTES = 4 * 1024 * 1024;
+		// An accented food name is one UTF-16 code unit and two UTF-8 bytes, so
+		// this document measures exactly the ceiling by `String.length` and one
+		// byte over it on the wire. The check counted code units and let it
+		// through (#283); an ASCII fixture cannot tell the two apart.
+		const prefix = '{"version":0,"format":"tend.v1","body":{"a":"café';
+		const suffix = '"}}';
+		const straddling =
+			prefix + 'x'.repeat(MAX_STATE_BODY_BYTES - prefix.length - suffix.length) + suffix;
+		expect(straddling.length).toBe(MAX_STATE_BODY_BYTES);
+		expect(Buffer.byteLength(straddling)).toBe(MAX_STATE_BODY_BYTES + 1);
+
+		const refused = await writeState(db, eventFor(authFor(), putRequest({ rawBody: straddling })));
+		expect(refused.status).toBe(400);
+		expect(db.prepare('select count(*) as n from household_state').get()?.['n']).toBe(0);
+	});
+
 	it('accepts a declared content-length exactly at the size ceiling', async () => {
 		const response = await writeState(
 			db,
