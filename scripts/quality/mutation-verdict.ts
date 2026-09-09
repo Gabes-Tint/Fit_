@@ -167,11 +167,7 @@ export function sourceWindowHash(source: string, location: Mutant['location']): 
  * a reviewed mutant's window without trusting the ledger entry's own line
  * numbers, which an edit above the mutant leaves pointing at the wrong text.
  */
-export function sourceWindowOccurrences(
-	source: string,
-	spanLines: number,
-	targetHash: string
-): number {
+function sourceWindowOccurrences(source: string, spanLines: number, targetHash: string): number {
 	const lines = source.split('\n');
 	let matches = 0;
 	for (let startLine = 1; startLine + spanLines - 1 <= lines.length; startLine++) {
@@ -224,7 +220,7 @@ export function sourceWindowStatus(
  * appearing twice) collapse onto one fingerprint. One review then excuses
  * both. That is treated as correct rather than as an ambiguity to reject --
  * identical code carries identical reasoning -- but it does mean a ledger
- * entry can silently cover a second, unreviewed occurrence if one ever
+ * entry can silently cover a second, not-actually-reviewed occurrence if one ever
  * appears.
  */
 export function mutantFingerprint(input: {
