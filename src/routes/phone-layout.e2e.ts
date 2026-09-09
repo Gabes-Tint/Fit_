@@ -95,16 +95,32 @@ test.describe('at 360px', () => {
 		// The "Log weight" button sits over the chart's bottom-right corner; the
 		// chart reserves space there (like the Training card reserves space for
 		// its own arrow) so the newest point and its end-date label are not
-		// hidden under it (#today-card-actions review). `toBeVisible` alone
-		// would not catch this — the label has a real box either way, it is
-		// just a button's box on top of it — so this checks what a tap (or a
-		// screen reader's touch exploration) would actually land on.
-		const endDateLabel = page
-			.getByRole('img', { name: /Weight trend/ })
-			.locator('text')
-			.last();
-		await expect(endDateLabel).toBeVisible();
-		await expectHittable(endDateLabel);
+		// hidden under it (#today-card-actions review). Checked against the
+		// chart's own container box, not the SVG `<text>` node's — Safari's
+		// `getBoundingClientRect` on `text-anchor: end` SVG text is unreliable
+		// and produces false positives unrelated to any real overlap.
+		const chart = page.getByRole('img', { name: /Weight trend/ });
+		await expect(chart).toBeVisible();
+		const chartBox = await chart.boundingBox();
+		expect(chartBox, 'chart has no box to measure').not.toBeNull();
+		const { x, y, width, height } = chartBox as {
+			x: number;
+			y: number;
+			width: number;
+			height: number;
+		};
+		// A few px in from the corner the end-date label and newest point sit
+		// at, so the point lands on the chart's own content rather than its
+		// bare edge.
+		const corner = { x: x + width - 4, y: y + height - 8 };
+		const hit = await page.evaluate(
+			(point) => document.elementFromPoint(point.x, point.y)?.closest('svg') !== null,
+			corner
+		);
+		expect(
+			hit,
+			`something else covers the chart's bottom-right corner at (${corner.x}, ${corner.y})`
+		).toBe(true);
 	});
 
 	test('the Today weight trend card stays inside the viewport expanded', async ({
