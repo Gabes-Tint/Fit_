@@ -18,10 +18,32 @@ import {
  * directly, so a UI-level reintroduction of that bug is caught too.
  */
 
-async function switchUnits(page: Page, label: 'Metric' | 'Imperial') {
-	await page.getByRole('button', { name: 'Open menu' }).click();
-	await page.getByRole('link', { name: 'You' }).click();
+/**
+ * The two screens by address, rather than by walking the drawer to each one.
+ *
+ * The drawer is not what this spec proves, and it is covered on its own by
+ * `version.e2e.ts`, `lazy-shell.e2e.ts`, `phone-layout.e2e.ts` and by the
+ * reload test at the foot of this file. What it cost here was the budget. The
+ * round-trip test below alternates between `/you` and `/progress` six times,
+ * and a drawer trip is two clicks: one to open it, one for the link. On the
+ * `mobile-safari` shard a click spends one to two and a half seconds inside
+ * Playwright's actionability wait -- that is the engine's speed on a hosted
+ * runner rather than anything this app does, and it is the same on every spec
+ * -- so twelve of them put that one test at 29.6s of Playwright's 30s default
+ * in run 34233599295, twice the next slowest test in the suite. The attempt
+ * before it ran out of the 30s mid-action and was reported as a stuck "Open
+ * menu" (#284); the click was not stuck, it was where the clock happened to
+ * stop. A `goto` is one navigation and no actionability wait at all, and the
+ * preference and the weight both survive one, which is what the reload test
+ * asserts directly.
+ */
+async function openYou(page: Page) {
+	await page.goto('/you');
 	await expect(page.getByRole('heading', { name: 'You', level: 1 })).toBeVisible();
+}
+
+async function switchUnits(page: Page, label: 'Metric' | 'Imperial') {
+	await openYou(page);
 	await page.getByRole('button', { name: label }).click();
 	await expect(page.getByRole('button', { name: label })).toHaveAttribute('aria-pressed', 'true');
 }
@@ -33,15 +55,14 @@ async function searchTheCatalog(page: Page, query: string) {
 	await page.getByLabel('Search foods, brands, barcodes').fill(query);
 }
 
-/** Leaves the log sheet, so the drawer under it can be opened again. */
+/** Leaves the log sheet the way a person does, rather than navigating out from under it. */
 async function closeLogSheet(page: Page) {
 	await page.getByRole('dialog').getByRole('button', { name: 'Close' }).click();
 	await expect(page.getByRole('dialog')).toBeHidden();
 }
 
 async function openProgress(page: Page) {
-	await page.getByRole('button', { name: 'Open menu' }).click();
-	await page.getByRole('link', { name: 'Progress' }).click();
+	await page.goto('/progress');
 	await expect(page.getByRole('heading', { name: 'Progress', level: 1 })).toBeVisible();
 }
 
@@ -98,6 +119,8 @@ test.describe('the units preference, read on Progress and set on You', () => {
 	test('persists the units preference across a reload', async ({ page }) => {
 		await switchUnits(page, 'Imperial');
 		await page.reload();
+		// The one drawer trip this spec keeps: the route a person actually takes
+		// to the preference, walked once, on the cheapest test here.
 		await page.getByRole('button', { name: 'Open menu' }).click();
 		await page.getByRole('link', { name: 'You' }).click();
 		await expect(page.getByRole('button', { name: 'Imperial' })).toHaveAttribute(
