@@ -39,9 +39,24 @@
 	--radius-2xl: 32px;
 	--radius: 12px;
 
-	--shadow-border:
-		0 0 0 1px rgb(31 27 22 / 0.06), 0 1px 2px -1px rgb(31 27 22 / 0.06),
-		0 2px 8px 0 rgb(31 27 22 / 0.04);
+	/*
+	 * Free of blur on purpose, and the app's frame rate on iOS depends on it.
+	 *
+	 * 35 component sites carry `shadow-border` -- every card, input, row and
+	 * sheet -- so a route change repaints all of them at once. When this token
+	 * had blurred layers, that cost hosted WebKit ~900 ms per actionability
+	 * check on an ~880-element route against Chromium's 40 ms, and it was the
+	 * only property in the whole style sheet that did: #292 bisected the sheet by
+	 * rule, by count and finally by property, and radius, overflow,
+	 * sticky/fixed, transforms, transitions and filters were each null.
+	 *
+	 * The blur is the whole bill, not the layer count and not the radius.
+	 * Dropping only the widest layer and keeping a 2px blur stayed at 678 ms;
+	 * removing every blur dropped it to 170 ms, and removing the shadow outright
+	 * reached 85 ms. So a spread-only shadow is the shape to keep, whatever its
+	 * color or width -- `src/app-shadow-token.spec.ts` holds the line.
+	 */
+	--shadow-border: 0 0 0 1px rgb(31 27 22 / 0.12);
 }
 
 @layer base {
