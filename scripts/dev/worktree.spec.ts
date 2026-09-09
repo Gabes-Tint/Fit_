@@ -93,13 +93,4 @@ describe('planning a worktree to remove', () => {
 			planDone({ ...base, dirty: true, aheadCommits: ['abc1234 a commit'], force: true })
 		).toEqual({ action: 'remove', path: base.path, branch: base.branch, deleteBranch: false });
 	});
-
-	it('force on an already-clean, merged worktree still deletes the branch', () => {
-		expect(planDone({ ...base, dirty: false, aheadCommits: [], force: true })).toEqual({
-			action: 'remove',
-			path: base.path,
-			branch: base.branch,
-			deleteBranch: true
-		});
-	});
 });

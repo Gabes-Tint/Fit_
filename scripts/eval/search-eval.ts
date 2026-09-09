@@ -18,6 +18,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { percentile } from '../perf/stats.ts';
 import { fileURLToPath } from 'node:url';
 import { pickDefaultServing, type ServingRow } from '../../src/lib/domain/default-serving.ts';
 import { catalogPath } from '../../src/lib/server/catalog/connection.ts';
@@ -193,13 +194,6 @@ function score(entry: EvalQuery, names: string[]): Omit<QueryResult, 'coldMs' | 
 
 function mean(values: number[]): number {
 	return values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
-function percentile(values: number[], fraction: number): number {
-	if (values.length === 0) return 0;
-	const sorted = [...values].sort((left, right) => left - right);
-	const at = Math.min(sorted.length - 1, Math.ceil(fraction * sorted.length) - 1);
-	return sorted[Math.max(0, at)] ?? 0;
 }
 
 function summarize(results: QueryResult[]): GroupMetrics {

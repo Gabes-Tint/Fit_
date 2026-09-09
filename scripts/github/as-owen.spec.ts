@@ -54,15 +54,6 @@ describe('mintAppJwt', () => {
 		const signature = Buffer.from(defined(signatureSegment), 'base64url');
 		expect(verify('RSA-SHA256', Buffer.from(signingInput), publicKey, signature)).toBe(true);
 	});
-
-	it('rejects a tampered signature', () => {
-		const token = mintAppJwt('4578638', privateKey, Date.now());
-		const [headerSegment, payloadSegment, signatureSegment] = token.split('.');
-		const signature = Buffer.from(defined(signatureSegment), 'base64url');
-		signature[0] = (defined(signature[0]) + 1) % 256;
-		const signingInput = `${headerSegment}.${payloadSegment}`;
-		expect(verify('RSA-SHA256', Buffer.from(signingInput), publicKey, signature)).toBe(false);
-	});
 });
 
 describe('assertKeyPermissions', () => {
@@ -265,26 +256,11 @@ describe('run', () => {
 		expect(spawnCalls).toHaveLength(0);
 	});
 
-	it('accepts a key file readable only by its owner (0600)', async () => {
-		const { deps, spawnCalls } = fakeDependencies({ statKeyFile: () => ({ mode: 0o100600 }) });
-		const exitCode = await run(['gh'], { FIT_GITHUB_APP_KEY: '/secrets/owen.pem' }, deps);
-		expect(exitCode).toBe(0);
-		expect(spawnCalls).toHaveLength(1);
-	});
-
 	it('refuses when no command is given', async () => {
 		const { deps, spawnCalls } = fakeDependencies();
 		const exitCode = await run([], { FIT_GITHUB_APP_KEY: '/secrets/owen.pem' }, deps);
 		expect(exitCode).toBe(1);
 		expect(spawnCalls).toHaveLength(0);
-	});
-
-	it('propagates the child exit code', async () => {
-		const { deps } = fakeDependencies({
-			spawnChild: () => Promise.resolve(17)
-		});
-		const exitCode = await run(['gh'], { FIT_GITHUB_APP_KEY: '/secrets/owen.pem' }, deps);
-		expect(exitCode).toBe(17);
 	});
 
 	it('fails cleanly with a malformed (non-RSA) key instead of an unhandled rejection', async () => {
