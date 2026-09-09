@@ -33,6 +33,15 @@ describe('foodIdentity', () => {
 		);
 	});
 
+	it('folds the name to lower case, not upper, in the key it reads', () => {
+		// `fold` only has to agree with itself to make two spellings compare
+		// equal, so an equality-only test (the case above) cannot tell lower-case
+		// folding from upper-case folding apart -- both make 'Oatmeal' and
+		// 'oatmeal' collide. Pinning the literal key is what catches a `fold`
+		// that folds the other way.
+		expect(foodIdentity({ name: 'Oatmeal' })).toBe('name:oatmeal|');
+	});
+
 	it('reads a missing brand and a blank one as the same absence of a brand', () => {
 		expect(foodIdentity({ name: 'Oatmeal' })).toBe(foodIdentity({ name: 'Oatmeal', brand: '  ' }));
 	});
