@@ -139,6 +139,30 @@ describe('SyncStatusBadge, data this build cannot read', () => {
 	});
 });
 
+describe('SyncStatusBadge, a document too large to send', () => {
+	it('says the data is safe here before it says anything went wrong', async () => {
+		sync.status = 'too-large';
+		await render(SyncStatusBadge);
+		await expect.element(page.getByText(/still saved on this device/i)).toBeInTheDocument();
+	});
+
+	it('says what to do about it, since waiting is not it', async () => {
+		// Unlike being offline, this does not resolve on its own, so a notice
+		// that only reported it would leave somebody watching a red bar forever.
+		sync.status = 'too-large';
+		await render(SyncStatusBadge);
+		expect(document.body.textContent).toContain('export a backup');
+	});
+
+	it('stays up rather than clearing itself the way a finished save does', async () => {
+		vi.useFakeTimers();
+		sync.status = 'too-large';
+		await render(SyncStatusBadge);
+		await vi.advanceTimersByTimeAsync(5000);
+		expect(document.body.textContent).toContain('still saved on this device');
+	});
+});
+
 describe('SyncStatusBadge, the live region itself', () => {
 	it('is present even with nothing to announce, rather than appearing only once there is', async () => {
 		// A region only mounted once a message exists is a region whose first
