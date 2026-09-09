@@ -33,6 +33,7 @@ import {
 	type LoadRefusal
 } from '$lib/domain/state-document';
 import { displayLoad, loadToKg } from '$lib/domain/units';
+import { isStorageFull, type StorageStatus } from './storage-quota';
 import { todayISO, uid } from '$lib/domain/utils';
 import { currentExercise, workoutFromRoutine } from '$lib/domain/workout';
 import { buildWeekPlan, mealPool } from '$lib/domain/week-plan';
@@ -76,6 +77,15 @@ export class TendStore {
 	 * memory, and overwriting it is the one unrecoverable move.
 	 */
 	refusal = $state<LoadRefusal | null>(null);
+
+	/**
+	 * Whether this device could keep what was written to it. See
+	 * `storage-quota.ts`: the browser's own cap arrives before the server's, and
+	 * a refused write leaves the change in memory and nowhere else, which is
+	 * something a person has to be told rather than find out on the next reload.
+	 * Cleared by the next write that lands.
+	 */
+	storage = $state<StorageStatus>('ok');
 
 	private pendingWrite: ReturnType<typeof setTimeout> | null = null;
 	private lifecycleFlushBound = false;
@@ -134,8 +144,31 @@ export class TendStore {
 		// Never over a document this build could not read: see `refusal`.
 		if (this.refusal !== null) return;
 		const document = storedDocument($state.snapshot(this.state));
-		globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(document));
+		this.put(STORAGE_KEY, JSON.stringify(document));
+		// Reported whether or not the device kept it. A full phone is exactly the
+		// case where the copy on the server is the only one there will be, so the
+		// push is the last thing to give up on.
 		this.onWrite?.();
+	}
+
+	/**
+	 * One write to this device, and the only place `setItem` is called.
+	 *
+	 * A device out of room says so through `storage` and keeps going: the state
+	 * in memory is untouched, the action that triggered the write completes, and
+	 * `write()` still tells `sync` there is something to push. Anything that is
+	 * not the quota wall is re-thrown — see `isStorageFull` — because a store
+	 * that swallowed every storage failure would be indistinguishable from one
+	 * that worked.
+	 */
+	private put(key: string, text: string): void {
+		try {
+			globalThis.localStorage?.setItem(key, text);
+			this.storage = 'ok';
+		} catch (error) {
+			if (!isStorageFull(error)) throw error;
+			this.storage = 'full';
+		}
 	}
 
 	/**
@@ -185,7 +218,7 @@ export class TendStore {
 		const storage = globalThis.localStorage;
 		if (this.refusal === null || storage === undefined) return;
 		const raw = storage.getItem(STORAGE_KEY);
-		if (typeof raw === 'string') storage.setItem(REFUSED_STORAGE_KEY, raw);
+		if (typeof raw === 'string') this.put(REFUSED_STORAGE_KEY, raw);
 	}
 
 	/**
@@ -196,6 +229,9 @@ export class TendStore {
 	clear() {
 		this.cancelPendingWrite();
 		this.refusal = null;
+		// Emptying the device is what frees the room, so a warning about there
+		// being none left does not outlive the sign-out that fixed it.
+		this.storage = 'ok';
 		this.state = emptyState();
 		globalThis.localStorage?.removeItem(STORAGE_KEY);
 		// A document set aside is still this account's data, and leaving it for
