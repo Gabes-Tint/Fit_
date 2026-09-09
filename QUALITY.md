@@ -119,17 +119,24 @@ hosted one, that costs no time, only the tidiness of never pushing red.
 ### Pre-push
 
 `bun run lint:changed` (issue #128) lints only what a push would actually add: files
-committed since `HEAD` diverged from `origin/main`, plus whatever is staged or sitting
-unstaged right now, filtered to the extensions `eslint.config.js` actually covers (`.ts`,
-`.svelte`, `.js`, `.mjs`). `--base <ref>` overrides the merge-base target the same way
-`verify:changed`'s does; an empty match prints `lint: nothing to lint.` and exits 0 rather
-than skipping silently. `lint:staged` is its staged-only sibling — the pre-commit hook's
-view, since a commit only ever captures the index. Both are one mode inside
+committed since `HEAD` diverged from `origin/main`, plus whatever is staged, unstaged or
+untracked in the working tree right now, filtered to the extensions `eslint.config.js`
+actually covers (`.ts`, `.svelte`, `.js`, `.mjs`) and to paths that still exist on disk — a
+path can pass both those filters and still be gone, for example a file this branch added or
+modified since the merge-base that was later removed from the working tree without staging
+that removal, and a stale path makes ESLint exit 2 instead of reporting 0 problems for it.
+`--base <ref>` overrides the merge-base target the same way `verify:changed`'s does; an
+empty match prints `lint: nothing to lint.` and exits 0 rather than skipping silently.
+`lint:staged` is its staged-only sibling for the pre-commit hook: it lints the _current
+working-tree contents_ of whatever paths are staged, not a checkout of the index, so an
+edit made after `git add` but before the commit is what actually gets linted — narrower
+than what the eventual commit captures, never broader. Both are one mode inside
 `scripts/quality/eslint.ts` (`--changed` / `--staged`), reusing the same ESLint invocation,
 concurrency and memory-budget code the full `lint` script runs — `scripts/quality/changed-files.ts`
-is the one place staged/unstaged/committed-since-merge-base file selection is computed, and
-`verify:changed.ts`'s own `lint` step now calls `lint:changed` against the same merge-base
-instead of re-linting the whole tree on top of what CI already re-lints for the full diff.
+is the one place staged/unstaged/untracked/committed-since-merge-base file selection and the
+exists-on-disk filter are computed, and `verify:changed.ts`'s own `lint` step now calls
+`lint:changed` against the same merge-base instead of re-linting the whole tree on top of
+what CI already re-lints for the full diff.
 
 The pre-commit hook (`bun run precommit`, wired in by `git config core.hooksPath .githooks`)
 used to run full `lint` on every commit — a type-aware pass over the whole tree, ~75s and up

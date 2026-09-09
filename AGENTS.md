@@ -22,14 +22,16 @@ and `server/`; `server` measures `domain/` and `server/`.
 
 ## Working rules
 
-**Gates: run `verify:fast` locally, let the hosted runners do the rest.** Before you push,
-run `bun scripts/quality/gate.ts verify:fast` — about twenty-five seconds, and it catches
-the formatting, lint, spelling and typecheck failures that account for most red builds.
-Then push and read the verdict from `gh pr checks`. Do not run the full `ci` tier locally
-just to be sure: it takes eight to eighteen minutes on one machine to produce the answer
-fourteen parallel hosted jobs give in four and a half, and waiting on it is the most wasteful
-thing an agent does. Run `gate.ts ci --job <name>` when you are iterating on one failing
-lane, and run things locally when they need this machine, such as the deploy scripts.
+**Gates: run a diff-sized set of checks locally, let the hosted runners do the rest.**
+Before you push, follow QUALITY.md's "Pre-push" section — `npm run check`, `npm run
+lint:changed`, the touched files' specs, the affected e2e file once, and the mutation lane
+only for changed domain/server/state code, all in the foreground. Then push and read the
+verdict from `gh pr checks`. Do not run the full `ci`, `verify` or `verify:deep` tier
+locally just to be sure: it takes eight to eighteen minutes on one machine to produce the
+answer fourteen parallel hosted jobs give in four and a half, and waiting on it is the most
+wasteful thing an agent does. Run `gate.ts ci --job <name>` when you are iterating on one
+failing lane, and run things locally when they need this machine, such as the deploy
+scripts.
 
 **Never end your turn waiting on a gate.** Block on it in the same turn — a `bash` loop on
 the process or the report file, with a timeout — then read the result and finish the work.
