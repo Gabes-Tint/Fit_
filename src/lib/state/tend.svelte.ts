@@ -33,6 +33,7 @@ import {
 	type LoadRefusal
 } from '$lib/domain/state-document';
 import { displayLoad, loadToKg } from '$lib/domain/units';
+import { putItem, STORAGE_FULL_MESSAGE, type StorageStatus } from './storage-quota';
 import { todayISO, uid } from '$lib/domain/utils';
 import { currentExercise, workoutFromRoutine } from '$lib/domain/workout';
 import { buildWeekPlan, mealPool } from '$lib/domain/week-plan';
@@ -76,6 +77,26 @@ export class TendStore {
 	 * memory, and overwriting it is the one unrecoverable move.
 	 */
 	refusal = $state<LoadRefusal | null>(null);
+
+	/**
+	 * Whether this device could keep what was written to it. See
+	 * `storage-quota.ts`: the browser's own cap arrives before the server's, and
+	 * a refused write leaves the change in memory and nowhere else, which is
+	 * something a person has to be told rather than find out on the next reload.
+	 * Cleared by the next write that lands.
+	 */
+	storage = $state<StorageStatus>('ok');
+
+	/**
+	 * What to say about this device's storage, or `null` when there is nothing
+	 * to say. The message is chosen here rather than in the badge so it is
+	 * decided beside the status it describes — and so the sentence itself is not
+	 * copied into every route chunk that renders a badge, which is what the
+	 * bundler does with a string constant a component reads directly.
+	 */
+	get storageNotice(): string | null {
+		return this.storage === 'full' ? STORAGE_FULL_MESSAGE : null;
+	}
 
 	private pendingWrite: ReturnType<typeof setTimeout> | null = null;
 	private lifecycleFlushBound = false;
@@ -134,8 +155,26 @@ export class TendStore {
 		// Never over a document this build could not read: see `refusal`.
 		if (this.refusal !== null) return;
 		const document = storedDocument($state.snapshot(this.state));
-		globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(document));
+		this.put(STORAGE_KEY, JSON.stringify(document));
+		// Reported whether or not the device kept it. A full phone is exactly the
+		// case where the copy on the server is the only one there will be, so the
+		// push is the last thing to give up on.
 		this.onWrite?.();
+	}
+
+	/**
+	 * One write to this device, and where `storage` is decided.
+	 *
+	 * A device out of room says so and keeps going: the state in memory is
+	 * untouched, the action that triggered the write completes, and `write()`
+	 * still tells `sync` there is something to push. A write that reached no
+	 * storage at all reports nothing — there is no device to call full on a
+	 * server render, and clearing the warning on a write that never happened
+	 * would be a lie the other way.
+	 */
+	private put(key: string, text: string): void {
+		const landed = putItem(key, text);
+		if (landed !== null) this.storage = landed ? 'ok' : 'full';
 	}
 
 	/**
@@ -185,7 +224,7 @@ export class TendStore {
 		const storage = globalThis.localStorage;
 		if (this.refusal === null || storage === undefined) return;
 		const raw = storage.getItem(STORAGE_KEY);
-		if (typeof raw === 'string') storage.setItem(REFUSED_STORAGE_KEY, raw);
+		if (typeof raw === 'string') this.put(REFUSED_STORAGE_KEY, raw);
 	}
 
 	/**
@@ -196,6 +235,9 @@ export class TendStore {
 	clear() {
 		this.cancelPendingWrite();
 		this.refusal = null;
+		// Emptying the device is what frees the room, so a warning about there
+		// being none left does not outlive the sign-out that fixed it.
+		this.storage = 'ok';
 		this.state = emptyState();
 		globalThis.localStorage?.removeItem(STORAGE_KEY);
 		// A document set aside is still this account's data, and leaving it for
