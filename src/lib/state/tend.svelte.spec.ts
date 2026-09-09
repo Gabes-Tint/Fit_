@@ -710,6 +710,12 @@ describe('whole-state operations', () => {
 });
 
 describe('a device with no room left', () => {
+	it('says nothing about storage before anything has been written', () => {
+		// The badge reads this on its first paint, before any write has had the
+		// chance to report anything, so the quiet answer has to be the default.
+		expect(new TendStore().storage).toBe('ok');
+	});
+
 	it('completes the action rather than throwing out of it', () => {
 		// The whole point of #300: the quota wall used to arrive as an exception
 		// out of whatever the person had just tapped.
