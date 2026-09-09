@@ -255,38 +255,35 @@ describe('a toast that offers an explicit dismiss', () => {
 	});
 });
 
-/** The box a pointer or focus event has to land on to pause the countdown. */
-function toastBox(): HTMLElement | null {
-	return region().querySelector('.toast');
-}
-
 describe('a reachable toast pauses its own countdown', () => {
-	it('does not disappear while the pointer is over it', async () => {
+	it('does not disappear while the pointer is over the Undo button', async () => {
 		await render(Toaster, { offset: OFFSET });
 		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
 		await vi.advanceTimersByTimeAsync(0);
 
-		toastBox()?.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }));
+		actionButton()?.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }));
 		await vi.advanceTimersByTimeAsync(60000);
 
 		expect(region().textContent).toContain('Logged Egg to breakfast.');
 	});
 
-	it('picks the countdown back up, from where it left off, once the pointer leaves', async () => {
+	it('picks the countdown back up, at the full five seconds, once the pointer leaves', async () => {
+		// `resume` re-arms at the entry's usual length rather than tracking
+		// exactly how much was left when it paused — see `toast.svelte.ts`.
 		await render(Toaster, { offset: OFFSET });
 		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
 		await vi.advanceTimersByTimeAsync(0);
 
-		// Two of the five seconds spent before the pointer arrives.
-		await vi.advanceTimersByTimeAsync(2000);
-		toastBox()?.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }));
+		// Four of the five seconds spent before the pointer arrives.
+		await vi.advanceTimersByTimeAsync(4000);
+		actionButton()?.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }));
 
-		// Paused for a while — none of this counts against the three seconds left.
+		// Paused for a while — none of this counts against what resume grants.
 		await vi.advanceTimersByTimeAsync(10000);
 		expect(region().textContent).toContain('Logged Egg to breakfast.');
 
-		toastBox()?.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }));
-		await vi.advanceTimersByTimeAsync(2999);
+		actionButton()?.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }));
+		await vi.advanceTimersByTimeAsync(4999);
 		expect(region().textContent).toContain('Logged Egg to breakfast.');
 
 		await vi.advanceTimersByTimeAsync(1);
@@ -304,36 +301,51 @@ describe('a reachable toast pauses its own countdown', () => {
 		expect(region().textContent).toContain('Logged Egg to breakfast.');
 	});
 
-	it('resumes the countdown once focus moves off the button', async () => {
+	it('resumes the countdown, at the full five seconds, once focus moves off the button', async () => {
 		await render(Toaster, { offset: OFFSET });
 		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
 		await vi.advanceTimersByTimeAsync(0);
 
-		await vi.advanceTimersByTimeAsync(2000);
+		await vi.advanceTimersByTimeAsync(4000);
 		actionButton()?.focus();
 
 		await vi.advanceTimersByTimeAsync(10000);
 		expect(region().textContent).toContain('Logged Egg to breakfast.');
 
 		actionButton()?.blur();
-		await vi.advanceTimersByTimeAsync(2999);
+		await vi.advanceTimersByTimeAsync(4999);
 		expect(region().textContent).toContain('Logged Egg to breakfast.');
 
 		await vi.advanceTimersByTimeAsync(1);
 		expect(region().textContent?.trim()).toBe('');
 	});
 
-	it('leaves a plain message alone — nothing there to pause for', async () => {
-		// Every toast box gets the countdown either way, but only one with an
-		// action carries buttons worth reaching for; a plain message keeps its
-		// four-second life regardless of a pointer passing over it.
+	it('pauses just as well for a pointer over the Dismiss button', async () => {
+		// The same protection applies to Dismiss as to Undo: a thumb landing on
+		// it is a thumb about to tap it, whichever of the two it is.
 		await render(Toaster, { offset: OFFSET });
-		toast('Height saved.');
+		toast('Logged Egg to breakfast.', {
+			action: { label: 'Undo', onClick: () => {} },
+			dismissible: true
+		});
 		await vi.advanceTimersByTimeAsync(0);
 
-		toastBox()?.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }));
-		await vi.advanceTimersByTimeAsync(4000);
+		dismissButton()?.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }));
+		await vi.advanceTimersByTimeAsync(60000);
 
+		expect(region().textContent).toContain('Logged Egg to breakfast.');
+	});
+
+	it('has no button to pause a plain message on, so it keeps its own four-second life', async () => {
+		// A plain message renders neither button (see "gives a plain message
+		// nothing to press" above), so there is nothing for a pointer or focus
+		// to land on and pause it — its own timer runs out on schedule.
+		await render(Toaster, { offset: OFFSET });
+		toast('Height saved.');
+		await vi.advanceTimersByTimeAsync(3999);
+		expect(region().textContent).toContain('Height saved.');
+
+		await vi.advanceTimersByTimeAsync(1);
 		expect(region().textContent?.trim()).toBe('');
 	});
 });

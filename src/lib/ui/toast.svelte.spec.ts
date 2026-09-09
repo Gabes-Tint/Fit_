@@ -135,10 +135,11 @@ describe('a toast with something to do about it', () => {
 		expect(onScreen()).toEqual([]);
 	});
 
-	it('does not let a dismissed toast’s timer carry off the one that replaced it', () => {
-		// Pressing the action dismisses the toast early, but the five-second timer
-		// armed when it appeared still fires afterwards. By then the list has
-		// moved on, and the entry at that position belongs to someone else.
+	it('does not let an earlier dismiss disturb the toast that replaced it', () => {
+		// Dismissing is by identity, not position: pressing the action removes
+		// the toast early, and the entry at that position later belongs to
+		// whatever was queued after it. That later toast's own five-second
+		// countdown must run its own course untouched.
 		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
 		toasts.dismiss(only());
 
@@ -175,29 +176,42 @@ describe('pausing the countdown a pointer or focus has landed on', () => {
 		expect(onScreen()).toEqual(['Logged Egg to breakfast.']);
 	});
 
-	it('takes it away after the remaining time once resumed', () => {
+	it('restarts the full countdown once resumed, not whatever was left of it', () => {
+		// `resume` re-arms at the entry's usual length rather than tracking
+		// exactly how much was left when it paused — simpler, and the person
+		// reading it has, at minimum, glanced away and back, which already
+		// argues for more than whatever remained.
 		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
 		const entry = only();
 
-		// Two of the five seconds spent before the pointer arrives.
-		vi.advanceTimersByTime(2000);
+		// Four of the five seconds spent before the pointer arrives.
+		vi.advanceTimersByTime(4000);
 		toasts.pause(entry);
 
-		// Paused for a while — none of this counts against the three seconds left.
+		// Paused for a while — none of this counts against what resume grants.
 		vi.advanceTimersByTime(10000);
 		expect(onScreen()).toEqual(['Logged Egg to breakfast.']);
 
 		toasts.resume(entry);
-		vi.advanceTimersByTime(2999);
+		vi.advanceTimersByTime(4999);
 		expect(onScreen()).toEqual(['Logged Egg to breakfast.']);
 
 		vi.advanceTimersByTime(1);
 		expect(onScreen()).toEqual([]);
 	});
 
-	it('is a no-op on a toast with nothing armed', () => {
-		// A dismissed entry's timer is already gone; pausing or resuming it must
-		// not throw, and must not resurrect it.
+	it('pauses a plain message just as well, at the store level', () => {
+		// `Toaster` only wires the pointer/focus handlers on an actionable toast
+		// (a plain message has no button to reach for), but the store itself does
+		// not know or care which kind of toast it is pausing — every toast is
+		// armed the same way in `show`, so every toast can be paused.
+		toast('Height saved.');
+		toasts.pause(only());
+		vi.advanceTimersByTime(4000);
+		expect(onScreen()).toEqual(['Height saved.']);
+	});
+
+	it('does not resurrect a dismissed toast, and does not throw on one', () => {
 		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
 		const entry = only();
 		toasts.dismiss(entry);
@@ -207,43 +221,18 @@ describe('pausing the countdown a pointer or focus has landed on', () => {
 		expect(onScreen()).toEqual([]);
 	});
 
-	it('lets a second pause and resume run against the time still left, not the whole five seconds', () => {
-		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
-		const entry = only();
-
-		vi.advanceTimersByTime(1000);
-		toasts.pause(entry);
-		toasts.resume(entry);
-		// One second gone, four left — pausing and resuming immediately must not
-		// have reset the clock back to the full five.
-		vi.advanceTimersByTime(1000);
-		toasts.pause(entry);
-		toasts.resume(entry);
-
-		vi.advanceTimersByTime(2999);
-		expect(onScreen()).toEqual(['Logged Egg to breakfast.']);
-
-		vi.advanceTimersByTime(1);
-		expect(onScreen()).toEqual([]);
-	});
-
-	it('drops the timer record on dismiss, so a stray resume afterwards cannot re-arm it', () => {
-		// `resume` after `dismiss` is already covered as a no-op above, but a
-		// no-op is also what happens with nothing left to prove it: if `dismiss`
-		// kept the record around instead of dropping it, `resume` would find it
-		// and schedule a fresh timeout that calls `dismiss` a second time. The
-		// spy is what tells the two apart — `clearAllTimers` first, so the
-		// original five-second timer `show` armed (which nothing here cancels,
-		// by design: `dismiss` is idempotent precisely because that timer still
-		// fires later) does not also call it and confound the count.
+	it('cancels the pending timer on dismiss, so it does not fire again later', () => {
+		// `dismiss` reuses `pause` to cancel its own timeout rather than leaving
+		// it to fire uselessly later. Without that, the timer `show` armed would
+		// still be sitting there and would call `dismiss` a second time once its
+		// five seconds were up — harmless in the sense that the entry is already
+		// gone either way, but a leak this spy is what catches.
 		toast('Logged Egg to breakfast.', { action: { label: 'Undo', onClick: () => {} } });
 		const entry = only();
 		const dismissSpy = vi.spyOn(toasts, 'dismiss');
 
 		toasts.dismiss(entry);
-		vi.clearAllTimers();
-		toasts.resume(entry);
-		vi.advanceTimersByTime(60000);
+		vi.advanceTimersByTime(5000);
 
 		expect(dismissSpy).toHaveBeenCalledTimes(1);
 	});

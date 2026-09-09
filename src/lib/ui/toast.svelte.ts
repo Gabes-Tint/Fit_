@@ -62,19 +62,19 @@ export type ToastOptions = {
 };
 
 /**
+ * A `Toast` plus the one thing about it that is not for rendering: the timer
+ * currently counting down to `dismiss`, so `pause` has something to clear and
+ * `resume` something to know was cleared. Cast rather than a parallel `Map`
+ * keyed by entry — the object is already the identity `dismiss` filters by,
+ * so it is also the cheapest place to hang this.
+ */
+type Armed = Toast & { timer?: ReturnType<typeof setTimeout> | undefined };
+
+/**
  * Lives outside the component tree for the reason `logUi` does — the sync
  * client raises these from a module with no component around it, and the log
  * sheet raises them from a dialog that is on its way closed.
  */
-/** What `ToastQueue` tracks per entry to pause and resume its countdown. */
-type TimerState = {
-	timeoutId: ReturnType<typeof setTimeout>;
-	/** How much of the countdown was left the last time it was (re)armed. */
-	remainingMs: number;
-	/** When the current `timeoutId` was armed, so `pause` can subtract elapsed time. */
-	armedAt: number;
-};
-
 class ToastQueue {
 	/**
 	 * Oldest first, so a second message arrives under the first rather than in
@@ -82,46 +82,35 @@ class ToastQueue {
 	 *
 	 * `$state.raw` rather than `$state`: a deep proxy hands back a different
 	 * object than the one that went in, and `dismiss` below finds its entry by
-	 * identity. Nothing here mutates an entry either — the list is replaced
-	 * whole on both paths — so the proxy would buy reactivity nobody uses.
+	 * identity. The `timer` field `pause`/`resume` hang off an entry is not
+	 * itself reactive, and never needs to be — nothing renders it.
 	 */
 	items = $state.raw<Toast[]>([]);
-
-	/**
-	 * Not `$state`: nothing here is rendered, it only tells `pause` and
-	 * `resume` how far a given entry's countdown had got. Keyed by the entry
-	 * itself for the same reason `dismiss` is — several toasts are in flight
-	 * at once, each with its own timer.
-	 */
-	#timers = new Map<Toast, TimerState>();
 
 	show(message: string, options?: ToastOptions): void {
 		const entry: Toast = { message, action: options?.action, dismissible: options?.dismissible };
 		this.items = [...this.items, entry];
-		this.#arm(entry, entry.action ? DISMISS_ACTIONABLE_AFTER_MS : DISMISS_AFTER_MS);
-	}
-
-	#arm(entry: Toast, durationMs: number): void {
-		const timeoutId = setTimeout(() => this.dismiss(entry), durationMs);
-		this.#timers.set(entry, { timeoutId, remainingMs: durationMs, armedAt: Date.now() });
+		this.resume(entry);
 	}
 
 	/**
 	 * By identity rather than by position: several of these are in flight at
 	 * once and each one's timer was armed against a list that has since moved.
 	 *
-	 * Idempotent on purpose. Pressing the action dismisses the toast early, and
-	 * the timer that was armed when it appeared still fires afterwards against
-	 * an entry the list no longer holds.
+	 * Idempotent on purpose — dismissing an already-dismissed entry, or one
+	 * `pause` already cleared, does nothing extra. `pause` is what actually
+	 * cancels the pending timeout, which a dismiss reuses rather than
+	 * repeating.
 	 */
 	dismiss(entry: Toast): void {
-		this.#timers.delete(entry);
+		this.pause(entry);
 		this.items = this.items.filter((item) => item !== entry);
 	}
 
 	/**
-	 * Stop the countdown without losing its place, for a toast a pointer or
-	 * keyboard focus has landed on.
+	 * Stop the countdown, for a toast a pointer or keyboard focus has landed
+	 * on — or one on its way out via `dismiss`, which reuses this rather than
+	 * cancelling its timer a second way.
 	 *
 	 * Without this, a thumb reaching for "Undo" can lose the node mid-tap —
 	 * the timer does not know a finger is already on its way — and a keyboard
@@ -130,18 +119,25 @@ class ToastQueue {
 	 * paused), so callers do not have to check first.
 	 */
 	pause(entry: Toast): void {
-		const state = this.#timers.get(entry);
-		if (!state) return;
-		clearTimeout(state.timeoutId);
-		state.remainingMs = Math.max(state.remainingMs - (Date.now() - state.armedAt), 0);
+		// `clearTimeout(undefined)` is a legal no-op, so an entry with nothing
+		// armed (a plain message, or one already paused) needs no guard first.
+		clearTimeout((entry as Armed).timer);
+		(entry as Armed).timer = undefined;
 	}
 
-	/** Re-arm a paused entry's countdown with whatever was left of it. */
+	/**
+	 * Arm (or re-arm) an entry's countdown at its usual length. `show` calls
+	 * this to start the clock in the first place; `pause` calling it "resume"
+	 * is the same operation under the name that makes sense from outside —
+	 * a fresh countdown rather than tracking exactly how much was left, since
+	 * the person reading it has, at minimum, glanced away and back, which
+	 * already argues for more than whatever remained.
+	 */
 	resume(entry: Toast): void {
-		const state = this.#timers.get(entry);
-		if (!state) return;
-		state.armedAt = Date.now();
-		state.timeoutId = setTimeout(() => this.dismiss(entry), state.remainingMs);
+		(entry as Armed).timer = setTimeout(
+			() => this.dismiss(entry),
+			entry.action ? DISMISS_ACTIONABLE_AFTER_MS : DISMISS_AFTER_MS
+		);
 	}
 }
 

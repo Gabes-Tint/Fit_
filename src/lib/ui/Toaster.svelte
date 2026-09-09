@@ -10,17 +10,39 @@
 		offset
 	}: { offset: string } = $props();
 
+	/** One shape for both of a toast's buttons: label, handler and text color. */
+	type ToastButton = { label: string; onclick: () => void; tone: string };
+
 	/**
-	 * Take the toast away first, then do the thing.
+	 * At most two: the action (if there is one) then Dismiss (if the caller
+	 * asked for it), in that order — both at the right end of the box, Undo
+	 * before Dismiss. One `{#each}` over this instead of two near-identical
+	 * `{#if}` blocks is what keeps the button markup itself written once.
 	 *
-	 * One that leaves its own toast standing reads as an action that did not
-	 * take. Dismissing first also means a handler that throws still leaves the
-	 * screen clear, and that the timer still armed against this entry finds
-	 * nothing left to remove — which `dismiss` is written to tolerate.
+	 * The action's own handler dismisses the toast first, then runs what it
+	 * was given — one that left its own toast standing would read as an
+	 * action that did not take. Dismissing first also means a handler that
+	 * throws still leaves the screen clear, and that the timer still armed
+	 * against this entry finds nothing left to remove, which `dismiss` is
+	 * written to tolerate.
 	 */
-	function act(item: Toast): void {
-		toasts.dismiss(item);
-		item.action?.onClick();
+	function buttonsFor(item: Toast): ToastButton[] {
+		const { action, dismissible } = item;
+		return [
+			action && {
+				label: action.label,
+				onclick: () => {
+					toasts.dismiss(item);
+					action.onClick();
+				},
+				tone: 'text-destructive'
+			},
+			dismissible && {
+				label: 'Dismiss',
+				onclick: () => toasts.dismiss(item),
+				tone: 'text-card-foreground'
+			}
+		].filter(Boolean) as ToastButton[];
 	}
 </script>
 
@@ -48,7 +70,6 @@
 	style={`top: ${offset}`}
 >
 	{#each toasts.items as item (item)}
-		{@const action = item.action}
 		<!--
 			One box shape whether or not there is a button, so a sentence sits in the
 			same place either way and there is one set of paddings to keep true.
@@ -57,65 +78,43 @@
 			rather than moving down to the text, because `overflow-wrap` inherits and
 			the width is the box's business.
 		-->
-		<!--
-			`pointerenter`/`pointerleave` and `focusin`/`focusout` on the box rather
-			than the buttons: a thumb arriving anywhere on the toast is a thumb
-			about to reach for one of them, and the node must not be removed out
-			from under it, or a keyboard user who has just tabbed onto the button.
-			Only a toast with an action gets these — a plain message has no button
-			to reach for and its shorter life was never the thing #1 worried about.
-		-->
 		<div
 			class="toast bg-card text-card-foreground shadow-border flex w-full max-w-lg items-center gap-2 rounded-2xl px-4 py-3 text-sm wrap-anywhere"
-			role={action ? 'group' : undefined}
-			onpointerenter={action ? () => toasts.pause(item) : undefined}
-			onpointerleave={action ? () => toasts.resume(item) : undefined}
-			onfocusin={action ? () => toasts.pause(item) : undefined}
-			onfocusout={action ? () => toasts.resume(item) : undefined}
 		>
 			<span class="min-w-0 flex-1">{item.message}</span>
-			{#if action}
-				<!--
-					`pointer-events-auto` because the column above turns them off: these
-					float over the day's rows and must not eat taps meant for them, but
-					the buttons in the column are there to be tapped. `min-h-11` for the
-					same reason it is on the other one-tap targets — a thumb aiming for
-					one of these over a list it has just been tapping down needs the
-					whole 44px.
+			<!--
+				Undo (if there is one) then Dismiss (if the caller asked for it), both
+				at the right end. One button template for both — `tone` is the only
+				thing that differs, `text-destructive` for the one action of the two
+				that removes something, the toast's own text color for the other.
+				`pointer-events-auto` because the column above turns them off: these
+				float over the day's rows and must not eat taps meant for them, but a
+				button here is there to be tapped. `min-h-11` for the same reason it is
+				on the other one-tap targets — a thumb aiming for one of these over a
+				list it has just been tapping down needs the whole 44px. The accessible
+				name is the same word shown on screen: with the two sitting side by
+				side, one word on its own is no longer read out of nowhere.
 
-					The accessible name is the same word shown on screen: with "Dismiss"
-					sitting right beside it, "Undo" on its own is no longer a word read
-					out of nowhere, and a caller-specific sentence in the name would make
-					two buttons that read differently for the same reason.
-
-					`text-destructive` is text only, no fill — the toast keeps its own
-					background, and this is the one action of the two that removes
-					something.
-				-->
+				`pointerenter`/`pointerleave` and `focusin`/`focusout` right on the
+				button rather than the box around it: a thumb arriving on the button is
+				a thumb about to tap it, and the node must not be removed out from
+				under it, or a keyboard user who has just tabbed onto it. A `<button>`
+				is already interactive, so this needs no extra role the way it would on
+				a plain `<div>`.
+			-->
+			{#each buttonsFor(item) as button (button.label)}
 				<button
 					type="button"
-					onclick={() => act(item)}
-					class="text-destructive focus-visible:ring-ring pointer-events-auto -my-1 flex min-h-11 shrink-0 items-center rounded-full px-3 font-medium focus-visible:ring-2 focus-visible:outline-none"
+					onclick={button.onclick}
+					onpointerenter={() => toasts.pause(item)}
+					onpointerleave={() => toasts.resume(item)}
+					onfocusin={() => toasts.pause(item)}
+					onfocusout={() => toasts.resume(item)}
+					class="{button.tone} focus-visible:ring-ring pointer-events-auto -my-1 flex min-h-11 shrink-0 items-center rounded-full px-3 font-medium focus-visible:ring-2 focus-visible:outline-none"
 				>
-					{action.label}
+					{button.label}
 				</button>
-			{/if}
-			{#if item.dismissible}
-				<!--
-					The escape hatch next to the action: it takes the toast away without
-					doing anything else, so waving off a message that needs no undoing
-					costs a tap rather than a wait. Same hit target as the action beside
-					it, and the toast's own text color rather than a second accent —
-					there is nothing here to draw the eye to.
-				-->
-				<button
-					type="button"
-					onclick={() => toasts.dismiss(item)}
-					class="text-card-foreground focus-visible:ring-ring pointer-events-auto -my-1 flex min-h-11 shrink-0 items-center rounded-full px-3 font-medium focus-visible:ring-2 focus-visible:outline-none"
-				>
-					Dismiss
-				</button>
-			{/if}
+			{/each}
 		</div>
 	{/each}
 </div>
