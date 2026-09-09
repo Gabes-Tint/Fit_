@@ -1,4 +1,4 @@
-import type { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createFixtureCatalog } from '../../../../tests/catalog-fixture';
 import { foodsByBarcode, pageSize, searchFoods } from './foods';
@@ -298,5 +298,40 @@ describe('foodsByBarcode', () => {
 
 	it('returns nothing for a barcode the catalog does not carry', () => {
 		expect(foodsByBarcode(db, '00000000009999')).toEqual([]);
+	});
+});
+
+describe('what one search costs the catalog', () => {
+	/** Every statement executed against `db`, in order, while `read` runs. */
+	function executed(read: (catalog: DatabaseSync) => void): string[] {
+		const statements: string[] = [];
+		const catalog = {
+			prepare: (sql: string) => {
+				const statement = db.prepare(sql);
+				return {
+					all: (...values: SQLInputValue[]) => {
+						statements.push(sql);
+						return statement.all(...values);
+					}
+				};
+			}
+		};
+		read(catalog as unknown as DatabaseSync);
+		return statements;
+	}
+
+	it('asks food_serving once for the page, not once per reader of it', () => {
+		// The regression: `finish` calls four readers of the same rows, and each
+		// used to run `servingRowsSql` for itself. A twenty-food page crossed
+		// into SQLite four times to fetch the identical result set — measured on
+		// the live catalog at 0.36 ms a crossing, three of them wasted.
+		const statements = executed((catalog) => searchFoods(catalog, 'milk', 10));
+		expect(statements.filter((sql) => sql.includes('from food_serving'))).toHaveLength(1);
+		expect(statements).toHaveLength(2);
+	});
+
+	it('asks food_serving once for a barcode page too', () => {
+		const statements = executed((catalog) => foodsByBarcode(catalog, '00000000000103'));
+		expect(statements.filter((sql) => sql.includes('from food_serving'))).toHaveLength(1);
 	});
 });

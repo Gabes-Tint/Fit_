@@ -1,5 +1,6 @@
-import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
+import { DatabaseSync } from 'node:sqlite';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { servingRowsByFood } from './serving-rows';
 import { MAX_GRAMS, withServingOptions } from './serving-options';
 
 /** A catalog holding nothing but the serving rows a case needs. */
@@ -19,6 +20,16 @@ function catalogOf(rows: [id: number, label: unknown, grams: unknown, isDefault:
 
 type Food = { id: number };
 
+/**
+ * The page's serving rows, as `foods.ts` fetches them once and hands them to
+ * this module. Read through `servingRowsByFood` rather than built by hand, so
+ * these cases still run against the statement the server really asks — the
+ * filters and the `is_default desc, label` order they depend on live there.
+ */
+function rowsFor(db: DatabaseSync, foods: readonly { id: number }[]) {
+	return servingRowsByFood(db, [...new Set(foods.map((food) => food.id))]);
+}
+
 describe('withServingOptions', () => {
 	let db: DatabaseSync;
 
@@ -33,7 +44,7 @@ describe('withServingOptions', () => {
 
 	it('reports a food’s serving rows verbatim, not reinterpreted', () => {
 		const foods: Food[] = [{ id: 1 }];
-		expect(withServingOptions(db, foods)).toEqual([
+		expect(withServingOptions(rowsFor(db, foods), foods)).toEqual([
 			{
 				id: 1,
 				servingOptions: [
@@ -53,11 +64,9 @@ describe('withServingOptions', () => {
 				(2, 'b label', 50, 0), (2, 'a label', 60, 0), (2, 'z default', 70, 1)`
 		);
 		const foods: Food[] = [{ id: 2 }];
-		expect(withServingOptions(db, foods)[0]?.servingOptions.map((o) => o.label)).toEqual([
-			'z default',
-			'a label',
-			'b label'
-		]);
+		expect(
+			withServingOptions(rowsFor(db, foods), foods)[0]?.servingOptions.map((o) => o.label)
+		).toEqual(['z default', 'a label', 'b label']);
 	});
 
 	it('collapses rows naming the same portion, keeping the first', () => {
@@ -66,7 +75,7 @@ describe('withServingOptions', () => {
 				(3, '1 Cup', 240, 1), (3, '1 cup', 244, 0), (3, ' 1 CUP ', 250, 0)`
 		);
 		const foods: Food[] = [{ id: 3 }];
-		expect(withServingOptions(db, foods)).toEqual([
+		expect(withServingOptions(rowsFor(db, foods), foods)).toEqual([
 			{ id: 3, servingOptions: [{ label: '1 Cup', grams: 240 }] }
 		]);
 	});
@@ -79,7 +88,7 @@ describe('withServingOptions', () => {
 				(4, '1 tsp', 100000, 0), (4, '1 tbsp', 15, 0)`
 		);
 		const foods: Food[] = [{ id: 4 }];
-		expect(withServingOptions(db, foods)).toEqual([
+		expect(withServingOptions(rowsFor(db, foods), foods)).toEqual([
 			{ id: 4, servingOptions: [{ label: '1 tbsp', grams: 15 }] }
 		]);
 	});
@@ -90,7 +99,7 @@ describe('withServingOptions', () => {
 				(5, 'zero', 0, 0), (5, 'negative', -10, 0), (5, 'real one', 30, 0)`
 		);
 		const foods: Food[] = [{ id: 5 }];
-		expect(withServingOptions(db, foods)).toEqual([
+		expect(withServingOptions(rowsFor(db, foods), foods)).toEqual([
 			{ id: 5, servingOptions: [{ label: 'real one', grams: 30 }] }
 		]);
 	});
@@ -105,7 +114,7 @@ describe('withServingOptions', () => {
 				(7, 'at the cap', ${MAX_GRAMS}, 0), (7, 'past the cap', ${MAX_GRAMS + 1}, 0)`
 		);
 		const foods: Food[] = [{ id: 7 }];
-		expect(withServingOptions(db, foods)).toEqual([
+		expect(withServingOptions(rowsFor(db, foods), foods)).toEqual([
 			{ id: 7, servingOptions: [{ label: 'at the cap', grams: MAX_GRAMS }] }
 		]);
 	});
@@ -123,7 +132,7 @@ describe('withServingOptions', () => {
 				(8, '1 Straße', 100, 1), (8, '1 STRASSE', 105, 0)`
 		);
 		const foods: Food[] = [{ id: 8 }];
-		expect(withServingOptions(db, foods)).toEqual([
+		expect(withServingOptions(rowsFor(db, foods), foods)).toEqual([
 			{
 				id: 8,
 				servingOptions: [
@@ -141,42 +150,23 @@ describe('withServingOptions', () => {
 					(6, 'label ${i}', ${10 + i}, 0)`
 			);
 		const foods: Food[] = [{ id: 6 }];
-		expect(withServingOptions(db, foods)[0]?.servingOptions).toHaveLength(10);
+		expect(withServingOptions(rowsFor(db, foods), foods)[0]?.servingOptions).toHaveLength(10);
 	});
 
 	it('answers an empty list for a food with no serving rows at all', () => {
 		const foods: Food[] = [{ id: 999 }];
-		expect(withServingOptions(db, foods)).toEqual([{ id: 999, servingOptions: [] }]);
+		expect(withServingOptions(rowsFor(db, foods), foods)).toEqual([
+			{ id: 999, servingOptions: [] }
+		]);
 	});
 
-	it('asks the catalog nothing for an empty page of foods', () => {
-		const counted = { reads: 0 };
-		const catalog = {
-			prepare: (sql: string) => {
-				const statement = db.prepare(sql);
-				return {
-					all: (...values: SQLInputValue[]) => ((counted.reads += 1), statement.all(...values))
-				};
-			}
-		} as unknown as DatabaseSync;
-		expect(withServingOptions(catalog, [])).toEqual([]);
-		expect(counted.reads).toBe(0);
+	it('answers nothing for an empty page of foods', () => {
+		expect(withServingOptions(rowsFor(db, []), [])).toEqual([]);
 	});
 
-	it('answers every food asked about in one statement, including one with no rows', () => {
-		const counted = { reads: 0 };
-		const catalog = {
-			prepare: (sql: string) => {
-				const statement = db.prepare(sql);
-				return {
-					all: (...values: SQLInputValue[]) => ((counted.reads += 1), statement.all(...values))
-				};
-			}
-		} as unknown as DatabaseSync;
+	it('answers every food asked about, including one with no rows', () => {
 		const foods: Food[] = [{ id: 1 }, { id: 999 }];
-		const found = withServingOptions(catalog, foods);
-		expect(counted.reads).toBe(1);
-		expect(found).toEqual([
+		expect(withServingOptions(rowsFor(db, foods), foods)).toEqual([
 			{
 				id: 1,
 				servingOptions: [

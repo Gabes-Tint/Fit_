@@ -143,16 +143,25 @@ describe('TodayView', () => {
 		await expect.element(page.getByText('Fiber')).not.toBeInTheDocument();
 	});
 
-	it('leads with protein on GLP-1', async () => {
+	it("leads with protein on GLP-1, named in the ring cluster's accessible label", async () => {
 		onboard(true);
 		await render(TodayView);
-		await expect.element(page.getByText('Protein').first()).toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: /Protein/ })).toBeInTheDocument();
 	});
 
-	it('shows fiber as a ring on GLP-1', async () => {
+	it("names fiber in the ring cluster's accessible label on GLP-1", async () => {
 		onboard(true);
 		await render(TodayView);
-		await expect.element(page.getByText('Fiber').first()).toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: /Fiber/ })).toBeInTheDocument();
+	});
+
+	it("shows nothing at the ring cluster's centre until it is tapped, on GLP-1", async () => {
+		onboard(true);
+		await render(TodayView);
+		const cluster = page.getByRole('button', { name: /Energy/ });
+		expect(cluster.element().textContent?.trim()).toBe('');
+		await cluster.click();
+		await expect.element(page.getByText('Energy')).toBeInTheDocument();
 	});
 
 	it('drops the single Log something button in favor of per-meal buttons', async () => {

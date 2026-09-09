@@ -1,17 +1,16 @@
-import type { DatabaseSync } from 'node:sqlite';
-import { pickDefaultServing } from '$lib/domain/default-serving';
-import { servingRowsByFood } from './serving-rows';
+import { pickDefaultServing, type ServingRow } from '$lib/domain/default-serving';
 
 /**
  * The default serving a food's own row did not name, picked from its
  * `food_serving` measures instead of left as a silent 100 g (#157).
  *
- * A second, separate question from `portions.ts`'s, even though both now read
- * `servingRowsByFood` (#178): that module answers what a *typed volume unit*
- * weighs, for foods that already name their own serving; this answers what a
- * food with *no* serving of its own should default to. Sharing the fetch does
- * not merge the questions — each still picks its own answer from the rows,
- * and each stays a single, small responsibility.
+ * A second, separate question from `portions.ts`'s, even though both read the
+ * same rows (#178): that module answers what a *typed volume unit* weighs, for
+ * foods that already name their own serving; this answers what a food with
+ * *no* serving of its own should default to. Sharing the fetch does not merge
+ * the questions — each still picks its own answer from the rows, and each
+ * stays a single, small responsibility. The fetch itself is `foods.ts`'s, once
+ * per page; see `serving-rows.ts`.
  */
 
 type Servable = { id: number; serving: { label: string | null; grams: number | null } };
@@ -30,14 +29,12 @@ const PER_100G: Servable['serving'] = { label: 'per 100 g', grams: null };
  * Survey, Foundation and CNF rows leave.
  */
 export function withDefaultServing<T extends Servable>(
-	catalog: DatabaseSync,
+	rowsByFood: ReadonlyMap<number, ServingRow[]>,
 	foods: readonly T[]
 ): T[] {
-	const needing = foods.filter((food) => food.serving.grams === null);
-	const byFood = servingRowsByFood(catalog, [...new Set(needing.map((food) => food.id))]);
 	return foods.map((food) => {
 		if (food.serving.grams !== null) return food;
-		const picked = pickDefaultServing(byFood.get(food.id) ?? []);
+		const picked = pickDefaultServing(rowsByFood.get(food.id) ?? []);
 		return { ...food, serving: picked ?? PER_100G };
 	});
 }
