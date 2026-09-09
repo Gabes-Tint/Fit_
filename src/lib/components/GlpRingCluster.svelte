@@ -92,6 +92,12 @@
 	function cycle(step: number) {
 		const index = ORDER.indexOf(selected);
 		selected = ORDER[(index + step + ORDER.length) % ORDER.length] ?? null;
+		// A mobile browser's post-tap compatibility pointerenter has already set
+		// `hovered` by the time this click handler runs (pointerType gate below
+		// only screens the enter, not this) — clear it here so the tap-driven
+		// cycle through `selected` is what shows, not a ring pinned by that
+		// synthetic hover.
+		hovered = null;
 	}
 
 	function onkeydown(event: KeyboardEvent) {
@@ -104,18 +110,27 @@
 		}
 	}
 
-	function hover(key: RingKey) {
+	/**
+	 * Desktop-only reveal: touch and pen produce a compatibility pointerenter
+	 * on tap with no matching pointerleave, which would otherwise pin the
+	 * centre on whichever ring was tapped and stop the tap cycle from ever
+	 * reaching Protein or Fiber (mobile-chrome reproduction: three taps, all
+	 * showed Energy).
+	 */
+	function hover(key: RingKey, event: PointerEvent) {
+		if (event.pointerType !== 'mouse') return;
 		hovered = key;
 	}
 
-	function clearHover() {
+	function clearHover(event: PointerEvent) {
+		if (event.pointerType !== 'mouse') return;
 		hovered = null;
 	}
 </script>
 
 <button
 	type="button"
-	class="relative rounded-full"
+	class="focus-visible:ring-ring relative rounded-full focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
 	style={boxStyle}
 	aria-label={ariaLabel}
 	onclick={() => cycle(1)}
@@ -123,7 +138,11 @@
 >
 	<svg width={size} height={size} {viewBox} class="-rotate-90" aria-hidden="true">
 		{#each rings as ring (ring.key)}
-			<g role="presentation" onmouseenter={() => hover(ring.key)} onmouseleave={clearHover}>
+			<g
+				role="presentation"
+				onpointerenter={(event) => hover(ring.key, event)}
+				onpointerleave={clearHover}
+			>
 				<RingArc
 					cx={size / 2}
 					cy={size / 2}

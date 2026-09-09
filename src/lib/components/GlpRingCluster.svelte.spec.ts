@@ -23,14 +23,14 @@ describe('GlpRingCluster', () => {
 		// Two circles (track + progress) per ring, so six in total.
 		expect(radii).toHaveLength(6);
 		const [energyTrack, energyArc, proteinTrack, proteinArc, fiberTrack, fiberArc] = radii;
-		// The first pair (Energy) has the largest radius, the last pair
-		// (Fiber) the smallest — each smaller than the last by more than a
-		// stroke width, so there is a visible gap between rings.
 		expect(energyTrack).toBe(energyArc);
 		expect(proteinTrack).toBe(proteinArc);
 		expect(fiberTrack).toBe(fiberArc);
-		expect(energyTrack).toBeGreaterThan(proteinTrack ?? 0);
-		expect(proteinTrack).toBeGreaterThan(fiberTrack ?? 0);
+		// Each ring's radius steps in by exactly one stroke width plus the gap
+		// (10 + 4 = 14), so there is a visible gap between rings, not just a
+		// smaller radius.
+		expect((energyTrack ?? 0) - (proteinTrack ?? 0)).toBe(14);
+		expect((proteinTrack ?? 0) - (fiberTrack ?? 0)).toBe(14);
 	});
 
 	it('is empty at the centre by default', async () => {
@@ -91,16 +91,44 @@ describe('GlpRingCluster', () => {
 		await expect.element(page.getByText('Energy')).toBeInTheDocument();
 	});
 
-	it('reveals the hovered ring even while no ring is tapped', async () => {
+	it('reveals the hovered ring even while no ring is tapped, for a mouse pointer', async () => {
 		await render(GlpRingCluster, {
 			props: { ...PROPS, proteinValue: 80 }
 		});
 		const proteinGroup = document.querySelectorAll('g')[1];
-		proteinGroup?.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+		proteinGroup?.dispatchEvent(
+			new PointerEvent('pointerenter', { bubbles: true, pointerType: 'mouse' })
+		);
 		await expect.element(page.getByText('Protein')).toBeInTheDocument();
 		await expect.element(page.getByText('of 189 g')).toBeInTheDocument();
 
-		proteinGroup?.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+		proteinGroup?.dispatchEvent(
+			new PointerEvent('pointerleave', { bubbles: true, pointerType: 'mouse' })
+		);
 		await expect.element(page.getByText('Protein')).not.toBeInTheDocument();
+	});
+
+	it('does not pin the reveal on a touch pointer, so tapping still cycles to Protein and Fiber', async () => {
+		await render(GlpRingCluster, {
+			props: { ...PROPS, energyValue: 1200, proteinValue: 80, fiberValue: 14 }
+		});
+		const cluster = page.getByRole('button');
+		const energyGroup = document.querySelectorAll('g')[0];
+
+		// A touch tap fires a compatibility pointerenter (no matching
+		// pointerleave) on whatever ring is under the finger — here, the
+		// outer Energy ring — before the click that should advance the cycle.
+		energyGroup?.dispatchEvent(
+			new PointerEvent('pointerenter', { bubbles: true, pointerType: 'touch' })
+		);
+
+		await cluster.click();
+		await expect.element(page.getByText('Energy')).toBeInTheDocument();
+
+		await cluster.click();
+		await expect.element(page.getByText('Protein')).toBeInTheDocument();
+
+		await cluster.click();
+		await expect.element(page.getByText('Fiber')).toBeInTheDocument();
 	});
 });
