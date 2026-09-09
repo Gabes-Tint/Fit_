@@ -82,6 +82,16 @@ test.describe('at 360px', () => {
 		await expectFitsViewport(page, strip);
 	});
 
+	test('the Today weight trend card stays inside the viewport', async ({ page, baseURL }) => {
+		await signInThroughApi(page, baseURL ?? '');
+		await page.goto('/');
+		await atNarrowPhone(page);
+		await openSampleJournal(page);
+
+		const weightCard = page.getByRole('group', { name: 'Weight trend' });
+		await expectFitsViewport(page, weightCard);
+	});
+
 	test('the exercise training strip stays inside the viewport', async ({ page, baseURL }) => {
 		await openExerciseTabEmpty(page, baseURL ?? '');
 		await pickFullBodyTemplate(page);

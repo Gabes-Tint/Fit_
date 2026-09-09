@@ -19,6 +19,7 @@
 	import MacroRing from './MacroRing.svelte';
 	import MiniStat from './MiniStat.svelte';
 	import WeekStrip from './WeekStrip.svelte';
+	import WeightChart from './WeightChart.svelte';
 
 	let day = $state(todayISO());
 	let editing = $state<string | null>(null);
@@ -90,6 +91,12 @@
 						<MiniStat label="Fat" value={dayTotals.fat} target={targets.fat} unit="g" />
 					</div>
 				{/if}
+			</div>
+		</section>
+
+		<section class="bg-card rounded-3xl p-4 shadow-border" role="group" aria-label="Weight trend">
+			<div class="h-44">
+				<WeightChart weights={profile.weights} units={tend.state.units} />
 			</div>
 		</section>
 
