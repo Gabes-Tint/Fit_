@@ -1,8 +1,7 @@
-import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
-import { mutantFingerprint } from './mutation-verdict';
+import { mutantFingerprint, sourceWindowHash } from './mutation-verdict';
 
 /**
  * Computes the `sourceHash`/`fingerprint` pair for one equivalence-ledger
@@ -43,8 +42,8 @@ const location = {
 
 const projectRoot = new URL('../../', import.meta.url);
 const source = await readFile(path.join(projectRoot.pathname, file), 'utf8');
-const sourceHash = createHash('sha256').update(source).digest('hex');
-const fingerprint = mutantFingerprint({ file, mutatorName, replacement, location, sourceHash });
+const sourceHash = sourceWindowHash(source, location);
+const fingerprint = mutantFingerprint({ file, mutatorName, replacement, sourceHash });
 
 console.log(
 	JSON.stringify({ file, mutatorName, replacement, location, sourceHash, fingerprint }, null, '\t')
