@@ -244,7 +244,7 @@ export const fixtures: GateFixture[] = [
 								classification: 'equivalent',
 								rationale:
 									'This deliberately broad entry must be rejected before mutation testing begins.',
-								review: 'https://github.com/gabepsilva/Fit_/pull/5'
+								review: 'https://github.com/Gabes-Tint/Fit_/pull/5'
 							}
 						]
 					},

@@ -1,6 +1,6 @@
 [Unit]
 Description=Fit_ web application
-Documentation=https://github.com/gabepsilva/Fit_
+Documentation=https://github.com/Gabes-Tint/Fit_
 After=network-online.target
 Wants=network-online.target
 
