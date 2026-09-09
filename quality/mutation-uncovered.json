@@ -50,6 +50,7 @@
 			"src/lib/components/TopBar.svelte",
 			"src/lib/components/WeekStrip.svelte",
 			"src/lib/components/WeightChart.svelte",
+			"src/lib/components/WeightEntry.svelte",
 			"src/lib/components/auth/AccountMenu.svelte",
 			"src/lib/components/auth/AuthField.svelte",
 			"src/lib/components/auth/AuthNotice.svelte",
