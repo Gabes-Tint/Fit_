@@ -17,16 +17,17 @@ APP GOES TO PRODUCTION.** Everything below is a safety rule switched off on purp
 the app has no real users. Each one is dangerous once it does.
 
 **1. THE ORCHESTRATOR MAY BYPASS BRANCH PROTECTION.** Granted 2026-09-04. `main` requires
-an approving review and an up-to-date head, and `enforce_admins` is off, so a merge made
-through the `gh` CLI as an administrator goes through without either. The orchestrator is
-authorized to do that rather than wait. It still does not merge a pull request whose
-checks are failing, and it still sends anything past mechanical through the `reviewer`
-agent first — the bypass buys speed, not permission to skip the gates. Merge only when the
-PR's base commit is main's current tip; otherwise run `gh pr update-branch` first and wait
-for the fresh run on the updated head. And never deploy a commit whose own CI run on main
-is not green — `deploy.ts` now refuses that itself, but the rule holds even reading logs by
-hand. (Reason: PR #120 and #121 each merged green against the same stale base; main's run
-33941127559 for the result failed, and the failing commit still shipped as v0.0.10.)
+an approving review, and `enforce_admins` is off, so a merge made through the `gh` CLI as an
+administrator goes through without one. The orchestrator is authorized to do that rather than
+wait. It still does not merge a pull request whose checks are failing, and it still sends
+anything past mechanical through the `reviewer` agent first — the bypass buys speed, not
+permission to skip the gates. Merge with `gh pr merge <n> --squash` once CI is green and the
+review approves; the merge queue rebuilds the PR on top of main and lands it — do not run
+`gh pr update-branch`. If GitHub reports a conflict, rebase and push. And never deploy a
+commit whose own CI run on main is not green — `deploy.ts` now refuses that itself, but the
+rule holds even reading logs by hand. (Reason: PR #120 and #121 each merged green against the
+same stale base; main's run 33941127559 for the result failed, and the failing commit still
+shipped as v0.0.10.)
 _To remove: stop bypassing, and turn on `enforce_admins` so the rule binds everyone._
 
 **2. ANY DATA IN THE DATABASE MAY BE DELETED AT ANY TIME.** Granted 2026-09-04. Until
