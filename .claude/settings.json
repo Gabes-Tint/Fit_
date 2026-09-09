@@ -1,0 +1,26 @@
+{
+	"hooks": {
+		"PreToolUse": [
+			{
+				"matcher": "Bash",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "jq -c 'if .tool_input.run_in_background == true then {hookSpecificOutput:{hookEventName:\"PreToolUse\",permissionDecision:\"deny\",permissionDecisionReason:\"run_in_background is disabled in this repo: nothing wakes you when it finishes. Rerun the same command in the foreground with timeout 600000, or poll with a bounded foreground loop (sleep 20; at most 25 iterations).\"}} else empty end'",
+						"timeout": 10
+					}
+				]
+			},
+			{
+				"matcher": "Monitor",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "jq -c '{hookSpecificOutput:{hookEventName:\"PreToolUse\",permissionDecision:\"deny\",permissionDecisionReason:\"Monitor is disabled in this repo: a monitor never wakes a finished agent. Wait in the foreground: rerun the command with timeout 600000, or poll with a bounded loop (sleep 20; at most 25 iterations).\"}}'",
+						"timeout": 10
+					}
+				]
+			}
+		]
+	}
+}

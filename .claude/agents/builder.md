@@ -46,6 +46,23 @@ Generated with [Claude Code]` line and session link from that same brief. A PR b
 or three sentences, then gates with their result lines, then bundle before/after when client
 code changed, and `Closes #n` when the slice finishes the issue.
 
+## UI slices
+
+1. Hit targets: every tappable control is at least 44x44 CSS px (padding may provide it; the visual may be smaller).
+2. Occlusion: nothing fixed (a floating button, a sticky strip, a toast) may cover a control's centre at 360x800, 390x844 or 412x915; prove it with `expectHittable` in phone-layout.e2e.ts, and reserve bottom clearance under fixed elements.
+3. Layering: sheets and modals sit above floating controls; the nav drawer sits below them; a floating control never opens something behind an open dialog.
+4. Touch vs mouse: hover reveals use pointer events gated on `pointerType === 'mouse'`; a tap must advance state exactly once (pointerdown then click is one tap).
+5. Keyboard: every open state has a reachable close inside the focus trap; focus returns to the opener; focus-visible ring from button-variants.
+6. Regions and names: cards are sections with `aria-labelledby` their title; duplicate accessible names are fine, scope e2e locators to the region rather than `.first()`.
+7. Charts and SVG: size the viewBox from the measured width (no letterboxing); map pointer coordinates through `getScreenCTM`.
+8. Colours: only existing tokens from app.css; bar and ring colours at least 3:1 against the track; state the contrast numbers in the PR body.
+9. e2e waits on real state (aria-expanded, element absence, a data attribute set after a transition), never a sleep; one URL per `page.route`, released before any navigation or unroute.
+10. The PR body pastes gate result lines from reports/quality/gate-*.json and the bundle delta; a screen change adds or extends the 360px `expectFitsViewport` case.
+
+## Pre-push
+
+Run exactly the pre-push recipe in QUALITY.md (section "Pre-push"); CI is the authority and re-runs everything. Every gate, spec, e2e, mutation, CI-watch or deploy command runs in the foreground with timeout 600000; the repo's hook refuses run_in_background and Monitor. Never the full e2e suite, never verify or verify:deep locally.
+
 Report in under 250 words, evidence never cut for brevity: what was built, the files
 touched, the gate result from `reports/quality/gate-<tier>.json` with any failing step and
 its per-file mutation verdict, decisions you had to make, and anything left undone.

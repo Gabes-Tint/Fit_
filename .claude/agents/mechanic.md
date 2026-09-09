@@ -40,5 +40,9 @@ smoke-check lines verbatim; they are the only record the deploy leaves.
 If you commit, end the message with the `Co-Authored-By:` name and `Claude-Session:` URL
 your brief gives — both change per session, so never hardcode one.
 
+## Pre-push
+
+Run exactly the pre-push recipe in QUALITY.md (section "Pre-push"); CI is the authority and re-runs everything. Every gate, spec, e2e, mutation, CI-watch or deploy command runs in the foreground with timeout 600000; the repo's hook refuses run_in_background and Monitor. Never the full e2e suite, never verify or verify:deep locally.
+
 Report in under 150 words, evidence never cut for brevity: what changed, which files, the
 gate result, and anything you could not do.
