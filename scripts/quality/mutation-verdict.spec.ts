@@ -5,7 +5,12 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { MutationPolicy, MutationReviewLedger, MutationScope } from './mutation-types';
 import { parseMutationPolicy } from './mutation-types';
-import { evaluateMutationReport, mutantFingerprint, verifyMutationFiles } from './mutation-verdict';
+import {
+	evaluateMutationReport,
+	mutantFingerprint,
+	sourceWindowHash,
+	verifyMutationFiles
+} from './mutation-verdict';
 
 const roots: string[] = [];
 const policy: MutationPolicy = {
@@ -755,6 +760,91 @@ describe('mutation verdict', () => {
 				expect.stringContaining('report source does not match scoped file'),
 				expect.stringContaining('stale or no longer survives')
 			])
+		);
+	});
+
+	it('keeps an accepted equivalence when an unrelated line elsewhere in the file changes', async () => {
+		const { root, scope } = await fixture();
+		const originalSource =
+			'export function choose(value: boolean) {\n' +
+			'\treturn value ? 1 : 2;\n' +
+			'}\n' +
+			'\n' +
+			'export const unrelated = 1;\n';
+		const survivor = mutant('reviewed', 'Survived', 2);
+		const entry = {
+			file: 'src/a.ts',
+			mutatorName: survivor.mutatorName,
+			replacement: survivor.replacement,
+			location: survivor.location,
+			sourceHash: sourceWindowHash(originalSource, survivor.location),
+			classification: 'equivalent' as const,
+			rationale:
+				'The replacement returns the same externally observable value for every valid input.',
+			review: 'https://github.com/gabepsilva/Fit_/pull/5'
+		};
+		// Edited far from the mutated line -- an unrelated constant, not the
+		// guarded expression the acceptance reasons about.
+		const updatedSource = originalSource.replace('unrelated = 1', 'unrelated = 2');
+		await writeFile(path.join(root, 'src/a.ts'), updatedSource);
+		const verdict = await evaluateMutationReport({
+			projectRoot: root,
+			lane: 'security',
+			scope,
+			policy,
+			ledger: { version: 1, entries: [{ ...entry, fingerprint: mutantFingerprint(entry) }] },
+			report: {
+				files: {
+					'src/a.ts': {
+						source: updatedSource,
+						mutants: [
+							survivor,
+							...Array.from({ length: 9 }, (_, index) => mutant(String(index), 'Killed'))
+						]
+					}
+				}
+			}
+		});
+		expect(verdict.reviewedSurvivors).toBe(1);
+		expect(verdict.failures).not.toEqual(
+			expect.arrayContaining([expect.stringContaining('stale or no longer survives')])
+		);
+	});
+
+	it('retires an accepted equivalence when the edit lands on the mutated line', async () => {
+		const { root, scope } = await fixture();
+		const originalSource =
+			'export function choose(value: boolean) {\n' +
+			'\treturn value ? 1 : 2;\n' +
+			'}\n' +
+			'\n' +
+			'export const unrelated = 1;\n';
+		const survivor = mutant('reviewed', 'Survived', 2);
+		const entry = {
+			file: 'src/a.ts',
+			mutatorName: survivor.mutatorName,
+			replacement: survivor.replacement,
+			location: survivor.location,
+			sourceHash: sourceWindowHash(originalSource, survivor.location),
+			classification: 'equivalent' as const,
+			rationale:
+				'The old reasoning was about this exact guarded expression, which the edit below changes.',
+			review: 'https://github.com/gabepsilva/Fit_/pull/5'
+		};
+		// Edited on the mutated line itself.
+		const updatedSource = originalSource.replace('value ? 1 : 2', 'value ? 3 : 4');
+		await writeFile(path.join(root, 'src/a.ts'), updatedSource);
+		const verdict = await evaluateMutationReport({
+			projectRoot: root,
+			lane: 'security',
+			scope,
+			policy,
+			ledger: { version: 1, entries: [{ ...entry, fingerprint: mutantFingerprint(entry) }] },
+			report: { files: { 'src/a.ts': { source: updatedSource, mutants: [survivor] } } }
+		});
+		expect(verdict.reviewedSurvivors).toBe(0);
+		expect(verdict.failures).toEqual(
+			expect.arrayContaining([expect.stringContaining('stale or no longer survives')])
 		);
 	});
 

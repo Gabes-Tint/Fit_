@@ -280,6 +280,15 @@ source/location/mutator/replacement fingerprint with a pull-request rationale. I
 changed-line exception, is disclosed separately from the 100 percent observable changed-mutant
 score, and is invalidated by source or report drift.
 
+The `sourceHash` an entry pins is a hash of the mutated line plus one line of
+context on each side, not the whole file (`sourceWindowHash` in
+`scripts/quality/mutation-verdict.ts`). An edit anywhere else in the file -- a
+comment, an unrelated function, a rename three hundred lines away -- leaves
+the window untouched and the acceptance stands; an edit that touches the
+mutated line or its immediate neighbours changes the hash, and the entry
+silently stops matching and is reported as a stale survivor on the next run.
+See issue #256 for why the key moved off the whole file.
+
 When a configuration, test, deletion, rename, or non-mutated runtime input forces a broad
 changed-lane fallback, actual changed production files retain the strict verdict. Unchanged
 background files must preserve the historical 80 percent Stryker-compatible aggregate, so
