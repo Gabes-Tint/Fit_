@@ -36,11 +36,7 @@ the process or the report file, with a timeout — then read the result and fini
 An agent that backgrounds a gate and returns "waiting" has to be woken repeatedly, costs
 tokens on every wake, and usually has to be taken over. Report a verdict, not a wait.
 
-- Run `bun run verify:fast` after each change; it needs no Docker and no browser.
-- Run `bun run verify` before declaring implementation work complete.
-- Run `bun run verify:deep` when changing user-facing behavior or reusable domain logic.
-- Run `bun run ci` when changing authentication, authorization, input handling,
-  dependencies, HTTP behavior, or security configuration.
+- Which tier to run before pushing and when — see QUALITY.md, "Pre-push".
 - Read `reports/quality/gate-<tier>.json` for results — every step with its exit code, log
   path and machine-readable artifact. Do not scrape the human output. Re-run one step with
   `bun scripts/quality/gate.ts <tier> --only <step>`.

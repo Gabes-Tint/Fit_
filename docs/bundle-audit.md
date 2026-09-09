@@ -49,7 +49,9 @@ Current state against `quality/bundle-budgets.json`:
 
 ### The number is not reproducible, and it is biased against every branch
 
-Two things move the total without a line of source changing.
+_Historical: both sources of noise below were eliminated after this audit was written — #321 made `check:bundle` version-length-independent and #326 pinned `kit.version.name` so the token no longer varies. `check:bundle` now measures the same tree byte-for-byte on any machine; see QUALITY.md's bundle section for the current mechanics._
+
+Two things moved the total without a line of source changing, at the time of this audit.
 
 **Random build noise, four bytes.** Repeated builds of one identical clean tree alternate between
 two totals four bytes apart. Diffing two such outputs, exactly one chunk differs, and only in the
@@ -306,9 +308,9 @@ bracketed by a measurement.
 
 Risk: **low to medium**. Low because the entire used API is `toast(string)` at 20 call sites
 plus three props on `<Toaster>`; there is no feature to port. Medium because it is a visible
-component and the replacement has to keep the top-center placement, the safe-area offset that
-`AppShell` computes to clear `TopBar`, and whatever the accessibility checks in the e2e suite
-assert about it.
+component and the replacement has to keep the top-center placement, the safe-area offset
+`AppShell` computes below the notch (there is no top bar left to clear), and whatever the
+accessibility checks in the e2e suite assert about it.
 
 Touches behavior: **yes, visually.** Swipe-to-dismiss, stacking and the expand-on-hover
 animation would go. Nothing about what the app does or stores changes.
