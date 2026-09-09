@@ -128,17 +128,17 @@
 			"location": {
 				"end": {
 					"column": 3,
-					"line": 166
+					"line": 172
 				},
 				"start": {
 					"column": 10,
-					"line": 163
+					"line": 169
 				}
 			},
-			"sourceHash": "7fb024cf1c6cff6f6e9b5547e62f303c616fd93a397c19927726e1d339bf90a4",
-			"fingerprint": "947c2d75635b1fa9b05e8cfe2c1c2759126e0c4604d30aef7042428001ae36e7",
+			"sourceHash": "39673c2a9427b5a19879f8d4e05621563c0f82c149aaed49ab219c0e1c08807f",
+			"fingerprint": "c9d5a087c92f20184740b202240e09f757816f8eaa617305589a8a6296cb317d",
 			"classification": "equivalent",
-			"rationale": "Emptying the catch leaves parsed as undefined, which textFieldsOf already refuses because it is not an object, so a malformed body still answers null on both the guarded and the unguarded path. (Relocated by #163/#165: readTextBody now reads through readJsonText and declaredMediaType, moving this catch from line 96 to line 163 without changing its behavior; the sibling OptionalChaining review for the old `?.split(';')[0]?.trim` at line 90 is removed because that code no longer exists \u2014 declaredMediaType uses indexOf/slice instead.)",
+			"rationale": "Emptying the catch leaves parsed as undefined, which textFieldsOf already refuses because it is not an object, so a malformed body still answers null on both the guarded and the unguarded path. (Relocated by #163/#165: readTextBody now reads through readJsonText and declaredMediaType, moving this catch from line 96 to line 163 without changing its behavior; the sibling OptionalChaining review for the old `?.split(';')[0]?.trim` at line 90 is removed because that code no longer exists \u2014 declaredMediaType uses indexOf/slice instead.) (Re-pinned by #283 on the product owner\u2019s instruction: the byte-vs-code-unit fix added a doc comment in readJsonText, six lines above, moving this catch from line 163 to line 169. The mutant is unchanged and still survives for the reason above.)",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
 		},
 		{
@@ -148,17 +148,17 @@
 			"location": {
 				"end": {
 					"column": 18,
-					"line": 159
+					"line": 165
 				},
 				"start": {
 					"column": 6,
-					"line": 159
+					"line": 165
 				}
 			},
-			"sourceHash": "7fb024cf1c6cff6f6e9b5547e62f303c616fd93a397c19927726e1d339bf90a4",
-			"fingerprint": "b47ff36a2d65b7bd41bb0dcdc7bc3d7a1448380b03070a87d12d80ad124bb3e5",
+			"sourceHash": "39673c2a9427b5a19879f8d4e05621563c0f82c149aaed49ab219c0e1c08807f",
+			"fingerprint": "b9ba212e89041cac31795c5743efc0cc95417b354794906fde3c07aeb1233f7e",
 			"classification": "equivalent",
-			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null \u2014 it coerces to the string \"null\" and returns JS null \u2014 and the very next line, textFieldsOf's `parsed === null` check, refuses that the same way one step later. Both versions answer null for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away.",
+			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null \u2014 it coerces to the string \"null\" and returns JS null \u2014 and the very next line, textFieldsOf's `parsed === null` check, refuses that the same way one step later. Both versions answer null for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away. (Re-pinned by #283 on the product owner\u2019s instruction: the byte-vs-code-unit fix added a doc comment in readJsonText, six lines above, moving this guard from line 159 to line 165. The mutant is unchanged and still survives for the reason above.)",
 			"review": "https://github.com/gabepsilva/Fit_/pull/186"
 		},
 		{

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { apiError, declaredMediaType, MAX_BODY_BYTES, readTextBody } from './api';
+import { apiError, declaredMediaType, MAX_BODY_BYTES, readJsonText, readTextBody } from './api';
 
 const SITE = 'https://fit.example/api/sessions';
 
@@ -46,6 +46,47 @@ describe('apiError', () => {
 
 	it('answers as JSON, so a client never has to sniff the body', () => {
 		expect(apiError('invalid-body').headers.get('content-type')).toContain('application/json');
+	});
+});
+
+/**
+ * `max` is a count of bytes, and `String.length` counts UTF-16 code units. The
+ * two agree only for ASCII, so every fixture here carries a character that is
+ * one code unit and two UTF-8 bytes: an ASCII body cannot tell a code-unit
+ * check from a byte one, and a test it passes against both proves nothing
+ * (#283).
+ */
+const ACCENTED_NAME = 'café';
+
+/** `max` code units, `max + 1` bytes: under the ceiling by the old measure, over it by the real one. */
+function straddlingBody(max: number): string {
+	return ACCENTED_NAME + 'a'.repeat(max - ACCENTED_NAME.length);
+}
+
+/** `max - 1` code units, exactly `max` bytes: the largest body the ceiling still admits. */
+function bodyAtCeiling(max: number): string {
+	return ACCENTED_NAME + 'a'.repeat(max - ACCENTED_NAME.length - 1);
+}
+
+describe('readJsonText', () => {
+	it('refuses a non-ASCII body over the ceiling in bytes though under it in code units', async () => {
+		const body = straddlingBody(MAX_BODY_BYTES);
+		expect(body.length).toBe(MAX_BODY_BYTES);
+		expect(Buffer.byteLength(body)).toBe(MAX_BODY_BYTES + 1);
+		expect(await readJsonText(jsonRequest(body), MAX_BODY_BYTES)).toBeNull();
+	});
+
+	it('accepts a non-ASCII body whose bytes land exactly on the ceiling', async () => {
+		const body = bodyAtCeiling(MAX_BODY_BYTES);
+		expect(body.length).toBe(MAX_BODY_BYTES - 1);
+		expect(Buffer.byteLength(body)).toBe(MAX_BODY_BYTES);
+		expect(await readJsonText(jsonRequest(body), MAX_BODY_BYTES)).toBe(body);
+	});
+
+	it('hands back the text it read when it is within the ceiling', async () => {
+		expect(await readJsonText(jsonRequest('{"food":"café"}'), MAX_BODY_BYTES)).toBe(
+			'{"food":"café"}'
+		);
 	});
 });
 

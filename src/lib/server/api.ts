@@ -115,6 +115,12 @@ export function withinDeclaredLength(request: Request, max: number): boolean {
  * The body text, read once, or `null` for a stream that failed to read or
  * text past `max` bytes. Parsing is left to the caller: what counts as a
  * malformed or wrongly-shaped body differs by endpoint.
+ *
+ * The ceiling is in bytes, so the text is measured in bytes. `String.length`
+ * counts UTF-16 code units, which agree with UTF-8 bytes only for ASCII: an
+ * accented or non-Latin food name is one code unit and two or more bytes, so
+ * measuring code units would let a document over the ceiling on the wire
+ * count as under it (#283).
  */
 export async function readJsonText(request: Request, max: number): Promise<string | null> {
 	let raw: string;
@@ -124,7 +130,7 @@ export async function readJsonText(request: Request, max: number): Promise<strin
 		// A stream that broke is the sender's problem, not an error to throw here.
 		return null;
 	}
-	return raw.length > max ? null : raw;
+	return Buffer.byteLength(raw) > max ? null : raw;
 }
 
 /**
