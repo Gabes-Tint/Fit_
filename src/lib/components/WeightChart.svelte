@@ -20,7 +20,6 @@
 	let svgEl: SVGSVGElement | undefined = $state();
 	let selectedIndex = $state<number | null>(null);
 	let activePointerId: number | null = null;
-	let activePointerType: string | null = null;
 
 	const points = $derived([...weights].sort((a, b) => a.date.localeCompare(b.date)));
 
@@ -92,14 +91,12 @@
 	}
 
 	function handlePointerDown(event: PointerEvent) {
-		if (!geometry) return;
 		activePointerId = event.pointerId;
-		activePointerType = event.pointerType;
 		selectedIndex = nearestIndex(event.clientX);
-		// A synthetic pointer (as component specs dispatch) has no live hardware
-		// pointer behind it, so a real browser refuses to capture it — harmless,
-		// since capture only matters once a finger or cursor leaves the SVG's own
-		// box mid-drag, which a spec's single dispatched event never does.
+		// Capture keeps a drag alive once the finger or cursor leaves the SVG's own box.
+		// A synthetic pointer, as the component specs dispatch, has no live hardware behind
+		// it, so a real browser refuses to capture it — harmless here, since a single
+		// dispatched event never leaves the box in the first place.
 		try {
 			svgEl?.setPointerCapture(event.pointerId);
 		} catch {
@@ -122,9 +119,8 @@
 	 */
 	function handlePointerUp(event: PointerEvent) {
 		if (activePointerId === null || event.pointerId !== activePointerId) return;
-		if (activePointerType !== 'touch') selectedIndex = null;
+		if (event.pointerType !== 'touch') selectedIndex = null;
 		activePointerId = null;
-		activePointerType = null;
 	}
 
 	/** Only a mouse (or pen) leaving clears — a finger's own pointerleave fires on lift, which must not discard the reading. */
