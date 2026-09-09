@@ -1,5 +1,5 @@
-import { readBuildVersion } from './app-version';
-import type { BuildVersion } from './app-version';
+import { readBuildVersion } from './app-version.ts';
+import type { BuildVersion } from './app-version.ts';
 
 /**
  * `readBuildVersion()` derives the version string a build carries from
