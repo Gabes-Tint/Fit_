@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import * as foods from '../../src/lib/server/catalog/foods.ts';
-import * as portions from '../../src/lib/server/catalog/portions.ts';
 import * as servingRows from '../../src/lib/server/catalog/serving-rows.ts';
 import {
 	DYNAMIC_PROBES,
@@ -18,7 +17,6 @@ import type { Loaded } from './sql-dynamic.ts';
  */
 const MODULES: Record<string, Loaded> = {
 	'src/lib/server/catalog/foods.ts': foods,
-	'src/lib/server/catalog/portions.ts': portions,
 	'src/lib/server/catalog/serving-rows.ts': servingRows
 };
 
@@ -68,7 +66,6 @@ describe('captureDynamicStatements', () => {
 		const captured = await captureDynamicStatements('.', load);
 		expect(captured.map((each) => `${each.file} ${each.label}`)).toEqual([
 			'src/lib/server/catalog/foods.ts searchFoods',
-			'src/lib/server/catalog/portions.ts volumesByFood',
 			'src/lib/server/catalog/serving-rows.ts servingRowsByFood'
 		]);
 	});
@@ -79,14 +76,12 @@ describe('captureDynamicStatements', () => {
 		expect(search?.sql).toContain('limit :limit');
 	});
 
-	it('binds one placeholder per food of a default page, on both serving reads', async () => {
+	it('binds one placeholder per food of a default page on the serving read', async () => {
 		const captured = await captureDynamicStatements('.', load);
 		const page = foods.pageSize(null);
-		for (const label of ['volumesByFood', 'servingRowsByFood']) {
-			const statement = captured.find((each) => each.label === label);
-			expect(statement?.sql).toContain('from food_serving');
-			expect(statement?.sql.match(/\?/g)).toHaveLength(page);
-		}
+		const statement = captured.find((each) => each.label === 'servingRowsByFood');
+		expect(statement?.sql).toContain('from food_serving');
+		expect(statement?.sql.match(/\?/g)).toHaveLength(page);
 	});
 
 	it('takes its page size from the module that owns it', async () => {

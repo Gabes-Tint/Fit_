@@ -1,6 +1,7 @@
-import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
+import { DatabaseSync } from 'node:sqlite';
 import * as unitMeasureDomain from '$lib/domain/unit-measure';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { servingRowsByFood } from './serving-rows';
 import { withUnitMeasure } from './unit-measure';
 
 /** A catalog holding nothing but the serving rows a case needs. */
@@ -19,6 +20,16 @@ function catalogOf(rows: [id: number, label: unknown, grams: unknown, isDefault:
 }
 
 type Food = { id: number };
+
+/**
+ * The page's serving rows, as `foods.ts` fetches them once and hands them to
+ * this module. Read through `servingRowsByFood` rather than built by hand, so
+ * these cases still run against the statement the server really asks — the
+ * filters and the `is_default desc, label` order they depend on live there.
+ */
+function rowsFor(db: DatabaseSync, foods: readonly { id: number }[]) {
+	return servingRowsByFood(db, [...new Set(foods.map((food) => food.id))]);
+}
 
 describe('withUnitMeasure', () => {
 	let db: DatabaseSync;
@@ -41,43 +52,35 @@ describe('withUnitMeasure', () => {
 
 	it('carries the usable unit measure for a food with a genuine single-item row', () => {
 		const foods: Food[] = [{ id: 1 }];
-		expect(withUnitMeasure(db, foods)).toEqual([
+		expect(withUnitMeasure(rowsFor(db, foods), foods)).toEqual([
 			{ id: 1, unit: { label: '1.0 item 7.6 oz', grams: 219 } }
 		]);
 	});
 
 	it('answers null for a food whose only piece label is a per-serving count', () => {
 		const foods: Food[] = [{ id: 2 }];
-		expect(withUnitMeasure(db, foods)).toEqual([{ id: 2, unit: null }]);
+		expect(withUnitMeasure(rowsFor(db, foods), foods)).toEqual([{ id: 2, unit: null }]);
 	});
 
 	it('carries a plain single-piece measure', () => {
 		const foods: Food[] = [{ id: 3 }];
-		expect(withUnitMeasure(db, foods)).toEqual([{ id: 3, unit: { label: '1 Piece', grams: 105 } }]);
+		expect(withUnitMeasure(rowsFor(db, foods), foods)).toEqual([
+			{ id: 3, unit: { label: '1 Piece', grams: 105 } }
+		]);
 	});
 
 	it('answers null for a food with only weight and volume rows', () => {
 		const foods: Food[] = [{ id: 4 }];
-		expect(withUnitMeasure(db, foods)).toEqual([{ id: 4, unit: null }]);
+		expect(withUnitMeasure(rowsFor(db, foods), foods)).toEqual([{ id: 4, unit: null }]);
 	});
 
 	it('answers null for a food with no food_serving rows at all', () => {
 		const foods: Food[] = [{ id: 999 }];
-		expect(withUnitMeasure(db, foods)).toEqual([{ id: 999, unit: null }]);
+		expect(withUnitMeasure(rowsFor(db, foods), foods)).toEqual([{ id: 999, unit: null }]);
 	});
 
-	it('asks the catalog nothing for an empty page of foods', () => {
-		const counted = { reads: 0 };
-		const catalog = {
-			prepare: (sql: string) => {
-				const statement = db.prepare(sql);
-				return {
-					all: (...values: SQLInputValue[]) => ((counted.reads += 1), statement.all(...values))
-				};
-			}
-		} as unknown as DatabaseSync;
-		expect(withUnitMeasure(catalog, [])).toEqual([]);
-		expect(counted.reads).toBe(0);
+	it('answers nothing for an empty page of foods', () => {
+		expect(withUnitMeasure(rowsFor(db, []), [])).toEqual([]);
 	});
 
 	it('carries every row of a food forward, not only the first the query returns', () => {
@@ -90,34 +93,22 @@ describe('withUnitMeasure', () => {
 				(5, '0 Piece', 50, 0), (5, '1 Piece', 105, 0)`
 		);
 		const foods: Food[] = [{ id: 5 }];
-		expect(withUnitMeasure(db, foods)).toEqual([{ id: 5, unit: { label: '1 Piece', grams: 105 } }]);
-	});
-
-	it('answers every food on the page in one statement rather than one per food', () => {
-		const counted = { reads: 0 };
-		const catalog = {
-			prepare: (sql: string) => {
-				const statement = db.prepare(sql);
-				return {
-					all: (...values: SQLInputValue[]) => ((counted.reads += 1), statement.all(...values))
-				};
-			}
-		} as unknown as DatabaseSync;
-		const foods: Food[] = [{ id: 1 }, { id: 2 }, { id: 3 }];
-		withUnitMeasure(catalog, foods);
-		expect(counted.reads).toBe(1);
+		expect(withUnitMeasure(rowsFor(db, foods), foods)).toEqual([
+			{ id: 5, unit: { label: '1 Piece', grams: 105 } }
+		]);
 	});
 
 	it('asks the picker with a real empty array, not a non-empty placeholder, for a food with no rows', () => {
 		const spy = vi.spyOn(unitMeasureDomain, 'pickUnitMeasure');
-		withUnitMeasure(db, [{ id: 999 }]);
+		const missing: Food[] = [{ id: 999 }];
+		withUnitMeasure(rowsFor(db, missing), missing);
 		expect(spy).toHaveBeenCalledWith([]);
 		spy.mockRestore();
 	});
 
 	it('answers for every food asked about, including one with no rows at all', () => {
 		const foods: Food[] = [{ id: 1 }, { id: 999 }];
-		expect(withUnitMeasure(db, foods)).toEqual([
+		expect(withUnitMeasure(rowsFor(db, foods), foods)).toEqual([
 			{ id: 1, unit: { label: '1.0 item 7.6 oz', grams: 219 } },
 			{ id: 999, unit: null }
 		]);

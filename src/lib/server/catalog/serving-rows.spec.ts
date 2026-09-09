@@ -7,10 +7,12 @@ import { servingRowsByFood, servingRowsSql } from './serving-rows';
  * `food_serving` has four readers — `default-serving.ts`, `unit-measure.ts`,
  * `serving-options.ts` and `portions.ts` — and all four have to see the same
  * rows in the same order, because the order is what picks the winning row and
- * the `typeof` filter is what keeps a corrupted one out. `portions.ts` used to
- * build a byte-identical copy of this statement instead of running this one,
- * which meant a filter or a tie-break could be changed for three readers and
- * not the fourth. These cases fail if that copy comes back.
+ * the `typeof` filter is what keeps a corrupted one out. This module is now the
+ * only one that asks: `foods.ts` runs it once for the page and hands the map to
+ * all four. `portions.ts` used to build a byte-identical copy of this statement
+ * and run it itself, which both cost the search a second read of the same rows
+ * and meant a filter or a tie-break could be changed for three readers and not
+ * the fourth. These cases fail if that copy comes back.
  */
 
 /** A catalog holding nothing but the serving rows a case needs. */
@@ -63,10 +65,8 @@ afterEach(() => {
 });
 
 describe('servingRowsSql', () => {
-	it('is the statement `portions.ts` runs, so one order-by serves both readers', () => {
-		expect(recorded((catalog) => servingRowsByFood(catalog, [1, 2]))).toEqual(
-			recorded((catalog) => withPortions(catalog, [{ id: 1 }, { id: 2 }]))
-		);
+	it('is the only statement any of the four readers asks for', () => {
+		expect(recorded((catalog) => servingRowsByFood(catalog, [1, 2]))).toHaveLength(1);
 	});
 
 	it('binds one placeholder per food asked about', () => {
@@ -86,7 +86,7 @@ describe('the rows every reader sees', () => {
 		// The same fact as the case above, read from the other side: the row
 		// this module reports first is the row `portions.ts` scales by. 20 g is
 		// `2 Tbsp` at 40 g halved; 13.5 would be the row the label sorts first.
-		const [portions] = withPortions(db, [{ id: 1 }]);
+		const [portions] = withPortions(servingRowsByFood(db, [1]), [{ id: 1 }]);
 		expect(portions?.portions).toEqual([{ unit: 'tbsp', grams: 20 }]);
 	});
 
