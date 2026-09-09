@@ -146,7 +146,7 @@ describe('TodayView', () => {
 			await expect.element(page.getByText('Fiber')).not.toBeInTheDocument();
 			expect(document.querySelector('.bg-destructive.h-full')).not.toBeNull();
 			expect(document.querySelector('.bg-foreground.h-full')).not.toBeNull();
-			expect(document.querySelector('.bg-ink-subtle.h-full')).not.toBeNull();
+			expect(document.querySelector('.bg-muted-foreground.h-full')).not.toBeNull();
 			expect(document.querySelector('.bg-sage-soft.h-full')).toBeNull();
 		});
 
@@ -161,7 +161,7 @@ describe('TodayView', () => {
 			expect(document.querySelector('.bg-destructive.h-full')).not.toBeNull();
 			expect(document.querySelector('.bg-sage-soft.h-full')).not.toBeNull();
 			expect(document.querySelector('.bg-foreground.h-full')).toBeNull();
-			expect(document.querySelector('.bg-ink-subtle.h-full')).toBeNull();
+			expect(document.querySelector('.bg-muted-foreground.h-full')).toBeNull();
 		});
 	});
 
@@ -309,6 +309,30 @@ describe('TodayView', () => {
 			// The section may stay open after a successful entry.
 			await expect.element(page.getByLabelText('Weight in kilograms')).toBeInTheDocument();
 		});
+
+		// The chart used to reserve a right-hand gutter (`pr-16`) so the
+		// absolutely-positioned Log weight button would not sit over the plot;
+		// the button now lives in its own row below the chart instead, so the
+		// chart can use the card's full width.
+		it('places the Log weight button after the chart in the DOM, not layered over it', async () => {
+			tend.addWeight(80, addDaysISO(todayISO(), -1));
+			tend.addWeight(81, todayISO());
+			await render(TodayView);
+			const chart = page.getByRole('img', { name: /Weight trend/ }).element();
+			const button = page.getByRole('button', { name: 'Log weight' }).element();
+			const region = page.getByRole('region', { name: 'Weight' }).element();
+			const order = Array.from(region.querySelectorAll('*'));
+			expect(order.indexOf(button)).toBeGreaterThan(order.indexOf(chart));
+		});
+
+		it('does not reserve a gutter beside the chart for the button', async () => {
+			tend.addWeight(80, addDaysISO(todayISO(), -1));
+			tend.addWeight(81, todayISO());
+			await render(TodayView);
+			const chartContainer = page.getByRole('img', { name: /Weight trend/ }).element()
+				.parentElement as HTMLElement;
+			expect(chartContainer.className).not.toContain('pr-16');
+		});
 	});
 
 	describe('Training card link', () => {
@@ -317,6 +341,24 @@ describe('TodayView', () => {
 			const link = page.getByRole('link', { name: 'Go to training' });
 			await expect.element(link).toBeInTheDocument();
 			expect(link.element().getAttribute('href')).toBe('/exercise');
+		});
+
+		// The arrow used to sit bottom-anchored under the title+text block; it
+		// now shares a flex row with that block so the two are vertically
+		// centred against each other rather than the arrow trailing below.
+		it('vertically centers the arrow against the title and text block, not below it', async () => {
+			await render(TodayView);
+			const heading = page.getByRole('heading', { name: 'Training', level: 2 }).element();
+			const group = page.getByRole('group', { name: "This week's training" }).element();
+			const link = page.getByRole('link', { name: 'Go to training' }).element();
+
+			const textTop = heading.getBoundingClientRect().top;
+			const textBottom = group.getBoundingClientRect().bottom;
+			const textMid = (textTop + textBottom) / 2;
+			const linkBox = link.getBoundingClientRect();
+			const linkMid = (linkBox.top + linkBox.bottom) / 2;
+
+			expect(Math.abs(linkMid - textMid)).toBeLessThan(4);
 		});
 	});
 
