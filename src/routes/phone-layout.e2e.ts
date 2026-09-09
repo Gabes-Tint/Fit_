@@ -264,11 +264,22 @@ test.describe('at 360px', () => {
 		await expect(logWeight).toBeVisible();
 		await expectHittable(logWeight);
 
-		// And at the foot of the page, which is where the clearance is spent: the
-		// last card's action must be scrollable clear of a button pinned to the
-		// bottom of the screen.
-		await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-		await expectHittable(page.getByRole('link', { name: 'Go to training' }));
+		// And the foot of the page, which is where the clearance is spent: scrolled
+		// all the way down, the last thing on the page still ends above the
+		// toggle rather than under it. This is what `AppShell`'s 5.5rem of bottom
+		// padding buys, and 1.25rem — what it was while nothing floated down here
+		// — does not.
+		await page.evaluate(() => globalThis.scrollTo(0, document.documentElement.scrollHeight));
+		const lastBox = await page.locator('section').last().boundingBox();
+		const restingToggle = await toggle.boundingBox();
+		expect(lastBox, 'the last section has no box to measure').not.toBeNull();
+		expect(restingToggle, 'the menu toggle has no box to measure').not.toBeNull();
+		const { y: lastY, height: lastHeight } = lastBox as { y: number; height: number };
+		const { y: toggleY } = restingToggle as { y: number };
+		expect(
+			lastY + lastHeight,
+			`the page's last section ends at ${lastY + lastHeight}px, past the toggle's top edge at ${toggleY}px`
+		).toBeLessThanOrEqual(toggleY);
 	});
 
 	test('the whole Today page still fits the narrow phone with the toggle on it', async ({

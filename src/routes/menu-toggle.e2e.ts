@@ -82,11 +82,27 @@ test('still closes on Escape', async ({ page, baseURL }) => {
 	await expect(page.getByRole('dialog')).toBeHidden();
 });
 
-test('leaves no top bar behind, and the journal starts at the top', async ({ page, baseURL }) => {
+test('gives the top of the screen back, and keeps the wordmark in the drawer', async ({
+	page,
+	baseURL
+}) => {
 	await openTheJournal(page, baseURL ?? '');
 
-	await expect(page.getByRole('banner')).toHaveCount(0);
-	// The wordmark was the bar's other passenger; it heads the drawer now.
+	// One banner, and it is the page's own header rather than a bar of chrome
+	// above it: the top bar used to be a second one.
+	const header = page.getByRole('banner');
+	await expect(header).toHaveCount(1);
+	const box = await header.boundingBox();
+	expect(box, 'the page header has no box to measure').not.toBeNull();
+	// A 3.5rem bar and the safe area it padded for used to sit above this.
+	const { y } = box as { y: number };
+	expect(y, `the page header still starts ${y}px down, as though a bar were above it`).toBeLessThan(
+		56
+	);
+
+	// The wordmark the bar carried is off screen until the drawer is asked for,
+	// which is where it went.
+	await expect(page.getByText('Fit_', { exact: true })).toHaveCount(0);
 	await page.getByRole('button', { name: 'Open menu' }).click();
 	await expect(page.getByRole('dialog', { name: 'Fit_' })).toBeVisible();
 });
