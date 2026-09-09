@@ -2,7 +2,6 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import {
 		computeTargets,
-		latestWeight,
 		loggedDatesSet,
 		nutritionForDay,
 		rollingAverages
@@ -10,7 +9,7 @@
 	import { isGlp1, servingStep } from '$lib/domain/profile';
 	import { calendarWeeks, weekOf } from '$lib/domain/training-plan';
 	import { weeklyAdherence } from '$lib/domain/training-progress';
-	import { trainingWeekText, weightStatusText } from '$lib/domain/today-status';
+	import { trainingWeekText } from '$lib/domain/today-status';
 	import { MEALS, type Meal } from '$lib/domain/types';
 	import { todayISO, weekdayLong } from '$lib/domain/utils';
 	import { logUi } from '$lib/state/log-ui.svelte';
@@ -58,13 +57,6 @@
 		count: 1
 	})[0] ?? { planned: 0, done: 0 }}
 	{@const trainingText = trainingWeekText(thisWeek)}
-	{@const weightText = weightStatusText({
-		hasWeight: profile.weights.length > 0,
-		hasTrend: targets.tdee.sampleSize >= 4,
-		kg: latestWeight(profile.weights),
-		kgPerWeek: targets.tdee.kgPerWeek,
-		units: tend.state.units
-	})}
 	<div class="flex flex-col gap-6 pb-8">
 		<PageHeader kicker={weekdayLong(day)} title="Today">
 			{greetingFor(week.loggedDays)}
@@ -108,14 +100,10 @@
 			</div>
 		</section>
 
-		<section class="bg-card grid grid-cols-2 gap-3 rounded-3xl px-4 py-3 shadow-border text-sm">
+		<section class="bg-card rounded-3xl px-4 py-3 shadow-border text-sm">
 			<div role="group" aria-label="This week's training">
 				<p class="text-muted-foreground text-xs">Training</p>
 				<p class="mt-0.5">{trainingText}</p>
-			</div>
-			<div role="group" aria-label="Weight">
-				<p class="text-muted-foreground text-xs">Weight</p>
-				<p class="mt-0.5">{weightText}</p>
 			</div>
 		</section>
 

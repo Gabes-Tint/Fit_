@@ -137,7 +137,10 @@ describe('TodayView', () => {
 
 	it('leads with energy for a calorie-led profile', async () => {
 		await render(TodayView);
-		await expect.element(page.getByText(/of \d+\s*kcal/).first()).toBeInTheDocument();
+		// Only the calorie-led layout shows the Carbs/Fat MiniStats; the
+		// GLP-1 layout shows a Fiber ring instead and has no Carbs stat.
+		await expect.element(page.getByText('Carbs')).toBeInTheDocument();
+		await expect.element(page.getByText('Fiber')).not.toBeInTheDocument();
 	});
 
 	it('leads with protein on GLP-1', async () => {
@@ -222,24 +225,11 @@ describe('TodayView', () => {
 		expect(document.body.textContent).toContain(weekdayLong(todayISO()));
 	});
 
-	describe('training and weight', () => {
+	describe('training tile and week strip', () => {
 		it('states plainly that a new account has no training logged or planned', async () => {
 			await render(TodayView);
 			await expect
 				.element(page.getByText('No training logged or planned this week.'))
-				.toBeInTheDocument();
-		});
-
-		it('states plainly that a new account has no weight recorded', async () => {
-			await render(TodayView);
-			await expect.element(page.getByText('No weight recorded yet.')).toBeInTheDocument();
-		});
-
-		it('reads a single weight entry without claiming a trend', async () => {
-			tend.addWeight(80, todayISO());
-			await render(TodayView);
-			await expect
-				.element(page.getByText('80.0 kg. Not enough entries yet for a trend.'))
 				.toBeInTheDocument();
 		});
 
@@ -251,35 +241,10 @@ describe('TodayView', () => {
 				.toBeInTheDocument();
 		});
 
-		it('reads the weight in kilograms by default', async () => {
-			tend.addWeight(80, addDaysISO(todayISO(), -1));
-			tend.addWeight(79, todayISO());
-			await render(TodayView);
-			await expect
-				.element(page.getByText('79.0 kg. Not enough entries yet for a trend.'))
-				.toBeInTheDocument();
-		});
-
-		it('switches the weight reading to pounds when the preference changes, without touching storage', async () => {
-			tend.addWeight(80, todayISO());
-			await render(TodayView);
-			await expect
-				.element(page.getByText('80.0 kg. Not enough entries yet for a trend.'))
-				.toBeInTheDocument();
-			tend.setUnits('imperial');
-			await expect
-				.element(page.getByText('176.4 lb. Not enough entries yet for a trend.'))
-				.toBeInTheDocument();
-			expect(tend.profile?.weights[0]?.kg).toBe(80);
-		});
-
-		it('gives each addition an accessible name that says what it measures', async () => {
+		it('gives the training tile an accessible name that says what it measures', async () => {
 			await render(TodayView);
 			await expect
 				.element(page.getByRole('group', { name: "This week's training" }))
-				.toBeInTheDocument();
-			await expect
-				.element(page.getByRole('group', { name: 'Weight', exact: true }))
 				.toBeInTheDocument();
 		});
 

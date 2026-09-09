@@ -29,7 +29,9 @@ describe('MacroRing', () => {
 		await render(MacroRing, {
 			props: { value: 10, target: 100, unit: 'kcal' }
 		});
-		expect(document.querySelector('p.font-medium')).toBeNull();
+		await expect.element(page.getByText('10', { exact: true })).toBeInTheDocument();
+		await expect.element(page.getByText('of 100 kcal')).toBeInTheDocument();
+		expect(document.querySelectorAll('p')).toHaveLength(0);
 	});
 
 	it('draws a heavier ring when emphasized', async () => {
