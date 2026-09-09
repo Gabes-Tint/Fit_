@@ -8,7 +8,7 @@
 	export const DRAWER_ID = 'app-drawer';
 
 	/**
-	 * How the drawer recognises a tap that landed on this button.
+	 * How the drawer tells apart a tap that landed on this button.
 	 *
 	 * The button floats *above* the drawer's own overlay, which makes every tap
 	 * on it an "interact outside" as far as `bits-ui` is concerned: the drawer
