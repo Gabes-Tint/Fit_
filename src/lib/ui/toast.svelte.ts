@@ -66,6 +66,15 @@ export type ToastOptions = {
  * client raises these from a module with no component around it, and the log
  * sheet raises them from a dialog that is on its way closed.
  */
+/** What `ToastQueue` tracks per entry to pause and resume its countdown. */
+type TimerState = {
+	timeoutId: ReturnType<typeof setTimeout>;
+	/** How much of the countdown was left the last time it was (re)armed. */
+	remainingMs: number;
+	/** When the current `timeoutId` was armed, so `pause` can subtract elapsed time. */
+	armedAt: number;
+};
+
 class ToastQueue {
 	/**
 	 * Oldest first, so a second message arrives under the first rather than in
@@ -78,13 +87,23 @@ class ToastQueue {
 	 */
 	items = $state.raw<Toast[]>([]);
 
+	/**
+	 * Not `$state`: nothing here is rendered, it only tells `pause` and
+	 * `resume` how far a given entry's countdown had got. Keyed by the entry
+	 * itself for the same reason `dismiss` is — several toasts are in flight
+	 * at once, each with its own timer.
+	 */
+	#timers = new Map<Toast, TimerState>();
+
 	show(message: string, options?: ToastOptions): void {
 		const entry: Toast = { message, action: options?.action, dismissible: options?.dismissible };
 		this.items = [...this.items, entry];
-		setTimeout(
-			() => this.dismiss(entry),
-			entry.action ? DISMISS_ACTIONABLE_AFTER_MS : DISMISS_AFTER_MS
-		);
+		this.#arm(entry, entry.action ? DISMISS_ACTIONABLE_AFTER_MS : DISMISS_AFTER_MS);
+	}
+
+	#arm(entry: Toast, durationMs: number): void {
+		const timeoutId = setTimeout(() => this.dismiss(entry), durationMs);
+		this.#timers.set(entry, { timeoutId, remainingMs: durationMs, armedAt: Date.now() });
 	}
 
 	/**
@@ -96,7 +115,33 @@ class ToastQueue {
 	 * an entry the list no longer holds.
 	 */
 	dismiss(entry: Toast): void {
+		this.#timers.delete(entry);
 		this.items = this.items.filter((item) => item !== entry);
+	}
+
+	/**
+	 * Stop the countdown without losing its place, for a toast a pointer or
+	 * keyboard focus has landed on.
+	 *
+	 * Without this, a thumb reaching for "Undo" can lose the node mid-tap —
+	 * the timer does not know a finger is already on its way — and a keyboard
+	 * user tabbing onto the button gets it pulled out from under their focus.
+	 * A no-op on a toast with nothing armed (a plain message, or one already
+	 * paused), so callers do not have to check first.
+	 */
+	pause(entry: Toast): void {
+		const state = this.#timers.get(entry);
+		if (!state) return;
+		clearTimeout(state.timeoutId);
+		state.remainingMs = Math.max(state.remainingMs - (Date.now() - state.armedAt), 0);
+	}
+
+	/** Re-arm a paused entry's countdown with whatever was left of it. */
+	resume(entry: Toast): void {
+		const state = this.#timers.get(entry);
+		if (!state) return;
+		state.armedAt = Date.now();
+		state.timeoutId = setTimeout(() => this.dismiss(entry), state.remainingMs);
 	}
 }
 

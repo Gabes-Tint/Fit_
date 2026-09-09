@@ -57,8 +57,21 @@
 			rather than moving down to the text, because `overflow-wrap` inherits and
 			the width is the box's business.
 		-->
+		<!--
+			`pointerenter`/`pointerleave` and `focusin`/`focusout` on the box rather
+			than the buttons: a thumb arriving anywhere on the toast is a thumb
+			about to reach for one of them, and the node must not be removed out
+			from under it, or a keyboard user who has just tabbed onto the button.
+			Only a toast with an action gets these — a plain message has no button
+			to reach for and its shorter life was never the thing #1 worried about.
+		-->
 		<div
 			class="toast bg-card text-card-foreground shadow-border flex w-full max-w-lg items-center gap-2 rounded-2xl px-4 py-3 text-sm wrap-anywhere"
+			role={action ? 'group' : undefined}
+			onpointerenter={action ? () => toasts.pause(item) : undefined}
+			onpointerleave={action ? () => toasts.resume(item) : undefined}
+			onfocusin={action ? () => toasts.pause(item) : undefined}
+			onfocusout={action ? () => toasts.resume(item) : undefined}
 		>
 			<span class="min-w-0 flex-1">{item.message}</span>
 			{#if action}
