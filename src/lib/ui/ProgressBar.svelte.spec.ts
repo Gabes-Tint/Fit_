@@ -44,4 +44,15 @@ describe('ProgressBar', () => {
 		await render(ProgressBar, { props: { value: 1, target: 2 } });
 		expect(document.body.querySelector('.bg-secondary')?.getAttribute('aria-hidden')).toBe('true');
 	});
+
+	it('defaults the fill color to bg-primary', async () => {
+		await render(ProgressBar, { props: { value: 1, target: 2 } });
+		expect(fill()).not.toBeNull();
+	});
+
+	it('lets a caller override the fill color with barClass', async () => {
+		await render(ProgressBar, { props: { value: 1, target: 2, barClass: 'bg-destructive' } });
+		expect(fill()).toBeNull();
+		expect(document.body.querySelector('.bg-destructive')).not.toBeNull();
+	});
 });

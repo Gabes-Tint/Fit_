@@ -58,4 +58,17 @@ describe('MiniStat', () => {
 		await render(MiniStat, { props: { label: 'Protein', value: 73, target: 80, unit: 'g' } });
 		await expect.element(page.getByText('73/80 g')).toHaveClass(/shrink-0/);
 	});
+
+	it('defaults the bar fill to bg-primary when no color is given', async () => {
+		await render(MiniStat, { props: { label: 'Protein', value: 50, target: 120, unit: 'g' } });
+		expect(document.body.querySelector('.bg-primary')).not.toBeNull();
+	});
+
+	it('colors the bar fill from the color prop instead of the default', async () => {
+		await render(MiniStat, {
+			props: { label: 'Protein', value: 50, target: 120, unit: 'g', color: 'bg-destructive' }
+		});
+		expect(document.body.querySelector('.bg-destructive')).not.toBeNull();
+		expect(document.body.querySelector('.bg-primary')).toBeNull();
+	});
 });

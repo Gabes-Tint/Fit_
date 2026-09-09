@@ -21,7 +21,6 @@
 	import { BUTTON_BASE, BUTTON_SIZES, BUTTON_VARIANTS } from '$lib/ui/button-variants';
 	import LogRow from './LogRow.svelte';
 	import PageHeader from './PageHeader.svelte';
-	import GlpRingCluster from './GlpRingCluster.svelte';
 	import MacroRing from './MacroRing.svelte';
 	import MiniStat from './MiniStat.svelte';
 	import WeekStrip from './WeekStrip.svelte';
@@ -85,23 +84,40 @@
 		>
 			<h2 id="today-energy-title" class="font-display px-1 text-xl tracking-tight">Energy</h2>
 			<div class="mt-2 flex items-start justify-center gap-3">
-				{#if primaryProtein}
-					<GlpRingCluster
-						energyValue={dayTotals.kcal}
-						energyTarget={targets.kcal}
-						proteinValue={dayTotals.protein}
-						proteinTarget={targets.protein}
-						fiberValue={dayTotals.fiber}
-						fiberTarget={targets.fiber}
+				<MacroRing value={dayTotals.kcal} target={targets.kcal} unit="kcal" emphasis size={148} />
+				<div class="flex flex-col justify-center gap-3 pt-2 text-sm">
+					<MiniStat
+						label="Protein"
+						value={dayTotals.protein}
+						target={targets.protein}
+						unit="g"
+						color="bg-destructive"
 					/>
-				{:else}
-					<MacroRing value={dayTotals.kcal} target={targets.kcal} unit="kcal" emphasis size={148} />
-					<div class="flex flex-col justify-center gap-3 pt-2 text-sm">
-						<MiniStat label="Protein" value={dayTotals.protein} target={targets.protein} unit="g" />
-						<MiniStat label="Carbs" value={dayTotals.carbs} target={targets.carbs} unit="g" />
-						<MiniStat label="Fat" value={dayTotals.fat} target={targets.fat} unit="g" />
-					</div>
-				{/if}
+					{#if primaryProtein}
+						<MiniStat
+							label="Fiber"
+							value={dayTotals.fiber}
+							target={targets.fiber}
+							unit="g"
+							color="bg-sage-soft"
+						/>
+					{:else}
+						<MiniStat
+							label="Carbs"
+							value={dayTotals.carbs}
+							target={targets.carbs}
+							unit="g"
+							color="bg-foreground"
+						/>
+						<MiniStat
+							label="Fat"
+							value={dayTotals.fat}
+							target={targets.fat}
+							unit="g"
+							color="bg-ink-subtle"
+						/>
+					{/if}
+				</div>
 			</div>
 			<button
 				type="button"

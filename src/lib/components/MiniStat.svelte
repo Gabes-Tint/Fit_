@@ -5,8 +5,9 @@
 		label,
 		value,
 		target,
-		unit
-	}: { label: string; value: number; target: number; unit: string } = $props();
+		unit,
+		color = 'bg-primary'
+	}: { label: string; value: number; target: number; unit: string; color?: string } = $props();
 </script>
 
 <div>
@@ -14,5 +15,5 @@
 		<span class="text-muted-foreground truncate">{label}</span>
 		<span class="tabular shrink-0">{Math.round(value)}/{Math.round(target)} {unit}</span>
 	</div>
-	<ProgressBar {value} {target} class="mt-1" />
+	<ProgressBar {value} {target} barClass={color} class="mt-1" />
 </div>
