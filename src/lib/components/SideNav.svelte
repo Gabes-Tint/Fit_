@@ -5,6 +5,7 @@
 	import Home from '@lucide/svelte/icons/house';
 	import TrendingUp from '@lucide/svelte/icons/trending-up';
 	import UserRound from '@lucide/svelte/icons/user-round';
+	import X from '@lucide/svelte/icons/x';
 	import { resolve } from '$app/paths';
 	import { APP_VERSION } from '$lib/version';
 	import AccountMenu from './auth/AccountMenu.svelte';
@@ -49,21 +50,35 @@
 
 <Dialog.Root bind:open>
 	<Dialog.Portal>
-		<Dialog.Overlay class="bg-foreground/25 fixed inset-0 z-50" />
+		<Dialog.Overlay class="bg-foreground/25 fixed inset-0 z-40" />
 		<Dialog.Content
 			id={DRAWER_ID}
 			onInteractOutside={keepOpenForTheToggle}
-			class="bg-card text-card-foreground fixed inset-y-0 left-0 z-50 flex w-[min(17rem,80vw)] flex-col rounded-r-3xl pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-border outline-none"
+			class="bg-card text-card-foreground fixed inset-y-0 left-0 z-40 flex w-[min(17rem,80vw)] flex-col rounded-r-3xl pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-border outline-none"
 		>
 			<!--
-				The wordmark, which used to head the top bar and now heads the only
-				thing left that has a header. There is no close button beside it: the
-				floating toggle outside this panel is the close control, wearing an X
-				for as long as this is open, and a second control with the same name
-				would only make a screen reader ask which one it meant.
+				The way out for anyone not using a thumb.
+
+				The floating toggle is the close control a thumb reaches for, and it
+				stays on screen wearing an X — but it is outside this panel, and a
+				modal traps the tab ring inside itself, so Tab never reaches it and
+				Escape would otherwise be the whole of the keyboard. This is the same
+				exit by another route, in the tab ring and in the drawer's own header
+				where a dialog's close belongs.
+
+				Two controls end up named "Close menu" while the drawer is open, and
+				that is less ambiguous than it looks: this is the only one inside the
+				dialog, and a screen reader working a modal is scoped to the dialog,
+				so it is the only one such a reader is offered.
 			-->
-			<div class="flex h-14 items-center px-4">
+			<div class="flex h-14 items-center justify-between gap-2 px-4">
 				<Dialog.Title class="font-display text-xl tracking-tight">Fit_</Dialog.Title>
+				<Dialog.Close
+					class="text-muted-foreground hover:bg-secondary flex size-10 items-center justify-center rounded-xl"
+				>
+					<X class="size-4" />
+					<span class="sr-only">Close menu</span>
+				</Dialog.Close>
 			</div>
 			<Dialog.Description class="text-muted-foreground px-4 pb-3 text-xs">
 				Everything stays on this device.

@@ -28,6 +28,26 @@
 	// `open` is reported, not owned: the shell holds the drawer, this only draws
 	// which of the two faces the button is currently wearing and says so.
 	let { open, ontoggle }: { open: boolean; ontoggle: () => void } = $props();
+
+	/**
+	 * Any dialog on screen that is not the drawer this button owns — a log
+	 * sheet, a routine sheet, a confirm modal. Every one of them is painted
+	 * above this button and traps focus inside itself, so a tap cannot reach
+	 * here while one is up; this is the belt to that pair of braces, and it
+	 * costs one selector on a tap rather than an observer on every mutation.
+	 *
+	 * It matters because the failure it prevents is silent: opening the drawer
+	 * underneath an open sheet puts a menu nobody can see or reach behind the
+	 * thing they are actually using, with this button reporting it as expanded.
+	 */
+	function coveredByASheet() {
+		return document.querySelector(`[data-dialog-content]:not(#${DRAWER_ID})`) !== null;
+	}
+
+	function toggle() {
+		if (coveredByASheet()) return;
+		ontoggle();
+	}
 </script>
 
 <!--
@@ -39,21 +59,30 @@
 	that corner is where a thumb already rests, and the top of the screen is
 	given back to the journal.
 
-	`z-[60]` is the whole point of it, and it is above `SideNav`'s overlay and
-	panel (`z-50`) deliberately: the button does not disappear behind the drawer
-	it opened, it stays on screen wearing an X so the same thumb in the same
-	place closes what it just opened. The wrapper takes no pointer events, so
-	everywhere the button is not, a tap still reaches the overlay underneath and
-	closes the drawer that way.
+	It sits in a tier of its own: above `SideNav`'s overlay and panel (`z-40`),
+	so the button does not disappear behind the drawer it opened and the same
+	thumb in the same place closes what it just opened — and below `Sheet` and
+	`Modal` (`z-50`), so an open sheet covers it completely rather than leaving
+	it floating over a row somebody is trying to press. The wrapper takes no
+	pointer events, so everywhere the button is not, a tap still reaches
+	whatever is underneath, and a tap on the drawer's overlay still closes it.
+
+	Tucked to `0.75rem` from each edge rather than the `1.25rem` a floating
+	action button usually takes. The Today cards right-align their own actions
+	against the same edge, and how much of one this circle clips is a matter of
+	how far its centre is from theirs — the margin at 390x844, the tightest of
+	the phone widths, is three pixels of it. `phone-layout.e2e.ts` sweeps every
+	card action at three widths so a change to either shape is caught here
+	rather than on somebody's phone.
 -->
 <div
-	class="pointer-events-none fixed inset-x-0 bottom-0 z-[60] flex justify-center pt-2 pr-[max(1.25rem,env(safe-area-inset-right))] pb-[max(1.25rem,env(safe-area-inset-bottom))] pl-5"
+	class="pointer-events-none fixed inset-x-0 bottom-0 z-[45] flex justify-center pt-2 pr-[max(0.75rem,env(safe-area-inset-right))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-5"
 >
 	<div class="flex w-full max-w-lg justify-end">
 		<Button
 			size="icon-round"
 			class="shadow-border pointer-events-auto shadow-lg"
-			onclick={ontoggle}
+			onclick={toggle}
 			aria-label={open ? 'Close menu' : 'Open menu'}
 			aria-haspopup="dialog"
 			aria-expanded={open}

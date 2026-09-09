@@ -349,6 +349,27 @@ export async function pickFullBodyTemplate(page: Page): Promise<void> {
 }
 
 /**
+ * Refuse every save with the one error that puts a standing notice on screen and
+ * leaves it there: the document has outgrown what the server accepts.
+ *
+ * The notice that does not clear itself is what a test measuring the notice
+ * needs — the busy and offline ones come and go on their own timers. Shared
+ * because two files need the same standing notice for different reasons: one
+ * measures whether its longest wording fits a narrow phone, the other whether
+ * the strip it sits in clears the page's own header.
+ */
+export async function refuseStateAsTooLarge(page: Page): Promise<void> {
+	await page.route('**/api/state', async (route) => {
+		if (route.request().method() !== 'PUT') return route.continue();
+		await route.fulfill({
+			status: 400,
+			contentType: 'application/json',
+			body: JSON.stringify({ error: { code: 'invalid-body', reason: 'too-large' } })
+		});
+	});
+}
+
+/**
  * Asserts nothing overflows the viewport at the page's current size.
  *
  * `document.documentElement.scrollWidth <= clientWidth` catches page-level

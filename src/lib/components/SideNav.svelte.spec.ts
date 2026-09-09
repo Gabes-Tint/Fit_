@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import { session } from '$lib/state/session.svelte';
@@ -74,13 +74,23 @@ describe('SideNav', () => {
 		expect(document.querySelector('a[href$="/"]')?.getAttribute('aria-current')).toBeNull();
 	});
 
-	// The drawer carries no close button of its own since the menu became a
-	// floating toggle (`MenuFab`): that toggle stays on screen above this panel
-	// wearing an X, and it is the close control. A second button with the same
-	// name inside here would only make a screen reader ask which one it meant.
-	it('offers no close button of its own, because the toggle outside is the one', async () => {
+	// The floating toggle is outside this panel and a modal traps the tab ring
+	// inside it, so without a close of its own the keyboard would have only
+	// Escape. This is that way out, and it is first in the ring.
+	it('closes from its own close control', async () => {
+		const props = $state({ open: true, pathname: '/' });
+		await render(SideNav, { props });
+		await page.getByRole('button', { name: 'Close menu' }).click();
+		expect(props.open).toBe(false);
+	});
+
+	it('puts that close first, so the keyboard lands on the way out', async () => {
 		await render(SideNav, { props: { open: true, pathname: '/' } });
-		expect(page.getByRole('button', { name: 'Close menu' }).elements()).toHaveLength(0);
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(
+				page.getByRole('button', { name: 'Close menu' }).element()
+			)
+		);
 	});
 
 	it('answers to the name the toggle points at', async () => {

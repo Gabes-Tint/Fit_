@@ -15,6 +15,7 @@ import {
 	openLogSheetAndType,
 	openSampleJournal,
 	pickFullBodyTemplate,
+	refuseStateAsTooLarge,
 	signInThroughApi,
 	stubFoodResolve,
 	stubFoodSearch
@@ -71,6 +72,115 @@ async function fillMondayWithTwo(page: Page) {
 	await page.getByRole('button', { name: /Chest & Shoulders/ }).click();
 	await page.getByRole('button', { name: /Back & Arms/ }).click();
 }
+
+/**
+ * The menu is a button floating in the bottom-right corner of every signed-in
+ * screen and it never hides, so it is the thing most likely to be sitting on
+ * top of something a person is trying to press. The Today cards right-align
+ * their own actions against the same edge it occupies.
+ *
+ * Where the collision lands is a function of viewport height and nothing else:
+ * "Go to training" sat clear at 360 and 412 and directly under the toggle at
+ * 390x844, which is the commonest phone this ships to and which no project in
+ * `scripts/quality/e2e-projects.ts` renders. So this sweeps every card action
+ * at three heights rather than trusting one. The toggle is tucked to 0.75rem
+ * from each edge for the same reason — how much of a control beside it a
+ * circle clips is a matter of how far its centre is from theirs, and 1.25rem
+ * was not far enough at 390.
+ */
+test.describe('the floating menu over the Today card actions', () => {
+	const PHONES = [
+		{ width: 360, height: 800 },
+		{ width: 390, height: 844 },
+		{ width: 412, height: 915 }
+	];
+
+	for (const size of PHONES) {
+		test(`leaves every Today card action tappable at ${size.width}x${size.height}`, async ({
+			page,
+			baseURL
+		}) => {
+			await signInThroughApi(page, baseURL ?? '');
+			await page.goto('/');
+			await page.setViewportSize(size);
+			await openSampleJournal(page);
+
+			// Its own tap target first: a button nobody can hit is no better than
+			// one that hides.
+			const toggle = page.getByRole('button', { name: 'Open menu' });
+			await expect(toggle).toBeVisible();
+			const toggleBox = await toggle.boundingBox();
+			expect(toggleBox, 'the menu toggle has no box to measure').not.toBeNull();
+			const { width, height } = toggleBox as { width: number; height: number };
+			expect(width, 'the menu toggle is narrower than its 44px tap target').toBeGreaterThanOrEqual(
+				44
+			);
+			expect(height, 'the menu toggle is shorter than its 44px tap target').toBeGreaterThanOrEqual(
+				44
+			);
+			await expectFitsViewport(page, toggle);
+			await expectHittable(toggle);
+
+			await expectHittable(
+				page.getByRole('region', { name: 'Energy' }).getByRole('button', { name: 'Log food' })
+			);
+			await expectHittable(page.getByRole('button', { name: 'Log weight' }));
+			await expectHittable(page.getByRole('link', { name: 'Go to training' }));
+
+			/*
+			 * The expanded weight form's own submit, which is the button the old
+			 * floating log button used to steal (#today-card-actions review).
+			 *
+			 * Its centre, and not its outermost pixel column. The three checks
+			 * above are 44px circles whose centres have to stay clear, and they
+			 * do; this is a ~100px-wide button whose bottom-right corner is
+			 * inside the toggle's circle at 390x844, and no inset undoes that —
+			 * a 44px circle in the corner reaches 44px in from the edge whatever
+			 * its margin, while the cards start 20px in, so the two overlap
+			 * horizontally by construction and only the viewport height decides
+			 * whether they meet. What is being asserted is the thing that
+			 * matters: the button a thumb aims at is the button it hits. The
+			 * clipped corner is in the PR for Gabriel to rule on.
+			 */
+			await page.getByRole('button', { name: 'Log weight' }).click();
+			await expect(page.getByLabel('Weight in kilograms')).toBeVisible();
+			const submit = page.getByRole('button', { name: 'Today', exact: true });
+			const submitBox = await submit.boundingBox();
+			expect(submitBox, 'the weight form submit has no box to measure').not.toBeNull();
+			const {
+				x: submitX,
+				y: submitY,
+				width: submitWidth,
+				height: submitHeight
+			} = submitBox as { x: number; y: number; width: number; height: number };
+			const centreHit = await submit.evaluate(
+				(el, point) => {
+					const target = document.elementFromPoint(point.x, point.y);
+					return target !== null && (target === el || el.contains(target));
+				},
+				{ x: submitX + submitWidth / 2, y: submitY + submitHeight / 2 }
+			);
+			expect(centreHit, "something covers the weight form's submit at its centre").toBe(true);
+
+			// And at the foot of the page, which is where the clearance is spent:
+			// scrolled all the way down, the last thing on the page ends above the
+			// toggle rather than under it. That is what `AppShell`'s 5.5rem of
+			// bottom padding buys, and 1.25rem — what it was while nothing floated
+			// down here — does not.
+			await page.evaluate(() => globalThis.scrollTo(0, document.documentElement.scrollHeight));
+			const lastBox = await page.locator('section').last().boundingBox();
+			const restingToggle = await toggle.boundingBox();
+			expect(lastBox, 'the last section has no box to measure').not.toBeNull();
+			expect(restingToggle, 'the menu toggle has no box to measure').not.toBeNull();
+			const { y: lastY, height: lastHeight } = lastBox as { y: number; height: number };
+			const { y: toggleY } = restingToggle as { y: number };
+			expect(
+				lastY + lastHeight,
+				`the page's last section ends at ${lastY + lastHeight}px, past the toggle's top edge at ${toggleY}px`
+			).toBeLessThanOrEqual(toggleY);
+		});
+	}
+});
 
 test.describe('at 360px', () => {
 	test('the Today week strip stays inside the viewport', async ({ page, baseURL }) => {
@@ -215,71 +325,6 @@ test.describe('at 360px', () => {
 
 		const energyCard = page.getByRole('region', { name: 'Energy' });
 		await expectFitsViewport(page, energyCard);
-	});
-
-	/**
-	 * The menu is a button floating in the bottom-right corner of every signed-in
-	 * screen, and it never hides — so on the narrowest phone this ships to, it is
-	 * the thing most likely to be sitting on top of something a person is trying
-	 * to press. The Today cards put their own actions in exactly that corner.
-	 *
-	 * This is the shape of the failure #today-card-actions found with the old
-	 * floating log button, and the reason `AppShell` keeps 5.5rem of clearance
-	 * under the page: the toggle must never be what a tap lands on when a tap was
-	 * aimed somewhere else.
-	 */
-	test('the Today card actions are still tappable under the floating menu', async ({
-		page,
-		baseURL
-	}) => {
-		await signInThroughApi(page, baseURL ?? '');
-		await page.goto('/');
-		await atNarrowPhone(page);
-		await openSampleJournal(page);
-
-		const toggle = page.getByRole('button', { name: 'Open menu' });
-		await expect(toggle).toBeVisible();
-		await expectFitsViewport(page, toggle);
-
-		// Its own tap target first: a button nobody can hit is no better than one
-		// that hides.
-		const toggleBox = await toggle.boundingBox();
-		expect(toggleBox, 'the menu toggle has no box to measure').not.toBeNull();
-		const { width, height } = toggleBox as { width: number; height: number };
-		expect(width, 'the menu toggle is narrower than its 44px tap target').toBeGreaterThanOrEqual(
-			44
-		);
-		expect(height, 'the menu toggle is shorter than its 44px tap target').toBeGreaterThanOrEqual(
-			44
-		);
-		await expectHittable(toggle);
-
-		const logFood = page.getByRole('region', { name: 'Energy' }).getByRole('button', {
-			name: 'Log food'
-		});
-		await expect(logFood).toBeVisible();
-		await expectHittable(logFood);
-
-		const logWeight = page.getByRole('button', { name: 'Log weight' });
-		await expect(logWeight).toBeVisible();
-		await expectHittable(logWeight);
-
-		// And the foot of the page, which is where the clearance is spent: scrolled
-		// all the way down, the last thing on the page still ends above the
-		// toggle rather than under it. This is what `AppShell`'s 5.5rem of bottom
-		// padding buys, and 1.25rem — what it was while nothing floated down here
-		// — does not.
-		await page.evaluate(() => globalThis.scrollTo(0, document.documentElement.scrollHeight));
-		const lastBox = await page.locator('section').last().boundingBox();
-		const restingToggle = await toggle.boundingBox();
-		expect(lastBox, 'the last section has no box to measure').not.toBeNull();
-		expect(restingToggle, 'the menu toggle has no box to measure').not.toBeNull();
-		const { y: lastY, height: lastHeight } = lastBox as { y: number; height: number };
-		const { y: toggleY } = restingToggle as { y: number };
-		expect(
-			lastY + lastHeight,
-			`the page's last section ends at ${lastY + lastHeight}px, past the toggle's top edge at ${toggleY}px`
-		).toBeLessThanOrEqual(toggleY);
 	});
 
 	test('the whole Today page still fits the narrow phone with the toggle on it', async ({
@@ -498,14 +543,7 @@ test.describe('at 360px', () => {
 		// itself, so a phone that cannot fit it would be showing the overflow for
 		// as long as the condition lasts (#282).
 		await signInThroughApi(page, baseURL ?? '');
-		await page.route('**/api/state', async (route) => {
-			if (route.request().method() !== 'PUT') return route.continue();
-			await route.fulfill({
-				status: 400,
-				contentType: 'application/json',
-				body: JSON.stringify({ error: { code: 'invalid-body', reason: 'too-large' } })
-			});
-		});
+		await refuseStateAsTooLarge(page);
 		await atNarrowPhone(page);
 		await openEmptyJournal(page);
 

@@ -1,6 +1,10 @@
 import { expect } from '@playwright/test';
 import { test } from '../../tests/preview-server';
-import { openSampleJournal, signInThroughApi } from '../../tests/e2e-support';
+import {
+	openSampleJournal,
+	refuseStateAsTooLarge,
+	signInThroughApi
+} from '../../tests/e2e-support';
 
 /**
  * The menu is one button in one place, and it never leaves the screen.
@@ -29,7 +33,7 @@ test('opens and closes the drawer from the one button, in the one corner', async
 	await toggle.click();
 
 	// Same button, renamed, still on screen with the drawer over everything else.
-	const closer = page.getByRole('button', { name: 'Close menu' });
+	const closer = page.locator('[data-menu-fab]');
 	await expect(page.getByRole('dialog')).toBeVisible();
 	await expect(closer).toBeVisible();
 	await expect(closer).toHaveAttribute('aria-expanded', 'true');
@@ -54,7 +58,7 @@ test('hands focus back to the toggle when the drawer closes', async ({ page, bas
 	await openTheJournal(page, baseURL ?? '');
 
 	await page.getByRole('button', { name: 'Open menu' }).click();
-	await page.getByRole('button', { name: 'Close menu' }).click();
+	await page.locator('[data-menu-fab]').click();
 	await expect(page.getByRole('dialog')).toBeHidden();
 	await expect(page.getByRole('button', { name: 'Open menu' })).toBeFocused();
 });
@@ -105,4 +109,107 @@ test('gives the top of the screen back, and keeps the wordmark in the drawer', a
 	await expect(page.getByText('Fit_', { exact: true })).toHaveCount(0);
 	await page.getByRole('button', { name: 'Open menu' }).click();
 	await expect(page.getByRole('dialog', { name: 'Fit_' })).toBeVisible();
+});
+
+/**
+ * The toggle is above the drawer and below everything else.
+ *
+ * Getting that wrong in the other direction is the worse failure of the two: a
+ * toggle painted over an open log sheet sits on top of a row somebody is trying
+ * to press, and a tap on it opens the navigation drawer *behind* the sheet —
+ * out of sight, out of reach, with the button reporting it as expanded.
+ */
+test('disappears under an open sheet, and comes back when it closes', async ({ page, baseURL }) => {
+	await openTheJournal(page, baseURL ?? '');
+
+	const toggle = page.locator('[data-menu-fab]');
+	const box = await toggle.boundingBox();
+	expect(box, 'the menu toggle has no box to measure').not.toBeNull();
+	const { x, y, width, height } = box as { x: number; y: number; width: number; height: number };
+	const centre = { x: x + width / 2, y: y + height / 2 };
+
+	await page
+		.getByRole('region', { name: 'Energy' })
+		.getByRole('button', { name: 'Log food' })
+		.click();
+	const sheet = page.getByRole('dialog');
+	await expect(sheet).toBeVisible();
+
+	// Whatever is painted at the toggle's own centre is the sheet, not the
+	// toggle: the sheet covers it completely rather than leaving it floating
+	// over the sheet's own rows.
+	const onTop = await page.evaluate((point) => {
+		const target = document.elementFromPoint(point.x, point.y);
+		return target?.closest('[data-menu-fab]') !== null ? 'toggle' : 'something else';
+	}, centre);
+	expect(onTop, 'the menu toggle is painted on top of an open sheet').toBe('something else');
+
+	// And it is not merely covered: nothing that reaches it while a sheet is up
+	// gets to open a drawer behind that sheet.
+	await toggle.evaluate((el) => (el as HTMLElement).click());
+	await expect(page.getByRole('dialog', { name: 'Fit_' })).toHaveCount(0);
+	await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+	// Closed again, the toggle is back and works.
+	await page.getByRole('button', { name: 'Close' }).click();
+	await expect(sheet).toBeHidden();
+	await toggle.click();
+	await expect(page.getByRole('dialog', { name: 'Fit_' })).toBeVisible();
+});
+
+/**
+ * A thumb has the floating toggle; a keyboard has the drawer's own close, which
+ * is inside the modal's tab ring where the toggle outside it can never be.
+ */
+test('closes from the keyboard, and hands focus back to the toggle', async ({ page, baseURL }) => {
+	await openTheJournal(page, baseURL ?? '');
+
+	await page.getByRole('button', { name: 'Open menu' }).click();
+	const drawer = page.getByRole('dialog', { name: 'Fit_' });
+	await expect(drawer).toBeVisible();
+
+	const close = drawer.getByRole('button', { name: 'Close menu' });
+	await expect(close).toHaveCount(1);
+
+	// First in the drawer's tab ring, so it is what the keyboard lands on the
+	// moment the drawer opens rather than something to hunt for — and the ring
+	// then walks on into the destinations.
+	await expect(close).toBeFocused();
+	await page.keyboard.press('Tab');
+	await expect(drawer.getByRole('link', { name: 'Today' })).toBeFocused();
+	await page.keyboard.press('Shift+Tab');
+	await expect(close).toBeFocused();
+
+	await page.keyboard.press('Enter');
+
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'Open menu' })).toBeFocused();
+});
+
+/**
+ * The sync notice used to have a top bar between it and the page. It has not
+ * had one since the menu moved, so the page reserves its height instead — and
+ * this is the failure that reservation exists to prevent: the notice printing
+ * over the heading of the page somebody is reading.
+ */
+test('keeps the sync notice clear of the page header', async ({ page, baseURL }) => {
+	await signInThroughApi(page, baseURL ?? '');
+	// A refused write is the shortest route to a notice that stays up.
+	await refuseStateAsTooLarge(page);
+	await page.goto('/');
+	await openSampleJournal(page);
+
+	const notice = page.getByRole('status');
+	await expect(notice).toContainText('Your data has outgrown what the server accepts');
+
+	const noticeBox = await notice.boundingBox();
+	const headerBox = await page.getByRole('banner').boundingBox();
+	expect(noticeBox, 'the sync notice has no box to measure').not.toBeNull();
+	expect(headerBox, 'the page header has no box to measure').not.toBeNull();
+	const { y: noticeY, height: noticeHeight } = noticeBox as { y: number; height: number };
+	const { y: headerY } = headerBox as { y: number };
+	expect(
+		noticeY + noticeHeight,
+		`the sync notice runs to ${noticeY + noticeHeight}px, over a header that starts at ${headerY}px`
+	).toBeLessThanOrEqual(headerY);
 });

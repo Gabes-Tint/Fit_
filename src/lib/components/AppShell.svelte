@@ -26,6 +26,16 @@
 
 	let menuOpen = $state(false);
 
+	/**
+	 * How tall the sync notice is right now, and zero whenever there is none.
+	 *
+	 * Reserved at the top of the page rather than ignored: the notice is a fixed
+	 * strip, and with no top bar left above it there is nothing between it and
+	 * the page's own header. It reads as zero for almost all of a session, so
+	 * almost all of the time this reserves nothing at all.
+	 */
+	let noticeHeight = $state(0);
+
 	onMount(() => {
 		// The store reads `localStorage`, so hydrate waits for the client; nothing renders before then.
 		tend.hydrate();
@@ -185,10 +195,12 @@
 				/>
 			{:else if tend.state.onboarded}
 				<div class="bg-background flex min-h-dvh w-full max-w-lg flex-col">
-					<SyncStatusBadge />
+					<SyncStatusBadge bind:height={noticeHeight} />
 					<!--
-						The journal starts at the top of the screen: `pt` is the gap plus
-						whatever the hardware reserves, and no bar sits in between.
+						The journal starts at the top of the screen: the gap, whatever the
+						hardware reserves, and the sync notice's own height when there is
+						one — no bar sits in between any more, and nothing but that notice
+						is ever above the page's header.
 
 						`pb` is the room the floating toggle needs. It is 5.5rem rather
 						than the gap alone so the last thing on the page can be scrolled
@@ -198,7 +210,8 @@
 						failure this padding exists to prevent.
 					-->
 					<div
-						class="flex-1 px-5 pt-[calc(1.25rem+env(safe-area-inset-top))] pb-[calc(5.5rem+env(safe-area-inset-bottom))]"
+						class="flex-1 px-5 pb-[calc(5.5rem+env(safe-area-inset-bottom))]"
+						style:padding-top="calc(1.25rem + env(safe-area-inset-top) + {noticeHeight}px)"
 					>
 						{@render children()}
 					</div>

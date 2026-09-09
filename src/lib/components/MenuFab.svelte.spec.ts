@@ -88,6 +88,46 @@ describe('MenuFab', () => {
 		expect(button.closest('[data-menu-fab]')).toBe(button);
 	});
 
+	/**
+	 * A sheet or a modal is painted over this button, and every one of them traps
+	 * focus inside itself, so nothing should reach here while one is up. This is
+	 * the guard behind those two, and the failure it prevents is a silent one:
+	 * a navigation drawer opened underneath an open sheet, out of sight and out
+	 * of reach, with this button reporting it as expanded.
+	 */
+	it('does nothing while a sheet or a modal is over it', async () => {
+		const ontoggle = vi.fn();
+		await render(MenuFab, { props: { ...base, ontoggle } });
+		const sheet = document.createElement('div');
+		sheet.setAttribute('data-dialog-content', '');
+		document.body.append(sheet);
+		try {
+			await page.getByRole('button', { name: 'Open menu' }).click();
+			expect(ontoggle).not.toHaveBeenCalled();
+		} finally {
+			sheet.remove();
+		}
+	});
+
+	// Its own drawer is not something in its way: that one it opened, and the
+	// same tap has to be able to close it again.
+	it('still answers while its own drawer is the dialog on screen', async () => {
+		const ontoggle = vi.fn();
+		await render(MenuFab, { props: { ...base, open: true, ontoggle } });
+		const drawer = document.createElement('div');
+		drawer.setAttribute('data-dialog-content', '');
+		// `String` because a value imported from a `.svelte` module block reaches
+		// the lint's type checker untyped, and `id` wants a string.
+		drawer.setAttribute('id', String(DRAWER_ID));
+		document.body.append(drawer);
+		try {
+			await page.getByRole('button', { name: 'Close menu' }).click();
+			expect(ontoggle).toHaveBeenCalled();
+		} finally {
+			drawer.remove();
+		}
+	});
+
 	// The rest of what this button has to be — a 44px target, a stacking order
 	// above the drawer's own overlay, and a wrapper that swallows no taps — is
 	// entirely a matter of the stylesheet, and this project renders components

@@ -212,8 +212,11 @@ describe('AppShell, on the sign-in form itself', () => {
  * that the drawer does not reopen behind the tap, are asserted against the
  * built app in `menu-toggle.e2e.ts`.
  */
-function tapTheToggle(name: 'Open menu' | 'Close menu') {
-	(page.getByRole('button', { name }).element() as HTMLElement).click();
+function tapTheToggle() {
+	// The marked one: while the drawer is open its own close carries the same
+	// name, and inside a modal that is the one a screen reader is offered. This
+	// is the floating button outside it.
+	(document.querySelector('[data-menu-fab]') as HTMLElement).click();
 }
 
 describe('AppShell, signed in', () => {
@@ -328,7 +331,7 @@ describe('AppShell, signed in', () => {
 		seedReturningVisit();
 		await render(AppShellHarness, { props: { body: 'Page body' } });
 		await page.getByRole('button', { name: 'Open menu' }).click();
-		tapTheToggle('Close menu');
+		tapTheToggle();
 		await expect.element(page.getByRole('dialog')).not.toBeInTheDocument();
 	});
 
@@ -336,7 +339,7 @@ describe('AppShell, signed in', () => {
 		seedReturningVisit();
 		await render(AppShellHarness, { props: { body: 'Page body' } });
 		await page.getByRole('button', { name: 'Open menu' }).click();
-		tapTheToggle('Close menu');
+		tapTheToggle();
 		await vi.waitFor(() =>
 			expect(document.activeElement).toBe(page.getByRole('button', { name: 'Open menu' }).element())
 		);
@@ -360,6 +363,14 @@ describe('AppShell, signed in', () => {
 		expect(strip).not.toBeNull();
 		// A bar's height (3.5rem, 56px) is no longer reserved above it.
 		expect(Number.parseFloat(getComputedStyle(strip as Element).top)).toBeLessThan(56);
+	});
+
+	it('carries a close inside the drawer too, for anyone not using a thumb', async () => {
+		seedReturningVisit();
+		await render(AppShellHarness, { props: { body: 'Page body' } });
+		await page.getByRole('button', { name: 'Open menu' }).click();
+		const drawer = page.getByRole('dialog');
+		await expect.element(drawer.getByRole('button', { name: 'Close menu' })).toBeInTheDocument();
 	});
 
 	it('names the wordmark in the drawer, which is where it went', async () => {
