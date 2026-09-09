@@ -90,6 +90,26 @@ test.describe('once onboarded', () => {
 		await expect(page.getByRole('heading', { name: 'breakfast' })).toBeVisible();
 	});
 
+	/**
+	 * The weight graph moved here from Progress so a trend is visible without
+	 * leaving the day. The sample journal seeds enough weigh-ins to draw a
+	 * line, so its accessible name carries the "Weight trend" caption instead
+	 * of the empty-state invitation.
+	 */
+	test('plots the weight trend under the Energy card', async ({ page }) => {
+		const energyCard = page.getByText(/of \d+\s*kcal/).first();
+		await expect(energyCard).toBeVisible();
+		const chart = page.getByRole('img', { name: /Weight trend/ });
+		await expect(chart).toBeVisible();
+		const [energyBox, chartBox] = await Promise.all([
+			energyCard.boundingBox(),
+			chart.boundingBox()
+		]);
+		expect(energyBox).not.toBeNull();
+		expect(chartBox).not.toBeNull();
+		expect(chartBox?.y).toBeGreaterThan(energyBox?.y ?? Infinity);
+	});
+
 	test('keeps the destinations behind the menu button', async ({ page }) => {
 		await expect(page.getByRole('button', { name: 'Open menu' })).toBeVisible();
 		await expect(page.getByRole('link', { name: 'Progress' })).toBeHidden();
