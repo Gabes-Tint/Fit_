@@ -179,7 +179,7 @@ test.describe('at 360px', () => {
 		await atNarrowPhone(page);
 		await openSampleJournal(page);
 
-		const weightCard = page.getByRole('group', { name: 'Weight trend' });
+		const weightCard = page.getByRole('region', { name: 'Weight' });
 		const chart = weightCard.getByRole('img', { name: /Weight trend from/ });
 		await chart.evaluate((el) => {
 			const rect = el.getBoundingClientRect();
