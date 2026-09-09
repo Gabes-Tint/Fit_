@@ -10,9 +10,12 @@ could come out.
 
 ## What the budget measures
 
-`bun run check:bundle` runs `scripts/quality/bundle-budget.ts`, which measures — it does **not**
-build. It reads whatever `.svelte-kit/output/client/_app/immutable` currently holds, so it is
-only meaningful straight after `bun run build`.
+`bun run check:bundle` runs `scripts/quality/bundle-budget.ts`, which builds fresh (with
+`FIT_BUNDLE_MEASURE_VERSION` set — see `scripts/build/bundle-measurement-version.ts`) and then
+measures what it just built. It used to measure whatever `.svelte-kit/output/client/_app/immutable`
+already held, meaning a stale build could get measured, or the real, variable-length git-derived
+`__APP_VERSION__`/`__APP_COMMIT__` could shift the byte count between checkouts; the numbers
+below predate that fix and were captured straight after `bun run build`.
 
 Through `scripts/quality/bundle-assets.ts` it walks that directory recursively and, for every
 file whose name ends in `.js` or `.css`, takes `stat().size`. Then:
