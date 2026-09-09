@@ -318,13 +318,12 @@ const WEEK_EPOCH = '1970-01-05';
  * mutation still terminates, failing fast on a wrong answer instead of hanging.
  *
  * No separate guard for a range that runs backwards (every logged date after
- * `end`): the length is then zero or negative, and `Array.from` already treats
- * a negative `length` as zero, so the walk simply does not run and the answer
- * is no calm weeks.
+ * `end`), nor for an empty log: the length is then zero, negative or
+ * `-Infinity`, and `Array.from` treats any of those as zero, so the walk simply
+ * does not run and the answer is no calm weeks.
  */
 export function calmWeeks(log: LogItem[], minDays = 4, end = todayISO()) {
 	const dates = new Set(log.map((i) => i.date));
-	if (!dates.size) return 0;
 	const epochMs = parseISODate(WEEK_EPOCH).getTime();
 	/** The week index a date falls in, counting from `WEEK_EPOCH`. */
 	const weekOf = (iso: string) =>
@@ -335,8 +334,9 @@ export function calmWeeks(log: LogItem[], minDays = 4, end = todayISO()) {
 
 	const lastWeek = weekOf(end);
 	// `Infinity` rather than the first week seen, so the running minimum needs no
-	// "have we started yet" branch; the empty log already returned above, so at
-	// least one date always replaces it.
+	// "have we started yet" branch. It is also what makes an empty log need no
+	// guard of its own: nothing replaces it, the range below comes out
+	// `-Infinity` long, and a negative length is an empty walk.
 	let firstWeek = Infinity;
 	const perWeek = new Map<number, number>();
 	// Distinct dates: a day is several meals, and the bar is days logged, not

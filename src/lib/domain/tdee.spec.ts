@@ -561,6 +561,34 @@ describe('calmWeeks', () => {
 		expect(calmWeeks(log, 0, '2026-06-01')).toBe(0);
 	});
 
+	// A day is several meals. The bar is days logged, so three entries on one
+	// date are one day toward the minimum, not three.
+	it('counts a day once however many times it was logged', () => {
+		const log = [
+			entry('2026-06-01', 'coffee', 1, 'breakfast'),
+			entry('2026-06-01', 'chicken-breast', 2),
+			entry('2026-06-01', 'egg-large', 2, 'dinner'),
+			entry('2026-06-02', 'coffee', 1)
+		];
+		expect(calmWeeks(log, 4, '2026-06-07')).toBe(0);
+		expect(calmWeeks(log, 2, '2026-06-07')).toBe(1);
+	});
+
+	// The cut-off is the week `end` falls in, not the day: a date later in that
+	// same week still counts toward it, which is what logging the evening's meal
+	// against tomorrow looks like.
+	it('counts a date after end when it shares end\u2019s week', () => {
+		const log = [0, 1, 2, 3].map((i) => entry(addDaysISO('2026-06-01', i), 'coffee', 1));
+		expect(calmWeeks(log, 4, '2026-06-02')).toBe(1);
+	});
+
+	// ...but a date in a later week than `end` is out of range entirely.
+	it('ignores a week later than the one end falls in', () => {
+		const inRange = [0, 1, 2, 3].map((i) => entry(addDaysISO('2026-06-01', i), 'coffee', 1));
+		const ahead = [0, 1, 2, 3].map((i) => entry(addDaysISO('2026-06-08', i), 'coffee', 1));
+		expect(calmWeeks([...inRange, ...ahead], 4, '2026-06-07')).toBe(1);
+	});
+
 	it('is zero for an empty log', () => {
 		expect(calmWeeks([], 4, END)).toBe(0);
 		// Even with no minimum to clear there is no week to count.
