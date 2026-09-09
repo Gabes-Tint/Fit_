@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase } from '../db';
 import { registerAccount } from '../users/accounts';
 import type { Account, Auth } from '../users/types';
+import { MAX_STATE_BODY_BYTES } from '../../domain/state-size';
 import { readState, readStateBody, writeState } from './endpoints';
 import type { StateEvent } from './endpoints';
 
@@ -269,6 +270,34 @@ describe('writeState', () => {
 		expect(response.status).toBe(400);
 	});
 
+	it('tells a device its document was refused for its size, and nothing else', async () => {
+		// The one refusal a correct, up-to-date device can earn. Without the
+		// reason it is indistinguishable from a malformed body, and a phone that
+		// cannot tell them apart can only stop syncing in silence (#282).
+		const response = await writeState(
+			db,
+			eventFor(
+				authFor(),
+				putRequest({
+					body: { version: 0, format: 'tend.v1', body: {} },
+					contentLength: MAX_STATE_BODY_BYTES + 1
+				})
+			)
+		);
+		expect(response.status).toBe(400);
+		// Spelled out rather than taken from the constant: this is the wire, and
+		// a client built before this server — or after it — matches on the text.
+		expect(await bodyOf(response)).toEqual({
+			error: { code: 'invalid-body', reason: 'too-large' }
+		});
+		expect(db.prepare('select count(*) as n from household_state').get()?.['n']).toBe(0);
+	});
+
+	it('does not name a size when the body was simply malformed', async () => {
+		const response = await writeState(db, eventFor(authFor(), putRequest({ rawBody: '{' })));
+		expect(await bodyOf(response)).toEqual({ error: { code: 'invalid-body' } });
+	});
+
 	it('refuses a body that is not a JSON object', async () => {
 		const response = await writeState(db, eventFor(authFor(), putRequest({ rawBody: '[]' })));
 		expect(response.status).toBe(400);
@@ -367,9 +396,6 @@ describe('writeState', () => {
 	);
 
 	it('accepts a body exactly at the size ceiling and refuses one byte more', async () => {
-		// Mirrors the module's own MAX_STATE_BODY_BYTES; kept local because the
-		// constant is not exported.
-		const MAX_STATE_BODY_BYTES = 4 * 1024 * 1024;
 		const prefix = '{"version":0,"format":"tend.v1","body":{"a":"';
 		const suffix = '"}}';
 		const atCeiling =
@@ -489,14 +515,14 @@ describe('readStateBody', () => {
 		expect(result).toEqual({ ok: false, code: 'invalid-body' });
 	});
 
-	it('reports invalid-body for a declared content-length over the limit', async () => {
+	it('reports too-large for a declared content-length over the limit', async () => {
 		const result = await readStateBody(
 			putRequest({
 				body: { version: 0, format: 'tend.v1', body: {} },
 				contentLength: 5 * 1024 * 1024
 			})
 		);
-		expect(result).toEqual({ ok: false, code: 'invalid-body' });
+		expect(result).toEqual({ ok: false, code: 'too-large' });
 	});
 
 	it('reports invalid-body rather than throwing when reading the body fails', async () => {

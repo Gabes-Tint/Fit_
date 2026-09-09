@@ -2273,3 +2273,146 @@ describe('a write the server took and never answered', () => {
 		expect(record()?.outstanding).toBeNull();
 	});
 });
+
+/**
+ * The document is the whole store and it only ever grows, so the size ceiling
+ * is not a limit a device can respect by sending less — it is a wall an
+ * ordinary account eventually walks into. What it must not do is walk into it
+ * silently, or drop anything to fit (#282).
+ */
+describe('a document the server will not accept for its size', () => {
+	/** The refusal `PUT /api/state` answers an oversized document with. */
+	function tooLarge(): Response {
+		return jsonResponse({ error: { code: 'invalid-body', reason: 'too-large' } }, 400);
+	}
+
+	/** A device holding a document large enough to name in the assertions below. */
+	function bulkyJournal(): TendStore {
+		const store = journal();
+		store.state.profiles.push({ ...emptyProfile({ name: 'B'.repeat(4000) }), id: 'p-bulk' });
+		store.persist();
+		return store;
+	}
+
+	it('says so, and keeps everything it is holding', async () => {
+		const store = bulkyJournal();
+		server([documentAnswer(0, null), tooLarge()]);
+		const sync = syncFor(store);
+
+		await sync.start(HOUSEHOLD);
+
+		expect(sync.status).toBe('too-large');
+		// Still unsent, and still here: a refused write stored nothing, and
+		// nothing is ever pruned to fit.
+		expect(record()?.dirty).toBe(true);
+		expect(store.state.profiles).toHaveLength(2);
+	});
+
+	it('does not offer the same document again, or a larger one', async () => {
+		const store = bulkyJournal();
+		const sent = server([documentAnswer(0, null), tooLarge()]);
+		const sync = syncFor(store);
+		await sync.start(HOUSEHOLD);
+
+		store.state.profiles.push({ ...emptyProfile({ name: 'Robin' }), id: 'p-robin' });
+		store.persist();
+		const flushed = await sync.flush();
+
+		// One read and one refused write. A document that has only grown since
+		// would cost megabytes of somebody's data to be refused again.
+		expect(sent).toHaveLength(2);
+		expect(flushed).toBe(false);
+		expect(sync.status).toBe('too-large');
+	});
+
+	it('sends again by itself once the document has shrunk', async () => {
+		const store = bulkyJournal();
+		const sent = server([documentAnswer(0, null), tooLarge(), stored(1)]);
+		const sync = syncFor(store);
+		await sync.start(HOUSEHOLD);
+
+		store.state.profiles.splice(1, 1);
+		store.persist();
+		const flushed = await sync.flush();
+
+		// The one thing that could have changed did: no latch to clear, and
+		// nobody had to know why it had stopped.
+		expect(sent).toHaveLength(3);
+		expect(flushed).toBe(true);
+		expect(sync.status).toBe('idle');
+		expect(sync.version).toBe(1);
+	});
+
+	it('measures the wire, not the string, so a document that shrank is offered', async () => {
+		// The refused document carries accented food and brand names, which cost
+		// two bytes each and one code unit each. The one that replaces it is
+		// longer in code units and smaller on the wire — which is the document
+		// the server would now accept, and the one a device measuring
+		// `payload.length` would silently refuse to send (#282).
+		const store = journal();
+		store.state.profiles.push({ ...emptyProfile({ name: 'é'.repeat(400) }), id: 'p-bulk' });
+		store.persist();
+		const sent = server([documentAnswer(0, null), tooLarge(), stored(1)]);
+		const sync = syncFor(store);
+		await sync.start(HOUSEHOLD);
+		expect(sync.status).toBe('too-large');
+
+		store.state.profiles[1] = { ...emptyProfile({ name: 'a'.repeat(600) }), id: 'p-bulk' };
+		store.persist();
+		const flushed = await sync.flush();
+
+		expect(sent).toHaveLength(3);
+		expect(flushed).toBe(true);
+		expect(sync.status).toBe('idle');
+	});
+
+	it('stops holding a refusal against a document the server has since taken', async () => {
+		const store = bulkyJournal();
+		const sent = server([documentAnswer(0, null), tooLarge(), stored(1), stored(2)]);
+		const sync = syncFor(store);
+		await sync.start(HOUSEHOLD);
+
+		store.state.profiles.splice(1, 1);
+		store.persist();
+		await sync.flush();
+		// Bigger than the document that was refused, on a server that has just
+		// accepted a write. What it will do with this one is its answer to give,
+		// not this device's to assume.
+		store.state.profiles.push({ ...emptyProfile({ name: 'C'.repeat(9000) }), id: 'p-bigger' });
+		store.persist();
+		const flushed = await sync.flush();
+
+		expect(sent).toHaveLength(4);
+		expect(flushed).toBe(true);
+		expect(sync.version).toBe(2);
+	});
+
+	it('is not what an ordinary malformed-body refusal means', async () => {
+		const store = journal();
+		server([documentAnswer(0, null), jsonResponse({ error: { code: 'invalid-body' } }, 400)]);
+		const sync = syncFor(store);
+
+		await sync.start(HOUSEHOLD);
+
+		// A refusal this device cannot account for stays the latch it was: it
+		// keeps its document and stops, rather than promising a recovery that
+		// shrinking cannot deliver.
+		expect(sync.status).toBe('error');
+	});
+
+	it('asks once more from scratch after this device has stopped and started again', async () => {
+		const store = bulkyJournal();
+		const sent = server([documentAnswer(0, null), tooLarge(), documentAnswer(0, null), stored(1)]);
+		const sync = syncFor(store);
+		await sync.start(HOUSEHOLD);
+
+		sync.stop();
+		await sync.start(HOUSEHOLD);
+
+		// What was refused was a ceiling on a server, and a server can be given a
+		// larger one between two sessions. So a device that starts fresh finds
+		// out rather than assuming, and the same document goes out again.
+		expect(sent).toHaveLength(4);
+		expect(sync.status).toBe('idle');
+	});
+});

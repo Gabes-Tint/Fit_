@@ -3,6 +3,7 @@
 	import { tend } from '$lib/state/tend.svelte';
 	import { cn } from '$lib/ui/cn';
 	import { OUTDATED_MESSAGE } from '$lib/domain/state-document';
+	import { TOO_LARGE_MESSAGE } from '$lib/domain/state-size';
 
 	/**
 	 * How long a save or a background read may run before it is worth mentioning.
@@ -66,6 +67,14 @@
 				'waiting',
 				"Offline. Your changes are saved on this device and will send once you're back online."
 			);
+			return;
+		}
+		if (status === 'too-large') {
+			// Stays up: nothing is being sent and nothing will be until the
+			// document is smaller, so this is a standing condition rather than a
+			// passing one. Its wording says the data is safe first, because that
+			// is the question a red notice about your journal raises.
+			show('error', TOO_LARGE_MESSAGE);
 			return;
 		}
 		if (status === 'error') {
