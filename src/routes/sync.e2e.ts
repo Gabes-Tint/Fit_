@@ -22,13 +22,6 @@ import {
 
 const PASSWORD = 'salt-and-pepper-mill';
 
-/**
- * Long enough that an answer held for it cannot be heard before a reload that
- * follows the tap immediately, and short enough that the test does not sit on
- * it: nothing below ever waits this out.
- */
-const HELD_ANSWER_MS = 3000;
-
 async function logTwoEggs(page: Page) {
 	// Naming the food is the server's job since #116, and this preview server
 	// has no catalog file; the sync behavior under test is unaffected by it.
@@ -287,9 +280,9 @@ test.describe('two devices that edited while apart', () => {
  * it. It failed as an intermittent height flake on the You screen; nothing about
  * it is particular to height, or to that screen.
  *
- * Holding the answer back is the only thing slowed down here, and it is what
- * makes the window certain instead of a matter of luck. The reload still happens
- * the instant the tap returns.
+ * Passing the write on and dropping its answer is the only thing done to the
+ * network here, and it is what makes the window certain instead of a matter of
+ * luck. The reload still happens the instant the tap returns.
  */
 test.describe('a write whose answer never arrives', () => {
 	test('does not take the next save down with it', async ({ page, baseURL }) => {
@@ -300,12 +293,35 @@ test.describe('a write whose answer never arrives', () => {
 		await page.getByRole('link', { name: 'You' }).click();
 		await expect(page.getByRole('heading', { name: 'You', level: 1 })).toBeVisible();
 
-		// From here the account accepts every write and answers too late to be heard.
+		/** Writes the account has taken and this device has been told nothing about. */
+		let unanswered = 0;
+		/** Writes inside the handler right now. The page must not move while any is. */
+		let beingDropped = 0;
+		/** Dropped until the page has moved on; after that the account answers as it does. */
+		let dropAnswers = true;
+		/*
+		 * The answer this device is never told about. `route.fetch` sends the write
+		 * on, so the account takes it, and `route.abort` drops the answer on the way
+		 * back, as a connection that dies under an answered request would — which
+		 * is what a reload does to a request in the air anyway.
+		 *
+		 * Both halves happen inside the handler, and that is the point. A handler
+		 * still parked when the interception comes down is answered by Playwright
+		 * itself: removing the last handler tells the browser to stop intercepting,
+		 * and every route still held inside a handler is continued on the way past
+		 * (`removeRequestInterceptor`). The `route.fulfill` this test used to make
+		 * after a timer was then answering a request already answered —
+		 * `Route is already handled!`, a red mobile-safari shard about sync for a
+		 * reason that was not about sync, and the same mechanism as #303 in
+		 * `lazy-shell.e2e.ts`. Nothing is held here for anything to collide with.
+		 */
 		await page.route('**/api/state', async (route) => {
-			if (route.request().method() !== 'PUT') return route.continue();
-			const answer = await route.fetch();
-			await new Promise((resolve) => setTimeout(resolve, HELD_ANSWER_MS));
-			await route.fulfill({ response: answer });
+			if (!dropAnswers || route.request().method() !== 'PUT') return route.continue();
+			beingDropped += 1;
+			await route.fetch();
+			await route.abort();
+			beingDropped -= 1;
+			unanswered += 1;
 		});
 
 		// The switch is what puts a write in the air; anything recorded a moment
@@ -315,13 +331,24 @@ test.describe('a write whose answer never arrives', () => {
 		await page.getByLabel('Height, feet').fill('5');
 		await page.getByLabel('Height, inches').fill('9');
 		await page.getByRole('button', { name: 'Save height' }).click();
+		// The account is a version ahead of this device before the page moves,
+		// rather than probably: a reload that beat every write to the server would
+		// leave nothing to be mistaken for another device's work, and prove
+		// nothing. And nothing is left inside the handler for the reload to take
+		// the request out from under.
+		await expect.poll(() => unanswered > 0 && beingDropped === 0, { timeout: 20_000 }).toBe(true);
 		await page.reload();
 
 		// The answers come back at their own pace again, so what the reloaded page
-		// makes of the account is reached without waiting the held answer out.
-		await page.unroute('**/api/state');
+		// makes of the account is reached without waiting on anything.
+		dropAnswers = false;
 		await settled(page);
 		await expect(page.getByLabel('Height, feet')).toHaveValue('5');
 		await expect(page.getByLabel('Height, inches')).toHaveValue('9');
+
+		// Taken down with the device idle — it has sent everything it holds — and
+		// `wait` for whatever the handler may still be finishing, so no request
+		// can be continued out from under it on the way down.
+		await page.unrouteAll({ behavior: 'wait' });
 	});
 });
