@@ -17,7 +17,10 @@ test('logs food and a weight entry from the Today cards', async ({ page, baseURL
 	await openSampleJournal(page);
 
 	// The Energy card's own button opens the same sheet the rest of the app uses.
-	await page.getByRole('button', { name: 'Log food' }).click();
+	// Scoped to the card: the floating log button carries the same accessible
+	// name, so an unscoped query would be ambiguous here.
+	const energyCard = page.getByRole('region', { name: 'Energy' });
+	await energyCard.getByRole('button', { name: 'Log food' }).click();
 	await expect(page.getByRole('dialog')).toBeVisible();
 	await page.getByRole('button', { name: 'Close' }).click();
 	await expect(page.getByRole('dialog')).toBeHidden();

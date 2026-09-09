@@ -99,7 +99,7 @@ test.describe('once onboarded', () => {
 	test('plots the weight trend directly under the Energy card', async ({ page }) => {
 		const energyCard = page.getByText(/of \d+\s*kcal/).first();
 		await expect(energyCard).toBeVisible();
-		const weightSection = page.getByRole('group', { name: 'Weight trend' });
+		const weightSection = page.getByRole('region', { name: 'Weight' });
 		const chart = weightSection.getByRole('img', { name: /Weight trend/ });
 		await expect(chart).toBeVisible();
 		// Proves adjacency rather than "somewhere below": the weight section's
@@ -172,7 +172,7 @@ test.describe('once onboarded', () => {
 	});
 
 	test('reaches the photo tab from the log sheet', async ({ page }) => {
-		await page.getByRole('button', { name: 'Log food' }).click();
+		await page.getByRole('button', { name: 'Log food' }).first().click();
 		await expect(page.getByRole('dialog')).toBeVisible();
 		await page.getByRole('button', { name: 'Photo', exact: true }).click();
 		await expect(page.getByRole('button', { name: 'Photo', exact: true })).toHaveAttribute(
@@ -182,13 +182,13 @@ test.describe('once onboarded', () => {
 	});
 
 	test('offers the gallery as its own way in, beside the camera', async ({ page }) => {
-		await page.getByRole('button', { name: 'Log food' }).click();
+		await page.getByRole('button', { name: 'Log food' }).first().click();
 		await page.getByRole('button', { name: 'Upload' }).click();
 		await expect(page.getByRole('button', { name: 'Choose a picture' })).toBeVisible();
 	});
 
 	test('offers typing as the way out of the photo tab', async ({ page }) => {
-		await page.getByRole('button', { name: 'Log food' }).click();
+		await page.getByRole('button', { name: 'Log food' }).first().click();
 		await page.getByRole('button', { name: 'Photo', exact: true }).click();
 		await expect(page.getByRole('button', { name: 'Type it instead' })).toBeVisible();
 	});

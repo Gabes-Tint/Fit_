@@ -88,7 +88,7 @@ test.describe('at 360px', () => {
 		await atNarrowPhone(page);
 		await openSampleJournal(page);
 
-		const weightCard = page.getByRole('group', { name: 'Weight trend' });
+		const weightCard = page.getByRole('region', { name: 'Weight' });
 		await expectFitsViewport(page, weightCard);
 	});
 
@@ -102,7 +102,7 @@ test.describe('at 360px', () => {
 		await openSampleJournal(page);
 
 		await page.getByRole('button', { name: 'Log weight' }).click();
-		const weightCard = page.getByRole('group', { name: 'Weight trend' });
+		const weightCard = page.getByRole('region', { name: 'Weight' });
 		await expect(page.getByLabel('Weight in kilograms')).toBeVisible();
 		await expectFitsViewport(page, weightCard);
 	});
@@ -113,7 +113,7 @@ test.describe('at 360px', () => {
 		await atNarrowPhone(page);
 		await openSampleJournal(page);
 
-		const energyCard = page.getByRole('heading', { name: 'Energy', level: 2 }).locator('..');
+		const energyCard = page.getByRole('region', { name: 'Energy' });
 		await expectFitsViewport(page, energyCard);
 	});
 
@@ -123,7 +123,7 @@ test.describe('at 360px', () => {
 		await atNarrowPhone(page);
 		await openSampleJournal(page);
 
-		const trainingCard = page.getByRole('group', { name: "This week's training" }).locator('..');
+		const trainingCard = page.getByRole('region', { name: 'Training' });
 		await expectFitsViewport(page, trainingCard);
 	});
 

@@ -79,8 +79,11 @@
 
 		<WeekStrip {food} exercise={exerciseDays} weight={weightDays} bind:selected={day} />
 
-		<section class="bg-card relative rounded-3xl px-3 py-5 shadow-border">
-			<h2 class="font-display px-1 text-xl tracking-tight">Energy</h2>
+		<section
+			class="bg-card relative rounded-3xl px-3 py-5 shadow-border"
+			aria-labelledby="today-energy-title"
+		>
+			<h2 id="today-energy-title" class="font-display px-1 text-xl tracking-tight">Energy</h2>
 			<div class="mt-2 flex items-start justify-center gap-3">
 				{#if primaryProtein}
 					<GlpRingCluster
@@ -112,10 +115,9 @@
 
 		<section
 			class="bg-card relative rounded-3xl p-4 shadow-border"
-			role="group"
-			aria-label="Weight trend"
+			aria-labelledby="today-weight-title"
 		>
-			<h2 class="font-display px-1 text-xl tracking-tight">Weight</h2>
+			<h2 id="today-weight-title" class="font-display px-1 text-xl tracking-tight">Weight</h2>
 			<div class="mt-1 h-44">
 				<WeightChart weights={profile.weights} units={tend.state.units} />
 			</div>
@@ -145,8 +147,11 @@
 			{/if}
 		</section>
 
-		<section class="bg-card relative rounded-3xl px-4 py-3 pr-16 shadow-border text-sm">
-			<h2 class="font-display px-1 text-xl tracking-tight">Training</h2>
+		<section
+			class="bg-card relative rounded-3xl px-4 py-3 pr-16 shadow-border text-sm"
+			aria-labelledby="today-training-title"
+		>
+			<h2 id="today-training-title" class="font-display px-1 text-xl tracking-tight">Training</h2>
 			<div role="group" aria-label="This week's training">
 				<p class="mt-0.5">{trainingText}</p>
 			</div>

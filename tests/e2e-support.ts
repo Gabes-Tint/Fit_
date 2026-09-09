@@ -271,7 +271,12 @@ export async function openLogSheetAndType(page: Page, what: string): Promise<voi
  * of re-deriving it.
  */
 export async function openLogSheet(page: Page): Promise<void> {
-	await page.getByRole('button', { name: 'Log food' }).click();
+	// Today's Energy card carries its own "Log food" button now, alongside the
+	// floating one every screen has — both open the same sheet on the same
+	// default tab, and the Energy card's sits earlier in the DOM, so `.first()`
+	// is a deterministic way to reach either without caring which screen this
+	// runs from.
+	await page.getByRole('button', { name: 'Log food' }).first().click();
 	const sheet = page.getByRole('dialog');
 	await expect(sheet.getByRole('button', { name: 'Close' })).toBeFocused();
 }
