@@ -15,8 +15,8 @@
 					"line": 87
 				}
 			},
-			"sourceHash": "040553b69fdf4f9ac052f53cced9ec81ee3ad3e23238c3113695b497ff1c5ed6",
-			"fingerprint": "7fb89f2b6cc2744066b5ca551fd383a59688522931020b0476855c3c1de6e286",
+			"sourceHash": "f60ef6103cdd426ed87551e4d8c000c2497efb571d3dbdaa28b5905f3b8047ba",
+			"fingerprint": "4dc352ab036039d22b387c1ab3400502e55ce486bb3dd22b14f5f0bad35a3385",
 			"classification": "equivalent",
 			"rationale": "The `typeof body !== \u2018object\u2019` half only short-circuits a body that is a JSON string, number or boolean; each of those reads `.error` as undefined, so the very next guard returns the same `invalid-body`. Both halves reach one verdict and no response body can separate them.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
@@ -35,8 +35,8 @@
 					"line": 91
 				}
 			},
-			"sourceHash": "040553b69fdf4f9ac052f53cced9ec81ee3ad3e23238c3113695b497ff1c5ed6",
-			"fingerprint": "034c3b80b892e8605a073150c696243b52e65133b0ebf03739c0c9afecd5cd6c",
+			"sourceHash": "f800c2220f937f95cbe1f2be5b668c60e31ba890330397fd8fcdd4522a393d6e",
+			"fingerprint": "9025888e06f9fbcb628bcfa57c2855d7dd5fa587537e45c35ff5e3074e6f3b26",
 			"classification": "equivalent",
 			"rationale": "`CODES` is a set of strings, so `CODES.has(code)` is already false for every non-string value; the `typeof` guard narrows the type for the compiler and cannot change which branch runs.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
@@ -55,8 +55,8 @@
 					"line": 111
 				}
 			},
-			"sourceHash": "040553b69fdf4f9ac052f53cced9ec81ee3ad3e23238c3113695b497ff1c5ed6",
-			"fingerprint": "f14e7d1a8b16a4238d9c6fdd2d18bbb6532533d54b69e030a874c18476e3ec58",
+			"sourceHash": "7e8643372ae47fdeccbd17b5e65d77c1e4f18c37faf3e1e40287d57cea3fced8",
+			"fingerprint": "74ea2d021aeccb301f973be7a42aafcd612a6609d011ca3cc3e35c342f221154",
 			"classification": "equivalent",
 			"rationale": "The catch supplies the value `codeOf` and `textOf` then read. `undefined` fails `typeof body !== \u2018object\u2019` where `null` fails `body === null`, both returning `invalid-body`, and `?.error` is undefined for either. No caller can tell the two apart.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
@@ -75,8 +75,8 @@
 					"line": 145
 				}
 			},
-			"sourceHash": "040553b69fdf4f9ac052f53cced9ec81ee3ad3e23238c3113695b497ff1c5ed6",
-			"fingerprint": "53d81fce847f031f92b911484e422f9e65e248e3c080f61f9edf599f884c6446",
+			"sourceHash": "aaf74e40764b41b5f15ec4b27eed29ee144ad4afab177fba243af85515775c2d",
+			"fingerprint": "0d050026d933414a698dc539b6d4bbbcfcf3627342030ae645a9c4bf776d842e",
 			"classification": "equivalent",
 			"rationale": "Same catch, in `sessionFrom`: the very next line rejects `undefined` on `typeof value !== \u2018object\u2019` and `null` on `value === null`, and both produce the identical `unreachable` failure.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
@@ -95,8 +95,8 @@
 					"line": 36
 				}
 			},
-			"sourceHash": "098164e58f7e3e8d03e8115fb4e31d5c6a53dcdf9a4a0911ef1a6dcbc44fb443",
-			"fingerprint": "c1d30753ddb4a6324680835dc54f6c51c8a40400f64199a06b1da7612bf9f22b",
+			"sourceHash": "66cea6946b0da822a3f2144ce1de41451faf74786b4a528189a5e7aa4fc0b8c1",
+			"fingerprint": "3b0bafb182276f7ffc2d9899222ed949cdbb033d7672eb1e031faec4da01579b",
 			"classification": "equivalent",
 			"rationale": "The fallback is a lookup key for a reason that was not sent. No field record in `FIELD_WORDING` holds an empty key, so `\u2018\u2019` and any other absent key alike miss the table and fall through to the same `UNRECOGNIZED_FIELD` sentence.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
@@ -115,8 +115,8 @@
 					"line": 66
 				}
 			},
-			"sourceHash": "098164e58f7e3e8d03e8115fb4e31d5c6a53dcdf9a4a0911ef1a6dcbc44fb443",
-			"fingerprint": "4adee6cac89f63edd12ccea8cbf8bf4b3baf9d6650f307062aa1c333b3b8fd27",
+			"sourceHash": "4d3baff0ae6abaaecbd9235aff91a4003c77c2901b36a944e351c718268c9df9",
+			"fingerprint": "bc390533e2172a8a63fac2bcd5d35249e89373ed566757ddfd0f16a8edfc55c9",
 			"classification": "equivalent",
 			"rationale": "The fallback is a field name for a failure that named none. `FIELD_WORDING` has no empty-string field, so `\u2018\u2019` and any other unlisted name both miss the table and produce the same `UNRECOGNIZED_FIELD` sentence.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
@@ -135,8 +135,8 @@
 					"line": 169
 				}
 			},
-			"sourceHash": "39673c2a9427b5a19879f8d4e05621563c0f82c149aaed49ab219c0e1c08807f",
-			"fingerprint": "c9d5a087c92f20184740b202240e09f757816f8eaa617305589a8a6296cb317d",
+			"sourceHash": "96d7122df08402df60b6ac6ce0f3f128f6295907c1f82c553dddd8ea0cab3230",
+			"fingerprint": "0cd70a1b996807e560dd2e3285554b8f67a02e7a0f882e3b66cb7a8459df5852",
 			"classification": "equivalent",
 			"rationale": "Emptying the catch leaves parsed as undefined, which textFieldsOf already refuses because it is not an object, so a malformed body still answers null on both the guarded and the unguarded path. (Relocated by #163/#165: readTextBody now reads through readJsonText and declaredMediaType, moving this catch from line 96 to line 163 without changing its behavior; the sibling OptionalChaining review for the old `?.split(';')[0]?.trim` at line 90 is removed because that code no longer exists \u2014 declaredMediaType uses indexOf/slice instead.) (Re-pinned by #283 on the product owner\u2019s instruction: the byte-vs-code-unit fix added a doc comment in readJsonText, six lines above, moving this catch from line 163 to line 169. The mutant is unchanged and still survives for the reason above.)",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
@@ -155,8 +155,8 @@
 					"line": 165
 				}
 			},
-			"sourceHash": "39673c2a9427b5a19879f8d4e05621563c0f82c149aaed49ab219c0e1c08807f",
-			"fingerprint": "b9ba212e89041cac31795c5743efc0cc95417b354794906fde3c07aeb1233f7e",
+			"sourceHash": "cb6e70557ebe949594e0c33a53271c938baa5aea2ba0770ba2b3aeaaba7bf8f9",
+			"fingerprint": "23e1420b0fc70daf267105e7236bb009bd694344528eb0a6f7587e0e58431e54",
 			"classification": "equivalent",
 			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null \u2014 it coerces to the string \"null\" and returns JS null \u2014 and the very next line, textFieldsOf's `parsed === null` check, refuses that the same way one step later. Both versions answer null for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away. (Re-pinned by #283 on the product owner\u2019s instruction: the byte-vs-code-unit fix added a doc comment in readJsonText, six lines above, moving this guard from line 159 to line 165. The mutant is unchanged and still survives for the reason above.)",
 			"review": "https://github.com/gabepsilva/Fit_/pull/186"
@@ -175,8 +175,8 @@
 					"line": 61
 				}
 			},
-			"sourceHash": "7a415b94ca26620a10984920ec8b62a7c92479d2935a969df36e4c3ced8b81e9",
-			"fingerprint": "3d533881f870273edfe3918de53af2e8b50e14afd380e453753d36749109f023",
+			"sourceHash": "9e363bd9284dd56ba0c8088bb285f0d57a8a5b51eddbf5d5d951891b02f7555e",
+			"fingerprint": "4224c5e5eca40acf3645fbd1b0246d04bce9a55289d3651eb7ec7b8ce38818eb",
 			"classification": "equivalent",
 			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null \u2014 it coerces to the string \"null\" and returns JS null \u2014 and this function's own `parsed === null` refusal a few lines below catches that the same way one step later. Both versions answer REFUSED for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/186"
@@ -195,8 +195,8 @@
 					"line": 61
 				}
 			},
-			"sourceHash": "c56d1fbf23e9343b48df3cefda2a46fee75ff11bc48838aecbd87503cf7b6c51",
-			"fingerprint": "4417d0f35caaa3385c30c32e8fc45ea57e3090390aab0b93e6a5d17c3cd59dc8",
+			"sourceHash": "0ec15dc0ffe55c92ec45c1fb0e2df76cc1bbdcaac6ecdf456fda22c2eb1ccf6f",
+			"fingerprint": "0717c6ad8d3fa99a7167d61af4e54a5a23314ca86703bf61849287e892b29275",
 			"classification": "equivalent",
 			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null \u2014 it coerces to the string \"null\" and returns JS null \u2014 and this function's own `parsed === null` refusal a few lines below catches that the same way one step later. Both versions answer REFUSED for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/186"
@@ -215,8 +215,8 @@
 					"line": 53
 				}
 			},
-			"sourceHash": "1c1d0159300857a27ea636fe7093d1fc1a4de4159f33d1a61b9464958e9c4465",
-			"fingerprint": "5fff05600127abd27b5a62f90ad913b01f226add5c176719db2c2bc52e2fec40",
+			"sourceHash": "4b8fb311f45cf5a9d1ed6d2506da8624be105dba5c63c6c7e8e7cf44d0466042",
+			"fingerprint": "3f4e3b55d58d534af21db88f956fce2f29d69e4c2429a924150635f41e92e530",
 			"classification": "equivalent",
 			"rationale": "readJsonText returns null for text past the ceiling or a stream that failed to read. JSON.parse does not throw on null \u2014 it coerces to the string \"null\" and returns JS null \u2014 and the isPlainObject check on the very next line refuses that the same way one step later. Both versions answer null for the same input by the same path, so no test can tell them apart. The guard stays because it states the intent locally instead of leaning on that coercion two functions away.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/186"
@@ -235,8 +235,8 @@
 					"line": 167
 				}
 			},
-			"sourceHash": "dc0994ad4cc5de44ab60d858283d2039e99518168bb0b82cfe9fbda2c0256f99",
-			"fingerprint": "89005b9b2cf3a6e989ad9c21b62f3038d2ae2534625dd2deb4ed17b5862960a6",
+			"sourceHash": "31ae9db7d7ede635d89617ac79ad7a675a258f8d14ed6e4ff6bc8bfb8245b487",
+			"fingerprint": "159ffcd001fac478c0f5101dd813f4c8e42cce2e7feea3ae311a1c17044ce474",
 			"classification": "equivalent",
 			"rationale": "The fallback for an absent password field is only ever verified against a stored hash and never persisted, so any literal that is not somebody's password yields the same invalid-credentials answer; the upgrade candidate a longer literal would derive is discarded because verification failed. (Relocated by #163/#165: removing the file-local tooManyAttempts wrapper in favor of api.ts's shared retryAfter moved this line from 175 to 167 without changing it.)",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
@@ -255,8 +255,8 @@
 					"line": 186
 				}
 			},
-			"sourceHash": "d974be143ccd3516f3b4d20a1aaac5ff1d7345e75320ba4c14a221a9e9877f99",
-			"fingerprint": "7ca1ad4c786ce6d23bbe73f95c9bbca844cd5b1979f87c2e2c717e4ca2d33900",
+			"sourceHash": "839064edb317ddae2f31f91107a1cbe57c2a3271b05c4bfa77ca4adcd260455a",
+			"fingerprint": "e7884f7c2cfc9e54d4f526dae847a460f8a632ccab4be45f47bc2462e4aad2c8",
 			"classification": "host-specific-defense-in-depth",
 			"rationale": "On POSIX, a newly created directory is already restricted by mode 0700; for an existing directory mkdirSync returns undefined, so this composite replacement cannot change the observable permission verdict.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
@@ -275,8 +275,8 @@
 					"line": 186
 				}
 			},
-			"sourceHash": "d974be143ccd3516f3b4d20a1aaac5ff1d7345e75320ba4c14a221a9e9877f99",
-			"fingerprint": "c7cd45bea81b5d602633bc7c404bc1151221468cb963edfbb60c9dbb7181ac9f",
+			"sourceHash": "839064edb317ddae2f31f91107a1cbe57c2a3271b05c4bfa77ca4adcd260455a",
+			"fingerprint": "dffd68abb525208ebdac717dd4c2a5cd1a8ba9d5085d37ee65f4f930421bf014",
 			"classification": "host-specific-defense-in-depth",
 			"rationale": "On POSIX, the OR differs only for a newly created directory, whose requested 0700 mode already makes the outer permission check false; existing directories take the same branch.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
@@ -295,8 +295,8 @@
 					"line": 186
 				}
 			},
-			"sourceHash": "d974be143ccd3516f3b4d20a1aaac5ff1d7345e75320ba4c14a221a9e9877f99",
-			"fingerprint": "68b59e73147c3dea3aba1fe763324f5f4c4c2376b6682b581087bad57227e1e7",
+			"sourceHash": "45c31a21799b3ca75434d8b36bdd3beb48af272a723f87bce39425132fbf6176",
+			"fingerprint": "718c1589c71c2af7518dd8758011af7de80dd6af7498e60dfeb76b7b49d423c2",
 			"classification": "host-specific-defense-in-depth",
 			"rationale": "This platform guard is always true on the Linux host where POSIX permission enforcement and this mutation are observable; Windows deliberately does not implement POSIX mode enforcement.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
@@ -315,8 +315,8 @@
 					"line": 186
 				}
 			},
-			"sourceHash": "d974be143ccd3516f3b4d20a1aaac5ff1d7345e75320ba4c14a221a9e9877f99",
-			"fingerprint": "359752a20537257dad52187a5d13387a1c499a7057e258d3828dce67a95a0bd8",
+			"sourceHash": "45c31a21799b3ca75434d8b36bdd3beb48af272a723f87bce39425132fbf6176",
+			"fingerprint": "7bd6c32360bd41bb1ddb0fb1b5eb32a67652c119f1abdd2d1535e81bc43a346e",
 			"classification": "host-specific-defense-in-depth",
 			"rationale": "Changing the Windows platform sentinel to this exact empty string is observationally identical on the Linux security-test host; the classification is host-specific and fingerprinted to this replacement.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
@@ -335,8 +335,8 @@
 					"line": 187
 				}
 			},
-			"sourceHash": "d974be143ccd3516f3b4d20a1aaac5ff1d7345e75320ba4c14a221a9e9877f99",
-			"fingerprint": "2ac6ac73e723ca01b9c83e299b919be884fed6548bfde2b64c56496aaa5c85ed",
+			"sourceHash": "50c893318aa3f22a30a721dd08f0873174f0cef358066afc823e39127d8d5d53",
+			"fingerprint": "2fc9cecac8458ac8285fc3ab70f927ffabd811953309445680ead0e2cd4743b8",
 			"classification": "equivalent",
 			"rationale": "mkdirSync returns undefined for an existing directory; a newly created directory receives mode 0700, so forcing this condition true cannot change the outer permission verdict.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
@@ -355,8 +355,8 @@
 					"line": 229
 				}
 			},
-			"sourceHash": "d974be143ccd3516f3b4d20a1aaac5ff1d7345e75320ba4c14a221a9e9877f99",
-			"fingerprint": "d78a15d61dc197471138556fb9be28490a0390d1796147054ec6fb42acf726c5",
+			"sourceHash": "dfd3ceaf0f93893102c7931ec96850cb062d3b8137d1f6ef9879f468dd8c2ecc",
+			"fingerprint": "23b3a9f95e4a94a625f1d1ce919bab03e16a1c7627c7a7fffb69d1834f0839c6",
 			"classification": "equivalent",
 			"rationale": "When database creation fails before assignment, forcing the db guard true only throws inside the deliberately swallowing close-error try/catch; the original opening error and file-hardening behavior remain identical.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
@@ -375,8 +375,8 @@
 					"line": 41
 				}
 			},
-			"sourceHash": "87aff93ec9fbd654ca128d46d938dd719cacc2cdfa8eec2115c18485a19f1a24",
-			"fingerprint": "59db3f0b08dc9402c0ca2992161e488b36264960df9f779beffdfd6682e9ed42",
+			"sourceHash": "f1ace3bb57418ae5c2e393901246b385d0ffd9274019c12f4fcb581e466457f3",
+			"fingerprint": "3ff57da6629cf4248dd62140fba5633e960d7f5d19636e4c78fa2f4d8d0853a6",
 			"classification": "equivalent",
 			"rationale": "RegExp.prototype.test stringifies a null argument to the four characters null, which the anchored bearer pattern cannot match, so dropping the null guard still answers false for a request carrying no Authorization header.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
@@ -395,8 +395,8 @@
 					"line": 145
 				}
 			},
-			"sourceHash": "73677b7257f7ef75cd12f078987002c8da6809a973ebe609392ea4354495b77f",
-			"fingerprint": "23e6b148fe2667fb23c2187d7f27c2955cb678c992f84efecee2779b4c107dfb",
+			"sourceHash": "867720f14e872af53117c27ab0dfa651f0ef628bd1a9083a9b4e79fd7de73211",
+			"fingerprint": "78142ae4318f3b9462da9cffb2959adb738cda9c76fd8b8414fb3c1b5f6cbb66",
 			"classification": "equivalent",
 			"rationale": "For a non-string stored credential, both the empty fallback and this exact replacement fail the anchored fixed-width serialized-hash grammar before any derivation or authentication. (sourceHash refreshed by #163/#165: password.ts changed elsewhere \u2014 the unused passwordHashNeedsUpgrade wrapper was deleted \u2014 this line is untouched.)",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
@@ -415,8 +415,8 @@
 					"line": 126
 				}
 			},
-			"sourceHash": "49594352b02de7e6614e4c67270eb325a28d2a183fc6ececf628f006c0a7b295",
-			"fingerprint": "2b4c579b8a4f17bdaa1a77503007b7b5822d0123e9b56254536662d7f687bfb8",
+			"sourceHash": "712712ffd177ecb7cf3ddf8e3c89b145081f0078837b05664f466f7db88924f0",
+			"fingerprint": "8396e883f0ebfa444e722f57b28f525e862a0acab6ea113abc0a8044b8130783",
 			"classification": "equivalent",
 			"rationale": "The mutated ternary reads locked_until from a STRICT text column, so the value is a string or null; the guard's false branch and the column's own null are the same value, and the typeof test only narrows an unknown row value for the type checker.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
@@ -435,8 +435,8 @@
 					"line": 162
 				}
 			},
-			"sourceHash": "49594352b02de7e6614e4c67270eb325a28d2a183fc6ececf628f006c0a7b295",
-			"fingerprint": "1249cae693de8b0c3d872a0ee46f54641188844c4148db43989333597f1c4a27",
+			"sourceHash": "96af473c1711426490c72d8e78f9b3cc87795f1daeb87847bf8b4c35a7cf707c",
+			"fingerprint": "0e0c15109ffabfd49f3ace4d0e539c572ced3241e09871c90fc66249f416949b",
 			"classification": "equivalent",
 			"rationale": "Dropping the null check falls through to new Date(null), the epoch, so the subtraction is always negative for any clock after 1970 and Math.max(0, ...) clamps it to the same zero the guard returns.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
@@ -455,8 +455,8 @@
 					"line": 65
 				}
 			},
-			"sourceHash": "50b053f538a12120ebdbbaa2ba509a528b4ead15afe83b80ea5d4f4f0b1ffdc8",
-			"fingerprint": "04a42dde80d6e6782956ab721b4801f4b0413a10dc41024f5b55aba7aba1c679",
+			"sourceHash": "1b8af2b2073d96efbfe690b205c61a9459c82b291e54ebde63df3ec143a2fa88",
+			"fingerprint": "cb9e6bb54c48422d88ce0328b7a95d7cb74167ac054ee38fe07d1605036bda7e",
 			"classification": "equivalent",
 			"rationale": "The guard is a short circuit, not a decision. Without it an absent record reaches `JSON.parse`, where `null`, `undefined` and `\u2018\u2019` either parse to a value `isSession` rejects or throw into the catch beside it \u2014 every path returns the same `null`, and nothing is written.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/5"
@@ -475,8 +475,8 @@
 					"line": 111
 				}
 			},
-			"sourceHash": "77e2a3deadcca09d20206cb8b2be16e0569e615264a3befa4db8b26e770d3fbe",
-			"fingerprint": "cc7a03c07acee845cbd2aa1d371b5bf4396a8cde542f430b021614bada7944d2",
+			"sourceHash": "5616581b7e69ae63062fca9fb506eecf3de28b09c90c71eb107950b156fa41ae",
+			"fingerprint": "e2b44d53c2d51855644316d794034e8a714a9311594599acc59b450e16ec7ef0",
 			"classification": "equivalent",
 			"rationale": "The subject is raw.slice(0, 10), so it is at most ten characters, and the pattern matches exactly ten. A ten-character pattern can only match a \u226410-character string at offset 0 running to the end, so \u2018matches somewhere\u2019 and \u2018matches the whole string\u2019 are the same proposition here, and dropping ^ cannot change the verdict. The anchor stays in the code because it documents intent and would start mattering the moment the slice changes.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/199"
@@ -495,8 +495,8 @@
 					"line": 111
 				}
 			},
-			"sourceHash": "77e2a3deadcca09d20206cb8b2be16e0569e615264a3befa4db8b26e770d3fbe",
-			"fingerprint": "29bf007b4f381d01c7fe7d83a027889efc7304736a6fb69190ee52e5349678f1",
+			"sourceHash": "5616581b7e69ae63062fca9fb506eecf3de28b09c90c71eb107950b156fa41ae",
+			"fingerprint": "6e2ef0287d7d9308e30c9a17515471d48246fdd1a9c3256f64d2ed13ee9ef2a2",
 			"classification": "equivalent",
 			"rationale": "Same slice, the other anchor: raw.slice(0, 10) is at most ten characters and the pattern matches exactly ten, so a match at offset 0 already runs to the end of whatever there is to match. Dropping $ cannot separate \u2018matches somewhere\u2019 from \u2018matches the whole string\u2019 given that slice. The anchor stays in the code because it documents intent and would start mattering the moment the slice changes.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/199"
@@ -515,10 +515,10 @@
 					"line": 122
 				}
 			},
-			"sourceHash": "77e2a3deadcca09d20206cb8b2be16e0569e615264a3befa4db8b26e770d3fbe",
-			"fingerprint": "8f49e67a169d9ec1e947ea6fb49cb5519244a7d6441261dfcd8c84a60d6579a0",
+			"sourceHash": "e2e05b0a0d9b52d687f43a3c1bac91ade31059a24a7174c0acc0a0b1d4aa1159",
+			"fingerprint": "d7c10e364780f8205f79ef522380a560cc2ffeb95bc16abd12db54347d574092",
 			"classification": "equivalent",
-			"rationale": "splitCsv is private to the module \u2014 three references, all inside export-data.ts \u2014 and both the header line and every data row are split by the same function, so a constant prefix element shifts every column index by exactly one on both sides and the header-to-row alignment survives. A test pinning that alignment directly (a wide CSV, checking every field lands under its header, across every row) was tried first and still could not kill it: the junk cell is also the only new header cell, and \u2018stryker was here\u2019 contains none of the substrings idx() looks for (date, name/food/item, calor, protein, carb, fat, meal/folder), so it never captures a column and the shift stays symmetric. The call rests on today\u2019s idx() keyword heuristics rather than a structural impossibility \u2014 a future keyword colliding with the junk string would invalidate it, and the source hash would not catch that because the change would land in a different function. See issue/145 for the full discussion.",
+			"rationale": "splitCsv is private to the module \u2014 three references, all inside export-data.ts \u2014 and both the header line and every data row are split by the same function, so a constant prefix element shifts every column index by exactly one on both sides and the header-to-row alignment survives. A test pinning that alignment directly (a wide CSV, checking every field lands under its header, across every row) was tried first and still could not kill it: the junk cell is also the only new header cell, and \u2018stryker was here\u2019 contains none of the substrings idx() looks for (date, name/food/item, calor, protein, carb, fat, meal/folder), so it never captures a column and the shift stays symmetric. The call rests on today\u2019s idx() keyword heuristics rather than a structural impossibility \u2014 a future keyword colliding with the junk string would invalidate it, and this entry\u2019s own sourceHash, a window around line 122 only, would not catch that: idx() is defined in a different function elsewhere in this file, outside that window, so a future change to its keyword list will not retire this entry automatically. See issue/145 for the full discussion, and issue #256 for why the key no longer spans the whole file.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/199"
 		},
 		{
@@ -528,18 +528,18 @@
 			"location": {
 				"end": {
 					"column": 33,
-					"line": 61
+					"line": 66
 				},
 				"start": {
 					"column": 30,
-					"line": 61
+					"line": 66
 				}
 			},
-			"sourceHash": "ca2a39dfe98c513488933d50543987a3e4e152aa4ffcf013dbdc17e035421ad3",
-			"fingerprint": "a772ec2c6e87a81f50ccc296788e3adb987ca7e5369be869dfeabbbcdb175bac",
+			"sourceHash": "c9c5aafea6fecd81ab31430e746e0be3451bd6573b3d121098368bfb0de3b742",
+			"fingerprint": "74dd50bf4afabc9a5e6034dbc6c8ecec3d309582bddd41507f9a37160d088985",
 			"classification": "equivalent",
 			"status": "Timeout",
-			"rationale": "lastNDates counts i down from n - 1 to 0 with i--; replacing it with i++ turns the countdown into a count-up that never reaches the loop's exit condition (i >= 0), so the loop runs forever and Stryker can only ever report Timeout for this mutant, never Survived. No assertion can kill it without asserting non-termination, which is not a test anyone should write. Gabriel accepted this as equivalent on 2026-09-07 (issue #145, proposal 1); recording required issue #200's status field because the mutant cannot report Survived.",
+			"rationale": "lastNDates counts i down from n - 1 to 0 with i--; replacing it with i++ turns the countdown into a count-up that never reaches the loop's exit condition (i >= 0), so the loop runs forever and Stryker can only ever report Timeout for this mutant, never Survived. No assertion can kill it without asserting non-termination, which is not a test anyone should write. Gabriel accepted this as equivalent on 2026-09-07 (issue #145, proposal 1); recording required issue #200's status field because the mutant cannot report Survived. Re-pinned by #148's follow-up, which folded parseISODate's redundant undefined guard into the isFinite check (moving this line from 61 to 66) without changing it.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/212"
 		}
 	]

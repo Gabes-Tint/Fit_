@@ -90,6 +90,25 @@ test.describe('once onboarded', () => {
 		await expect(page.getByRole('heading', { name: 'breakfast' })).toBeVisible();
 	});
 
+	/**
+	 * The weight graph moved here from Progress so a trend is visible without
+	 * leaving the day. The sample journal seeds enough weigh-ins to draw a
+	 * line, so its accessible name carries the "Weight trend" caption instead
+	 * of the empty-state invitation.
+	 */
+	test('plots the weight trend directly under the Energy card', async ({ page }) => {
+		const energyCard = page.getByText(/of \d+\s*kcal/).first();
+		await expect(energyCard).toBeVisible();
+		const weightSection = page.getByRole('group', { name: 'Weight trend' });
+		const chart = weightSection.getByRole('img', { name: /Weight trend/ });
+		await expect(chart).toBeVisible();
+		// Proves adjacency rather than "somewhere below": the weight section's
+		// immediately preceding sibling in the DOM must be the Energy card's own
+		// section, not just any section above it.
+		const precedingSection = weightSection.locator('xpath=preceding-sibling::section[1]');
+		await expect(precedingSection.getByText(/of \d+\s*kcal/).first()).toBeVisible();
+	});
+
 	test('keeps the destinations behind the menu button', async ({ page }) => {
 		await expect(page.getByRole('button', { name: 'Open menu' })).toBeVisible();
 		await expect(page.getByRole('link', { name: 'Progress' })).toBeHidden();

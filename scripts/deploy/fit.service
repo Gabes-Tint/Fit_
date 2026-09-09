@@ -11,6 +11,20 @@ Group=fit
 # A symlink, so a restart is what picks up the release the deploy just switched to.
 WorkingDirectory=/opt/fit/current
 EnvironmentFile=/etc/fit/fit.env
+# How much of a request body adapter-node will read. Its default is 512K, eight
+# times below the 4 MiB one `PUT /api/state` is allowed to carry, and a
+# household's document only grows — about 1.24 MB per logged year, measured by
+# `bun run perf:sync-payload`. On the default, every account's sync stops for
+# good a few months in, and stops invisibly: the transport kills the request
+# stream before the application can answer anything a client could read (#282).
+# It belongs here rather than in /etc/fit/fit.env because the deploy installs
+# this unit on every release and writes that file only when it is absent, so a
+# value there would never reach a machine that already exists. Kept equal to
+# MAX_STATE_BODY_BYTES in src/lib/domain/state-size.ts, which
+# scripts/deploy/body-size-limit.spec.ts checks: below it the transport refuses
+# documents the application accepts, and above it a body the application will
+# refuse anyway is buffered first.
+Environment=BODY_SIZE_LIMIT=4194304
 ExecStart=/opt/node/bin/node build
 Restart=always
 RestartSec=2

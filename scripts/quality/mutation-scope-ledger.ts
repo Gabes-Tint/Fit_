@@ -86,7 +86,7 @@ export const UNCOVERED_AREAS: readonly UncoveredArea[] = [
 		id: 'e2e-harness',
 		holds: 'the end-to-end harness under tests/',
 		coveredBy:
-			'tests/e2e-workspace.spec.ts covers the workspace builder; the rest is exercised only by running the end-to-end suite',
+			'tests/e2e-workspace.spec.ts and tests/built-chunk.spec.ts cover the pure parts; the rest is exercised only by running the end-to-end suite',
 		matches: (file) => file.startsWith('tests/')
 	}
 ];

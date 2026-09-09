@@ -7,6 +7,7 @@ import {
 	storedDocument,
 	type StoredDocument
 } from '$lib/domain/state-document';
+import { payloadBytes, refusedForSize, refusedSize, worthSending } from '$lib/domain/state-size';
 import { toast } from '$lib/ui/toast.svelte';
 import {
 	fingerprint,
@@ -98,7 +99,13 @@ export type SyncStatus =
 	| 'stale'
 	| 'error'
 	/** The account's document was written by a newer build than this one. */
-	| 'outdated';
+	| 'outdated'
+	/**
+	 * The document has outgrown what the server will accept. Nothing is lost and
+	 * nothing is pruned; it simply stops leaving the device until it is smaller.
+	 * Not a latch: see `push()`.
+	 */
+	| 'too-large';
 
 /** The document as both a read and a refused write hand it back. */
 type RemoteDocument = { version: number; body: Record<string, unknown> | null };
@@ -112,8 +119,25 @@ type NoDocument = 'unreachable' | 'refused';
 
 type ReadOutcome = RemoteDocument | NoDocument;
 
-/** A write answers with a version too; `stale` says whose it is. */
-type WriteOutcome = ({ stale: boolean } & RemoteDocument) | NoDocument;
+/**
+ * A write answers with a version too; `stale` says whose it is. `'too-large'` is
+ * a refusal like the others, told apart because it is the only one that says
+ * something true about this device's own document rather than about the
+ * request — see `state-size.ts`.
+ */
+type WriteOutcome = ({ stale: boolean } & RemoteDocument) | NoDocument | 'too-large';
+
+/**
+ * One write on its way out: the document, the exact text carrying it, and what
+ * that text measures on the wire. Bundled rather than positional for the same
+ * reason `Adoption` below is.
+ */
+type OutgoingWrite = {
+	householdId: string;
+	body: StoredDocument;
+	payload: string;
+	size: number;
+};
 
 /**
  * What an adoption puts into the store, bundled rather than positional:
@@ -187,16 +211,21 @@ async function readRemote(): Promise<ReadOutcome> {
  * body names no version is treated as a refusal: the write may well have landed,
  * and the next attempt is told so by a refusal carrying exactly what it wrote.
  */
-async function writeRemote(version: number, body: StoredDocument): Promise<WriteOutcome> {
+async function writeRemote(payload: string): Promise<WriteOutcome> {
 	const answer = await ask({
 		method: 'PUT',
 		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ version, format: STATE_FORMAT, body })
+		body: payload
 	});
 	if (answer === null) return 'unreachable';
 	const document = documentIn(answer.body);
-	if (document === null) return 'refused';
+	if (document === null) return refusedForSize(answer.body) ? 'too-large' : 'refused';
 	return { stale: answer.status === STALE_STATUS, ...document };
+}
+
+/** Exactly what a write sends, built once so its size is the size measured. */
+function envelope(version: number, body: StoredDocument): string {
+	return JSON.stringify({ version, format: STATE_FORMAT, body });
 }
 
 /**
@@ -263,6 +292,15 @@ export class SyncStore {
 	private outstanding: OutstandingWrite | null = null;
 
 	/**
+	 * The size of the smallest document the server has refused this device for,
+	 * and `null` while it has refused none. The whole of the size latch: nothing
+	 * else stops a push, and a document that shrinks past this sends again on the
+	 * next ordinary trigger. See `worthSending` in `state-size.ts`, which also
+	 * says why this is not carried across a reload.
+	 */
+	private refusedAt: number | null = null;
+
+	/**
 	 * The exchange under way and whose it is. Every request records the household
 	 * it was issued for, because "am I still signed in" is not the question an
 	 * answer has to survive: signing out and straight back in as somebody else
@@ -306,6 +344,7 @@ export class SyncStore {
 			this.version = 0;
 			this.dirty = false;
 			this.outstanding = null;
+			this.refusedAt = null;
 		} else {
 			this.version = record?.version ?? 0;
 			// No record and a document of its own is a device that predates sync:
@@ -329,6 +368,7 @@ export class SyncStore {
 		this.dirty = false;
 		this.version = 0;
 		this.outstanding = null;
+		this.refusedAt = null;
 		this.status = 'idle';
 	}
 
@@ -441,6 +481,12 @@ export class SyncStore {
 	 * other than `'waiting'`. None of them arms anything, which is what stops a
 	 * latched device pushing over a document it must not touch.
 	 *
+	 * A document refused for its size is in that group too, and for a plainer
+	 * reason: no amount of asking again makes it smaller, so a clock would only
+	 * spend somebody's battery. It is the one of them that is not a latch — the
+	 * next local change or visit tries again, and `push()` sends the moment the
+	 * document has shrunk past the size that was refused.
+	 *
 	 * Nothing here takes an attempt off the clock, because nothing can be on it:
 	 * an attempt is only ever armed by the exchange before this one, and every
 	 * other way of opening an exchange goes through `retry()`, which clears the
@@ -519,31 +565,23 @@ export class SyncStore {
 	 * it was in the air, so there is something newer still to send. `again` is
 	 * false for the one extra attempt a refusal can earn, so a server that
 	 * refuses cannot be talked into an unbounded exchange.
+	 *
+	 * A document already known to be too large is the one case that sends nothing
+	 * at all.
 	 */
 	private async push(householdId: string, again = true): Promise<boolean> {
 		const body = storedDocument($state.snapshot(this.store.state));
-		this.status = 'saving';
-		// Recorded before the request goes out and while the record still reads
-		// dirty, because the case this covers is the one where no answer ever
-		// arrives: the tab is reloaded or closed with the write in the air, and
-		// the next start has to be able to recognise it. Added to whatever is
-		// already unanswered rather than replacing it — a device that hears
-		// nothing goes on writing, and the write that landed is as likely to be
-		// an earlier one as this. See `outstanding-write.ts`.
-		this.outstanding = pendingWrite(this.outstanding, this.version, fingerprint(body));
-		this.save(householdId);
-		this.dirty = false;
-		const result = await writeRemote(this.version, body);
+		const payload = envelope(this.version, body);
+		// Measured in the unit the server's ceiling is named in, which is not the
+		// unit a string reports its own length in; see `payloadBytes`.
+		const size = payloadBytes(payload);
+		const result = await this.send({ householdId, body, payload, size });
 		// The account this write was for is no longer the one signed in here, so
 		// neither the version it created nor the document it was refused with
 		// belongs to whoever is.
 		if (this.householdId !== householdId) return false;
-		if (result === 'unreachable' || result === 'refused') {
-			// Nothing was accepted, so nothing was sent, whichever it was. The
-			// record is left as it stands: it already says this device is holding
-			// something, and it is never less dirty than the store.
-			this.dirty = true;
-			this.status = result === 'unreachable' ? 'waiting' : 'error';
+		if (result === 'unreachable' || result === 'refused' || result === 'too-large') {
+			this.stalled(result, size);
 			return false;
 		}
 		if (result.stale) {
@@ -567,9 +605,63 @@ export class SyncStore {
 		}
 		this.outstanding = null;
 		this.version = result.version;
+		// The server took this document, so whatever it refused before belongs to
+		// a conversation that has moved on — and to a ceiling it may since have
+		// been given more of. The next document that is too large finds out by
+		// being offered rather than by being assumed.
+		this.refusedAt = null;
 		this.save(householdId);
 		this.status = 'idle';
 		return this.dirty;
+	}
+
+	/**
+	 * The write itself: the bookkeeping a write in the air needs, and then the
+	 * request.
+	 *
+	 * A document already known to be too large never gets that far. The server
+	 * has turned down a document this size and this one is no smaller — a
+	 * document only grows — so the answer is known, and asking again would cost
+	 * megabytes of somebody's mobile data to hear it. Refusing it here rather
+	 * than after the bookkeeping is the point of doing it here at all: nothing
+	 * left the device, so nothing is recorded as an unanswered write.
+	 */
+	private async send(write: OutgoingWrite): Promise<WriteOutcome> {
+		if (!worthSending(this.refusedAt, write.size)) return 'too-large';
+		this.status = 'saving';
+		// Recorded before the request goes out and while the record still reads
+		// dirty, because the case this covers is the one where no answer ever
+		// arrives: the tab is reloaded or closed with the write in the air, and
+		// the next start has to be able to recognise it. Added to whatever is
+		// already unanswered rather than replacing it — a device that hears
+		// nothing goes on writing, and the write that landed is as likely to be
+		// an earlier one as this. See `outstanding-write.ts`.
+		this.outstanding = pendingWrite(this.outstanding, this.version, fingerprint(write.body));
+		this.save(write.householdId);
+		this.dirty = false;
+		return writeRemote(write.payload);
+	}
+
+	/**
+	 * A write that carried nothing back, whichever of the three it was. Nothing
+	 * was accepted, so nothing was sent: the store is dirty again, and the record
+	 * is left as it stands, since it already says this device is holding
+	 * something and is never less dirty than the store.
+	 *
+	 * A size refusal is the one that says something about the document rather
+	 * than about the request. It is remembered, so the next trigger does not
+	 * repeat a multi-megabyte upload whose answer is already known, and it is
+	 * said out loud through the status — a phone that stops syncing without
+	 * saying so is the whole of #282.
+	 */
+	private stalled(result: NoDocument | 'too-large', size: number): void {
+		this.dirty = true;
+		if (result === 'too-large') {
+			this.refusedAt = refusedSize(this.refusedAt, size);
+			this.status = 'too-large';
+			return;
+		}
+		this.status = result === 'unreachable' ? 'waiting' : 'error';
 	}
 
 	/**
