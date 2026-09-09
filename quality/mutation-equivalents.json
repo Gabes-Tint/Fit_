@@ -528,18 +528,18 @@
 			"location": {
 				"end": {
 					"column": 33,
-					"line": 61
+					"line": 66
 				},
 				"start": {
 					"column": 30,
-					"line": 61
+					"line": 66
 				}
 			},
 			"sourceHash": "c9c5aafea6fecd81ab31430e746e0be3451bd6573b3d121098368bfb0de3b742",
 			"fingerprint": "74dd50bf4afabc9a5e6034dbc6c8ecec3d309582bddd41507f9a37160d088985",
 			"classification": "equivalent",
 			"status": "Timeout",
-			"rationale": "lastNDates counts i down from n - 1 to 0 with i--; replacing it with i++ turns the countdown into a count-up that never reaches the loop's exit condition (i >= 0), so the loop runs forever and Stryker can only ever report Timeout for this mutant, never Survived. No assertion can kill it without asserting non-termination, which is not a test anyone should write. Gabriel accepted this as equivalent on 2026-09-07 (issue #145, proposal 1); recording required issue #200's status field because the mutant cannot report Survived.",
+			"rationale": "lastNDates counts i down from n - 1 to 0 with i--; replacing it with i++ turns the countdown into a count-up that never reaches the loop's exit condition (i >= 0), so the loop runs forever and Stryker can only ever report Timeout for this mutant, never Survived. No assertion can kill it without asserting non-termination, which is not a test anyone should write. Gabriel accepted this as equivalent on 2026-09-07 (issue #145, proposal 1); recording required issue #200's status field because the mutant cannot report Survived. Re-pinned by #148's follow-up, which folded parseISODate's redundant undefined guard into the isFinite check (moving this line from 61 to 66) without changing it.",
 			"review": "https://github.com/gabepsilva/Fit_/pull/212"
 		}
 	]
