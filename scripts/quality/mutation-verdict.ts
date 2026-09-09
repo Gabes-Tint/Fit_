@@ -158,6 +158,30 @@ function isReviewedMutant(value: unknown): value is ReviewedMutant {
 	);
 }
 
+/** Lines of unchanged context kept on each side of a mutant's own lines. */
+const SOURCE_WINDOW_CONTEXT_LINES = 1;
+
+/**
+ * Hashes a small window of source around a mutant's location instead of the
+ * whole file, so an accepted equivalence stays keyed to the reasoning that
+ * justified it -- the mutated line and its immediate neighbours -- rather
+ * than to every other line in the file.
+ *
+ * A whole-file hash is honest about what it cannot see (issue #256's own
+ * `idx()`-heuristic example: a change in a different function that could
+ * still invalidate the call), but it pays for that by retiring every
+ * acceptance in the file on any unrelated edit, including a comment tweak
+ * three hundred lines away. This trades that blunt safety for a key that
+ * survives unrelated edits and still retires the moment the mutated line (or
+ * its immediate context) actually changes.
+ */
+export function sourceWindowHash(source: string, location: Mutant['location']): string {
+	const lines = source.split('\n');
+	const start = Math.max(1, location.start.line - SOURCE_WINDOW_CONTEXT_LINES);
+	const end = Math.min(lines.length, location.end.line + SOURCE_WINDOW_CONTEXT_LINES);
+	return sha256(lines.slice(start - 1, end).join('\n'));
+}
+
 export function mutantFingerprint(input: {
 	file: string;
 	mutatorName: string;
@@ -414,7 +438,6 @@ export async function evaluateMutationReport(options: {
 				failures.push(`report source does not match scoped file: ${file}`);
 			}
 		}
-		const sourceHash = sha256(verifiedSource);
 		const changedLines = changed.get(file) ?? [];
 		for (const mutant of fileReport.mutants) {
 			const fingerprint = mutantFingerprint({
@@ -422,7 +445,7 @@ export async function evaluateMutationReport(options: {
 				mutatorName: mutant.mutatorName,
 				replacement: mutant.replacement,
 				location: mutant.location,
-				sourceHash
+				sourceHash: sourceWindowHash(verifiedSource, mutant.location)
 			});
 			const reviewedEntry = reviewed.get(fingerprint);
 			const isReviewed = reviewedEntry !== undefined && mutant.status === reviewedEntry.status;
