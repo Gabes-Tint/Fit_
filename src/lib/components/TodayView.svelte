@@ -1,5 +1,8 @@
 <script lang="ts">
 	import Plus from '@lucide/svelte/icons/plus';
+	import ArrowRight from '@lucide/svelte/icons/arrow-right';
+	import X from '@lucide/svelte/icons/x';
+	import { resolve } from '$app/paths';
 	import {
 		computeTargets,
 		loggedDatesSet,
@@ -14,6 +17,9 @@
 	import { todayISO, weekdayLong } from '$lib/domain/utils';
 	import { logUi } from '$lib/state/log-ui.svelte';
 	import { tend } from '$lib/state/tend.svelte';
+	import { cn } from '$lib/ui/cn';
+	import { BUTTON_BASE, BUTTON_SIZES, BUTTON_VARIANTS } from '$lib/ui/button-variants';
+	import Button from '$lib/ui/Button.svelte';
 	import LogRow from './LogRow.svelte';
 	import PageHeader from './PageHeader.svelte';
 	import GlpRingCluster from './GlpRingCluster.svelte';
@@ -21,9 +27,13 @@
 	import MiniStat from './MiniStat.svelte';
 	import WeekStrip from './WeekStrip.svelte';
 	import WeightChart from './WeightChart.svelte';
+	import WeightEntry from './WeightEntry.svelte';
 
 	let day = $state(todayISO());
 	let editing = $state<string | null>(null);
+	// Starts collapsed on every visit (#the today card actions issue): nothing
+	// persists it open across a reload.
+	let weightExpanded = $state(false);
 
 	const profile = $derived(tend.profile);
 
@@ -65,7 +75,8 @@
 
 		<WeekStrip {food} exercise={exerciseDays} weight={weightDays} bind:selected={day} />
 
-		<section class="bg-card rounded-3xl px-3 py-5 shadow-border">
+		<section class="bg-card flex flex-col gap-2 rounded-3xl px-3 py-5 shadow-border">
+			<h2 class="font-display px-1 text-xl tracking-tight">Energy</h2>
 			<div class="flex items-start justify-center gap-3">
 				{#if primaryProtein}
 					<GlpRingCluster
@@ -85,18 +96,58 @@
 					</div>
 				{/if}
 			</div>
-		</section>
-
-		<section class="bg-card rounded-3xl p-4 shadow-border" role="group" aria-label="Weight trend">
-			<div class="h-44">
-				<WeightChart weights={profile.weights} units={tend.state.units} />
+			<div class="flex justify-end">
+				<Button size="icon-round" aria-label="Log food" onclick={() => logUi.show()}>
+					<Plus class="size-5" />
+				</Button>
 			</div>
 		</section>
 
-		<section class="bg-card rounded-3xl px-4 py-3 shadow-border text-sm">
+		<section
+			class="bg-card flex flex-col gap-2 rounded-3xl p-4 shadow-border"
+			role="group"
+			aria-label="Weight trend"
+		>
+			<h2 class="font-display px-1 text-xl tracking-tight">Weight</h2>
+			<div class="h-44">
+				<WeightChart weights={profile.weights} units={tend.state.units} />
+			</div>
+			{#if weightExpanded}
+				<div class="flex flex-col gap-2 px-1">
+					<div class="flex items-center justify-end">
+						<Button
+							variant="ghost"
+							size="icon"
+							aria-label="Close"
+							onclick={() => (weightExpanded = false)}
+						>
+							<X class="size-4" />
+						</Button>
+					</div>
+					<WeightEntry units={tend.state.units} />
+				</div>
+			{:else}
+				<div class="flex justify-end">
+					<Button size="icon-round" aria-label="Log weight" onclick={() => (weightExpanded = true)}>
+						<Plus class="size-5" />
+					</Button>
+				</div>
+			{/if}
+		</section>
+
+		<section class="bg-card flex flex-col gap-2 rounded-3xl px-4 py-3 shadow-border text-sm">
+			<h2 class="font-display px-1 text-xl tracking-tight">Training</h2>
 			<div role="group" aria-label="This week's training">
-				<p class="text-muted-foreground text-xs">Training</p>
 				<p class="mt-0.5">{trainingText}</p>
+			</div>
+			<div class="flex justify-end">
+				<a
+					href={resolve('/exercise')}
+					aria-label="Go to training"
+					class={cn(BUTTON_BASE, BUTTON_VARIANTS.default, BUTTON_SIZES['icon-round'])}
+				>
+					<ArrowRight class="size-5" />
+				</a>
 			</div>
 		</section>
 

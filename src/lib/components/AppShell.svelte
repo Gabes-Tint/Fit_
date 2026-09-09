@@ -70,6 +70,10 @@
 
 	const pathname = $derived(page.url.pathname);
 	const onAuthRoute = $derived(AUTH_ROUTES.some((route) => resolve(route) === pathname));
+	// Today already has its own "Log food" button, on the Energy card, so the
+	// floating one would be a second control with the same accessible name on
+	// the one screen that carries both — everywhere else it is still the only way in.
+	const onTodayRoute = $derived(pathname === resolve('/'));
 
 	/**
 	 * The whole address that was asked for, fragment included.
@@ -218,7 +222,9 @@
 					{#await import('./LogSheet.svelte') then { default: LogSheet }}
 						<LogSheet />
 					{/await}
-					<LogFab onlog={() => logUi.show()} />
+					{#if !onTodayRoute}
+						<LogFab onlog={() => logUi.show()} />
+					{/if}
 				</div>
 			{:else}
 				<!--

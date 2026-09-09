@@ -316,7 +316,11 @@ describe('AppShell, signed in', () => {
 
 	// Current-destination highlighting depends on real routing, so it is asserted end to end.
 
-	it('opens the log sheet from the top bar', async () => {
+	it('opens the log sheet from the floating log button', async () => {
+		// Not on Today: that screen's own Energy card carries the "Log food"
+		// button now, and the floating one steps aside there so the accessible
+		// name is not duplicated on one screen (see `onTodayRoute`).
+		at('/exercise');
 		seedReturningVisit();
 		await render(AppShellHarness, { props: { body: 'Page body' } });
 		await page.getByRole('button', { name: 'Log food' }).click();
@@ -324,10 +328,17 @@ describe('AppShell, signed in', () => {
 	});
 
 	it('leaves the plain log action on the search tab', async () => {
+		at('/exercise');
 		seedReturningVisit();
 		await render(AppShellHarness, { props: { body: 'Page body' } });
 		await page.getByRole('button', { name: 'Log food' }).click();
 		expect(logUi.tab).toBe('search');
+	});
+
+	it('steps the floating log button aside on Today, where the Energy card offers the same action', async () => {
+		seedReturningVisit();
+		await render(AppShellHarness, { props: { body: 'Page body' } });
+		await expect.element(page.getByRole('button', { name: 'Log food' })).not.toBeInTheDocument();
 	});
 
 	it('closes the app the moment the session expires under it', async () => {
