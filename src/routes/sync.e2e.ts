@@ -22,13 +22,6 @@ import {
 
 const PASSWORD = 'salt-and-pepper-mill';
 
-/**
- * Long enough that an answer held for it cannot be heard before a reload that
- * follows the tap immediately, and short enough that the test does not sit on
- * it: nothing below ever waits this out.
- */
-const HELD_ANSWER_MS = 3000;
-
 async function logTwoEggs(page: Page) {
 	// Naming the food is the server's job since #116, and this preview server
 	// has no catalog file; the sync behavior under test is unaffected by it.
@@ -287,9 +280,9 @@ test.describe('two devices that edited while apart', () => {
  * it. It failed as an intermittent height flake on the You screen; nothing about
  * it is particular to height, or to that screen.
  *
- * Holding the answer back is the only thing slowed down here, and it is what
- * makes the window certain instead of a matter of luck. The reload still happens
- * the instant the tap returns.
+ * Passing the write on and dropping its answer is the only thing done to the
+ * network here, and it is what makes the window certain instead of a matter of
+ * luck. The reload still happens the instant the tap returns.
  */
 test.describe('a write whose answer never arrives', () => {
 	test('does not take the next save down with it', async ({ page, baseURL }) => {
@@ -300,12 +293,34 @@ test.describe('a write whose answer never arrives', () => {
 		await page.getByRole('link', { name: 'You' }).click();
 		await expect(page.getByRole('heading', { name: 'You', level: 1 })).toBeVisible();
 
-		// From here the account accepts every write and answers too late to be heard.
+		/**
+		 * The answer this device is never told about — never, rather than late.
+		 *
+		 * A held answer used to be delivered on a timer, and the handler was
+		 * still parked on that timer when the test took the interception down.
+		 * Removing the last handler tells the browser to stop intercepting, and
+		 * Playwright answers every request still held inside a handler itself on
+		 * the way past (`removeRequestInterceptor` continues each route in
+		 * flight). The `route.fulfill` that came after the wait was then
+		 * answering a request already answered: `Route is already handled!`, and
+		 * a red mobile-safari shard about sync for a reason that was not about
+		 * sync — the same mechanism as #303 in `lazy-shell.e2e.ts`.
+		 *
+		 * A write that is never answered has nothing left to collide with: the
+		 * only thing this handler ever does to a held route is pass it on to the
+		 * account with `route.fetch`, which the browser that reloads over it
+		 * would have done to the answer anyway.
+		 */
+		const neverAnswered = new Promise<never>(() => undefined);
+		/** Writes the account has taken and this device has heard nothing about. */
+		let unanswered = 0;
+		/** Held until the page has moved on; after that the account answers as it does. */
+		let holdAnswers = true;
 		await page.route('**/api/state', async (route) => {
-			if (route.request().method() !== 'PUT') return route.continue();
-			const answer = await route.fetch();
-			await new Promise((resolve) => setTimeout(resolve, HELD_ANSWER_MS));
-			await route.fulfill({ response: answer });
+			if (!holdAnswers || route.request().method() !== 'PUT') return route.continue();
+			await route.fetch();
+			unanswered += 1;
+			await neverAnswered;
 		});
 
 		// The switch is what puts a write in the air; anything recorded a moment
@@ -315,13 +330,24 @@ test.describe('a write whose answer never arrives', () => {
 		await page.getByLabel('Height, feet').fill('5');
 		await page.getByLabel('Height, inches').fill('9');
 		await page.getByRole('button', { name: 'Save height' }).click();
+		// The account is a version ahead of this device before the reload rather
+		// than probably: a reload that beat every write to the server would leave
+		// nothing to be mistaken for another device's work, and prove nothing.
+		await expect.poll(() => unanswered, { timeout: 20_000 }).toBeGreaterThan(0);
 		await page.reload();
 
 		// The answers come back at their own pace again, so what the reloaded page
-		// makes of the account is reached without waiting the held answer out.
-		await page.unroute('**/api/state');
+		// makes of the account is reached without waiting on anything held. What is
+		// still held belongs to a page that no longer exists.
+		holdAnswers = false;
 		await settled(page);
 		await expect(page.getByLabel('Height, feet')).toHaveValue('5');
 		await expect(page.getByLabel('Height, inches')).toHaveValue('9');
+
+		// Taken down with the device idle — it has sent everything it holds — so
+		// there is no request inside the handler to be continued out from under
+		// it. `behavior: 'wait'` is what this must not do: it waits for the
+		// handler holding a write this test is deliberately never answering.
+		await page.unrouteAll();
 	});
 });
