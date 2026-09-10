@@ -226,7 +226,7 @@
 						as it mounts, because `menuOpen` is already true by then.
 					-->
 					{#await import('./SideNav.svelte') then { default: SideNav }}
-						<SideNav bind:open={menuOpen} {pathname} />
+						<SideNav bind:open={menuOpen} {pathname} leftHanded={tend.state.leftHanded} />
 					{/await}
 					<!--
 						Rendered outside the drawer and never with it: the toggle is the
@@ -236,7 +236,11 @@
 						be there to be tapped before the drawer's chunk has landed —
 						`menuOpen` is simply already true when it does.
 					-->
-					<MenuFab open={menuOpen} ontoggle={() => (menuOpen = !menuOpen)} />
+					<MenuFab
+						open={menuOpen}
+						ontoggle={() => (menuOpen = !menuOpen)}
+						leftHanded={tend.state.leftHanded}
+					/>
 					<!--
 						Fetched after the shell rather than inside it. The log sheet and
 						everything it can show — the search, the proposal rows, the photo

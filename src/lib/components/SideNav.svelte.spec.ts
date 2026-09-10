@@ -219,4 +219,16 @@ describe('SideNav', () => {
 		await new Promise((resolve) => setTimeout(resolve, 50));
 		expect(props.open).toBe(false);
 	});
+
+	it('sits on the left edge by default', async () => {
+		await render(SideNav, { props: { open: true, pathname: '/' } });
+		await expect.element(page.getByRole('dialog', { name: 'Fit_' })).toHaveClass(/left-0/);
+		await expect.element(page.getByRole('dialog', { name: 'Fit_' })).toHaveClass(/rounded-r-3xl/);
+	});
+
+	it('mirrors to the right edge when left-handed', async () => {
+		await render(SideNav, { props: { open: true, pathname: '/', leftHanded: true } });
+		await expect.element(page.getByRole('dialog', { name: 'Fit_' })).toHaveClass(/right-0/);
+		await expect.element(page.getByRole('dialog', { name: 'Fit_' })).toHaveClass(/rounded-l-3xl/);
+	});
 });
