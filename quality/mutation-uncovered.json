@@ -135,6 +135,8 @@
 			"scripts/dev/gate-slice.ts",
 			"scripts/dev/install-gate-slice.ts",
 			"scripts/dev/worktree.ts",
+			"scripts/etl/plausibility-audit.ts",
+			"scripts/etl/plausibility.ts",
 			"scripts/eval/page-fill.ts",
 			"scripts/eval/search-eval.ts",
 			"scripts/github/as-owen.ts",
