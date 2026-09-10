@@ -11,7 +11,6 @@
 	import NutritionFactsButton from './NutritionFactsButton.svelte';
 	import NutritionFactsSheet from './NutritionFactsSheet.svelte';
 	import BrandLabel from './BrandLabel.svelte';
-	import ProvenanceBadge from './ProvenanceBadge.svelte';
 
 	let {
 		onpick,
@@ -131,21 +130,14 @@
 					onclick={() => onpick(food)}
 					class="flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-3 py-3 text-left"
 				>
-					<div class="min-w-0 flex-1">
-						<div class="flex items-center gap-2">
-							<p class="min-w-0 truncate font-medium">{food.name}</p>
-							<span class="shrink-0">
-								<ProvenanceBadge provenance={food.provenance} />
-							</span>
-						</div>
-						<div class="flex min-w-0 items-center gap-1.5">
-							<!-- The brand ahead of the numbers rather than folded into them: it
-								was already in this line, spelled "CLAEYS · 3 PIECES (15 g) · 400
-								kcal · 0g protein", and the person who logged hard candy as an
-								apple (#337) read straight past it. -->
-							<BrandLabel brand={food.brand} />
-							<p class="text-muted-foreground truncate text-xs">{summary}</p>
-						</div>
+					<div class="flex min-w-0 flex-1 flex-col">
+						<!-- The name takes the row: a source badge beside it stole
+							width from long USDA titles. The brand is its own line so
+							it cannot be skipped the way it was when folded into the
+							serving (#337). The numbers stay last. -->
+						<p class="min-w-0 truncate font-medium">{food.name}</p>
+						<BrandLabel brand={food.brand} />
+						<p class="text-muted-foreground truncate text-xs">{summary}</p>
 					</div>
 				</button>
 				<NutritionFactsButton name={food.name} onclick={() => showFacts(food)} />
