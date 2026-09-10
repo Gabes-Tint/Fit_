@@ -6,6 +6,7 @@
 	import { tend } from '$lib/state/tend.svelte';
 	import NutritionFactsButton from './NutritionFactsButton.svelte';
 	import NutritionFactsSheet from './NutritionFactsSheet.svelte';
+	import BrandLabel from './BrandLabel.svelte';
 	import QuantityStepper from './QuantityStepper.svelte';
 	import ProvenanceBadge from './ProvenanceBadge.svelte';
 
@@ -60,8 +61,12 @@
 		>
 			<div class="min-w-0 flex-1">
 				<p class="truncate font-medium">{item.name}</p>
-				<div class="mt-0.5 flex items-center gap-1.5">
+				<div class="mt-0.5 flex min-w-0 items-center gap-1.5">
 					<ProvenanceBadge provenance={item.provenance} />
+					<!-- #337: the journal said "GREEN APPLE", "BRAND PUBLISHED" and a
+						portion, and never said Claeys. A brand is what tells a candy from
+						the fruit it is named after, days after the thing was logged. -->
+					<BrandLabel brand={item.brand} />
 					<span class="text-muted-foreground truncate text-xs">{portion}</span>
 				</div>
 			</div>
