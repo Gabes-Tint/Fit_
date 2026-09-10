@@ -27,7 +27,7 @@ describe('a document that came up from version 4', () => {
 
 	// A document taken from another device (`replace()`) can carry a value that
 	// is not a boolean at all before this rung has ever run on it — the field
-	// simply is not one this build recognises yet. That is treated the same as
+	// simply is not one this build recognizes yet. That is treated the same as
 	// an absent field: the off default, not the stray value carried through.
 	it('falls back to the off default when the field is present but not a boolean', () => {
 		const v4WithBadField = { ...V4, leftHanded: 'yes' };
