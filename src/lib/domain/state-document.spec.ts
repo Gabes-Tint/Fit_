@@ -10,7 +10,12 @@ import {
 	stateFormat,
 	storedDocument
 } from './state-document';
-import { DEFAULT_LOAD_UNIT, DEFAULT_REST_SECONDS, DEFAULT_UNITS } from './types';
+import {
+	DEFAULT_LEFT_HANDED,
+	DEFAULT_LOAD_UNIT,
+	DEFAULT_REST_SECONDS,
+	DEFAULT_UNITS
+} from './types';
 import { displayLoad } from './units';
 
 /**
@@ -30,7 +35,8 @@ const BLANK = {
 	activeWorkout: null,
 	loadUnit: DEFAULT_LOAD_UNIT,
 	restSeconds: DEFAULT_REST_SECONDS,
-	units: DEFAULT_UNITS
+	units: DEFAULT_UNITS,
+	leftHanded: DEFAULT_LEFT_HANDED
 };
 
 /**
@@ -151,6 +157,7 @@ const BENCH_KG = 20.41165665;
  */
 const AFTER_THE_LADDER = {
 	...STORED_BEFORE_THE_LADDER,
+	leftHanded: false,
 	routines: [
 		{
 			id: 'r-1',
@@ -392,6 +399,13 @@ describe('a document that is not one', () => {
 
 	it.each(['stones', 'METRIC', 7])('is refused when the unit system is not one: %s', (units) => {
 		expect(loadStateDocument({ ...atCurrentVersion(), units })).toMatchObject({
+			ok: false,
+			reason: 'invalid'
+		});
+	});
+
+	it.each(['true', 1, null])('is refused when left-handed is not a boolean: %s', (leftHanded) => {
+		expect(loadStateDocument({ ...atCurrentVersion(), leftHanded })).toMatchObject({
 			ok: false,
 			reason: 'invalid'
 		});

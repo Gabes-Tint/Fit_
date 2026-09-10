@@ -545,6 +545,12 @@ export class TendStore {
 		this.persist();
 	}
 
+	// Layout only: nothing stored depends on which side the menu sits on.
+	setLeftHanded(leftHanded: boolean) {
+		this.state.leftHanded = leftHanded;
+		this.persist();
+	}
+
 	// -- workouts ------------------------------------------------------------
 
 	startWorkout(routineId: string): Workout | null {

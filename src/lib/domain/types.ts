@@ -263,6 +263,9 @@ export type UnitSystem = 'metric' | 'imperial';
 
 export const DEFAULT_UNITS: UnitSystem = 'metric';
 
+/** Whether the menu button and side menu sit on the left instead of the right. */
+export const DEFAULT_LEFT_HANDED = false;
+
 /** Rest between sets, in seconds: the default, and its lower and upper bounds. */
 export const DEFAULT_REST_SECONDS = 90;
 export const MIN_REST_SECONDS = 30;
@@ -376,4 +379,10 @@ export type TendState = {
 	 * perfectly ordinary way to live.
 	 */
 	units: UnitSystem;
+	/**
+	 * When set, the floating menu button sits bottom-left instead of
+	 * bottom-right, and the side menu slides in from the right instead of the
+	 * left. Nothing else about the layout moves.
+	 */
+	leftHanded: boolean;
 };

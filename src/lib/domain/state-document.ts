@@ -1,7 +1,14 @@
 import { migrate_3_to_4 } from './migrate-canonical-loads';
+import { migrate_4_to_5 } from './migrate-left-handed';
 import { migrate_2_to_3 } from './migrate-deleted-routines';
 import { migrate_1_to_2 } from './migrate-planned-days';
-import { DEFAULT_LOAD_UNIT, DEFAULT_REST_SECONDS, DEFAULT_UNITS, type TendState } from './types';
+import {
+	DEFAULT_LEFT_HANDED,
+	DEFAULT_LOAD_UNIT,
+	DEFAULT_REST_SECONDS,
+	DEFAULT_UNITS,
+	type TendState
+} from './types';
 
 /**
  * The stored shape of the whole application state, and the ladder that carries
@@ -26,7 +33,7 @@ import { DEFAULT_LOAD_UNIT, DEFAULT_REST_SECONDS, DEFAULT_UNITS, type TendState 
  */
 
 /** The shape this build reads and writes. Bumped by every shape change. */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /**
  * A document with no `schemaVersion` at all: everything written before this
@@ -52,7 +59,8 @@ export function emptyState(): TendState {
 		activeWorkout: null,
 		loadUnit: DEFAULT_LOAD_UNIT,
 		restSeconds: DEFAULT_REST_SECONDS,
-		units: DEFAULT_UNITS
+		units: DEFAULT_UNITS,
+		leftHanded: DEFAULT_LEFT_HANDED
 	};
 }
 
@@ -123,7 +131,8 @@ export const MIGRATIONS: readonly Migration[] = [
 	migrate_0_to_1,
 	migrate_1_to_2,
 	migrate_2_to_3,
-	migrate_3_to_4
+	migrate_3_to_4,
+	migrate_4_to_5
 ];
 
 /**
@@ -159,7 +168,8 @@ const FIELD_CHECKS = {
 	activeWorkout: (value: unknown) => value === null || isPlainObject(value),
 	loadUnit: (value: unknown) => value === 'kg' || value === 'lb',
 	restSeconds: (value: unknown) => Number.isFinite(value),
-	units: (value: unknown) => value === 'metric' || value === 'imperial'
+	units: (value: unknown) => value === 'metric' || value === 'imperial',
+	leftHanded: (value: unknown) => typeof value === 'boolean'
 } satisfies Record<keyof TendState, (value: unknown) => boolean>;
 
 /** The first field that does not match the shape, or `null` when all do. */

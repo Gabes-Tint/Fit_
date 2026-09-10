@@ -11,7 +11,13 @@ import {
 } from './export-data';
 import { SCHEMA_VERSION, stateFormat } from './state-document';
 import type { LogItem, Profile, TendState } from './types';
-import { DEFAULT_LOAD_UNIT, DEFAULT_REST_SECONDS, DEFAULT_UNITS, ZERO_MICROS } from './types';
+import {
+	DEFAULT_LEFT_HANDED,
+	DEFAULT_LOAD_UNIT,
+	DEFAULT_REST_SECONDS,
+	DEFAULT_UNITS,
+	ZERO_MICROS
+} from './types';
 import { todayISO } from './utils';
 
 const state: TendState = {
@@ -26,7 +32,8 @@ const state: TendState = {
 	activeWorkout: null,
 	loadUnit: DEFAULT_LOAD_UNIT,
 	restSeconds: DEFAULT_REST_SECONDS,
-	units: DEFAULT_UNITS
+	units: DEFAULT_UNITS,
+	leftHanded: DEFAULT_LEFT_HANDED
 };
 
 /**
