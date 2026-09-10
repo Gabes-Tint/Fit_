@@ -18,7 +18,7 @@ Plan:
 - SEARCH f USING INDEX idx_food_gtin (gtin14=?)
 - USE TEMP B-TREE FOR ORDER BY
 
-### src/lib/server/catalog/foods.ts — searchFoods (built at run time)
+### src/lib/server/catalog/foods.ts — rankedPage (built at run time)
 
 ```sql
 with matched as (
@@ -42,6 +42,9 @@ named as (
 			+ 1.5 * min(1.0,
 				ln(1.0 + f.n_sources) / ln(1.0 + 250.0))
 			+ 0.5 * max(0.0, (f.quality - 87) / 13.0)
+			- 1.75 * case when f.kind = 'branded'
+			and not (length(lower(trim(coalesce(f.brand, '')))) >= 3 and instr(:text, lower(trim(coalesce(f.brand, '')))) > 0)
+		then 1.0 else 0.0 end
 			as row_score
 	from matched m
 	join food f on f.food_id = m.food_id
@@ -101,7 +104,7 @@ ranked as (
 select f.food_id, f.name, f.brand, f.kind, f.category, f.gtin14, f.license,
 	f.serving_label, f.serving_g, f.kcal, f.protein, f.fat, f.carbs, f.sugar, f.fiber,
 	f.sodium, f.saturated_fat, f.potassium, f.iron, f.calcium, f.magnesium, f.zinc,
-	f.vitamin_a, f.vitamin_c, f.vitamin_d, f.vitamin_b12, f.quality, f.n_sources
+	f.vitamin_a, f.vitamin_c, f.vitamin_d, f.vitamin_b12, f.quality, f.n_sources, d.score
 from ranked d
 join food f on f.food_id = d.food_id
 order by d.score desc, f.quality desc

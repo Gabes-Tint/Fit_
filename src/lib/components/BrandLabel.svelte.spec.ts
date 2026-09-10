@@ -20,7 +20,7 @@ describe('BrandLabel', () => {
 	});
 
 	it('leaves the brand as the source spelled it, rather than restyling the text', async () => {
-		// The uppercasing is CSS, so a brand written "Trader Joe's" reads as its
+		// The capitals are CSS, so a brand written "Trader Joe's" reads as its
 		// own name to anything reading the page rather than looking at it.
 		await render(BrandLabel, { props: { brand: "Trader Joe's" } });
 		await expect.element(page.getByText("Trader Joe's")).toBeInTheDocument();

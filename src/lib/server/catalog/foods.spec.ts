@@ -142,7 +142,7 @@ describe('searchFoods', () => {
 
 	it('carries the provenance and the per-100 g numbers a logged entry keeps', () => {
 		// The branded row by name rather than by position: what is asserted here
-		// is that a product's brand, barcode and licence travel with it, which is
+		// is that a product's brand, barcode and license travel with it, which is
 		// not a claim about where #337's demotion leaves it on the page.
 		const food = searchFoods(db, 'milk', 5).find((row) => row.id === 3);
 		expect(food).toEqual({
