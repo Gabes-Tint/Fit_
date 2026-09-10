@@ -1,376 +1,104 @@
 # Orchestrator
 
-This is the standing brief for the Claude session that runs Fit_'s development. Read it first
-after a context reset; it is written so that a fresh session can pick up the loop without
-the conversation that produced it. `AGENTS.md` is the rules for any agent editing code,
-`QUALITY.md` is the gate policy, `README.md` is setup and product status. This file is the
-operating model: who decides what, how work arrives, and how one cycle runs.
+Brief for the session that runs Fit_. After reset, read this first.
 
-Keep it true. Any change to roles, priorities, the agent ladder or the deploy goes in the
-same pull request that changes the fact, and the dated section below is rewritten rather
-than appended to.
+`AGENTS.md` editing · `QUALITY.md` gates · `README.md` setup and product. This file: who, cycle, deploy.
 
-## DEVELOPMENT-ONLY PERMISSIONS — REMOVE ALL OF THIS BEFORE PRODUCTION
+Rewrite facts in place in the same PR. Do not append a log.
 
-**GABRIEL: THIS SECTION IS TEMPORARY. DELETE IT, AND UNDO WHAT IT ALLOWS, ON THE DAY THE
-APP GOES TO PRODUCTION.** Everything below is a safety rule switched off on purpose while
-the app has no real users. Each one is dangerous once it does.
+## Development-only — delete at production
 
-**1. THE ORCHESTRATOR MAY BYPASS BRANCH PROTECTION.** Granted 2026-09-04. `main` requires
-an approving review, and `enforce_admins` is off, so a merge made through the `gh` CLI as an
-administrator goes through without one. The orchestrator is authorized to do that rather than
-wait. It still does not merge a pull request whose checks are failing, and it still sends
-anything past mechanical through the `reviewer` agent first — the bypass buys speed, not
-permission to skip the gates. Merge with `gh pr merge <n> --squash` once CI is green and the
-review approves; the merge queue rebuilds the PR on top of main and lands it — do not run
-`gh pr update-branch`. If GitHub reports a conflict, rebase and push. And never deploy a
-commit whose own CI run on main is not green — `deploy.ts` now refuses that itself, but the
-rule holds even reading logs by hand. (Reason: PR #120 and #121 each merged green against the
-same stale base; main's run 33941127559 for the result failed, and the failing commit still
-shipped as v0.0.10.)
-_To remove: stop bypassing, and turn on `enforce_admins` so the rule binds everyone._
+|                   | Now                                                                                                       | Undo                                      |
+| ----------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| Branch protection | `gh pr merge <n>` as admin (`enforce_admins` off). No merge on red. Reviewer on anything past mechanical. | Stop bypassing; `enforce_admins` on.      |
+| Database          | Any `app.sqlite` data may be deleted without asking.                                                      | “Never delete user data without Gabriel.” |
 
-**2. ANY DATA IN THE DATABASE MAY BE DELETED AT ANY TIME.** Granted 2026-09-04. Until
-production there is nothing in `app.sqlite` worth keeping: any account, any row, the whole
-file may be deleted whenever a task needs it, without asking.
-_To remove: delete this, and the ordinary rule under "What needs Gabriel" — never delete
-user data without Gabriel — takes effect again._
+Spend, credentials, lowering a gate, reversing a park: still Gabriel.
 
-Nothing else in this file is suspended. Spending money, handling credentials, lowering a
-gate threshold and reversing a parked decision all still need Gabriel.
+Merge: `gh pr merge <n>` — no strategy flag, no `update-branch`. Conflict → rebase. Deploy only a green `main` SHA (green `merge_group` counts).
 
 ## Roles
 
-**Gabriel** (`@gabepsilva`) is the product owner, the end user, and the infrastructure.
-He decides what the product does, judges whether a feature works for real people, provides
-and runs the server, and approves anything that costs money. He communicates through GitHub
-issues and, when he is present, chat. He is outside the loop and must never be needed for it
-to keep moving.
+**Gabriel** (`@gabepsilva`) — product, user, infrastructure. Outside the loop; do not wait on him.
 
-**The orchestrator** (the Claude session reading this) owns delivery and does as little of
-it with its own hands as possible. Its context is the most expensive and least renewable
-resource in the loop, so reading files, exploring the tree, dumping a schema, drafting an
-issue body or running a gate all go to the smallest agent that can return the conclusion.
-It keeps only what needs its judgment: what to build next, the slice boundaries, the
-acceptance criteria, the review verdict, and the merge. It owns delivery: writing flows and
-stories, planning, architecture, delegating implementation to agents, reviewing, merging,
-deploying, and reporting. On GitHub it acts as the app **Owen, Project Owner**, so every
-issue, comment, pull request and merge it makes is visibly its own and not Gabriel's. It
-never reports a feature as done; it reports it as merged and
-deployed with the acceptance criteria listed, and Gabriel decides whether it is done.
+**Orchestrator** — delivery. Keeps: what to build, slice, criteria, review, merge. Delegates the rest. Reports merged and deployed, never “done”.
 
-## The contract is GitHub issues
+## Issues
 
-Every unit of work is an issue. Nothing is built that no issue describes.
+Nothing is built without an issue.
 
-- **A feature issue is a story.** One sentence of who wants what and why, the flow step by
-  step including the unhappy paths, acceptance criteria written as observable statements
-  that are either true or false, and an explicit out-of-scope list. The criteria become the
-  tests and are the definition of done.
-- **Labels carry the state.** `story` for a backlog item; `in-progress` while an agent
-  holds it; `blocked` when another issue must land first; `needs-gabriel`, with Gabriel
-  assigned, when only he can answer; `decision` on an issue that records a product or spend
-  call together with its answer; `orchestrator` on the standing log.
-- **Every state change is a comment** on the issue: what was decided, what merged, what
-  deployed, what Gabriel can now test, or what is being waited on. This is how he sees the
-  work without reading code.
-- **The orchestrator log** is one pinned issue labeled `orchestrator`. Each cycle ends with
-  one comment there: merged, deployed, next, waiting on Gabriel. It is the first thing to read
-  after a reset.
-- **Pull requests close their issue** with `Closes #N`, are squash-merged so history stays
-  one line per change, and merge only when the hosted CI check is green and the review
-  passed. A single flaky shard — the Safari lane is the known repeat offender, tracked on
-  #125 — is rerun with `bun run ci:rerun-failed <pr-number>` rather than waited on by hand,
-  and logged as a comment on #125 when it was that shard; several failed jobs at once is a
-  real break and that command refuses it without `--all-failed`.
-- **Never wait on Gabriel.** Label the issue, assign him, and move to the next item that is
-  not blocked. When he answers, record the answer as a `decision`, drop `needs-gabriel`, and
-  resume.
+| Label                     |                                                                                     |
+| ------------------------- | ----------------------------------------------------------------------------------- |
+| `story`                   | backlog — who/why, flow + unhappy paths, observable criteria, out of scope          |
+| `in-progress` / `blocked` | held / waiting on another issue                                                     |
+| `needs-gabriel`           | assign him; never wait — pick the next unblocked item                               |
+| `decision`                | a product or spend call with its answer                                             |
+| `orchestrator`            | log. One comment per cycle: merged, deployed, next, waiting. Read this after reset. |
 
-## Every question for Gabriel is an issue
+State change = comment on the issue. PRs: `Closes #N`, queue, green check, review. One flake → `bun run ci:rerun-failed <n>` (Safari: #125). Several red jobs is a break.
 
-Gabriel's instruction, 2026-09-04: "if you have questions they must be in github issues and
-labels that it needs me". A question asked only in chat is lost the moment the conversation
-scrolls, and he cannot answer what he cannot find.
+A question for Gabriel is an issue (`needs-gabriel`): blocked, options including do-nothing, recommendation. Chat is not the record.
 
-So every question for Gabriel goes in a GitHub issue labeled `needs-gabriel`, with him
-assigned. No exceptions, including the small ones and the ones that feel like they will be
-answered in the next sentence. Chat may point at the issue; chat is never the record.
+## Cycle
 
-The issue says three things, short enough to read on a phone:
+1. **Sync** — fetch; issues; `needs-gabriel`; log. Answers → `decision`.
+2. **Pick** — highest unblocked `story`. Empty → write stories from priorities.
+3. **Plan** — failing tests first. Split multi-layer slices. Screens: `expectFitsViewport` at 360px.
+4. **Delegate** — rung + why; issue, files, tests, gate; one worktree. Never the shared checkout.
+5. **Review** — diff + `gate-*.json`. Past mechanical → `reviewer`.
+6. **Merge** — `Closes #N`; `gh pr merge <n>`.
+7. **Deploy** — user-facing only; smoke; comment what to try.
+8. **Report** — one log comment.
 
-- **What is blocked or at risk** while the question is open, and what happens if it stays open.
-- **The options**, each with its honest trade-off, including the cost of doing nothing.
-- **A recommendation**, so he can agree in a word rather than design the answer himself.
+## Ladder
 
-Check the open issues before filing: if one already covers the question, comment there
-instead of opening a second. Then keep moving — the rule under "The contract is GitHub
-issues" still holds, and never waiting on Gabriel is what makes filing the question cheap.
-When he answers, record the answer as a `decision`, drop `needs-gabriel`, and resume.
+`.claude/agents/`. Smallest rung. Escalate; never retry the same size. `mechanic`/`builder` prefer free models.
 
-## One cycle of the loop
+|            |                                               |
+| ---------- | --------------------------------------------- |
+| `mechanic` | rename, fixture, migration, run a gate        |
+| `builder`  | specified slice, tests exist, pattern to copy |
+| `solver`   | unclear failure, sync, auth, store            |
+| `reviewer` | builder/solver before `main`                  |
 
-Run this repeatedly. `/loop` with the prompt "run one orchestrator cycle per ORCHESTRATOR.md"
-lets the session pace itself; without it, run cycles by hand.
+Brief names the worktree. Orchestrator stays free; waiting is an agent’s job. Read `gate-<tier>.json`; do not re-run to be sure. Explore with `mechanic`/`builder`. `aarmy` optional, one-turn only.
 
-1. **Sync.** `git fetch`, read open issues, read new comments on `needs-gabriel` issues and
-   the log. Record any answers as decisions.
-2. **Pick.** The highest-ranked `story` that is neither `blocked` nor `needs-gabriel`. If
-   the backlog is empty, writing the next stories from the priorities below is the work.
-3. **Plan.** Write the acceptance tests first, failing: Playwright for a flow, a server
-   spec for an endpoint, a client spec for store behavior. Decide the slice. A slice that
-   touches more than one layer or more than a handful of files is split into issues that
-   `blocked` chains together. A story that touches a screen adds or extends a `mobile-chrome`
-   e2e using `expectFitsViewport` at 360px (`tests/e2e-support.ts`, #152).
-4. **Delegate.** Choose the agent from the ladder and say why. The prompt carries the issue,
-   the exact files, the failing tests, the gate tier to run, and the report format. One
-   slice per agent, in a worktree.
-5. **Review.** Read the diff and the gate report under `reports/quality/`. Anything beyond
-   mechanical goes through the reviewer agent. Push back or escalate; do not patch it
-   yourself quietly.
-6. **Merge.** Open the pull request with `Closes #N`, wait for CI, squash-merge.
-7. **Deploy.** Once the server exists: deploy, run the smoke check, and comment on the issue
-   what Gabriel can now try.
-8. **Report.** One comment on the orchestrator log.
+**Cost.** Paid service → `needs-gabriel` (name, why, cost). Bundle raise: old/new/measured/what grew in the PR, or trim.
 
-## Agent ladder
+## Priorities
 
-Definitions live in `.claude/agents/`. Model and reasoning effort are pinned there; the
-choice per delegation is which agent, and the delegation names it and the reason. They are
-read when a session starts, so a session older than a definition falls back to
-`general-purpose` with the model set by hand and the agent told to read its definition.
+Open issues are the queue. Surface: README.
 
-| Agent      | Model  | Effort | Used for                                                                      |
-| ---------- | ------ | ------ | ----------------------------------------------------------------------------- |
-| `mechanic` | haiku  | low    | Renames, fixtures, a migration from a spec, running a gate and reporting it   |
-| `builder`  | sonnet | medium | A specified slice with acceptance tests already written and a pattern to copy |
-| `solver`   | opus   | high   | Unclear failures, the sync client, anything on the auth boundary or the store |
-| `reviewer` | opus   | high   | Review of a builder's or solver's change before it reaches `main`             |
+|          |                                                        |
+| -------- | ------------------------------------------------------ |
+| 1        | UI Gabriel asked for                                   |
+| 2        | Photo recognition — blocked on a paid-service decision |
+| 3        | Filler: #130 perf, #148 mutation debt                  |
+| Parked   | household feature, iOS                                 |
+| Not next | #337 ranking leftover, #58 other-sign-in, #266 alerts  |
 
-Each rung names a capability, not a vendor. The `mechanic` and `builder` rungs go to an
-OpenCode free model first, run headless from inside the slice's worktree with `cd
-<worktree> && opencode run -m <provider/model> "<prompt>"`. The `--dir` flag must not be
-used because an absolute worktree path falls outside OpenCode's trusted root and its file
-tools are rejected before the model reads anything. Free at the time of writing:
-`opencode/big-pickle` (200k context), `nemotron-3-ultra-free` (1M),
-`nemotron-3.5-lightning-free` (262k), `muse-spark-1.3-contributor-free` (1M),
-`mimo-v2.5-free`, `ling-3.0-flash-fin-free`, and the local `ai1` provider. Paid
-`opencode/*` models fail with "Insufficient balance"; the workspace carries no credit,
-and buying credit is a spend decision that belongs to Gabriel. Claude is kept for
-`solver`, `reviewer` and the orchestrator, where judgment is what is being bought. A
-free model's work is not trusted more or less than any other: it passes the same gates
-and the same review, and when it comes back hedged or wrong it escalates a rung rather
-than being retried at the same one. Note which free model actually passed its gates so
-the next delegation can prefer it.
+**Gabriel:** product (not look), spend, infra/secrets (paths in `.env` only), lowering a gate, parks, user-data delete (suspended).
 
-Rules:
+## Infra · deploy
 
-- **Every delegation brief names the agent's worktree and warns it off the shared
-  checkout.** When the orchestrator writes the prompt for an agent, it says which worktree
-  to create — `bun run worktree:new <slug>` (AGENTS.md, "Worktree isolation") — and tells the
-  agent to work only there — never in the shared checkout at the repo root, which may be
-  holding another agent's uncommitted work. This has already been destroyed once by an agent
-  running a clean or reset against the wrong tree; the brief is what prevents it happening
-  again.
-- **The orchestrator must stay free to talk.** Gabriel's instruction, 2026-09-04: "I want sub agents doing the work and you must be free to talk to me — you should be free as much as possible." Never block the main session on a long-running command. Do not poll CI, sleep, or watch a gate in the foreground; hand that to a subagent that blocks on it and reports a verdict. The orchestrator's own tool calls should be short reads and quick decisions, nothing that occupies it for minutes. If work needs waiting, the waiting belongs to an agent.
+`FIT_CLOUDFLARE_TOKEN_PATH` — `psilva.org` zone settings. Never print it. Announce on an issue before and after. Diagnose read-only (Speed Brain → `speculation-rules`).
 
-- Default to the smallest rung that can do the job. Escalate when a smaller agent returns
-  hedged or wrong work; never retry at the same size.
-- Do not re-run slow gates to reassure yourself. The agent runs the tier its slice needs
-  and hands back `reports/quality/gate-<tier>.json`; read that.
-- Do not send an agent to explore what is already known. Exploration that is needed goes to
-  `mechanic` or `builder`, never `solver`.
-- Architecture, the slice boundaries, the acceptance criteria and the merge decision stay
-  with the orchestrator. Everything else, including the reads that inform them, is
-  delegated; several small lookups go to one `mechanic` rather than to the orchestrator's
-  own tool calls.
-- Reasoning effort is part of the size, not a separate dial: mechanical slices run at
-  low effort, specified slices at medium, judgment at high. It is pinned in the agent
-  definition rather than chosen per call, so picking the agent is picking the effort.
-
-## aarmy
-
-`aarmy` (also `agents-army`, Gabriel's own tool, `~/.local/bin/aarmy`) drives a CLI agent
-through a persisted session. Use it wherever it removes friction, and do not use it where it
-adds any; it is a convenience, not a layer the loop is obliged to go through.
-
-Where it helps. It has a first-class OpenCode backend, so `aarmy create NAME -b opencode -m
-opencode/big-pickle` puts a free model behind a named agent, which is the ladder's mechanic
-and builder rungs without hand-rolling an invocation. It keeps the session, so `talk` resumes
-a conversation and `fork` branches one, instead of every call starting from nothing. It takes
-`--schema` with a validating repair loop, which is worth more than it sounds: a reply that
-must satisfy a schema is harder to fabricate than a prose report, and prose reports from
-agents have been wrong here more than once. It maps a team name to a working directory, so
-the agent runs where it should without the caller composing a `cd`. And `--prompt-file`,
-`--timeout` and non-tty-safe stdin mean it is meant to be driven by a script rather than a
-person.
-
-Where it does not help yet. `talk` is blocking and foreground — one turn per invocation,
-`subprocess.run` under the hood, no completion signal. So an orchestrator that wants several
-agents working at once must background them itself and poll, which is exactly the friction
-that makes a Claude subagent the easier choice and quietly defeats the free-model rule above.
-It also does not create git worktrees; a team points at one that already exists, and making
-and removing it stays the caller's job. Those two gaps are filed as issues on this repository
-and are meant to be fixed upstream in `agents-army` rather than worked around here.
-
-Until the first of those lands, prefer `aarmy` for work that is naturally one turn at a time
-and benefits from a session or a schema, and keep using Claude subagents where several pieces
-of work need to run at once and report back on their own.
-
-## Cost
-
-Cost is a constraint Gabriel set, not a preference.
-
-- No paid or external service enters without an issue labeled `needs-gabriel` that names the
-  service, why it is needed, and what it costs. This covers email delivery, payments, hosted
-  AI, and any SaaS.
-- Prefer what is already here: `node:sqlite`, a single self-hosted VM, Cloudflare in front
-  for TLS.
-- Prefer a free model over a paid one for every rung that can carry the work, and
-  prefer the smallest rung that can. The orchestrator's own tool calls are the most
-  expensive tokens in the loop and are the exception, not the rule: if an agent can
-  return the conclusion, an agent does, even for a two-line read.
-- Slices are short, prompts are precise, and lookups go to the cheapest agent.
-
-A bundle budget may be raised, but never as the reflex when a build goes over. Gabriel
-set the rule on 2026-09-04: a raise is fine when real features have been added and the
-orchestrator can say exactly what grew and why, naming the chunks and the byte counts.
-When that account cannot be given, the answer is not a bigger number but a bundle analyzer
-and a trim of whatever is largest. A raise arrives with its evidence in the pull request
-that needs it: the old and new limits, the measured build size, where the growth landed,
-and whether any new dependency entered. Repeated raises without that evidence mean the
-budget has stopped being a budget.
-
-## The five-hour window
-
-Claude Code meters usage in a rolling five-hour window, and the orchestrator is
-responsible for not spending the whole window in one cycle. The only supported way
-to read the window is the status line hook, which receives
-rate_limits.five_hour.used_percentage and rate_limits.five_hour.resets_at on its
-standard input and fires only in an interactive session. The script at
-~/.claude/statusline-usage.sh records both values to ~/.claude/usage-state.json on
-every render, and the orchestrator reads that file rather than guessing.
-
-At ninety-three percent the orchestrator stops delegating. It lets whatever is
-already running finish, writes its cycle comment on the log issue, and waits for
-the time in resets_at before starting anything new.
-
-The threshold is a gate on starting new work rather than a stop, because an agent
-already running has already committed its tokens and a long gate run can carry the
-total past the threshold after the gate closes. Nothing wakes an idle session when
-the window resets, so a session that means to resume by itself has to be running the
-loop skill with a wait long enough to reach resets_at.
-
-## Product state and priorities, as of 2026-09-10
-
-Built since 2026-09-03: per-account sync of the whole state document, versioned
-last-write-wins, with stale-device adoption and own-write protection (#30, verified on
-production 2026-09-04; #58, what happens to a device's data when someone else signs in, is
-still open). A real food catalog served from the ETL SQLite database, with search, ranking,
-serving options and brand labels on rows (#337 is partly open: a plain-food query can still
-show a same-named branded product first). The Today page was redesigned: titled cards each
-carrying their own actions, a weight graph with scrubbing, one ring layout in both normal
-and GLP-1 modes, and a toast with undo on logging. A floating menu toggle replaced the top
-bar, there is a left-handed setting that mirrors the toggle and the side menu, and sync now
-handles storage-quota limits and oversize documents rather than failing silently.
-
-Not built: photo recognition is still a screen with nothing behind it and needs a paid
-service decided before any build. Production monitoring does not exist (#266: options are
-posted, the alert channel is undecided). Household stays parked, unchanged from
-2026-09-03. There is no iOS shell.
-
-Agreed order now: (1) photo logging needs Gabriel's service decision before any build; (2)
-quality routines continue as filler — #129's slop audit is complete tree-wide, #130 hunts
-performance, #148's mutation debt keeps paying down file by file with six proposed
-equivalents awaiting Gabriel's acceptance; (3) anything Gabriel sends as a UI request takes
-priority over both. Pick from open issues; this section is context, not a queue.
-
-## What needs Gabriel
-
-- Product decisions: what a feature does, the flow, the wording of any promise the app
-  makes to a person. Not how it looks: Gabriel handed the design over on 2026-09-04, so
-  layout, color, type and the shape of a control are the orchestrator's to decide and to
-  defend. He is the end user and will say when something reads wrong; that is feedback to
-  act on, not a veto to wait for.
-- Any spend, as above.
-- Infrastructure access: the VM, DNS, Cloudflare, secrets. The orchestrator never handles a
-  credential; it asks Gabriel to place it and says where.
-- Lowering any gate threshold, changing branch protection, or reversing anything this file
-  parks.
-- Deleting user data — suspended until production by the development-only permissions at
-  the top of this file, which is where it goes back on.
-
-## Changing the infrastructure
-
-The orchestrator holds a Cloudflare API token for the `psilva.org` zone from 2026-09-04,
-placed by Gabriel under `~/keys/` and read from a path in the environment. It is never
-printed, echoed, logged or committed, exactly like the Owen app key. The token can read and
-write that zone's settings, which is enough to turn Speed Brain on or off; it does not need
-DNS, Workers or cache access and should not be given them.
-
-Two rules govern using it, and they exist because edge configuration is the least safe thing
-either of us can touch. A code change is reviewed, gated by CI, and revertible from git
-history. A zone setting takes effect globally the moment it is written, with none of that. On
-2026-09-04 a single Cloudflare setting made the Android app unusable on every navigation, and
-nothing in this repository could have caught it.
-
-**Announce an infrastructure change on an issue, before and after.** Say what is about to
-change and why, then say what changed and what was observed. That comment is the only record
-such a change will ever have, so it stands in for the commit message, the diff and the
-review all at once.
-
-**Diagnosis is read-only.** Never change a setting to find out whether a change is possible.
-The orchestrator broke this rule the day it was written, by testing write access with a live
-`PATCH` that happened to be a no-op; a permission is confirmed by being asked for, not by
-being used. Where the effect of a setting can be observed from outside — Speed Brain is
-visible as a `speculation-rules` header on any response — prefer that check over the API,
-because it needs no credential and reports what the edge is actually doing rather than what
-the control plane believes.
-
-## Deploy, as of 2026-09-10
-
-The repo is `Gabes-Tint/Fit_`. `main` is protected by one ruleset, "main: merge queue" —
-squash merges only, up to 3 entries at a time, required check "Quality and security". A
-pull request lands with `gh pr merge <n>`, no strategy flag: GitHub builds it onto the
-current `main` plus whatever else is queued, retests the combined tree, and fast-forwards
-`main` asynchronously — the merge is not immediate and its result shows up as a
-`gh-readonly-queue/…` run, not a run against the PR's own branch.
-
-The app is live at <https://fit.psilva.org>, a self-hosted VM behind Cloudflare; the VM's
-SSH hostname is deliberately not written down in this repository. One command from a clean
-checkout deploys it:
+`.env` (gitignored; worktrees do not inherit it):
 
 ```bash
-FIT_DEPLOY_HOST=user@host FIT_PUBLIC_ORIGIN=https://fit.psilva.org bun run deploy
+bun run deploy && bun run deploy:smoke
 ```
 
-as documented in README.md: it builds locally, ships `build/` plus a production
-`node_modules`, lands the release under `/opt/fit/releases/<commit>/`, switches
-`/opt/fit/current`, restarts `fit.service`, and finishes with `deploy:smoke`'s eleven
-checks. Before any of that, `scripts/deploy/main-ci-gate.ts` refuses a commit that is not
-proven green — but since main started landing through the merge queue it now accepts either
-a green `push` run of `ci.yml` on `main` for that commit, or a green `merge_group` run whose
-head SHA is that same commit (#332), so a flake that fails main's own push run and is then
-retried green no longer blocks a deploy the queue already vetted. `FIT_DEPLOY_ALLOW_RED_MAIN=1`
-still skips the check entirely, loudly, for the day the check itself is broken.
+|         |                                                                                           |
+| ------- | ----------------------------------------------------------------------------------------- |
+| Needs   | `FIT_DEPLOY_HOST` `FIT_PUBLIC_ORIGIN` · clean tree · green SHA                            |
+| Skip    | `FIT_DEPLOY_ALLOW_RED_MAIN=1` only if the check is broken                                 |
+| When    | user-facing merge                                                                         |
+| Queue   | `main: merge queue` · check `Quality and security`                                        |
+| Android | `https://` `FIT_CAPACITOR_SERVER_URL` · `FIT_ANDROID_SIGNING_PROPERTIES`                  |
+| Version | patch every `main` merge; `release:minor` when a feature is complete; major at production |
+| Known   | Flexible SSL; smoke = 10 deploys/hour through the public name                             |
 
-Deploy after any user-facing merge, under Gabriel's standing authorization; a docs- or
-tooling-only merge does not need one.
+## Resume
 
-Known, and Gabriel's to decide if either becomes a problem: the zone is on Cloudflare's
-Flexible SSL mode, so the hop from Cloudflare to the origin is unencrypted — moving to Full
-would mean a certificate and a proxy on the VM, and a different `HOST` and `PORT` in the
-environment file. And because Cloudflare supplies `CF-Connecting-IP` itself, every smoke
-check run through the public name is throttled as one address — this machine's; ten
-registrations an hour is the ceiling on deploys per hour.
-
-The Android build is pointed at the same server by `FIT_CAPACITOR_SERVER_URL`, which must
-be `https://`.
-
-## Resuming after a context reset
-
-1. Read this file, then `AGENTS.md`.
-2. Read the last comment on the orchestrator log issue.
-3. `gh issue list --label needs-gabriel` for anything he has answered, then the open stories.
-4. `git status`, `git log --oneline -20`, and any worktree under `.claude/worktrees/`.
-5. Continue at step one of the cycle.
+This file → `AGENTS.md` → last log comment → `needs-gabriel` → stories → `git status` / worktrees → cycle 1.
