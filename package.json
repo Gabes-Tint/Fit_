@@ -64,6 +64,7 @@
 		"debt:pay": "bun scripts/quality/debt-pay.ts",
 		"test:gates": "bun scripts/quality/self-test.ts",
 		"search:eval": "node scripts/eval/search-eval.ts",
+		"etl:audit": "node scripts/etl/plausibility-audit.ts",
 		"perf:measure": "node scripts/perf/measure.ts",
 		"check:perf-plans": "node scripts/perf/check-plans.ts",
 		"perf:catalog-page": "node scripts/perf/catalog-page.run.ts",

@@ -351,6 +351,25 @@ What each query is owed is counted out of the catalog on every run rather than w
 the fixture, so a rebuilt catalog moves the expectation with it. The fixture pins no row
 counts and nothing to update when the ETL runs again.
 
+### Catalog plausibility audit
+
+`etl:audit` (`scripts/etl/plausibility-audit.ts`) checks every catalog row against a
+physical bound rather than a ranking judgement: kcal per 100 g must sit within ±15% of the
+Atwater estimate from its own protein/carbs/fat/fibre (alcohol, where a catalog carries it),
+and never above 900 regardless. It is read-only — it lists failing rows grouped by
+`value_source` and `category` with a sample of names, and never deletes or rewrites one.
+
+```bash
+bun run etl:audit
+bun run etl:audit -- --db data/db/fit-food-full.sqlite --json reports/etl/plausibility-full.json
+```
+
+It defaults to `FIT_CATALOG_PATH` (`data/db/fit-food-core.sqlite`); `--db` points it at a
+different file, and `--json` writes the full failing list under `reports/etl/` (ignored by
+Git). Like `search:eval`, it needs a catalog neither in the repository nor in CI, so it is
+not a gate — run it by hand after an ETL change or when a plausibility question comes up
+(issue #338).
+
 ### Performance instruments
 
 `perf:measure` runs the four instruments of issue #130 — client bundle, phone-profile paint,
