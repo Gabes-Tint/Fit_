@@ -18,9 +18,16 @@ import {
  * file. There is no catalog in CI, so what these two tests own is the other
  * half: that the order the server sends is the order a person sees, and that a
  * branded row says its brand on the way in and on the way out.
+ *
+ * The rows below are stubbed in the order the server really answers this query
+ * with. The candy leads it, because "green apple" matches the candy and not one
+ * generic row in the catalog, and the widened page is only ever allowed to fill
+ * a tail (`plain-food.ts` says why). So what a person is owed here is not a
+ * different first row — it is being able to see, without tapping, that the
+ * first row is a Claeys product and the one under it is fruit.
  */
 
-/** Whichever raw apple the ranking puts first — generic, and carrying no brand. */
+/** The raw apple the widened page fills the tail with — generic, and carrying no brand. */
 const APPLE: ResolvedRow = {
 	id: 9401,
 	name: 'Apples, granny smith, with skin, raw',
@@ -66,23 +73,26 @@ async function searchGreenApple(page: Page) {
 test.describe('a search for "green apple"', () => {
 	test.beforeEach(async ({ page, baseURL }) => {
 		await signInThroughApi(page, baseURL ?? '');
-		await stubFoodSearch(page, [APPLE, CANDY]);
+		await stubFoodSearch(page, [CANDY, APPLE]);
 		await openEmptyJournal(page);
 	});
 
-	test('answers with the fruit first, and says whose candy the other row is', async ({ page }) => {
+	test('says whose product the first row is, and shows the fruit under it', async ({ page }) => {
 		const results = await searchGreenApple(page);
 
 		const first = results.getByRole('listitem').first();
-		await expect(first).toContainText('Apples, granny smith, with skin, raw');
-		// Not branded: the row a person taps without reading is the food, and
-		// the brand line is exactly what a branded row would add here.
-		await expect(first).not.toContainText('CLAEYS');
+		await expect(first).toContainText('GREEN APPLE');
+		// The whole of #337 on one line: the row said "GREEN APPLE" and a source
+		// badge, and never said Claeys, so a candy and a fruit read alike.
+		await expect(first).toContainText('CLAEYS');
+		// The label the package states, beside the weight it comes to.
+		await expect(first).toContainText('3 PIECES · 15 g');
 
-		const candy = results.getByRole('listitem').filter({ hasText: 'GREEN APPLE' });
-		await expect(candy).toContainText('CLAEYS');
-		// The label the package states, beside the weight it comes to (#337).
-		await expect(candy).toContainText('3 PIECES · 15 g');
+		const fruit = results
+			.getByRole('listitem')
+			.filter({ hasText: 'Apples, granny smith, with skin, raw' });
+		await expect(fruit).toBeVisible();
+		await expect(fruit).not.toContainText('CLAEYS');
 	});
 
 	test('carries the brand onto the journal row the candy is logged as', async ({ page }) => {

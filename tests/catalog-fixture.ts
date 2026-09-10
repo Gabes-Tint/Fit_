@@ -320,6 +320,30 @@ const FIXTURE_FOODS: FixtureRow[] = [
 		barcode: null,
 		alias: null
 	},
+	// The compound food the head-noun widening must never answer for (#337
+	// review): nothing generic carries both words, so a widening that outranked
+	// the strict page would put 360 kcal of plain rice above a 24 kcal
+	// vegetable — the same harm the candy did, in the other direction.
+	{
+		id: 27,
+		name: 'CAULIFLOWER RICE',
+		brand: 'WEGMANS',
+		kind: 'branded',
+		quality: 94,
+		sources: 3,
+		barcode: null,
+		alias: null
+	},
+	{
+		id: 28,
+		name: 'Rice, white, long-grain, regular, raw, enriched',
+		brand: null,
+		kind: 'generic',
+		quality: 91,
+		sources: 200,
+		barcode: null,
+		alias: null
+	},
 	// Found only through its alias, which is a separate FTS column.
 	{
 		id: 12,

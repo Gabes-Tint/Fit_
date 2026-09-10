@@ -4,23 +4,31 @@
 import { searchTerms, type SearchTerms } from './query.ts';
 
 /**
- * The two rules that separate a plain food from a brand whose label spells it.
+ * Two rules that keep a brand from answering for the food it is named after.
  *
- * "green apple" was logged as Claeys hard candy at 400 kcal (#337). Two things
- * were wrong at once and neither is fixable by the other's rule.
+ * "green apple" logged Claeys hard candy at 400 kcal (#337). A branded row
+ * named exactly what a person types collects every name term and the whole of
+ * the brevity term, which no generic row written "Apples, granny smith, with
+ * skin, raw" can reach. So a branded row whose brand the query does not name is
+ * demoted, and a person who types a brand still gets that brand.
  *
- * The first is scoring: a branded row named exactly "GREEN APPLE" collects every
- * name term and the whole brevity term, which no generic row written "Apples,
- * granny smith, with skin, raw" can ever match. So a branded row whose brand the
- * query does not name is demoted — a person who types a brand gets that brand,
- * and a person who types a food gets the food.
- *
- * The second is matching, and it is why the demotion alone is not enough: the
+ * The second rule is narrower than it first looks, and deliberately so. The
  * catalog holds no generic row carrying both "green" and "apple", so the strict
- * AND match for "green apple" is 859 rows of which every single one is branded.
- * Nothing can be re-ranked into first place that is not in the match set. When a
- * page comes back branded from end to end and names no brand, the query is read
- * again on its head noun alone, and the two pages are merged on their scores.
+ * match for that query is 948 rows of which every one is branded, and the first
+ * instinct — read the query again on its head noun and merge the two pages by
+ * score — is a worse bug than the one it fixes. Measured on the live catalog:
+ * "cauliflower rice" (300 matches, none generic) then answers with black rice
+ * at 360 kcal in place of a 24 kcal vegetable, "zucchini noodles" with chow
+ * mein at 471 against 18, "chickpea pasta" and "cashew cheese" the same way.
+ * A compound food is written exactly like a plain food with a modifier, and
+ * nothing in a name, a brand or a kind tells the two apart.
+ *
+ * So the widened page is never allowed to outrank the strict one. It fills the
+ * tail of a page the strict match could not fill, and nothing more: the branded
+ * cauliflower rice keeps the top of its own query, and the head noun's foods
+ * come after it instead of an empty page. What that does not do is put a fruit
+ * above the candy for "green apple" — no rule here can, because that judgement
+ * is about food and not about text.
  */
 
 /** A ranked row, as these rules need to see it. */
@@ -31,54 +39,75 @@ export type RankedRow = {
 };
 
 /**
- * One ranked row and whatever its caller wanted out of it.
- *
- * The payload is carried beside the ranking fields rather than merged into them
- * so that nothing here has to know what a food looks like, and so the score —
- * which exists only to compare two pages with each other — never has to be
- * peeled back off the object a caller returns to its own callers.
+ * One ranked row and whatever its caller wanted out of it. The payload rides
+ * beside the ranking fields so that nothing here has to know what a food is.
  */
-export type Ranked<Food> = RankedRow & { score: number; food: Food };
+export type Ranked<Food> = RankedRow & { food: Food };
 
 /** The catalog's word for a row that is a food rather than a product. */
 const GENERIC_KIND = 'generic';
 
 /**
- * Whether the typed text names this brand.
- *
- * Substring rather than token equality, because a brand is written as one label
- * ("BURGER KING", "TRADER JOE'S") and a person types it that way. Folded to
- * lower case on both sides; the text arrives already folded from `searchTerms`.
- *
- * A brand shorter than a token floor is ignored rather than matched: two-letter
- * brands exist in the catalog and would exempt half the branded rows from the
- * demotion by appearing inside an unrelated word.
+ * The text with a space on either end, so a token can be looked for with its
+ * boundaries. `searchTerms` joins its tokens with single spaces and strips
+ * everything that is not a letter or a digit, so this is a complete tokenizing
+ * for the query side.
  */
-export function namesBrand(text: string, brand: string | null): boolean {
-	if (brand === null) return false;
-	const folded = brand.trim().toLowerCase();
-	if (folded.length < MIN_BRAND_LENGTH) return false;
-	return text.includes(folded);
+function padded(text: string): string {
+	return ` ${text} `;
 }
 
 /**
- * How short a brand may be and still exempt its row from the demotion. Three,
- * the same floor `query.ts` puts on a typed token, and for the same reason: a
- * shorter string matches too much to mean anything.
+ * Whether the typed text names this brand.
+ *
+ * Whole tokens, not a substring, and that is the difference between a rule and
+ * a coincidence: "banana" contains "nan", "chicken breast" contains "eas" and
+ * "olive oil" contains "live", and all three are real brands in the catalog.
+ * A substring test exempted those rows from the demotion for a word the person
+ * never typed.
+ *
+ * A brand is still matched as the whole label it is printed as rather than
+ * token by token, because that is how a person types one: "burger king whopper"
+ * names BURGER KING, and neither half of that brand on its own should count.
+ *
+ * `namesBrandSql` below is the same rule in SQL and the two must agree.
  */
-const MIN_BRAND_LENGTH = 3;
+export function namesBrand(text: string, brand: string | null): boolean {
+	const folded = brand === null ? '' : brand.trim().toLowerCase();
+	if (folded.length === 0) return false;
+	return padded(text).includes(padded(folded));
+}
+
+/**
+ * `namesBrand`, in SQL, as the demotion `ranking.ts` weights: 1.0 for a branded
+ * row whose brand the query does not name, 0.0 for everything else.
+ *
+ * Only `kind = 'branded'` is demoted, named explicitly rather than as "not
+ * generic", so a catalog that grows a third kind is left alone until somebody
+ * decides what it means.
+ *
+ * `coalesce`, and not for tidiness: 4% of branded rows carry no brand at all,
+ * and a bare `f.brand` makes the whole predicate null for them, which `case
+ * when` reads as false and would exempt exactly the rows that can never be
+ * named. The padding is `namesBrand`'s, so the two forms agree token for token.
+ */
+export function unnamedBrandSql(): string {
+	const brand = "lower(trim(coalesce(f.brand, '')))";
+	return `case when f.kind = 'branded'
+			and not (length(${brand}) > 0
+				and instr(' ' || :text || ' ', ' ' || ${brand} || ' ') > 0)
+		then 1.0 else 0.0 end`;
+}
 
 /**
  * Whether a page has answered a plain-food query with branded products only.
  *
- * Three conditions, and all three are needed. The page must hold no generic row,
- * or there was a food to rank and the demotion's job was to lift it. It must
- * name no brand, or the person asked for a product and got one — this is what
- * keeps "burger king whopper" and "subway turkey" reading their own rows. And
- * the query must have a qualifier to drop, since a single token has no head to
- * fall back to.
+ * Both conditions are needed. The page must hold no generic row, or there was a
+ * food to rank and the demotion's job was to lift it; and it must name no
+ * brand, or the person asked for a product and got one, which is what keeps
+ * "burger king whopper" and "subway turkey" reading their own rows.
  *
- * An empty page is not retried. Answering nothing is a different problem from
+ * An empty page is not widened. Answering nothing is a different problem from
  * answering the wrong thing, and widening a query that matched nothing would
  * change what "no results" means.
  */
@@ -91,11 +120,10 @@ export function needsHeadRetry(text: string, page: readonly RankedRow[]): boolea
 /**
  * The head noun of a multi-token query, or `null` when there is not one.
  *
- * The last token, because English puts the head of a food phrase last: "green
- * apple" is an apple, "red onion" an onion, "greek yogurt" a yogurt. It is a
- * heuristic and it is wrong for a compound like "peanut butter" — which is why
- * it runs only when `needsHeadRetry` has already found the page hopeless, and
- * "peanut butter" answers with generic peanut butter and never reaches it.
+ * The last token, because English puts the head of a food phrase last. It is a
+ * heuristic and it is wrong for a compound like "peanut butter" — which costs
+ * nothing here, because what it produces can only ever sit below the rows the
+ * query actually matched.
  */
 function headWord(text: string): string | null {
 	const tokens = text.split(' ').filter((token) => token.length > 0);
@@ -109,15 +137,21 @@ export function headTerms(text: string): SearchTerms | null {
 }
 
 /**
- * The strict page, or the strict and head-only pages merged, ordered by score.
+ * The strict page, with the head noun's page appended under it when the strict
+ * match could not fill the page on its own.
  *
- * Merged rather than replaced: the candy is still a real answer to "green
- * apple" and a person looking for it has to be able to find it. Both pages are
- * scored by the same formula, so the scores compare; a row reached by both keeps
- * the higher of the two, since being found twice is not a reason to rank lower.
+ * Appended, never interleaved: a row the query actually matched outranks every
+ * row reached by throwing one of its words away, whatever either scored. The
+ * two pages are scored against different text, so comparing those scores was
+ * never the comparison it looked like.
  *
- * `run` is the caller's ranked query, which is what lets the eval runner and the
- * search endpoint share this decision instead of reimplementing it apart.
+ * A full page is returned without running the second query at all. That is not
+ * only the ~20 ms it saves on a search: `resolveFood` reads three rows, and a
+ * three-row page is nearly always full, so this is what keeps the photo and
+ * resolve endpoints reading exactly the rows the query matched.
+ *
+ * `run` is the caller's ranked query, which is what lets the eval runner and
+ * the search endpoint share this decision instead of reimplementing it apart.
  */
 export function searchPlainFood<Food>(
 	terms: SearchTerms,
@@ -125,35 +159,11 @@ export function searchPlainFood<Food>(
 	run: (terms: SearchTerms, limit: number) => Ranked<Food>[]
 ): Food[] {
 	const strict = run(terms, limit);
-	const relaxed = needsHeadRetry(terms.text, strict) ? headTerms(terms.text) : null;
+	if (strict.length >= limit) return strict.map((row) => row.food);
+	if (!needsHeadRetry(terms.text, strict)) return strict.map((row) => row.food);
+	const relaxed = headTerms(terms.text);
 	if (relaxed === null) return strict.map((row) => row.food);
-	const best = new Map<number, Ranked<Food>>();
-	for (const row of [...strict, ...run(relaxed, limit)]) {
-		const held = best.get(row.id);
-		if (held === undefined || row.score > held.score) best.set(row.id, row);
-	}
-	return [...best.values()]
-		.sort((left, right) => right.score - left.score)
-		.slice(0, limit)
-		.map((row) => row.food);
-}
-
-/**
- * `namesBrand`, in SQL, as the demotion `ranking.ts` weights: 1.0 for a branded
- * row whose brand the query does not name, 0.0 for everything else.
- *
- * Only `kind = 'branded'` is demoted, named explicitly rather than as "not
- * generic", so a catalog that grows a third kind is left alone until someone
- * decides what it means. The two forms are kept in one file because they are one
- * rule and a difference between them would be a silent ranking bug.
- */
-export function unnamedBrandSql(): string {
-	// `coalesce`, and not because null is tidier: 4% of the catalog's branded
-	// rows carry no brand at all, and a bare `f.brand` makes the whole predicate
-	// null for them, which `case when` reads as false and exempts from the
-	// demotion. A row with no brand is the one row a query can never be naming.
-	const brand = "lower(trim(coalesce(f.brand, '')))";
-	return `case when f.kind = 'branded'
-			and not (length(${brand}) >= ${MIN_BRAND_LENGTH} and instr(:text, ${brand}) > 0)
-		then 1.0 else 0.0 end`;
+	const seen = new Set(strict.map((row) => row.id));
+	const tail = run(relaxed, limit).filter((row) => !seen.has(row.id));
+	return [...strict, ...tail].slice(0, limit).map((row) => row.food);
 }

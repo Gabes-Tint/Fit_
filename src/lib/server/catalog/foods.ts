@@ -114,9 +114,9 @@ export function searchFoods(db: DatabaseSync, typed: string, limit: number): Cat
 	);
 }
 
-/** One ranked page for exactly these terms, each row carrying the score it was ranked on. */
+/** One ranked page for exactly these terms, in the order the ranking put them. */
 function rankedPage(db: DatabaseSync, terms: SearchTerms, limit: number): Ranked<CatalogFood>[] {
-	return prepared(db, searchSql(`${FOOD_COLUMNS}, d.score`))
+	return prepared(db, searchSql(FOOD_COLUMNS))
 		.all({
 			match: terms.match,
 			text: terms.text,
@@ -126,13 +126,7 @@ function rankedPage(db: DatabaseSync, terms: SearchTerms, limit: number): Ranked
 		})
 		.map((row) => {
 			const food = toFood(row);
-			return {
-				id: food.id,
-				brand: food.brand,
-				kind: food.kind,
-				score: requiredNumber(row, 'score'),
-				food
-			};
+			return { id: food.id, brand: food.brand, kind: food.kind, food };
 		});
 }
 

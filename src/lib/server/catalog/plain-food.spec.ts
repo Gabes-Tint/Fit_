@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFixtureCatalog } from '../../../../tests/catalog-fixture';
 import { searchFoods } from './foods';
 import { searchTerms } from './query';
@@ -29,16 +29,30 @@ describe('the defect this rule exists for (#337)', () => {
 		expect(matched).toEqual(['branded']);
 	});
 
-	it('answers "green apple" with the fruit, not with Claeys hard candy', () => {
-		expect(names('green apple')[0]).toBe('Apples, granny smith, with skin, raw');
-	});
-
-	it('still answers with the candy, because a demotion is not a filter', () => {
-		expect(names('green apple')).toContain('GREEN APPLE');
+	it('puts the fruit on the page, under the rows the query actually matched', () => {
+		// The candy is what "green apple" matches, so the candy leads. The fruit
+		// the strict match never held is reachable underneath it instead of
+		// absent — and the brand beside the name is what tells them apart.
+		expect(names('green apple')).toEqual(['GREEN APPLE', 'Apples, granny smith, with skin, raw']);
 	});
 
 	it('answers with the candy first when the person names its brand', () => {
 		expect(names('claeys green apple')[0]).toBe('GREEN APPLE');
+	});
+});
+
+describe('a compound food is not a plain food with a modifier', () => {
+	it('answers "cauliflower rice" with cauliflower rice, not with rice', () => {
+		// Measured on the live catalog before this was appended rather than
+		// merged: "cauliflower rice" answered with black rice at 360 kcal for a
+		// 24 kcal vegetable. "chickpea pasta", "zucchini noodles" and "cashew
+		// cheese" all failed the same way, and no rule can read a compound food
+		// apart from a modified one by its text.
+		expect(names('cauliflower rice')[0]).toBe('CAULIFLOWER RICE');
+	});
+
+	it('still offers the head noun underneath, rather than a page of one row', () => {
+		expect(names('cauliflower rice')).toContain('Rice, white, long-grain, regular, raw, enriched');
 	});
 });
 
@@ -55,34 +69,53 @@ describe('namesBrand', () => {
 		expect(namesBrand('burger king whopper', 'BURGER KING')).toBe(true);
 	});
 
-	it('a row with no brand is never a brand the query named', () => {
-		expect(namesBrand('green apple', null)).toBe(false);
-	});
-
 	it('reads a brand the ETL carried through padded and title-cased', () => {
 		// `food.brand` is free text from several sources merged together, so the
-		// same brand arrives "CLAEYS" from one and "  Claeys " from another, and
-		// a person types neither spelling exactly.
+		// same brand arrives "CLAEYS" from one and "  Claeys " from another.
 		expect(namesBrand('claeys green apple', '  Claeys  ')).toBe(true);
 	});
 
 	it('credits a three-letter brand, which is a brand and not a fragment', () => {
-		// The floor is "shorter than a token search would accept", not "three or
-		// fewer": KFC, GNC and Yeo are brands a person types and expects back.
 		expect(namesBrand('kfc bowl', 'KFC')).toBe(true);
 	});
 
-	it('ignores a brand too short to mean anything, rather than matching inside a word', () => {
-		// "ap" would otherwise match inside "apple" and exempt the row from the
-		// demotion, which is the floor `query.ts` puts on a typed token too.
-		expect(namesBrand('green apple', 'ap')).toBe(false);
+	it('a row with no brand is never a brand the query named', () => {
+		expect(namesBrand('green apple', null)).toBe(false);
+	});
+
+	it('a brand the ETL carried through blank is not one either', () => {
+		expect(namesBrand('green apple', '   ')).toBe(false);
+	});
+
+	describe('a brand is whole words, never a run of letters inside one', () => {
+		// All three are real brands in the catalog, and a substring test exempted
+		// every row carrying them from the demotion for a word nobody typed.
+		it('does not read NAN out of "banana"', () => {
+			expect(namesBrand('banana', 'NAN')).toBe(false);
+		});
+
+		it('does not read EAS out of "chicken breast"', () => {
+			expect(namesBrand('chicken breast', 'EAS')).toBe(false);
+		});
+
+		it('does not read LIVE out of "olive oil"', () => {
+			expect(namesBrand('olive oil', 'LIVE')).toBe(false);
+		});
+
+		it('still reads a brand that is the first word of the query', () => {
+			expect(namesBrand('nan formula', 'NAN')).toBe(true);
+		});
+
+		it('still reads a brand that is the last word of the query', () => {
+			expect(namesBrand('formula nan', 'NAN')).toBe(true);
+		});
 	});
 });
 
 describe('needsHeadRetry', () => {
 	const branded = { id: 1, brand: 'CLAEYS', kind: 'branded' };
 
-	it('retries a query answered with branded rows and no brand of its own', () => {
+	it('widens a query answered with branded rows and no brand of its own', () => {
 		expect(needsHeadRetry('green apple', [branded])).toBe(true);
 	});
 
@@ -115,87 +148,73 @@ describe('headTerms', () => {
 	});
 
 	it('reads past the gaps a typed query leaves', () => {
-		// A person types a trailing space and a doubled one between words; the
-		// head is still "apple", not the empty string between two separators,
-		// which would search for nothing and answer a widened query with a blank.
+		// A trailing space and a doubled one between words; the head is still
+		// "apple", not the empty string between two separators, which would
+		// widen the query into a search for nothing.
 		expect(headTerms('green  apple ')?.text).toBe('apple');
 	});
 });
 
 describe('searchPlainFood', () => {
 	/** A branded row naming no brand of its own, which is what makes a page hopeless. */
-	function branded(id: number, score: number, food: string): Ranked<string> {
-		return { id, brand: null, kind: 'branded', score, food };
+	function branded(id: number, food: string): Ranked<string> {
+		return { id, brand: null, kind: 'branded', food };
 	}
 
-	function generic(id: number, score: number, food: string): Ranked<string> {
-		return { id, brand: null, kind: 'generic', score, food };
+	function generic(id: number, food: string): Ranked<string> {
+		return { id, brand: null, kind: 'generic', food };
 	}
 
 	/** Answers the strict terms with one page and anything else with the other. */
 	function pages(strict: Ranked<string>[], relaxed: Ranked<string>[]) {
-		return (used: { text: string }, limit: number) =>
-			(used.text === 'green apple' ? strict : relaxed).slice(0, limit);
+		return vi.fn((used: { text: string }, limit: number) =>
+			(used.text === 'green apple' ? strict : relaxed).slice(0, limit)
+		);
 	}
 
 	const TERMS = searchTerms('green apple') ?? { match: '', text: 'green apple' };
 
 	it('hands back the strict page untouched when it already holds a food', () => {
-		const strict = [generic(1, 9, 'Apples, granny smith, with skin, raw'), branded(2, 8, 'CANDY')];
+		const strict = [generic(1, 'Apples, granny smith, with skin, raw'), branded(2, 'CANDY')];
 		expect(searchPlainFood(TERMS, 10, pages(strict, []))).toEqual([
 			'Apples, granny smith, with skin, raw',
 			'CANDY'
 		]);
 	});
 
-	it('merges the widened page into the strict one, best score first', () => {
+	it('appends the widened page under the strict one, never above it', () => {
 		const merged = searchPlainFood(
 			TERMS,
 			10,
-			pages([branded(1, 5, 'GREEN APPLE')], [generic(2, 7, 'Apple, raw'), branded(1, 5, 'ignored')])
+			pages([branded(1, 'GREEN APPLE')], [generic(2, 'Apple, raw')])
 		);
-		// The fruit the strict match never held, and the candy still on the page
-		// below it — a demotion is not a filter, and neither is this.
-		expect(merged).toEqual(['Apple, raw', 'GREEN APPLE']);
+		expect(merged).toEqual(['GREEN APPLE', 'Apple, raw']);
 	});
 
-	it('keeps the widened page’s copy of a row when that is the higher-scoring one', () => {
-		// The same food scored against two queries, better on the widened one.
-		// Which page a row arrived on is not what orders it; its score is.
+	it('shows a row the query matched once, not again under its head noun', () => {
 		const merged = searchPlainFood(
 			TERMS,
 			10,
-			pages(
-				[branded(1, 3, 'GREEN APPLE at 3')],
-				[generic(2, 4, 'Apple, raw'), branded(1, 6, 'GREEN APPLE at 6')]
-			)
+			pages([branded(1, 'GREEN APPLE')], [generic(2, 'Apple, raw'), branded(1, 'GREEN APPLE')])
 		);
-		expect(merged).toEqual(['GREEN APPLE at 6', 'Apple, raw']);
-	});
-
-	it('keeps the higher-scoring copy of a row both pages found', () => {
-		// The same food, scored against two different queries. Being found twice
-		// is not a reason to rank it by its worse showing.
-		const merged = searchPlainFood(
-			TERMS,
-			10,
-			pages(
-				[branded(1, 6, 'GREEN APPLE at 6')],
-				[generic(2, 4, 'Apple, raw'), branded(1, 2, 'GREEN APPLE at 2')]
-			)
-		);
-		expect(merged).toEqual(['GREEN APPLE at 6', 'Apple, raw']);
+		expect(merged).toEqual(['GREEN APPLE', 'Apple, raw']);
 	});
 
 	it('never answers with more rows than the page a caller asked for', () => {
 		const merged = searchPlainFood(
 			TERMS,
 			2,
-			pages(
-				[branded(1, 5, 'GREEN APPLE')],
-				[generic(2, 9, 'Apple, raw'), generic(3, 8, 'Apple, baked')]
-			)
+			pages([branded(1, 'GREEN APPLE')], [generic(2, 'Apple, raw'), generic(3, 'Apple, baked')])
 		);
-		expect(merged).toEqual(['Apple, raw', 'Apple, baked']);
+		expect(merged).toEqual(['GREEN APPLE', 'Apple, raw']);
+	});
+
+	it('does not widen a page the strict match already filled', () => {
+		// `resolveFood` reads three rows, and a three-row page is nearly always
+		// full: a widening whose rows would all be cut is a second query for
+		// nothing, and the rows it would have added are rows nobody asked for.
+		const run = pages([branded(1, 'GREEN APPLE'), branded(2, 'GREEN APPLE SOUR')], []);
+		expect(searchPlainFood(TERMS, 2, run)).toEqual(['GREEN APPLE', 'GREEN APPLE SOUR']);
+		expect(run).toHaveBeenCalledTimes(1);
 	});
 });

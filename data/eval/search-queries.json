@@ -671,7 +671,7 @@
 		{
 			"query": "green apple",
 			"group": "adversarial",
-			"means": "a raw apple. #337: no generic row in the catalog carries both words, so the strict match is 859 branded rows and the top one was Claeys hard candy at 400 kcal",
+			"means": "a raw apple. #337: no generic row carries both words, so the strict match is 948 branded rows and the top one is Claeys hard candy at 400 kcal. Unsolved on purpose: reading the query again on its head noun does answer this one, and answers \"cauliflower rice\" with 360 kcal of rice for a 24 kcal vegetable, so the widened page is only ever allowed to fill a tail. This case scores zero and is meant to.",
 			"acceptable": [
 				"Apple, raw",
 				"Apples, fuji, with skin, raw",
@@ -685,6 +685,41 @@
 			"forbidden": [
 				"GREEN APPLE",
 				"GREEN APPLE, GREEN"
+			]
+		},
+		{
+			"query": "cauliflower rice",
+			"group": "adversarial",
+			"means": "riced cauliflower, a 24 kcal vegetable — never rice, which is 360 kcal and shares only the head word",
+			"acceptable": [
+				"CAULIFLOWER RICE",
+				"CAULIFLOWER RICE, CAULIFLOWER",
+				"RICED CAULIFLOWER",
+				"CAULIFLOWER RICED VEGGIES, CAULIFLOWER",
+				"ORGANIC RICED CAULIFLOWER"
+			],
+			"forbidden": [
+				"Rice, black, unenriched, raw",
+				"Rice, red, unenriched, dry, raw",
+				"Rice, white, long grain, unenriched, raw",
+				"Rice, brown, long grain, unenriched, raw"
+			]
+		},
+		{
+			"query": "chickpea pasta",
+			"group": "adversarial",
+			"means": "pasta made of chickpeas, a legume product — never plain wheat pasta, which shares only the head word",
+			"acceptable": [
+				"CHICKPEA PASTA, CASARECCE",
+				"CHICKPEA PASTA, PENNE, CHICKPEA",
+				"CHICKPEA PASTA, LINGUINI",
+				"CHICKPEAS PASTA",
+				"CHICKPEA PASTA MAC AND CHEESE"
+			],
+			"forbidden": [
+				"Pasta, dry, enriched",
+				"Pasta, dry, unenriched",
+				"Pasta, gluten-free, corn, dry"
 			]
 		},
 		{

@@ -114,9 +114,9 @@ function ranked(db: DatabaseSync, typed: string, limit: number): string[] {
 	return searchPlainFood(terms, limit, (used, size) => rankedRows(db, used, size));
 }
 
-/** One ranked page of names, in the shape `searchPlainFood` needs to merge two of them. */
+/** One ranked page of names, in the shape `searchPlainFood` needs to page two of them. */
 function rankedRows(db: DatabaseSync, terms: SearchTerms, limit: number): Ranked<string>[] {
-	return prepared(db, searchSql('f.food_id, f.name, f.brand, f.kind, d.score'))
+	return prepared(db, searchSql('f.food_id, f.name, f.brand, f.kind'))
 		.all({
 			match: terms.match,
 			text: terms.text,
@@ -128,7 +128,6 @@ function rankedRows(db: DatabaseSync, terms: SearchTerms, limit: number): Ranked
 			id: Number(row['food_id']),
 			brand: typeof row['brand'] === 'string' ? row['brand'] : null,
 			kind: String(row['kind']),
-			score: Number(row['score']),
 			food: String(row['name'])
 		}));
 }
