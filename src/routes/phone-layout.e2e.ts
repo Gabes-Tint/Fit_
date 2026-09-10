@@ -18,7 +18,8 @@ import {
 	refuseStateAsTooLarge,
 	signInThroughApi,
 	stubFoodResolve,
-	stubFoodSearch
+	stubFoodSearch,
+	turnOnLeftHanded
 } from '../../tests/e2e-support';
 
 /**
@@ -190,6 +191,64 @@ test.describe('the floating menu over the Today card actions', () => {
 	}
 });
 
+/**
+ * The scope widened (per Gabriel, same PR): with left-handed on, the card
+ * actions themselves move to the left edge — Log food, Log weight and Go to
+ * training — so the FAB now sits under a different corner of the same cards,
+ * and the expanded weight form's "2 days ago" button (which stays put, unlike
+ * the actions) is the one left-aligned control the FAB's new corner can reach.
+ * This sweeps the same three heights with the preference on.
+ */
+test.describe('the floating menu over the Today card actions, left-handed', () => {
+	const PHONES = [
+		{ width: 360, height: 800 },
+		{ width: 390, height: 844 },
+		{ width: 412, height: 915 }
+	];
+
+	for (const size of PHONES) {
+		test(`leaves every left-handed Today card action tappable at ${size.width}x${size.height}`, async ({
+			page,
+			baseURL
+		}) => {
+			await signInThroughApi(page, baseURL ?? '');
+			await page.goto('/');
+			await page.setViewportSize(size);
+			await openSampleJournal(page);
+			await turnOnLeftHanded(page);
+
+			const toggle = page.getByRole('button', { name: 'Open menu' });
+			await expect(toggle).toBeVisible();
+			await expectFitsViewport(page, toggle);
+			await expectHittable(toggle);
+
+			await expectCentreHittable(
+				page.getByRole('region', { name: 'Energy' }).getByRole('button', { name: 'Log food' }),
+				'Log food'
+			);
+			await expectCentreHittable(page.getByRole('button', { name: 'Log weight' }), 'Log weight');
+			await expectCentreHittable(
+				page.getByRole('link', { name: 'Go to training' }),
+				'Go to training'
+			);
+
+			// The one control on this card the FAB's new corner can actually
+			// reach: the date row does not mirror, and "2 days ago" is its
+			// leftmost button.
+			await page.getByRole('button', { name: 'Log weight' }).click();
+			await expect(page.getByLabel('Weight in kilograms')).toBeVisible();
+			await expectCentreHittable(
+				page.getByRole('button', { name: '2 days ago' }),
+				"the weight form's 2 days ago button"
+			);
+			await expectCentreHittable(
+				page.getByRole('button', { name: 'Today', exact: true }),
+				"the weight form's Today"
+			);
+		});
+	}
+});
+
 test.describe('at 360px', () => {
 	test('the Today week strip stays inside the viewport', async ({ page, baseURL }) => {
 		await signInThroughApi(page, baseURL ?? '');
@@ -199,6 +258,19 @@ test.describe('at 360px', () => {
 
 		const strip = page.getByRole('button', { name: /^Today/ }).locator('xpath=..');
 		await expectFitsViewport(page, strip);
+	});
+
+	test('the Today page still fits the viewport with the left-handed preference on', async ({
+		page,
+		baseURL
+	}) => {
+		await signInThroughApi(page, baseURL ?? '');
+		await page.goto('/');
+		await atNarrowPhone(page);
+		await openSampleJournal(page);
+		await turnOnLeftHanded(page);
+
+		await expectFitsViewport(page);
 	});
 
 	test('the Today weight trend card stays inside the viewport', async ({ page, baseURL }) => {
