@@ -395,8 +395,7 @@ describe('TodayView', () => {
 			await render(TodayView);
 			const wrapper = page.getByRole('button', { name: 'Log weight' }).element()
 				.parentElement as HTMLElement;
-			expect(wrapper.className).toContain('justify-start');
-			expect(wrapper.className).not.toContain('justify-end');
+			expect(wrapper.getAttribute('style')).toContain('justify-content: flex-start');
 		});
 
 		it('puts the Go to training arrow before the title, reversing the row', async () => {
@@ -404,7 +403,7 @@ describe('TodayView', () => {
 			await render(TodayView);
 			const row = page.getByRole('link', { name: 'Go to training' }).element()
 				.parentElement as HTMLElement;
-			expect(row.className).toContain('flex-row-reverse');
+			expect(row.getAttribute('style')).toContain('flex-direction: row-reverse');
 		});
 
 		it('leaves the actions right-handed when the preference is off', async () => {
@@ -413,7 +412,7 @@ describe('TodayView', () => {
 			expect(action.className).toContain('right-3');
 			const row = page.getByRole('link', { name: 'Go to training' }).element()
 				.parentElement as HTMLElement;
-			expect(row.className).not.toContain('flex-row-reverse');
+			expect(row.getAttribute('style') ?? '').not.toContain('flex-direction: row-reverse');
 		});
 	});
 

@@ -117,6 +117,29 @@ async function expectCentreHittable(locator: Locator, what: string) {
  * Removing the clipped corner as well is a product call, and the pull request
  * asks for one.
  */
+/**
+ * The menu toggle, the three Today card actions it sits near, and the weight
+ * form expanded so its own submit is in play too. Shared between the
+ * right-handed sweep below and its left-handed twin: what differs between
+ * them is which corner the toggle occupies and which extra control (if any)
+ * the caller checks afterwards, not this shared middle.
+ */
+async function expectToggleAndCardActionsHittable(page: Page, toggle: Locator) {
+	await expect(toggle).toBeVisible();
+	await expectFitsViewport(page, toggle);
+	await expectHittable(toggle);
+
+	await expectCentreHittable(
+		page.getByRole('region', { name: 'Energy' }).getByRole('button', { name: 'Log food' }),
+		'Log food'
+	);
+	await expectCentreHittable(page.getByRole('button', { name: 'Log weight' }), 'Log weight');
+	await expectCentreHittable(page.getByRole('link', { name: 'Go to training' }), 'Go to training');
+
+	await page.getByRole('button', { name: 'Log weight' }).click();
+	await expect(page.getByLabel('Weight in kilograms')).toBeVisible();
+}
+
 test.describe('the floating menu over the Today card actions', () => {
 	const PHONES = [
 		{ width: 360, height: 800 },
@@ -147,25 +170,14 @@ test.describe('the floating menu over the Today card actions', () => {
 			expect(height, 'the menu toggle is shorter than its 44px tap target').toBeGreaterThanOrEqual(
 				44
 			);
-			await expectFitsViewport(page, toggle);
 			// The toggle itself is checked whole: nothing sits above it but sheets,
-			// and none of those are open here.
-			await expectHittable(toggle);
-
-			await expectCentreHittable(
-				page.getByRole('region', { name: 'Energy' }).getByRole('button', { name: 'Log food' }),
-				'Log food'
-			);
-			await expectCentreHittable(page.getByRole('button', { name: 'Log weight' }), 'Log weight');
-			await expectCentreHittable(
-				page.getByRole('link', { name: 'Go to training' }),
-				'Go to training'
-			);
+			// and none of those are open here. Shared with the left-handed sweep
+			// below, which puts the same toggle and the same three card actions
+			// through the same check from the opposite corner.
+			await expectToggleAndCardActionsHittable(page, toggle);
 
 			// The expanded weight form's own submit, which is the button the old
 			// floating log button used to steal (#today-card-actions review).
-			await page.getByRole('button', { name: 'Log weight' }).click();
-			await expect(page.getByLabel('Weight in kilograms')).toBeVisible();
 			await expectCentreHittable(
 				page.getByRole('button', { name: 'Today', exact: true }),
 				"the weight form's Today"
@@ -218,25 +230,11 @@ test.describe('the floating menu over the Today card actions, left-handed', () =
 			await turnOnLeftHanded(page);
 
 			const toggle = page.getByRole('button', { name: 'Open menu' });
-			await expect(toggle).toBeVisible();
-			await expectFitsViewport(page, toggle);
-			await expectHittable(toggle);
-
-			await expectCentreHittable(
-				page.getByRole('region', { name: 'Energy' }).getByRole('button', { name: 'Log food' }),
-				'Log food'
-			);
-			await expectCentreHittable(page.getByRole('button', { name: 'Log weight' }), 'Log weight');
-			await expectCentreHittable(
-				page.getByRole('link', { name: 'Go to training' }),
-				'Go to training'
-			);
+			await expectToggleAndCardActionsHittable(page, toggle);
 
 			// The one control on this card the FAB's new corner can actually
 			// reach: the date row does not mirror, and "2 days ago" is its
 			// leftmost button.
-			await page.getByRole('button', { name: 'Log weight' }).click();
-			await expect(page.getByLabel('Weight in kilograms')).toBeVisible();
 			await expectCentreHittable(
 				page.getByRole('button', { name: '2 days ago' }),
 				"the weight form's 2 days ago button"

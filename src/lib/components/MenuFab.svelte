@@ -82,14 +82,15 @@
 	rather than on somebody's phone.
 -->
 <div
-	class={[
-		'pointer-events-none fixed inset-x-0 bottom-0 z-[45] flex justify-center pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]',
-		leftHanded
-			? 'pr-5 pl-[max(0.75rem,env(safe-area-inset-left))]'
-			: 'pr-[max(0.75rem,env(safe-area-inset-right))] pl-5'
-	]}
+	class="pointer-events-none fixed inset-x-0 bottom-0 z-[45] flex justify-center pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+	style={leftHanded
+		? 'padding-right:calc(var(--spacing) * 5);padding-left:max(0.75rem,env(safe-area-inset-left))'
+		: 'padding-right:max(0.75rem,env(safe-area-inset-right));padding-left:calc(var(--spacing) * 5)'}
 >
-	<div class={['flex w-full max-w-lg', leftHanded ? 'justify-start' : 'justify-end']}>
+	<div
+		class="flex w-full max-w-lg"
+		style={leftHanded ? 'justify-content:flex-start' : 'justify-content:flex-end'}
+	>
 		<Button
 			size="icon-round"
 			class="shadow-border pointer-events-auto shadow-lg"

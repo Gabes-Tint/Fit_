@@ -161,7 +161,12 @@
 					<WeightEntry units={tend.state.units} />
 				</div>
 			{:else}
-				<div class={cn('mt-1 flex', tend.state.leftHanded ? 'justify-start' : 'justify-end')}>
+				<div
+					class="mt-1 flex"
+					style={tend.state.leftHanded
+						? 'justify-content: flex-start'
+						: 'justify-content: flex-end'}
+				>
 					<button
 						type="button"
 						aria-label="Log weight"
@@ -179,10 +184,8 @@
 			aria-labelledby="today-training-title"
 		>
 			<div
-				class={cn(
-					'flex items-center justify-between gap-3',
-					tend.state.leftHanded && 'flex-row-reverse'
-				)}
+				class="flex items-center justify-between gap-3"
+				style={tend.state.leftHanded ? 'flex-direction: row-reverse' : undefined}
 			>
 				<div class="min-w-0 flex-1">
 					<h2 id="today-training-title" class="font-display px-1 text-xl tracking-tight">

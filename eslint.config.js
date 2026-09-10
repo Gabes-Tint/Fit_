@@ -110,9 +110,19 @@ export default defineConfig(
 			// expectFitsViewport (tests/e2e-support.ts) wraps its own `expect` calls, so a
 			// test whose only assertion is the layout check reads as assertion-free to the
 			// rule's static scan without naming it here too. #152.
+			// expectToggleAndCardActionsHittable (phone-layout.e2e.ts) is the same
+			// shape one level deeper: it wraps expectHittable/expectCentreHittable,
+			// which themselves wrap `expect`, so the left-handed sweep's own
+			// assertions are inside it rather than in the test body.
 			'playwright/expect-expect': [
 				'warn',
-				{ assertFunctionNames: ['expect', 'expectFitsViewport'] }
+				{
+					assertFunctionNames: [
+						'expect',
+						'expectFitsViewport',
+						'expectToggleAndCardActionsHittable'
+					]
+				}
 			]
 		}
 	}

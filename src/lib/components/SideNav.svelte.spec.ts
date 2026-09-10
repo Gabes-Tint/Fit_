@@ -222,13 +222,17 @@ describe('SideNav', () => {
 
 	it('sits on the left edge by default', async () => {
 		await render(SideNav, { props: { open: true, pathname: '/' } });
-		await expect.element(page.getByRole('dialog', { name: 'Fit_' })).toHaveClass(/left-0/);
-		await expect.element(page.getByRole('dialog', { name: 'Fit_' })).toHaveClass(/rounded-r-3xl/);
+		const style = page.getByRole('dialog', { name: 'Fit_' }).element().getAttribute('style');
+		expect(style).toContain('left: 0');
+		expect(style).toContain('border-top-right-radius: var(--radius-3xl)');
+		expect(style).toContain('border-bottom-right-radius: var(--radius-3xl)');
 	});
 
 	it('mirrors to the right edge when left-handed', async () => {
 		await render(SideNav, { props: { open: true, pathname: '/', leftHanded: true } });
-		await expect.element(page.getByRole('dialog', { name: 'Fit_' })).toHaveClass(/right-0/);
-		await expect.element(page.getByRole('dialog', { name: 'Fit_' })).toHaveClass(/rounded-l-3xl/);
+		const style = page.getByRole('dialog', { name: 'Fit_' }).element().getAttribute('style');
+		expect(style).toContain('right: 0');
+		expect(style).toContain('border-top-left-radius: var(--radius-3xl)');
+		expect(style).toContain('border-bottom-left-radius: var(--radius-3xl)');
 	});
 });
