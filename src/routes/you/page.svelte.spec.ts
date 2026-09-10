@@ -56,6 +56,18 @@ describe('the Preferences section', () => {
 		await page.getByRole('button', { name: 'Increase rest between sets' }).click();
 		expect(tend.state.restSeconds).toBe(105);
 	});
+
+	it('shows left-handed off by default', async () => {
+		await render(YouPage);
+		await expect.element(page.getByRole('switch', { name: 'Left-handed' })).not.toBeChecked();
+	});
+
+	it('writes the left-handed preference through the store when toggled', async () => {
+		await render(YouPage);
+		await page.getByRole('switch', { name: 'Left-handed' }).click();
+		expect(tend.state.leftHanded).toBe(true);
+		await expect.element(page.getByRole('switch', { name: 'Left-handed' })).toBeChecked();
+	});
 });
 
 describe('the Height field', () => {
