@@ -159,6 +159,20 @@ describe('searchPlainFood', () => {
 		expect(merged).toEqual(['Apple, raw', 'GREEN APPLE']);
 	});
 
+	it('keeps the widened page’s copy of a row when that is the higher-scoring one', () => {
+		// The same food scored against two queries, better on the widened one.
+		// Which page a row arrived on is not what orders it; its score is.
+		const merged = searchPlainFood(
+			TERMS,
+			10,
+			pages(
+				[branded(1, 3, 'GREEN APPLE at 3')],
+				[generic(2, 4, 'Apple, raw'), branded(1, 6, 'GREEN APPLE at 6')]
+			)
+		);
+		expect(merged).toEqual(['GREEN APPLE at 6', 'Apple, raw']);
+	});
+
 	it('keeps the higher-scoring copy of a row both pages found', () => {
 		// The same food, scored against two different queries. Being found twice
 		// is not a reason to rank it by its worse showing.
