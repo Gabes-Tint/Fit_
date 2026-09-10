@@ -438,6 +438,36 @@ test.describe('at 360px', () => {
 		await expectFitsViewport(page, page.getByRole('dialog'));
 	});
 
+	test('a search result carrying a brand line stays inside the viewport', async ({
+		page,
+		baseURL
+	}) => {
+		// #337 put a third thing on the row's second line: the brand, beside the
+		// provenance badge and the serving. A long branded name over a long brand
+		// is what spills at 360px if either stops shrinking.
+		await signInThroughApi(page, baseURL ?? '');
+		await stubFoodSearch(page, [
+			{
+				...EGG_ROW,
+				id: 902,
+				name: 'GREEN APPLE FLAVOURED HARD CANDY, INDIVIDUALLY WRAPPED',
+				kind: 'branded',
+				brand: 'CLAEYS OLD FASHIONED CANDIES',
+				serving: { label: '3 PIECES', grams: 15 }
+			}
+		]);
+		await atNarrowPhone(page);
+		await openEmptyJournal(page);
+
+		await openLogSheet(page);
+		await page.getByRole('button', { name: 'Search', exact: true }).click();
+		await page.getByLabel('Search foods, brands, barcodes').fill('green apple');
+		const row = page.getByRole('listitem').filter({ hasText: 'CLAEYS' }).first();
+		await expect(row).toBeVisible();
+		await expectFitsViewport(page, row);
+		await expectFitsViewport(page, page.getByRole('dialog'));
+	});
+
 	test('a search result carrying an appended mass stays inside the viewport', async ({
 		page,
 		baseURL
