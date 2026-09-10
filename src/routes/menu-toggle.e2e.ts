@@ -3,7 +3,8 @@ import { test } from '../../tests/preview-server';
 import {
 	openSampleJournal,
 	refuseStateAsTooLarge,
-	signInThroughApi
+	signInThroughApi,
+	turnOnLeftHanded
 } from '../../tests/e2e-support';
 
 /**
@@ -243,11 +244,7 @@ test('stays on top of the open drawer when left-handed', async ({ page, baseURL 
 	await openTheJournal(page, baseURL ?? '');
 
 	// Enable left-handed mode
-	await page.getByRole('button', { name: 'Open menu' }).click();
-	await page.getByRole('link', { name: 'You' }).click();
-	await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
-	await page.getByRole('switch', { name: 'Left-handed' }).click();
-	await page.goto('/');
+	await turnOnLeftHanded(page);
 
 	const toggle = page.locator('[data-menu-fab]');
 	const box = await toggle.boundingBox();
