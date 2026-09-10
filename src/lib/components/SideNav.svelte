@@ -62,8 +62,8 @@
 			onInteractOutside={keepOpenForTheToggle}
 			class="bg-card text-card-foreground fixed inset-y-0 z-40 flex w-[min(17rem,80vw)] flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-border outline-none"
 			style={leftHanded
-				? 'right:0;border-top-left-radius:var(--radius-3xl);border-bottom-left-radius:var(--radius-3xl)'
-				: 'left:0;border-top-right-radius:var(--radius-3xl);border-bottom-right-radius:var(--radius-3xl)'}
+				? 'left:0;border-top-right-radius:var(--radius-3xl);border-bottom-right-radius:var(--radius-3xl)'
+				: 'right:0;border-top-left-radius:var(--radius-3xl);border-bottom-left-radius:var(--radius-3xl)'}
 		>
 			<!--
 				The way out for anyone not using a thumb.

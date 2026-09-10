@@ -3,7 +3,8 @@ import { test } from '../../tests/preview-server';
 import {
 	openSampleJournal,
 	refuseStateAsTooLarge,
-	signInThroughApi
+	signInThroughApi,
+	turnOnLeftHanded
 } from '../../tests/e2e-support';
 
 /**
@@ -204,6 +205,51 @@ test('closes from the keyboard, and hands focus back to the toggle', async ({ pa
 
 	await expect(page.getByRole('dialog')).toHaveCount(0);
 	await expect(page.getByRole('button', { name: 'Open menu' })).toBeFocused();
+});
+
+/**
+ * The toggle floats above the drawer with a higher z-index (z-45 vs z-40), so
+ * it stays tappable even when the drawer is open behind it. This test verifies
+ * that elementFromPoint at the toggle's centre returns the toggle itself when
+ * the drawer is open.
+ */
+async function assertToggleOnTopOfDrawer(
+	page: Parameters<typeof openSampleJournal>[0],
+	setting: 'default' | 'left-handed'
+) {
+	const toggle = page.locator('[data-menu-fab]');
+	const box = await toggle.boundingBox();
+	expect(box, 'the menu toggle has no box to measure').not.toBeNull();
+	const { x, y, width, height } = box as { x: number; y: number; width: number; height: number };
+	const centre = { x: x + width / 2, y: y + height / 2 };
+
+	// Open the drawer
+	await toggle.click();
+	await expect(page.getByRole('dialog', { name: 'Fit_' })).toBeVisible();
+
+	// The toggle's centre should still be occupied by the toggle itself, not the
+	// drawer behind it. The toggle is painted above the drawer (z-45 over z-40)
+	// so the thumb that opened it can close it again without moving.
+	const onTop = await page.evaluate((point) => {
+		const target = document.elementFromPoint(point.x, point.y);
+		return target?.closest('[data-menu-fab]') !== null ? 'toggle' : 'something else';
+	}, centre);
+	expect(onTop, `the menu toggle is painted on top of the open drawer (${setting})`).toBe('toggle');
+
+	// Close it again to verify the tap still works
+	await toggle.click();
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+}
+
+test('stays on top of the open drawer', async ({ page, baseURL }) => {
+	await openTheJournal(page, baseURL ?? '');
+	await assertToggleOnTopOfDrawer(page, 'default');
+});
+
+test('stays on top of the open drawer when left-handed', async ({ page, baseURL }) => {
+	await openTheJournal(page, baseURL ?? '');
+	await turnOnLeftHanded(page);
+	await assertToggleOnTopOfDrawer(page, 'left-handed');
 });
 
 /**
