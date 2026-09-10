@@ -170,23 +170,37 @@ describe('FoodSearch', () => {
 		await expect.element(page.getByText(/kcal/).first(), ANSWERED).toBeInTheDocument();
 	});
 
-	it('keeps the provenance badge from wrapping when the name truncates', async () => {
-		// Regression: a long name (e.g. "Chicken burrito bowl") and a two-word
-		// badge ("Brand published") shared a row with no min-w-0 on the name or
-		// shrink-0 on the badge, so the badge wrapped to two lines and made that
-		// row taller than its neighbors.
-		catalogAnswers(200, { foods: [BURRITO] });
+	it('leaves the source badge off so the name, brand and serving each get a line', async () => {
+		// A long USDA title used to share the first line with "Brand published"
+		// or "USDA", so the name truncated early and the brand sat in the same
+		// run as the serving numbers — the shape that logged Claeys as an apple
+		// (#337). The name, the brand and the numbers are three lines now.
+		const apple: CatalogFoodPayload = {
+			...row(5, 'Apple, raw, without skin'),
+			brand: null,
+			kind: 'generic'
+		};
+		catalogAnswers(200, { foods: [BURRITO, apple] });
 		await render(FoodSearch, { props: { onpick: vi.fn() } });
 		await page.getByLabelText(SEARCH).fill('burrito');
 		await expect
 			.element(page.getByText('CATALOG CHICKEN BURRITO BOWL, EXTRA LARGE'), ANSWERED)
 			.toBeInTheDocument();
-		const name = document.body.querySelector<HTMLElement>('p.truncate');
+		await expect.element(page.getByText('Apple, raw, without skin')).toBeInTheDocument();
+		expect(document.body.textContent).not.toContain('Brand published');
+		expect(document.body.textContent).not.toContain('USDA');
+		const name = document.body.querySelector<HTMLElement>('p.truncate.font-medium');
 		expect(name?.className).toMatch(/\bmin-w-0\b/);
-		const badge = page.getByText('Brand published');
-		await expect.element(badge).toBeInTheDocument();
-		const badgeWrapper = badge.element().closest('span.shrink-0');
-		expect(badgeWrapper).not.toBeNull();
+		const burrito = page
+			.getByRole('listitem')
+			.filter({ hasText: 'CATALOG CHICKEN BURRITO BOWL, EXTRA LARGE' });
+		const brand = burrito.getByText('CATALOG BRAND');
+		const serving = burrito.getByText(/100 g · 165 kcal/);
+		await expect.element(brand).toBeInTheDocument();
+		await expect.element(serving).toBeInTheDocument();
+		const brandBox = brand.element().getBoundingClientRect();
+		const servingBox = serving.element().getBoundingClientRect();
+		expect(brandBox.bottom).toBeLessThanOrEqual(servingBox.top + 1);
 	});
 
 	it('says a request is out while the catalog is still answering', async () => {

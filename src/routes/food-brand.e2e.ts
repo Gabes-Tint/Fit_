@@ -87,12 +87,16 @@ test.describe('a search for "green apple"', () => {
 		await expect(first).toContainText('CLAEYS');
 		// The label the package states, beside the weight it comes to.
 		await expect(first).toContainText('3 PIECES · 15 g');
+		// The source badge is gone from search results: it stole title width
+		// and the brand already says whose product this is.
+		await expect(first).not.toContainText('Brand published');
 
 		const fruit = results
 			.getByRole('listitem')
 			.filter({ hasText: 'Apples, granny smith, with skin, raw' });
 		await expect(fruit).toBeVisible();
 		await expect(fruit).not.toContainText('CLAEYS');
+		await expect(fruit).not.toContainText('USDA');
 	});
 
 	test('carries the brand onto the journal row the candy is logged as', async ({ page }) => {

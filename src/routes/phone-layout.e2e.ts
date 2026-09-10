@@ -492,7 +492,7 @@ test.describe('at 360px', () => {
 		await signInThroughApi(page, baseURL ?? '');
 		// Since #146 every row in this list comes from the catalog endpoint, so
 		// the stub is what puts anything on screen to measure. A long branded
-		// name beside a two-word provenance badge is the row most likely to spill.
+		// name over its own brand line is the row most likely to spill.
 		await stubFoodSearch(page, [
 			OLIVE_OIL_ROW,
 			{ ...EGG_ROW, id: 901, name: 'Chocolate Chip Cookie Dough Bar, Family Size', brand: 'KIND' }
@@ -512,9 +512,9 @@ test.describe('at 360px', () => {
 		page,
 		baseURL
 	}) => {
-		// #337 put a third thing on the row's second line: the brand, beside the
-		// provenance badge and the serving. A long branded name over a long brand
-		// is what spills at 360px if either stops shrinking.
+		// #337 put the brand on its own line under the name, with the serving
+		// under that. A long branded name over a long brand is what spills at
+		// 360px if either stops shrinking.
 		await signInThroughApi(page, baseURL ?? '');
 		await stubFoodSearch(page, [
 			{

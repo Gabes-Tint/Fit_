@@ -1,12 +1,12 @@
 <script lang="ts">
 	/**
-	 * The brand a food is sold under, beside its source badge.
+	 * The brand a food is sold under.
 	 *
 	 * #337: a person logged Claeys hard candy as "GREEN APPLE" at 400 kcal,
 	 * because the row said the food's name and where the numbers came from but
-	 * never said whose product it was. The badge answers "who published this",
-	 * which is not the question a candy named after a fruit makes urgent — "what
-	 * am I about to log" is, and the brand is the word that answers it.
+	 * never said whose product it was. The source badge answers "who published
+	 * this", which is not the question a candy named after a fruit makes urgent
+	 * — "what am I about to log" is, and the brand is the word that answers it.
 	 *
 	 * Its own file, and used by both rows, so the search result a person taps and
 	 * the journal row they read afterwards cannot say different things about the
