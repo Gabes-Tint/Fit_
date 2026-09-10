@@ -220,19 +220,19 @@ describe('SideNav', () => {
 		expect(props.open).toBe(false);
 	});
 
-	it('sits on the left edge by default', async () => {
+	it('sits on the right edge by default', async () => {
 		await render(SideNav, { props: { open: true, pathname: '/' } });
-		const style = page.getByRole('dialog', { name: 'Fit_' }).element().getAttribute('style');
-		expect(style).toContain('left: 0');
-		expect(style).toContain('border-top-right-radius: var(--radius-3xl)');
-		expect(style).toContain('border-bottom-right-radius: var(--radius-3xl)');
-	});
-
-	it('mirrors to the right edge when left-handed', async () => {
-		await render(SideNav, { props: { open: true, pathname: '/', leftHanded: true } });
 		const style = page.getByRole('dialog', { name: 'Fit_' }).element().getAttribute('style');
 		expect(style).toContain('right: 0');
 		expect(style).toContain('border-top-left-radius: var(--radius-3xl)');
 		expect(style).toContain('border-bottom-left-radius: var(--radius-3xl)');
+	});
+
+	it('mirrors to the left edge when left-handed', async () => {
+		await render(SideNav, { props: { open: true, pathname: '/', leftHanded: true } });
+		const style = page.getByRole('dialog', { name: 'Fit_' }).element().getAttribute('style');
+		expect(style).toContain('left: 0');
+		expect(style).toContain('border-top-right-radius: var(--radius-3xl)');
+		expect(style).toContain('border-bottom-right-radius: var(--radius-3xl)');
 	});
 });

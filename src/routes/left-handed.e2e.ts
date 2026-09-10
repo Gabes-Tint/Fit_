@@ -3,11 +3,11 @@ import { test } from '../../tests/preview-server';
 import { openSampleJournal, signInThroughApi, turnOnLeftHanded } from '../../tests/e2e-support';
 
 /**
- * The left-handed preference mirrors the one persistent piece of chrome — the
- * floating menu toggle — and the drawer it opens, to the opposite side of the
- * screen. This is the end-to-end proof that turning it on from the You page
- * actually moves both, in a real browser, rather than only in a component
- * test that never lays either of them out against a real viewport.
+ * The left-handed preference mirrors the floating menu toggle and the drawer
+ * it opens to the left side of the screen. This is the end-to-end proof that
+ * turning it on from the You page actually moves both, in a real browser, rather
+ * than only in a component test that never lays either of them out against a
+ * real viewport.
  */
 test('mirrors the menu toggle and the drawer once left-handed is turned on', async ({
 	page,
@@ -39,16 +39,14 @@ test('mirrors the menu toggle and the drawer once left-handed is turned on', asy
 	const drawerBox = await drawer.boundingBox();
 	expect(drawerBox, 'the drawer has no box to measure').not.toBeNull();
 	const { x: drawerX, width: drawerWidth } = drawerBox as { x: number; width: number };
-	// The panel is anchored to the right edge (`right-0`), not centred in the
-	// right half: at some viewport widths it is wider than half the screen, so
-	// what proves it moved is that it now touches the right edge rather than
-	// the left one, the way it did before this preference existed.
-	expect(
-		drawerX + drawerWidth,
-		`the drawer's right edge is at ${drawerX + drawerWidth}px, short of the ${width}px viewport's own right edge`
-	).toBeGreaterThanOrEqual(width - 1);
+	// The panel is anchored to the left edge (`left-0`) when left-handed is on.
+	// It touches the left edge of the viewport.
 	expect(
 		drawerX,
-		`the drawer's left edge is at ${drawerX}px, flush with the viewport's left edge as though it had not mirrored`
-	).toBeGreaterThan(0);
+		`the drawer's left edge is at ${drawerX}px, flush with the viewport's left edge`
+	).toBeLessThanOrEqual(1);
+	expect(
+		drawerX + drawerWidth,
+		`the drawer's right edge is at ${drawerX + drawerWidth}px, short of the viewport's right edge when mirrored to the left`
+	).toBeLessThan(width);
 });

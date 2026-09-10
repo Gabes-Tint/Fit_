@@ -207,6 +207,69 @@ test('closes from the keyboard, and hands focus back to the toggle', async ({ pa
 });
 
 /**
+ * The toggle floats above the drawer with a higher z-index (z-45 vs z-40), so
+ * it stays tappable even when the drawer is open behind it. This test verifies
+ * that elementFromPoint at the toggle's centre returns the toggle itself when
+ * the drawer is open, for both right-handed and left-handed settings.
+ */
+test('stays on top of the open drawer, tappable to close', async ({ page, baseURL }) => {
+	await openTheJournal(page, baseURL ?? '');
+
+	const toggle = page.locator('[data-menu-fab]');
+	const box = await toggle.boundingBox();
+	expect(box, 'the menu toggle has no box to measure').not.toBeNull();
+	const { x, y, width, height } = box as { x: number; y: number; width: number; height: number };
+	const centre = { x: x + width / 2, y: y + height / 2 };
+
+	// Open the drawer
+	await toggle.click();
+	await expect(page.getByRole('dialog', { name: 'Fit_' })).toBeVisible();
+
+	// The toggle's centre should still be occupied by the toggle itself, not the
+	// drawer behind it. The toggle is painted above the drawer (z-45 over z-40)
+	// so the thumb that opened it can close it again without moving.
+	const onTop = await page.evaluate((point) => {
+		const target = document.elementFromPoint(point.x, point.y);
+		return target?.closest('[data-menu-fab]') !== null ? 'toggle' : 'something else';
+	}, centre);
+	expect(onTop, 'the menu toggle is painted on top of the open drawer').toBe('toggle');
+
+	// Close it again to verify the tap still works
+	await toggle.click();
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('stays on top of the open drawer when left-handed', async ({ page, baseURL }) => {
+	await openTheJournal(page, baseURL ?? '');
+
+	// Enable left-handed mode
+	await page.getByRole('button', { name: 'Open menu' }).click();
+	await page.getByRole('link', { name: 'You' }).click();
+	await expect(page.getByRole('heading', { name: 'Profile' })).toBeVisible();
+	await page.getByRole('switch', { name: 'Left-handed' }).click();
+	await page.goto('/');
+
+	const toggle = page.locator('[data-menu-fab]');
+	const box = await toggle.boundingBox();
+	expect(box, 'the menu toggle has no box to measure').not.toBeNull();
+	const { x, y, width, height } = box as { x: number; y: number; width: number; height: number };
+	const centre = { x: x + width / 2, y: y + height / 2 };
+
+	// Open the drawer
+	await toggle.click();
+	await expect(page.getByRole('dialog', { name: 'Fit_' })).toBeVisible();
+
+	// Same check: toggle should be on top even when left-handed
+	const onTop = await page.evaluate((point) => {
+		const target = document.elementFromPoint(point.x, point.y);
+		return target?.closest('[data-menu-fab]') !== null ? 'toggle' : 'something else';
+	}, centre);
+	expect(onTop, 'the menu toggle is painted on top of the open drawer in left-handed mode').toBe(
+		'toggle'
+	);
+});
+
+/**
  * The sync notice used to have a top bar between it and the page. It has not
  * had one since the menu moved, so the page reserves its height instead — and
  * this is the failure that reservation exists to prevent: the notice printing
