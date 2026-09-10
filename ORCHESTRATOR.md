@@ -261,35 +261,29 @@ total past the threshold after the gate closes. Nothing wakes an idle session wh
 the window resets, so a session that means to resume by itself has to be running the
 loop skill with a wait long enough to reach resets_at.
 
-## Product state and priorities, as of 2026-09-03
+## Product state and priorities, as of 2026-09-10
 
-Built: the six nutrition destinations, onboarding, logging by text, voice, search, manual
-entry and a demo barcode; the exercise application with routines, sessions, planner and
-progress; accounts, sessions, sign-in, sign-up and sign-out on SQLite behind `/signin`.
+Built since 2026-09-03: per-account sync of the whole state document, versioned
+last-write-wins, with stale-device adoption and own-write protection (#30, verified on
+production 2026-09-04; #58, what happens to a device's data when someone else signs in, is
+still open). A real food catalog served from the ETL SQLite database, with search, ranking,
+serving options and brand labels on rows (#337 is partly open: a plain-food query can still
+show a same-named branded product first). The Today page was redesigned: titled cards each
+carrying their own actions, a weight graph with scrubbing, one ring layout in both normal
+and GLP-1 modes, and a toast with undo on logging. A floating menu toggle replaced the top
+bar, there is a left-handed setting that mirrors the toggle and the side menu, and sync now
+handles storage-quota limits and oversize documents rather than failing silently.
 
-Not built: nothing a person records reaches the server. All state is one `localStorage`
-document per device, so a reinstall or a second phone starts empty. The food catalog is
-about 96 bundled foods while the ETL under `data/` has produced a database of 2.5 million
-rows that nothing serves. Photo logging is a screen with no recognition behind it.
+Not built: photo recognition is still a screen with nothing behind it and needs a paid
+service decided before any build. Production monitoring does not exist (#266: options are
+posted, the alert channel is undecided). Household stays parked, unchanged from
+2026-09-03. There is no iOS shell.
 
-Agreed order:
-
-1. **Data persists per account and comes back after sign-in.** One JSON document per
-   account on the server, versioned; the store loads it at sign-in and pushes after every
-   write; a stale device is told rather than allowed to overwrite. The whole
-   TendState document syncs, including onboarded and activeProfileId, because
-   with one account per household both are properties of the account rather
-   than the device; activeProfileId becomes device-local only when household
-   unparks. Conflict
-   handling is versioned last-write-wins with a forced reload; merging is a later story.
-2. **A real food catalog from the server.** A read-only connection to the ETL database,
-   search and barcode endpoints, the bundled list kept as the offline fallback.
-3. **Photo logging.** Needs the catalog first and will need a paid service, so it also
-   needs a decision.
-
-Parked, by decision: **household** as a feature. The schema keeps `household_id` on every
-table and each account owns one household, so nothing is removed, but no household-facing
-feature is built. There is no iOS shell.
+Agreed order now: (1) photo logging needs Gabriel's service decision before any build; (2)
+quality routines continue as filler — #129's slop audit is complete tree-wide, #130 hunts
+performance, #148's mutation debt keeps paying down file by file with six proposed
+equivalents awaiting Gabriel's acceptance; (3) anything Gabriel sends as a UI request takes
+priority over both. Pick from open issues; this section is context, not a queue.
 
 ## What needs Gabriel
 
@@ -333,69 +327,35 @@ visible as a `speculation-rules` header on any response — prefer that check ov
 because it needs no credential and reports what the edge is actually doing rather than what
 the control plane believes.
 
-## Deploy, as of 2026-09-03
+## Deploy, as of 2026-09-10
 
-The app is live at <https://fit.psilva.org>. It deploys from a fully clean checkout, so a
-deploy runs from its own throwaway worktree — `bun run worktree:new deploy-<slug>` makes one
-already carrying `node_modules`, and `bun run worktree:done deploy-<slug>` removes it once
-the deploy is done. One command from a clean checkout deploys it:
+The repo is `Gabes-Tint/Fit_`. `main` is protected by one ruleset, "main: merge queue" —
+squash merges only, up to 3 entries at a time, required check "Quality and security". A
+pull request lands with `gh pr merge <n>`, no strategy flag: GitHub builds it onto the
+current `main` plus whatever else is queued, retests the combined tree, and fast-forwards
+`main` asynchronously — the merge is not immediate and its result shows up as a
+`gh-readonly-queue/…` run, not a run against the PR's own branch.
+
+The app is live at <https://fit.psilva.org>, a self-hosted VM behind Cloudflare; the VM's
+SSH hostname is deliberately not written down in this repository. One command from a clean
+checkout deploys it:
 
 ```bash
 FIT_DEPLOY_HOST=user@host FIT_PUBLIC_ORIGIN=https://fit.psilva.org bun run deploy
 ```
 
-The host is Gabriel's VM. It is not written down in this repository, in an issue, or in
-anything the deploy installs on the machine, and the script refuses to run without it, so
-the only place it lives is the shell that runs the deploy.
+as documented in README.md: it builds locally, ships `build/` plus a production
+`node_modules`, lands the release under `/opt/fit/releases/<commit>/`, switches
+`/opt/fit/current`, restarts `fit.service`, and finishes with `deploy:smoke`'s eleven
+checks. Before any of that, `scripts/deploy/main-ci-gate.ts` refuses a commit that is not
+proven green — but since main started landing through the merge queue it now accepts either
+a green `push` run of `ci.yml` on `main` for that commit, or a green `merge_group` run whose
+head SHA is that same commit (#332), so a flake that fails main's own push run and is then
+retried green no longer blocks a deploy the queue already vetted. `FIT_DEPLOY_ALLOW_RED_MAIN=1`
+still skips the check entirely, loudly, for the day the check itself is broken.
 
-`FIT_PUBLIC_ORIGIN` names the origin `smoke.ts` checks against and the deploy logs, and is
-required alongside `FIT_DEPLOY_HOST`. It has no default: with one, a deploy to any other
-machine that forgot to set it would run its registration round trip against production and
-leave the account row behind, because the cleanup runs over SSH against `FIT_DEPLOY_HOST`.
-It configures nothing on the machine — `ORIGIN` in `/etc/fit/fit.env` does that, and the
-deploy writes that file only when it is absent.
-
-Cloudflare terminates TLS and forwards plain HTTP to the origin's port 80. There is no
-proxy on the VM and no certificate on it: the unit binds 80 itself, as the unprivileged
-`fit` user, with `AmbientCapabilities=CAP_NET_BIND_SERVICE` and nothing else in its
-bounding set. That pairing is the whole reason `PORT=80` and the capability have to agree,
-and `scripts/deploy/deploy.spec.ts` fails if they stop agreeing.
-
-The build runs locally: the VM has 2 GB and cannot hold Vite beside the running server.
-What crosses is `build/`, the `package.json` beside it, and a production `node_modules`
-resolved from `bun.lock` — `adapter-node` leaves every `dependencies` entry external, so
-the server bundle really does need them. `scripts/deploy/deploy.ts` then installs the
-pinned Node from nodejs.org if the machine is missing it, lands the release in
-`/opt/fit/releases/<commit>/`, writes `/etc/fit/fit.env` only when it is absent and
-`fit.service` always, switches `/opt/fit/current`, restarts the unit, waits for it to
-answer, prunes all but the last five releases, and runs the smoke check.
-
-On the machine: a system user `fit`; releases under `/opt/fit`; the SQLite database under
-`/var/lib/fit`, which is `0700` and the only path `ProtectSystem=strict` leaves writable;
-Node under `/opt/node`.
-
-`/etc/fit/fit.env` is `0600` and root-owned, and `scripts/deploy/fit.env.example` is the
-template it is written from: `ORIGIN=https://fit.psilva.org`, which is also the origin
-policy's allow-list; `HOST=0.0.0.0` and `PORT=80`; `FIT_CLIENT_ADDRESS=forwarded` with
-`ADDRESS_HEADER=cf-connecting-ip`, so the sign-in throttle keys on the visitor rather than
-on Cloudflare; and `FIT_DB_PATH=/var/lib/fit/app.sqlite`. There are no secrets in it yet.
-When there are, Gabriel places them in that file by hand and the deploy leaves them alone.
-
-The smoke check is `bun run deploy:smoke`, and the deploy ends with it: `/signin` answers
-with a page this app built rather than with whatever else could be listening on that port,
-an anonymous session read is refused as `unauthenticated`, a throwaway account registers,
-signs out, signs back in and reads itself back, and `/opt/fit/current` points at the commit
-that was deployed. It writes `reports/deploy/smoke.json`, which is what the comment on the
-story being deployed is written from. The throwaway account it registers, under a `smoke.`
-username, is taken back out again: the checks run wrapped in that removal — see
-`scripts/deploy/smoke-cleanup.ts` — so a check that fails part way through no longer skips
-it, and the run asserts the row was deleted rather than hoping it was. `--tunnel` on either
-command runs it
-through an SSH port forward to the origin instead of through Cloudflare, which is how a
-deploy is checked when the public name is the thing that is broken. Only that mode sends
-the client-address header: Cloudflare sets it itself and answers 403 to a request that
-already carries one, while the origin reached directly has nothing else to learn an
-address from.
+Deploy after any user-facing merge, under Gabriel's standing authorization; a docs- or
+tooling-only merge does not need one.
 
 Known, and Gabriel's to decide if either becomes a problem: the zone is on Cloudflare's
 Flexible SSL mode, so the hop from Cloudflare to the origin is unencrypted — moving to Full
