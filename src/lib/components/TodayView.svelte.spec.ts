@@ -381,6 +381,42 @@ describe('TodayView', () => {
 		});
 	});
 
+	describe('card actions in left-handed mode', () => {
+		it('moves the Log food button to the bottom-left of the Energy card', async () => {
+			tend.setLeftHanded(true);
+			await render(TodayView);
+			const action = page.getByRole('button', { name: 'Log food' }).element();
+			expect(action.className).toContain('left-3');
+			expect(action.className).not.toContain('right-3');
+		});
+
+		it('left-aligns the Log weight button under the chart', async () => {
+			tend.setLeftHanded(true);
+			await render(TodayView);
+			const wrapper = page.getByRole('button', { name: 'Log weight' }).element()
+				.parentElement as HTMLElement;
+			expect(wrapper.className).toContain('justify-start');
+			expect(wrapper.className).not.toContain('justify-end');
+		});
+
+		it('puts the Go to training arrow before the title, reversing the row', async () => {
+			tend.setLeftHanded(true);
+			await render(TodayView);
+			const row = page.getByRole('link', { name: 'Go to training' }).element()
+				.parentElement as HTMLElement;
+			expect(row.className).toContain('flex-row-reverse');
+		});
+
+		it('leaves the actions right-handed when the preference is off', async () => {
+			await render(TodayView);
+			const action = page.getByRole('button', { name: 'Log food' }).element();
+			expect(action.className).toContain('right-3');
+			const row = page.getByRole('link', { name: 'Go to training' }).element()
+				.parentElement as HTMLElement;
+			expect(row.className).not.toContain('flex-row-reverse');
+		});
+	});
+
 	describe('training tile and week strip', () => {
 		it('states plainly that a new account has no training logged or planned', async () => {
 			await render(TodayView);

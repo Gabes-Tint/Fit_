@@ -128,7 +128,11 @@
 				type="button"
 				aria-label="Log food"
 				onclick={() => logUi.show()}
-				class={cn(CARD_ACTION_CLASS, 'absolute right-3 bottom-3')}
+				class={cn(
+					CARD_ACTION_CLASS,
+					'absolute bottom-3',
+					tend.state.leftHanded ? 'left-3' : 'right-3'
+				)}
 			>
 				<Plus class="size-5" />
 			</button>
@@ -157,7 +161,7 @@
 					<WeightEntry units={tend.state.units} />
 				</div>
 			{:else}
-				<div class="mt-1 flex justify-end">
+				<div class={cn('mt-1 flex', tend.state.leftHanded ? 'justify-start' : 'justify-end')}>
 					<button
 						type="button"
 						aria-label="Log weight"
@@ -174,7 +178,12 @@
 			class="bg-card rounded-3xl px-4 pt-3 pb-6 shadow-border text-sm"
 			aria-labelledby="today-training-title"
 		>
-			<div class="flex items-center justify-between gap-3">
+			<div
+				class={cn(
+					'flex items-center justify-between gap-3',
+					tend.state.leftHanded && 'flex-row-reverse'
+				)}
+			>
 				<div class="min-w-0 flex-1">
 					<h2 id="today-training-title" class="font-display px-1 text-xl tracking-tight">
 						Training
