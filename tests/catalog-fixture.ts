@@ -294,6 +294,32 @@ const FIXTURE_FOODS: FixtureRow[] = [
 		barcode: null,
 		alias: null
 	},
+	// #337, whole. The candy is a branded row named exactly what a person types,
+	// and the fruit is written the way the reference set writes it — head word
+	// first, variety after — so no generic row carries the word "green" at all.
+	// Nothing can be re-ranked into first place that the strict match never
+	// held, which is why the head-noun retry exists beside the demotion.
+	{
+		id: 25,
+		name: 'GREEN APPLE',
+		brand: 'CLAEYS',
+		kind: 'branded',
+		quality: 94,
+		sources: 7,
+		barcode: '00000000000257',
+		alias: null,
+		servings: [['3 pieces', 15]]
+	},
+	{
+		id: 26,
+		name: 'Apples, granny smith, with skin, raw',
+		brand: null,
+		kind: 'generic',
+		quality: 93,
+		sources: 218,
+		barcode: null,
+		alias: null
+	},
 	// Found only through its alias, which is a separate FTS column.
 	{
 		id: 12,

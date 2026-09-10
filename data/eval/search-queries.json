@@ -326,6 +326,26 @@
 			]
 		},
 		{
+			"query": "apple",
+			"group": "good",
+			"means": "the fruit, raw, of whatever variety the catalog names",
+			"acceptable": [
+				"Apple, raw",
+				"Apples, fuji, with skin, raw",
+				"Apples, gala, with skin, raw",
+				"Apples, granny smith, with skin, raw",
+				"Apples, honeycrisp, with skin, raw",
+				"Apples, red delicious, with skin, raw",
+				"Apples, raw, without skin",
+				"Apples, raw, golden delicious, with skin"
+			],
+			"forbidden": [
+				"Apple, candied",
+				"Apple, dried",
+				"Apple juice, 100%"
+			]
+		},
+		{
 			"query": "banana",
 			"group": "failing",
 			"means": "a raw banana",
@@ -647,6 +667,25 @@
 				"Pork, fresh, variety meats and by-products, brain, cooked, braised"
 			],
 			"forbidden": []
+		},
+		{
+			"query": "green apple",
+			"group": "adversarial",
+			"means": "a raw apple. #337: no generic row in the catalog carries both words, so the strict match is 859 branded rows and the top one was Claeys hard candy at 400 kcal",
+			"acceptable": [
+				"Apple, raw",
+				"Apples, fuji, with skin, raw",
+				"Apples, gala, with skin, raw",
+				"Apples, granny smith, with skin, raw",
+				"Apples, honeycrisp, with skin, raw",
+				"Apples, red delicious, with skin, raw",
+				"Apples, raw, without skin",
+				"Apples, raw, golden delicious, with skin"
+			],
+			"forbidden": [
+				"GREEN APPLE",
+				"GREEN APPLE, GREEN"
+			]
 		},
 		{
 			"query": "big mac",

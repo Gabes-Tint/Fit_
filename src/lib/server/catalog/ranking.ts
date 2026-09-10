@@ -3,6 +3,7 @@
 // extension the way Vite does. `rewriteRelativeImportExtensions` rewrites it on the way
 // out, so the built server sees `./byproducts.js`.
 import { byproductSql, namePartsSql } from './byproducts.ts';
+import { unnamedBrandSql } from './plain-food.ts';
 
 /**
  * How a catalog row is scored against a query.
@@ -63,7 +64,25 @@ const RANK_WEIGHTS = {
 	 * short. One penalty rather than two: a row that is both dried and offal is
 	 * still only one wrong answer.
 	 */
-	processedForm: 1
+	processedForm: 1,
+	/**
+	 * Subtracted. A branded row whose brand the query does not name is a product
+	 * a person did not ask for. Without it "green apple" answers with Claeys
+	 * hard candy at 400 kcal (#337) and "apple", "banana" and "milk" each answer
+	 * with a brand that named its package after the food: a branded row spelled
+	 * exactly like the query collects every name term and the whole of brevity,
+	 * which no generic row written "Apples, granny smith, with skin, raw" can
+	 * reach. Large enough to outweigh that exact-name advantage, and exempting a
+	 * named brand so "burger king whopper" still answers with the Whopper.
+	 *
+	 * Measured, not guessed, and it is a ceiling rather than a preference. Over
+	 * the eval fixture the demotion pays from 0.75 upwards (P@3 0.684 against a
+	 * 0.670 baseline) and this is the top of that range: at 1.9 the fixture falls
+	 * to 0.663, because a branded row that really is the plain food — "OLIVE OIL,
+	 * MILD", "BREAD" — starts losing to generic rows that merely contain the
+	 * words, and that is a worse answer than the one this weight exists to fix.
+	 */
+	unnamedBrand: 1.75
 } as const;
 
 /**
@@ -213,6 +232,7 @@ named as (
 			+ ${w.corroboration} * min(1.0,
 				ln(1.0 + f.n_sources) / ln(1.0 + ${CORROBORATION_SCALE}.0))
 			+ ${w.quality} * max(0.0, (f.quality - ${QUALITY_FLOOR}) / ${QUALITY_SPAN}.0)
+			- ${w.unnamedBrand} * ${unnamedBrandSql()}
 			as row_score
 	from matched m
 	join food f on f.food_id = m.food_id

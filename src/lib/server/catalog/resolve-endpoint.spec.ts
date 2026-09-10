@@ -114,13 +114,13 @@ describe('resolveFoodNames', () => {
 
 	it('puts the catalog’s first-ranked row in `food`', async () => {
 		const items = await itemsOf(await resolveFoodNames(catalog, asking('milk')));
-		expect(items[0]?.food?.name).toBe('MILK');
+		expect(items[0]?.food?.name).toBe('Milk, whole');
 	});
 
 	it('offers the two rows behind it as alternatives, and no more', async () => {
 		const items = await itemsOf(await resolveFoodNames(catalog, asking('milk')));
 		expect(items[0]?.alternatives).toHaveLength(2);
-		expect(items[0]?.alternatives.map((food) => food.name)).toEqual(['Milk, whole', 'Milk, dried']);
+		expect(items[0]?.alternatives.map((food) => food.name)).toEqual(['Milk, dried', 'MILK']);
 	});
 
 	it('answers a name the catalog has nothing for with no food and no alternatives', async () => {
