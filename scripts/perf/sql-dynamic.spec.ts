@@ -65,7 +65,7 @@ describe('captureDynamicStatements', () => {
 	it('records one statement for every function-built call site', async () => {
 		const captured = await captureDynamicStatements('.', load);
 		expect(captured.map((each) => `${each.file} ${each.label}`)).toEqual([
-			'src/lib/server/catalog/foods.ts searchFoods',
+			'src/lib/server/catalog/foods.ts rankedPage',
 			'src/lib/server/catalog/serving-rows.ts servingRowsByFood'
 		]);
 	});

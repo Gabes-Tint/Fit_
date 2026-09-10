@@ -5,7 +5,8 @@ import { withDefaultServing } from './default-serving';
 import { withPortions } from './portions';
 import { withServingOptions } from './serving-options';
 import { withUnitMeasure } from './unit-measure';
-import { searchTerms, singular } from './query';
+import { searchPlainFood, type Ranked } from './plain-food';
+import { searchTerms, singular, type SearchTerms } from './query';
 import { searchSql } from './ranking';
 import { servingRowsByFood } from './serving-rows';
 import { prepared } from './statements';
@@ -107,7 +108,15 @@ export function pageSize(requested: string | null): number {
 export function searchFoods(db: DatabaseSync, typed: string, limit: number): CatalogFood[] {
 	const terms = searchTerms(typed);
 	if (terms === null) return [];
-	const found = prepared(db, searchSql(FOOD_COLUMNS))
+	return finish(
+		db,
+		searchPlainFood(terms, limit, (used, size) => rankedPage(db, used, size))
+	);
+}
+
+/** One ranked page for exactly these terms, in the order the ranking put them. */
+function rankedPage(db: DatabaseSync, terms: SearchTerms, limit: number): Ranked<CatalogFood>[] {
+	return prepared(db, searchSql(FOOD_COLUMNS))
 		.all({
 			match: terms.match,
 			text: terms.text,
@@ -115,8 +124,10 @@ export function searchFoods(db: DatabaseSync, typed: string, limit: number): Cat
 			prefix: `${singular(terms.text)}%`,
 			limit
 		})
-		.map(toFood);
-	return finish(db, found);
+		.map((row) => {
+			const food = toFood(row);
+			return { id: food.id, brand: food.brand, kind: food.kind, food };
+		});
 }
 
 /**

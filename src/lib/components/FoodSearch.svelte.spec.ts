@@ -90,6 +90,22 @@ describe('FoodSearch', () => {
 		expect(onpick).toHaveBeenCalledWith(expect.objectContaining({ id: 'catalog-1' }));
 	});
 
+	it('names the brand on a branded result, and its labelled serving (#337)', async () => {
+		// "GREEN APPLE" by Claeys, sold in pieces: the row a person read as a
+		// fruit. The brand and the label the package states are the two things
+		// that tell it from one.
+		const candy: CatalogFoodPayload = {
+			...row(4, 'GREEN APPLE'),
+			brand: 'CLAEYS',
+			serving: { label: '3 PIECES', grams: 15 }
+		};
+		catalogAnswers(200, { foods: [candy] });
+		await render(FoodSearch, { props: { onpick: vi.fn() } });
+		await page.getByLabelText(SEARCH).fill('green apple');
+		await expect.element(page.getByText('CLAEYS'), ANSWERED).toBeInTheDocument();
+		expect(document.body.textContent).toContain('3 PIECES · 15 g');
+	});
+
 	it('explains itself rather than going blank when nothing matches', async () => {
 		catalogAnswers(200, { foods: [] });
 		await render(FoodSearch, { props: { onpick: vi.fn() } });

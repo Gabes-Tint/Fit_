@@ -22,7 +22,8 @@ import { percentile } from '../perf/stats.ts';
 import { fileURLToPath } from 'node:url';
 import { pickDefaultServing, type ServingRow } from '../../src/lib/domain/default-serving.ts';
 import { catalogPath } from '../../src/lib/server/catalog/connection.ts';
-import { searchTerms, singular } from '../../src/lib/server/catalog/query.ts';
+import { searchPlainFood, type Ranked } from '../../src/lib/server/catalog/plain-food.ts';
+import { searchTerms, singular, type SearchTerms } from '../../src/lib/server/catalog/query.ts';
 import { searchSql } from '../../src/lib/server/catalog/ranking.ts';
 import { prepared } from '../../src/lib/server/catalog/statements.ts';
 import {
@@ -107,14 +108,28 @@ const FOLDED_NAME = "trim(replace(lower(name), char(160), ' '))";
 function ranked(db: DatabaseSync, typed: string, limit: number): string[] {
 	const terms = searchTerms(typed);
 	if (terms === null) return [];
-	const rows = prepared(db, searchSql('f.name')).all({
-		match: terms.match,
-		text: terms.text,
-		singular: singular(terms.text),
-		prefix: `${singular(terms.text)}%`,
-		limit
-	});
-	return rows.map((row) => String(row['name']));
+	// Through `searchPlainFood`, not the bare statement, because the head-noun
+	// retry it owns is part of what a person is answered with: measuring the
+	// strict page alone would score a ranking the endpoint does not serve.
+	return searchPlainFood(terms, limit, (used, size) => rankedRows(db, used, size));
+}
+
+/** One ranked page of names, in the shape `searchPlainFood` needs to page two of them. */
+function rankedRows(db: DatabaseSync, terms: SearchTerms, limit: number): Ranked<string>[] {
+	return prepared(db, searchSql('f.food_id, f.name, f.brand, f.kind'))
+		.all({
+			match: terms.match,
+			text: terms.text,
+			singular: singular(terms.text),
+			prefix: `${singular(terms.text)}%`,
+			limit
+		})
+		.map((row) => ({
+			id: Number(row['food_id']),
+			brand: typeof row['brand'] === 'string' ? row['brand'] : null,
+			kind: String(row['kind']),
+			food: String(row['name'])
+		}));
 }
 
 /**

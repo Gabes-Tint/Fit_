@@ -40,8 +40,8 @@ describe('searchCatalog', () => {
 		const body = await bodyOf(searchCatalog(db, eventFor('q=milk&limit=2')));
 		expect(body['query']).toBe('milk');
 		expect((body['foods'] as { name: string }[]).map((food) => food.name)).toEqual([
-			'MILK',
-			'Milk, whole'
+			'Milk, whole',
+			'Milk, dried'
 		]);
 	});
 

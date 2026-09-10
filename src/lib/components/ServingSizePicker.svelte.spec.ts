@@ -102,6 +102,34 @@ describe('ServingSizePicker', () => {
 		expect(rebased).toMatchObject({ servingLabel: '1 medium', grams: 44 });
 	});
 
+	it('opens a branded food on its labelled serving, not on 100 g (#337)', async () => {
+		// The Claeys row of #337: a candy sold in pieces whose `food_serving`
+		// rows are the ETL's guaranteed "100 g" and the label's own "3 PIECES".
+		// The control reads the labelled serving, and 100 g stays on the list,
+		// because logging 2.3 × 100 g of a 15 g packet is how 920 kcal happened.
+		const candy = catalogFood({
+			id: 205,
+			name: 'GREEN APPLE',
+			brand: 'CLAEYS',
+			kind: 'branded',
+			serving: { label: '3 PIECES', grams: 15 },
+			servingOptions: [
+				{ label: '3 PIECES', grams: 15 },
+				{ label: '100 g', grams: 100 }
+			]
+		});
+		await render(ServingSizePicker, { props: { food: candy, onchoose: vi.fn() } });
+		const control = page.getByLabelText('Serving size for GREEN APPLE');
+		await expect.element(control).toHaveTextContent('3 PIECES · 15 g');
+		await control.click();
+		await expect
+			.element(page.getByRole('button', { name: /3 PIECES/ }))
+			.toHaveAttribute('aria-pressed', 'true');
+		await expect
+			.element(page.getByRole('button', { name: '100 g' }))
+			.toHaveAttribute('aria-pressed', 'false');
+	});
+
 	it('marks only the option matching both label and grams as current', async () => {
 		// Both rows read "1 cup"; only the 113 g one is the food's own serving.
 		// A guard that compared the label alone would mark them both.

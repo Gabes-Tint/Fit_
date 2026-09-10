@@ -49,9 +49,12 @@ describe('the defect this ranking exists for', () => {
 describe('searchFoods', () => {
 	it('puts plain milk above milk chocolate pretzels', () => {
 		expect(names('milk')).toEqual([
-			'MILK',
 			'Milk, whole',
 			'Milk, dried',
+			// North Valley Dairy's "MILK" used to lead this list on its exact name
+			// alone. #337 demotes a branded row whose brand the query does not
+			// name, so the food comes first and the product stays findable.
+			'MILK',
 			'ORGANIC PLAIN WHOLE MILK YOGURT',
 			'TORN & GLASSER, MILK CHOCOLATE PRETZELS'
 		]);
@@ -91,8 +94,8 @@ describe('searchFoods', () => {
 		// was cut, the crowd filled the cut and then became one row, so this
 		// answered with a single food — which is what the live catalog did.
 		expect(names('pasta', 4)).toEqual([
-			'PASTA',
 			'Pasta, dry, enriched',
+			'PASTA',
 			'Pasta, fresh-refrigerated, plain, cooked',
 			'Pasta (spaghetti, macaroni), enriched, dry'
 		]);
@@ -138,7 +141,10 @@ describe('searchFoods', () => {
 	});
 
 	it('carries the provenance and the per-100 g numbers a logged entry keeps', () => {
-		const [food] = searchFoods(db, 'milk', 1);
+		// The branded row by name rather than by position: what is asserted here
+		// is that a product's brand, barcode and license travel with it, which is
+		// not a claim about where #337's demotion leaves it on the page.
+		const food = searchFoods(db, 'milk', 5).find((row) => row.id === 3);
 		expect(food).toEqual({
 			id: 3,
 			name: 'MILK',
@@ -247,7 +253,7 @@ describe('searchFoods', () => {
 	});
 
 	it('honours the requested page size', () => {
-		expect(names('milk', 2)).toEqual(['MILK', 'Milk, whole']);
+		expect(names('milk', 2)).toEqual(['Milk, whole', 'Milk, dried']);
 	});
 
 	it('answers nothing for a query with no searchable token', () => {

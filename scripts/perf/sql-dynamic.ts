@@ -90,7 +90,10 @@ function idsOfSize(count: number): number[] {
 export const DYNAMIC_PROBES: readonly DynamicProbe[] = [
 	{
 		file: FOODS_MODULE,
-		label: 'searchFoods',
+		// The ranked search is prepared inside `rankedPage`, which is the name
+		// `sql-statements.ts` reports the call site under; `searchFoods` is still
+		// what drives it, because the page it asks for is what decides the SQL.
+		label: 'rankedPage',
 		run: (loaded, db, page) => {
 			callable<SearchFoods>(loaded, 'searchFoods')(db, PROBE_QUERY, page);
 		}

@@ -29,6 +29,22 @@ describe('LogRow', () => {
 		await expect.element(page.getByText(item().name)).toBeInTheDocument();
 	});
 
+	it('names the brand of a branded entry, beside its source badge (#337)', async () => {
+		// The entry that opened #337: a journal row saying "GREEN APPLE" and
+		// "BRAND PUBLISHED" and nothing that told a person it was hard candy.
+		const entry = { ...item(), name: 'GREEN APPLE', brand: 'CLAEYS' };
+		await render(LogRow, { props: { item: entry, open: false, step: 0.5, ontoggle: vi.fn() } });
+		await expect.element(page.getByText('CLAEYS')).toBeInTheDocument();
+	});
+
+	it('says no brand at all for an entry logged from a generic food', async () => {
+		const entry = item();
+		expect(entry.brand).toBeUndefined();
+		await render(LogRow, { props: { item: entry, open: false, step: 0.5, ontoggle: vi.fn() } });
+		await expect.element(page.getByText(entry.name)).toBeInTheDocument();
+		expect(document.body.textContent).not.toContain('CLAEYS');
+	});
+
 	it('shows the servings against the serving label', async () => {
 		const entry = item();
 		await render(LogRow, { props: { item: entry, open: false, step: 0.5, ontoggle: vi.fn() } });

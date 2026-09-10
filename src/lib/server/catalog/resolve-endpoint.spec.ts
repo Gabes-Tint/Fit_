@@ -114,13 +114,34 @@ describe('resolveFoodNames', () => {
 
 	it('puts the catalog’s first-ranked row in `food`', async () => {
 		const items = await itemsOf(await resolveFoodNames(catalog, asking('milk')));
-		expect(items[0]?.food?.name).toBe('MILK');
+		expect(items[0]?.food?.name).toBe('Milk, whole');
 	});
 
 	it('offers the two rows behind it as alternatives, and no more', async () => {
 		const items = await itemsOf(await resolveFoodNames(catalog, asking('milk')));
 		expect(items[0]?.alternatives).toHaveLength(2);
-		expect(items[0]?.alternatives.map((food) => food.name)).toEqual(['Milk, whole', 'Milk, dried']);
+		expect(items[0]?.alternatives.map((food) => food.name)).toEqual(['Milk, dried', 'MILK']);
+	});
+
+	describe('a three-row page is nearly always a full one (#337 review)', () => {
+		// `resolveFood` asks for three rows, not the ten a search shows, so a
+		// page of branded rows is far likelier here than anywhere the ranking
+		// was measured. What resolves has to be a row the query matched — the
+		// head-noun widening fills a tail, and a full page has no tail.
+		it('resolves a branded-only page to the product, not to the head noun’s food', async () => {
+			const items = await itemsOf(await resolveFoodNames(catalog, asking('green apple')));
+			expect(items[0]?.food?.name).toBe('GREEN APPLE');
+			// The fruit is offered behind it rather than instead of it.
+			expect(items[0]?.alternatives.map((food) => food.name)).toContain(
+				'Apples, granny smith, with skin, raw'
+			);
+		});
+
+		it('resolves a compound food to the compound, not to its head noun', async () => {
+			// Rice for cauliflower rice is 360 kcal answering for 24.
+			const items = await itemsOf(await resolveFoodNames(catalog, asking('cauliflower rice')));
+			expect(items[0]?.food?.name).toBe('CAULIFLOWER RICE');
+		});
 	});
 
 	it('answers a name the catalog has nothing for with no food and no alternatives', async () => {

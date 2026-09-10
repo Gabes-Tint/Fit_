@@ -10,6 +10,7 @@
 	import Input from '$lib/ui/Input.svelte';
 	import NutritionFactsButton from './NutritionFactsButton.svelte';
 	import NutritionFactsSheet from './NutritionFactsSheet.svelte';
+	import BrandLabel from './BrandLabel.svelte';
 	import ProvenanceBadge from './ProvenanceBadge.svelte';
 
 	let {
@@ -121,7 +122,7 @@
 	<ul class="flex flex-col gap-1">
 		{#each results as food (food.id)}
 			{@const serving = describePortion(food, 1, tend.state.units)}
-			{@const summary = `${food.brand ? `${food.brand} · ` : ''}${serving} · ${food.kcal} kcal · ${food.protein}g protein`}
+			{@const summary = `${serving} · ${food.kcal} kcal · ${food.protein}g protein`}
 			<li
 				class="bg-background hover:bg-secondary flex items-center gap-1 rounded-2xl pr-1 transition-colors"
 			>
@@ -137,7 +138,14 @@
 								<ProvenanceBadge provenance={food.provenance} />
 							</span>
 						</div>
-						<p class="text-muted-foreground truncate text-xs">{summary}</p>
+						<div class="flex min-w-0 items-center gap-1.5">
+							<!-- The brand ahead of the numbers rather than folded into them: it
+								was already in this line, spelled "CLAEYS · 3 PIECES (15 g) · 400
+								kcal · 0g protein", and the person who logged hard candy as an
+								apple (#337) read straight past it. -->
+							<BrandLabel brand={food.brand} />
+							<p class="text-muted-foreground truncate text-xs">{summary}</p>
+						</div>
 					</div>
 				</button>
 				<NutritionFactsButton name={food.name} onclick={() => showFacts(food)} />

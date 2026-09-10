@@ -18,6 +18,7 @@
 			"src/lib/components/AppShellHarness.svelte",
 			"src/lib/components/AvgRow.svelte",
 			"src/lib/components/BarcodeScan.svelte",
+			"src/lib/components/BrandLabel.svelte",
 			"src/lib/components/DayStrip.svelte",
 			"src/lib/components/EmptyState.svelte",
 			"src/lib/components/FoodSearch.svelte",
