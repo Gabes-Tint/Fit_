@@ -211,11 +211,12 @@ test('closes from the keyboard, and hands focus back to the toggle', async ({ pa
  * The toggle floats above the drawer with a higher z-index (z-45 vs z-40), so
  * it stays tappable even when the drawer is open behind it. This test verifies
  * that elementFromPoint at the toggle's centre returns the toggle itself when
- * the drawer is open, for both right-handed and left-handed settings.
+ * the drawer is open.
  */
-test('stays on top of the open drawer, tappable to close', async ({ page, baseURL }) => {
-	await openTheJournal(page, baseURL ?? '');
-
+async function assertToggleOnTopOfDrawer(
+	page: Parameters<typeof openSampleJournal>[0],
+	setting: 'default' | 'left-handed'
+) {
 	const toggle = page.locator('[data-menu-fab]');
 	const box = await toggle.boundingBox();
 	expect(box, 'the menu toggle has no box to measure').not.toBeNull();
@@ -233,37 +234,22 @@ test('stays on top of the open drawer, tappable to close', async ({ page, baseUR
 		const target = document.elementFromPoint(point.x, point.y);
 		return target?.closest('[data-menu-fab]') !== null ? 'toggle' : 'something else';
 	}, centre);
-	expect(onTop, 'the menu toggle is painted on top of the open drawer').toBe('toggle');
+	expect(onTop, `the menu toggle is painted on top of the open drawer (${setting})`).toBe('toggle');
 
 	// Close it again to verify the tap still works
 	await toggle.click();
 	await expect(page.getByRole('dialog')).toHaveCount(0);
+}
+
+test('stays on top of the open drawer', async ({ page, baseURL }) => {
+	await openTheJournal(page, baseURL ?? '');
+	await assertToggleOnTopOfDrawer(page, 'default');
 });
 
 test('stays on top of the open drawer when left-handed', async ({ page, baseURL }) => {
 	await openTheJournal(page, baseURL ?? '');
-
-	// Enable left-handed mode
 	await turnOnLeftHanded(page);
-
-	const toggle = page.locator('[data-menu-fab]');
-	const box = await toggle.boundingBox();
-	expect(box, 'the menu toggle has no box to measure').not.toBeNull();
-	const { x, y, width, height } = box as { x: number; y: number; width: number; height: number };
-	const centre = { x: x + width / 2, y: y + height / 2 };
-
-	// Open the drawer
-	await toggle.click();
-	await expect(page.getByRole('dialog', { name: 'Fit_' })).toBeVisible();
-
-	// Same check: toggle should be on top even when left-handed
-	const onTop = await page.evaluate((point) => {
-		const target = document.elementFromPoint(point.x, point.y);
-		return target?.closest('[data-menu-fab]') !== null ? 'toggle' : 'something else';
-	}, centre);
-	expect(onTop, 'the menu toggle is painted on top of the open drawer in left-handed mode').toBe(
-		'toggle'
-	);
+	await assertToggleOnTopOfDrawer(page, 'left-handed');
 });
 
 /**

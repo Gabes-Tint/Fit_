@@ -120,7 +120,8 @@ export default defineConfig(
 					assertFunctionNames: [
 						'expect',
 						'expectFitsViewport',
-						'expectToggleAndCardActionsHittable'
+						'expectToggleAndCardActionsHittable',
+						'assertToggleOnTopOfDrawer'
 					]
 				}
 			]
