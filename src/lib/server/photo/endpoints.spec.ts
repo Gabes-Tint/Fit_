@@ -275,7 +275,9 @@ describe('the plate it answers with', () => {
 		expect(response.status).toBe(200);
 		const items = await itemsOf(response);
 		expect(items).toHaveLength(1);
-		expect(items[0]?.food?.name).toBe('MILK');
+		// The catalog's own first-ranked row for "milk", which #337 made the
+		// generic food rather than the dairy's branded row of the same name.
+		expect(items[0]?.food?.name).toBe('Milk, whole');
 	});
 
 	it('keeps the model’s own label and portion beside the catalog food', async () => {
@@ -286,7 +288,7 @@ describe('the plate it answers with', () => {
 	it('offers the two next-best matches, and never more', async () => {
 		const items = await itemsOf(await readMealPhoto(db, catalog, plate(), deps(found('milk'))));
 		expect(items[0]?.alternatives).toHaveLength(2);
-		expect(items[0]?.alternatives.map((food) => food.name)).toEqual(['Milk, whole', 'Milk, dried']);
+		expect(items[0]?.alternatives.map((food) => food.name)).toEqual(['Milk, dried', 'MILK']);
 	});
 
 	it('says plainly when the catalog matched nothing, rather than dropping the food', async () => {
@@ -300,7 +302,7 @@ describe('the plate it answers with', () => {
 		const items = await itemsOf(
 			await readMealPhoto(db, catalog, plate(), deps(found('milk', 'banana')))
 		);
-		expect(items.map((item) => item.food?.name)).toEqual(['MILK', 'Bananas, raw']);
+		expect(items.map((item) => item.food?.name)).toEqual(['Milk, whole', 'Bananas, raw']);
 	});
 
 	it('answers an empty plate as an empty list, not as a failure', async () => {
