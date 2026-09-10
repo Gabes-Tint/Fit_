@@ -73,7 +73,11 @@ function padded(text: string): string {
  * `namesBrandSql` below is the same rule in SQL and the two must agree.
  */
 export function namesBrand(text: string, brand: string | null): boolean {
-	const folded = brand === null ? '' : brand.trim().toLowerCase();
+	if (brand === null) return false;
+	const folded = brand.trim().toLowerCase();
+	// A brand the ETL carried through blank is not a brand a query can name.
+	// The guard is not decoration: without it the padding alone would look for
+	// two adjacent spaces, which a doubled space between typed words supplies.
 	if (folded.length === 0) return false;
 	return padded(text).includes(padded(folded));
 }
@@ -100,21 +104,24 @@ export function unnamedBrandSql(): string {
 }
 
 /**
- * Whether a page has answered a plain-food query with branded products only.
+ * The terms a hopeless page should be widened with, or `null` to leave it alone.
  *
- * Both conditions are needed. The page must hold no generic row, or there was a
- * food to rank and the demotion's job was to lift it; and it must name no
- * brand, or the person asked for a product and got one, which is what keeps
- * "burger king whopper" and "subway turkey" reading their own rows.
+ * One function rather than a question and an answer, so there is exactly one
+ * place that decides and no branch downstream that cannot be reached.
  *
- * An empty page is not widened. Answering nothing is a different problem from
+ * An empty page is not widened: answering nothing is a different problem from
  * answering the wrong thing, and widening a query that matched nothing would
- * change what "no results" means.
+ * change what "no results" means. A page holding a food is not widened either —
+ * there was something to rank and the demotion's job was to lift it — nor is
+ * one whose brand the person named, which is what keeps "burger king whopper"
+ * and "subway turkey" reading their own rows. And a single-token query has no
+ * qualifier to drop, so there is nothing to widen it to.
  */
-export function needsHeadRetry(text: string, page: readonly RankedRow[]): boolean {
-	if (page.length === 0) return false;
-	if (headWord(text) === null) return false;
-	return !page.some((row) => row.kind === GENERIC_KIND || namesBrand(text, row.brand));
+export function headRetryTerms(text: string, page: readonly RankedRow[]): SearchTerms | null {
+	if (page.length === 0) return null;
+	if (page.some((row) => row.kind === GENERIC_KIND || namesBrand(text, row.brand))) return null;
+	const head = headWord(text);
+	return head === null ? null : searchTerms(head);
 }
 
 /**
@@ -128,12 +135,6 @@ export function needsHeadRetry(text: string, page: readonly RankedRow[]): boolea
 function headWord(text: string): string | null {
 	const tokens = text.split(' ').filter((token) => token.length > 0);
 	return tokens.length > 1 ? (tokens[tokens.length - 1] ?? null) : null;
-}
-
-/** The head noun read as its own query, or `null` when there is no head to read. */
-export function headTerms(text: string): SearchTerms | null {
-	const head = headWord(text);
-	return head === null ? null : searchTerms(head);
 }
 
 /**
@@ -160,8 +161,7 @@ export function searchPlainFood<Food>(
 ): Food[] {
 	const strict = run(terms, limit);
 	if (strict.length >= limit) return strict.map((row) => row.food);
-	if (!needsHeadRetry(terms.text, strict)) return strict.map((row) => row.food);
-	const relaxed = headTerms(terms.text);
+	const relaxed = headRetryTerms(terms.text, strict);
 	if (relaxed === null) return strict.map((row) => row.food);
 	const seen = new Set(strict.map((row) => row.id));
 	const tail = run(relaxed, limit).filter((row) => !seen.has(row.id));

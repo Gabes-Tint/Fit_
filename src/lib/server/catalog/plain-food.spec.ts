@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFixtureCatalog } from '../../../../tests/catalog-fixture';
 import { searchFoods } from './foods';
 import { searchTerms } from './query';
-import { headTerms, namesBrand, needsHeadRetry, searchPlainFood, type Ranked } from './plain-food';
+import { headRetryTerms, namesBrand, searchPlainFood, type Ranked } from './plain-food';
 
 let db: DatabaseSync;
 
@@ -87,6 +87,12 @@ describe('namesBrand', () => {
 		expect(namesBrand('green apple', '   ')).toBe(false);
 	});
 
+	it('is still no brand when the typed text left a gap for one to hide in', () => {
+		// A doubled space between typed words is two adjacent separators, which
+		// is exactly the shape an empty brand takes once it is padded.
+		expect(namesBrand('green  apple', '   ')).toBe(false);
+	});
+
 	describe('a brand is whole words, never a run of letters inside one', () => {
 		// All three are real brands in the catalog, and a substring test exempted
 		// every row carrying them from the demotion for a word nobody typed.
@@ -112,46 +118,36 @@ describe('namesBrand', () => {
 	});
 });
 
-describe('needsHeadRetry', () => {
+describe('headRetryTerms', () => {
 	const branded = { id: 1, brand: 'CLAEYS', kind: 'branded' };
 
 	it('widens a query answered with branded rows and no brand of its own', () => {
-		expect(needsHeadRetry('green apple', [branded])).toBe(true);
+		expect(headRetryTerms('green apple', [branded])?.text).toBe('apple');
 	});
 
 	it('leaves a page alone when a food is already in it to rank', () => {
-		expect(needsHeadRetry('green apple', [branded, { id: 2, brand: null, kind: 'generic' }])).toBe(
-			false
-		);
+		expect(
+			headRetryTerms('green apple', [branded, { id: 2, brand: null, kind: 'generic' }])
+		).toBeNull();
 	});
 
 	it('leaves a page alone when the person named one of its brands', () => {
-		expect(needsHeadRetry('claeys green apple', [branded])).toBe(false);
+		expect(headRetryTerms('claeys green apple', [branded])).toBeNull();
 	});
 
 	it('does not widen a single-token query, which has no qualifier to drop', () => {
-		expect(needsHeadRetry('apple', [branded])).toBe(false);
+		expect(headRetryTerms('apple', [branded])).toBeNull();
 	});
 
 	it('does not widen a query that matched nothing: that is a different answer', () => {
-		expect(needsHeadRetry('green apple', [])).toBe(false);
-	});
-});
-
-describe('headTerms', () => {
-	it('reads the last word as the head of a food phrase', () => {
-		expect(headTerms('green apple')?.text).toBe('apple');
-	});
-
-	it('has no head to read out of a single word', () => {
-		expect(headTerms('apple')).toBeNull();
+		expect(headRetryTerms('green apple', [])).toBeNull();
 	});
 
 	it('reads past the gaps a typed query leaves', () => {
 		// A trailing space and a doubled one between words; the head is still
 		// "apple", not the empty string between two separators, which would
 		// widen the query into a search for nothing.
-		expect(headTerms('green  apple ')?.text).toBe('apple');
+		expect(headRetryTerms('green  apple ', [branded])?.text).toBe('apple');
 	});
 });
 
@@ -175,11 +171,20 @@ describe('searchPlainFood', () => {
 	const TERMS = searchTerms('green apple') ?? { match: '', text: 'green apple' };
 
 	it('hands back the strict page untouched when it already holds a food', () => {
+		// The widened page is stocked, so a page that widened when it should not
+		// have would visibly grow rather than come back looking the same.
 		const strict = [generic(1, 'Apples, granny smith, with skin, raw'), branded(2, 'CANDY')];
-		expect(searchPlainFood(TERMS, 10, pages(strict, []))).toEqual([
-			'Apples, granny smith, with skin, raw',
-			'CANDY'
-		]);
+		const merged = searchPlainFood(TERMS, 10, pages(strict, [generic(3, 'Apple, raw')]));
+		expect(merged).toEqual(['Apples, granny smith, with skin, raw', 'CANDY']);
+	});
+
+	it('does not widen a single-token query, whatever its page looks like', () => {
+		const single = searchTerms('apple') ?? { match: '', text: 'apple' };
+		const run = vi.fn((used: { text: string }, limit: number) =>
+			(used.text === 'apple' ? [branded(1, 'APPLE')] : [generic(2, 'Apple, raw')]).slice(0, limit)
+		);
+		expect(searchPlainFood(single, 10, run)).toEqual(['APPLE']);
+		expect(run).toHaveBeenCalledTimes(1);
 	});
 
 	it('appends the widened page under the strict one, never above it', () => {
