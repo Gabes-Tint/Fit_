@@ -14,7 +14,13 @@
 	import type { NavRoute } from './nav-routes';
 
 	// pathname is a prop, not a $app/state read: the shell owns knowing where we are.
-	let { open = $bindable(false), pathname }: { open?: boolean; pathname: string } = $props();
+	// leftHanded mirrors the panel to the opposite edge; the shell reads it from
+	// the tend store, this component only lays out for it.
+	let {
+		open = $bindable(false),
+		pathname,
+		leftHanded = false
+	}: { open?: boolean; pathname: string; leftHanded?: boolean } = $props();
 
 	type Destination = { route: NavRoute; label: string; icon: typeof Home; active: boolean };
 
@@ -54,7 +60,10 @@
 		<Dialog.Content
 			id={DRAWER_ID}
 			onInteractOutside={keepOpenForTheToggle}
-			class="bg-card text-card-foreground fixed inset-y-0 left-0 z-40 flex w-[min(17rem,80vw)] flex-col rounded-r-3xl pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-border outline-none"
+			class="bg-card text-card-foreground fixed inset-y-0 z-40 flex w-[min(17rem,80vw)] flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-border outline-none"
+			style={leftHanded
+				? 'right:0;border-top-left-radius:var(--radius-3xl);border-bottom-left-radius:var(--radius-3xl)'
+				: 'left:0;border-top-right-radius:var(--radius-3xl);border-bottom-right-radius:var(--radius-3xl)'}
 		>
 			<!--
 				The way out for anyone not using a thumb.

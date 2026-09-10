@@ -128,6 +128,24 @@ describe('MenuFab', () => {
 		}
 	});
 
+	it('sits bottom-right by default', async () => {
+		await render(MenuFab, { props: { ...base } });
+		const button = page.getByRole('button', { name: 'Open menu' }).element();
+		expect(button.closest('div')?.getAttribute('style')).toContain('justify-content: flex-end');
+		expect(button.closest('div')?.parentElement?.getAttribute('style')).toContain(
+			'padding-right: max(0.75rem'
+		);
+	});
+
+	it('mirrors bottom-left when left-handed', async () => {
+		await render(MenuFab, { props: { ...base, leftHanded: true } });
+		const button = page.getByRole('button', { name: 'Open menu' }).element();
+		expect(button.closest('div')?.getAttribute('style')).toContain('justify-content: flex-start');
+		expect(button.closest('div')?.parentElement?.getAttribute('style')).toContain(
+			'padding-left: max(0.75rem'
+		);
+	});
+
 	// The rest of what this button has to be — a 44px target, a stacking order
 	// above the drawer's own overlay, and a wrapper that swallows no taps — is
 	// entirely a matter of the stylesheet, and this project renders components

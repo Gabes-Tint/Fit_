@@ -1737,6 +1737,40 @@ describe('the units preference', () => {
 	});
 });
 
+describe('the left-handed preference', () => {
+	it('opens off', () => {
+		const store = freshStore();
+		expect(store.state.leftHanded).toBe(false);
+	});
+
+	it('turns on and writes it down at once', () => {
+		const store = freshStore();
+		store.setLeftHanded(true);
+		expect(store.state.leftHanded).toBe(true);
+		expect(stored().leftHanded).toBe(true);
+		expect(reloaded().state.leftHanded).toBe(true);
+	});
+
+	it('gives an older payload lacking the field the off default', () => {
+		localStorage.setItem(STORAGE_KEY, JSON.stringify({ onboarded: true, workouts: [] }));
+		const store = new TendStore();
+		store.hydrate();
+		expect(store.state.leftHanded).toBe(false);
+	});
+
+	it('rides along in a document taken from another device', () => {
+		const store = freshStore();
+		store.replace({ onboarded: true, leftHanded: true });
+		expect(store.state.leftHanded).toBe(true);
+	});
+
+	it('is present in the persisted document so it syncs with the rest of the state', () => {
+		const store = freshStore();
+		store.setLeftHanded(true);
+		expect(Object.keys(stored())).toContain('leftHanded');
+	});
+});
+
 describe('training across a reload', () => {
 	it('saves each step of a session as it happens', () => {
 		const store = inSession();

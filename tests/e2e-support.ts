@@ -319,6 +319,24 @@ export async function openSampleJournal(page: Page): Promise<void> {
 	await expect(page.getByRole('heading', { name: 'Today', level: 1 })).toBeVisible();
 }
 
+/**
+ * Turns on the left-handed preference from the You page, then returns to
+ * Today. The switch writes through `tend.setLeftHanded` at once (mirroring
+ * the units preference), so waiting on its own `aria-checked` before
+ * navigating back is enough — no reload, no sleep.
+ */
+export async function turnOnLeftHanded(page: Page): Promise<void> {
+	await page.getByRole('button', { name: 'Open menu' }).click();
+	await page.getByRole('link', { name: 'You' }).click();
+	await expect(page.getByRole('heading', { name: 'You' })).toBeVisible();
+	const toggle = page.getByRole('switch', { name: 'Left-handed' });
+	await toggle.click();
+	await expect(toggle).toBeChecked();
+	await page.getByRole('button', { name: 'Open menu' }).click();
+	await page.getByRole('link', { name: 'Today' }).click();
+	await expect(page.getByRole('heading', { name: 'Today', level: 1 })).toBeVisible();
+}
+
 /** Onboard onto an empty journal, so anything logged afterwards is logged here. */
 export async function openEmptyJournal(page: Page): Promise<void> {
 	await page.goto('/');

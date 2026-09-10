@@ -267,6 +267,18 @@
 							tend.setRestSeconds(tend.state.restSeconds + direction * REST_STEP)}
 					/>
 				</div>
+				<div class="mt-4 flex items-start justify-between gap-3">
+					<div class="min-w-0">
+						<p class="text-sm font-medium">Left-handed</p>
+						<p class="text-muted-foreground text-xs">
+							Puts the menu button and the side menu on the left-hand side.
+						</p>
+					</div>
+					<Switch
+						aria-label="Left-handed"
+						bind:checked={() => tend.state.leftHanded, (on: boolean) => tend.setLeftHanded(on)}
+					/>
+				</div>
 			</section>
 
 			<section class="bg-card rounded-3xl p-4 shadow-border">

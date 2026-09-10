@@ -27,7 +27,13 @@
 
 	// `open` is reported, not owned: the shell holds the drawer, this only draws
 	// which of the two faces the button is currently wearing and says so.
-	let { open, ontoggle }: { open: boolean; ontoggle: () => void } = $props();
+	// `leftHanded` mirrors the button to the opposite corner; the shell reads it
+	// from the tend store, this component only lays out for it.
+	let {
+		open,
+		ontoggle,
+		leftHanded = false
+	}: { open: boolean; ontoggle: () => void; leftHanded?: boolean } = $props();
 
 	/**
 	 * Any dialog on screen that is not the drawer this button owns — a log
@@ -76,9 +82,15 @@
 	rather than on somebody's phone.
 -->
 <div
-	class="pointer-events-none fixed inset-x-0 bottom-0 z-[45] flex justify-center pt-2 pr-[max(0.75rem,env(safe-area-inset-right))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-5"
+	class="pointer-events-none fixed inset-x-0 bottom-0 z-[45] flex justify-center pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+	style={leftHanded
+		? 'padding-right:calc(var(--spacing) * 5);padding-left:max(0.75rem,env(safe-area-inset-left))'
+		: 'padding-right:max(0.75rem,env(safe-area-inset-right));padding-left:calc(var(--spacing) * 5)'}
 >
-	<div class="flex w-full max-w-lg justify-end">
+	<div
+		class="flex w-full max-w-lg"
+		style={leftHanded ? 'justify-content:flex-start' : 'justify-content:flex-end'}
+	>
 		<Button
 			size="icon-round"
 			class="shadow-border pointer-events-auto shadow-lg"
