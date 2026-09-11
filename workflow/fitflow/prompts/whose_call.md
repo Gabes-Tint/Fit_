@@ -19,6 +19,6 @@ maintainability and feature work.
 Reply with the schema fields: owner (orchestrator or gabriel), category (none,
 product, spend, infra, secrets, gate-lowering, or data-deletion - none unless
 owner is gabriel), reason (why), question (the question to put to Gabriel if
-his call, otherwise an empty string), options (the choices Gabriel has, if
-his call - always include a plain "Do nothing" option), and recommendation
-(your recommendation, if his call, otherwise an empty string).
+Gabriel's call, otherwise an empty string), options (the choices Gabriel has, if
+Gabriel's call - always include a plain "Do nothing" option), and recommendation
+(your recommendation, if Gabriel's call, otherwise an empty string).
