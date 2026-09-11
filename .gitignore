@@ -59,3 +59,10 @@ reports
 
 # Application database and its SQLite sidecars.
 /data/runtime
+
+# workflow/ is a Python subproject (uv); its own venv and caches.
+/workflow/.venv
+/workflow/__pycache__
+/workflow/**/__pycache__
+/workflow/.pytest_cache
+/workflow/.ruff_cache

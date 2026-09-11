@@ -4,9 +4,15 @@ The user starts `go.py` manually. It is intended to become the autonomous,
 maximally deterministic driver for Fit_'s complete
 [development flow](../docs/development-flow.md): issue selection, planning,
 implementation, gates, review, CI, merge, deploy and reporting. No external
-Codex or Claude Code session supervises or continuously monitors it. Agents
+Codex or Claude Code session is required to supervise or continuously monitor it. Agents
 invoked through `aarmy` are bounded workers under the Python driver's control;
 their replies must match JSON schemas.
+
+The proposed [delegation and implementation gates](delegation-contract.md)
+specify future role selection, before/after-turn validation, bounded repairs,
+escalation and the final all-slice barrier. An optional external operator may
+start, observe or cancel a run, but cannot mutate the workflow or worktrees
+while it runs. This proposal changes no current behavior or executable schema.
 
 Only block 1, "Pick and plan", is implemented today. In that block, `go.py`
 runs every command and check itself, calling agents only at the judgment boxes
@@ -85,7 +91,8 @@ uv sync
 ### Configure the agents
 
 [`agents.yaml`](agents.yaml) beside `go.py` is the source of truth for both
-current roles:
+roles implemented today: planner and the block 1 mechanic. Future Delegate
+roles such as builder and solver are not configured until that block exists.
 
 ```yaml
 planner:
@@ -197,8 +204,9 @@ Then the test runs `go.py` as a subprocess and checks the exit code, the log,
 and what ended up on the fake issues. No network, no agent turns, no GitHub
 writes.
 
-They are end-to-end flow tests only: the happy paths, and every stop and
-failure. There are no unit tests, on purpose.
+Most tests are end-to-end flow scenarios covering happy paths, stops and
+failures. Focused acceptance helper tests also cover report parsing and
+rejection of local stand-ins for product behavior.
 
 ### Read the log a test produced
 
@@ -230,19 +238,20 @@ repository root: `bun run lint:docs` and `bun run spellcheck`.
 
 ### Where things are
 
-| path                      | what                                                     |
-| ------------------------- | -------------------------------------------------------- |
-| `go.py`                   | the flow, box by box                                     |
-| `agents.yaml`             | planner and mechanic backend, model and effort           |
-| `fitflow/agent_config.py` | strict, source-relative YAML loading and validation      |
-| `fitflow/steps/`          | one module per box of the diagram                        |
-| `fitflow/github.py`       | the only code that runs `gh`                             |
-| `fitflow/agents.py`       | the only code that runs `aarmy`                          |
-| `fitflow/worktrees.py`    | the only code that runs `git` and `bun run worktree:new` |
-| `fitflow/acceptance.py`   | runs the mechanic's test files and reads their report    |
-| `fitflow/prompts/`        | what each agent is told                                  |
-| `fitflow/schemas/`        | the shape each agent must answer in                      |
-| `fitflow/settings.py`     | repository, label, timeout and path settings             |
+| path                      | what                                                      |
+| ------------------------- | --------------------------------------------------------- |
+| `go.py`                   | the flow, box by box                                      |
+| `delegation-contract.md`  | proposed block 2/3 gates and transitions; not implemented |
+| `agents.yaml`             | planner and mechanic backend, model and effort            |
+| `fitflow/agent_config.py` | strict, source-relative YAML loading and validation       |
+| `fitflow/steps/`          | one module per box of the diagram                         |
+| `fitflow/github.py`       | the only code that runs `gh`                              |
+| `fitflow/agents.py`       | the only code that runs `aarmy`                           |
+| `fitflow/worktrees.py`    | the only code that runs `git` and `bun run worktree:new`  |
+| `fitflow/acceptance.py`   | runs the mechanic's test files and reads their report     |
+| `fitflow/prompts/`        | what each agent is told                                   |
+| `fitflow/schemas/`        | the shape each agent must answer in                       |
+| `fitflow/settings.py`     | repository, label, timeout and path settings              |
 
 ### Seeded agent configuration
 
