@@ -43,7 +43,7 @@ A question for Gabriel is an issue (`needs-gabriel`): blocked, options including
 
 1. **Sync** — fetch; issues; `needs-gabriel`; log. Answers → `decision`.
 2. **Pick** — highest unblocked `story`. Empty → write stories from priorities.
-3. **Plan** — failing tests first. Split multi-layer slices. Screens: `expectFitsViewport` at 360px.
+3. **Plan** — `workflow/go.py` runs Pick and Plan (#351) deterministically: whose call, spending, split at the layer boundary, mechanic writes failing tests. Failing tests first. Split multi-layer slices. Screens: `expectFitsViewport` at 360px.
 4. **Delegate** — rung + why; issue, files, tests, gate; one worktree. Never the shared checkout.
 5. **Review** — diff + `gate-*.json`. Past mechanical → `reviewer`.
 6. **Merge** — `Closes #N`; `gh pr merge <n>`.
@@ -61,7 +61,7 @@ A question for Gabriel is an issue (`needs-gabriel`): blocked, options including
 | `solver`   | unclear failure, sync, auth, store            |
 | `reviewer` | builder/solver before `main`                  |
 
-Brief names the worktree. Orchestrator stays free; waiting is an agent’s job. Read `gate-<tier>.json`; do not re-run to be sure. Explore with `mechanic`/`builder`. `aarmy` optional, one-turn only.
+Brief names the worktree. Orchestrator stays free; waiting is an agent’s job. Read `gate-<tier>.json`; do not re-run to be sure. Explore with `mechanic`/`builder`. `workflow/go.py` uses `aarmy` for pick and plan; elsewhere it stays optional, one-turn only.
 
 **Cost.** Paid service → `needs-gabriel` (name, why, cost). Bundle raise: old/new/measured/what grew in the PR, or trim.
 

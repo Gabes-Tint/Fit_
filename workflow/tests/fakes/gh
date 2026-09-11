@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""Fake `gh`: exactly the subcommands go.py's github.py uses."""
+
+import json
+import os
+import sys
+from pathlib import Path
+
+
+def world_path():
+    return Path(os.environ["FAKE_WORLD"]) / "world.json"
+
+
+def load():
+    return json.loads(world_path().read_text())
+
+
+def save(world):
+    world_path().write_text(json.dumps(world, indent=2))
+
+
+def record(argv):
+    calls = Path(os.environ["FAKE_WORLD"]) / "calls.jsonl"
+    with calls.open("a") as f:
+        f.write(json.dumps({"tool": "gh", "argv": argv}) + "\n")
+
+
+def opt(argv, name, default=None):
+    return argv[argv.index(name) + 1] if name in argv else default
+
+
+def all_opts(argv, name):
+    return [argv[i + 1] for i, arg in enumerate(argv) if arg == name]
+
+
+def issue_json(number, issue):
+    return {
+        "number": number,
+        "title": issue["title"],
+        "body": issue.get("body", ""),
+        "labels": [{"name": label} for label in issue.get("labels", [])],
+        "state": issue.get("state", "OPEN"),
+        "assignees": [{"login": login} for login in issue.get("assignees", [])],
+    }
+
+
+def cmd_list(argv, world):
+    state = opt(argv, "--state", "open")
+    label = opt(argv, "--label")
+    rows = []
+    for number_str, issue in world["issues"].items():
+        if state and issue.get("state", "OPEN").lower() != state.lower():
+            continue
+        if label and label not in issue.get("labels", []):
+            continue
+        rows.append(issue_json(int(number_str), issue))
+    rows.sort(key=lambda row: row["number"])
+    print(json.dumps(rows))
+    return 0
+
+
+def cmd_view(argv, world):
+    number = int(argv[2])
+    issue = world["issues"].get(str(number))
+    if issue is None:
+        print(f"issue #{number} not found", file=sys.stderr)
+        return 1
+    print(json.dumps(issue_json(number, issue)))
+    return 0
+
+
+def cmd_edit(argv, world):
+    number = int(argv[2])
+    issue = world["issues"][str(number)]
+    label = opt(argv, "--add-label")
+    if label and label not in issue.setdefault("labels", []):
+        issue["labels"].append(label)
+    login = opt(argv, "--add-assignee")
+    if login and login not in issue.setdefault("assignees", []):
+        issue["assignees"].append(login)
+    save(world)
+    return 0
+
+
+def cmd_comment(argv, world):
+    number = int(argv[2])
+    body = opt(argv, "--body")
+    world["issues"][str(number)].setdefault("comments", []).append(body)
+    save(world)
+    return 0
+
+
+def cmd_create(argv, world):
+    title = opt(argv, "--title")
+    body = opt(argv, "--body")
+    labels = all_opts(argv, "--label")
+    number = world.get("next_issue_number", 1000)
+    world["next_issue_number"] = number + 1
+    world["issues"][str(number)] = {
+        "title": title,
+        "body": body,
+        "labels": labels,
+        "state": "OPEN",
+        "assignees": [],
+        "comments": [],
+    }
+    save(world)
+    print(f"https://github.com/Gabes-Tint/Fit_/issues/{number}")
+    return 0
+
+
+COMMANDS = {
+    ("issue", "list"): cmd_list,
+    ("issue", "view"): cmd_view,
+    ("issue", "edit"): cmd_edit,
+    ("issue", "comment"): cmd_comment,
+    ("issue", "create"): cmd_create,
+}
+
+
+def main() -> int:
+    argv = sys.argv[1:]
+    record(argv)
+    if "-R" in argv:
+        i = argv.index("-R")
+        del argv[i : i + 2]
+    handler = COMMANDS.get(tuple(argv[:2]))
+    if handler is None:
+        print(f"fake gh: unsupported command {argv}", file=sys.stderr)
+        return 1
+    return handler(argv, load())
+
+
+if __name__ == "__main__":
+    sys.exit(main())
