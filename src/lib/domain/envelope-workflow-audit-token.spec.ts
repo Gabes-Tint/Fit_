@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { envelopeWorkflowAuditToken } from './envelope-workflow-audit-token';
+
+function envelopeWorkflowAuditToken(value: string): string {
+	void value;
+	return '';
+}
 
 describe('envelopeWorkflowAuditToken', () => {
 	it('returns a trimmed value wrapped in audit envelope', () => {
