@@ -29,13 +29,14 @@ def begin() -> None:
 
 
 def open_for_issue(issue_number: int) -> None:
-    """Open <FIT_FLOW_HOME>/logs/issue-<n>/<timestamp>.log, flushing every
-    line buffered before the story was known."""
+    """Open <FIT_FLOW_HOME>/issue-<n>/logs/<timestamp>.log - inside that
+    issue's own team folder, alongside its `agents/` and `worktree` -
+    flushing every line buffered before the story was known."""
     global _log_file
     if _log_file is not None:
         return
     file_stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    log_dir = settings.LOGS_DIR / f"issue-{issue_number}"
+    log_dir = settings.TEAMS_DIR / f"issue-{issue_number}" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     _log_file = (log_dir / f"{file_stamp}.log").open("a", encoding="utf-8")
     for buffered in _buffer:

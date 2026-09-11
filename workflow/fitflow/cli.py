@@ -1,8 +1,8 @@
 """Argument parsing, narration setup, and turning the run's outcome (a
 FlowFailure, an unexpected tool error, or a clean Outcome) into a log line, a
 comment on the story when there is one to comment on, and the process exit
-code. The planner's worktree is always removed here, in a finally, no
-matter how the run ended.
+code. Teams and their worktrees are never torn down here - block 1 never
+deletes a team; a rerun resumes the same sessions in the same worktree.
 """
 
 import argparse
@@ -10,7 +10,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 
-from fitflow import audit, github, narrate, planner, settings
+from fitflow import audit, github, narrate, settings
 from fitflow.outcome import FlowFailure, Outcome
 
 
@@ -34,7 +34,6 @@ def run(flow: Callable[[int | None, bool], Outcome]) -> None:
     except Exception as error:
         outcome = _report_tool_failure(error)
     finally:
-        planner.cleanup()
         narrate.close()
     sys.exit(int(outcome))
 

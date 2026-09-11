@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Fake `aarmy`: `talk` pops the next scripted turn for "<team>/<role>",
 applies effects inside the team's worktree, and prints the reply shape a
-real `aarmy talk --schema` prints. `create`/`delete` succeed trivially."""
+real `aarmy talk --schema` prints. Keeps a small per-team agent registry
+under `<team>/agents/registry.json` (roles talked to or created), so `list
+agents --team <team>` behaves like the real thing for `fitflow.agents`'s
+`existing_roles()`. `delete` only removes what this fake itself tracks."""
 
 import json
 import os
@@ -39,6 +42,26 @@ def opt(argv, name):
     return argv[argv.index(name) + 1] if name in argv else None
 
 
+def registry_path(team):
+    return teams_dir() / team / "agents" / "registry.json"
+
+
+def load_registry(team):
+    path = registry_path(team)
+    if not path.exists():
+        return {"roles": []}
+    return json.loads(path.read_text())
+
+
+def add_role(team, role):
+    path = registry_path(team)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    registry = load_registry(team)
+    if role not in registry["roles"]:
+        registry["roles"].append(role)
+    path.write_text(json.dumps(registry))
+
+
 def cmd_delete(argv):
     team = opt(argv, "--team")
     marker = teams_dir() / team
@@ -46,6 +69,25 @@ def cmd_delete(argv):
         print(f"team '{team}' not found", file=sys.stderr)
         return 1
     print(f"deleted team '{team}'")
+    return 0
+
+
+def cmd_create(argv):
+    role = argv[1]
+    team = opt(argv, "--team")
+    add_role(team, role)
+    return 0
+
+
+def cmd_list_agents(argv):
+    team = opt(argv, "--team")
+    registry = load_registry(team)
+    print(f"registry: {registry_path(team)}")
+    if not registry["roles"]:
+        print("no agents")
+        return 0
+    for role in sorted(registry["roles"]):
+        print(f"{role:<20}  backend=claude  model=x  effort=x  turns=0  created=-  last=-  session=-")
     return 0
 
 
@@ -69,6 +111,7 @@ def cmd_talk(argv):
     if exit_code != 0:
         print(turn.get("message", "turn failed"), file=sys.stderr)
         return exit_code
+    add_role(team, role)
     effects = turn.get("effects")
     if effects:
         apply_effects(team, effects)
@@ -108,9 +151,11 @@ def main() -> int:
     if verb == "delete":
         return cmd_delete(argv)
     if verb == "create":
-        return 0
+        return cmd_create(argv)
     if verb == "talk":
         return cmd_talk(argv)
+    if argv[:2] == ["list", "agents"]:
+        return cmd_list_agents(argv)
     print(f"fake aarmy: unsupported verb {verb}", file=sys.stderr)
     return 1
 

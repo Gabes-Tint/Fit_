@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from fitflow import agents, github, narrate, planner, settings
+from fitflow import agents, github, narrate, settings, teams
 from fitflow.github import Story
 
 DO_NOTHING = "Do nothing"
@@ -19,9 +19,9 @@ class Call:
 
 
 def whose_call(story: Story) -> Call:
-    team = planner.ensure(story.number)
+    team = teams.for_issue(story.number)
     reply = agents.talk(
-        team,
+        team.name,
         "planner",
         "whose_call",
         "whose_call",
@@ -31,6 +31,7 @@ def whose_call(story: Story) -> Call:
         story_body=story.body or "(no body)",
         story_labels=", ".join(story.labels) or "(none)",
     )
+    teams.verify_left_clean(team, story.number)
     narrate.fields(
         [
             ("Owner", reply["owner"]),

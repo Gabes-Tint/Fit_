@@ -174,17 +174,17 @@ backend, model or effort, change one line.
 Defined in `fitflow/outcome.py`. Every stop and failure is also a comment on
 the story.
 
-| code | name                 | meaning                                                                  |
-| ---- | -------------------- | ------------------------------------------------------------------------ |
-| 0    | PLANNED              | the story, or each of its slices, is ready for block 2                   |
-| 2    | (usage)              | bad arguments                                                            |
-| 10   | NOTHING_TO_PICK      | no open story is free to pick                                            |
-| 11   | NEEDS_GABRIEL        | the call is Gabriel's: labelled, assigned, question posted               |
-| 12   | PAUSED               | spending is flagged; the story is labelled `paused`                      |
-| 20   | CANNOT_PICK          | the named issue does not exist, is closed, is not a story, or is held    |
-| 21   | AGENT_FAILED         | an agent turn failed or never gave a reply that fits its schema          |
-| 22   | AGENT_BROKE_CONTRACT | the planner's slices break the rules (one slice, or domain then UI)      |
-| 23   | TESTS_NOT_PUSHED     | the mechanic's work is not committed, pushed, or tests only              |
-| 24   | TESTS_DO_NOT_FAIL    | a test file passed, or never ran                                         |
-| 25   | WORKTREE_EXISTS      | the slice's worktree or branch already exists                            |
-| 26   | TOOL_FAILED          | `gh`, `git` or `bun` failed unexpectedly, or a reply could not be parsed |
+| code | name                  | meaning                                                                  |
+| ---- | --------------------- | ------------------------------------------------------------------------ |
+| 0    | PLANNED               | the story, or each of its slices, is ready for block 2                   |
+| 2    | (usage)               | bad arguments                                                            |
+| 10   | NOTHING_TO_PICK       | no open story is free to pick                                            |
+| 11   | NEEDS_GABRIEL         | the call is Gabriel's: labelled, assigned, question posted               |
+| 12   | PAUSED                | spending is flagged; the story is labelled `paused`                      |
+| 20   | CANNOT_PICK           | the named issue does not exist, is closed, is not a story, or is held    |
+| 21   | AGENT_FAILED          | an agent turn failed or never gave a reply that fits its schema          |
+| 22   | AGENT_BROKE_CONTRACT  | the planner's slices break the rules (one slice, or domain then UI)      |
+| 23   | TESTS_NOT_PUSHED      | the mechanic's work is not committed, pushed, or tests only              |
+| 24   | TESTS_DO_NOT_FAIL     | a test file passed, or never ran                                         |
+| 25   | WORKTREE_NOT_REUSABLE | the slice's worktree or branch already exists                            |
+| 26   | TOOL_FAILED           | `gh`, `git` or `bun` failed unexpectedly, or a reply could not be parsed |

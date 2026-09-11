@@ -9,6 +9,9 @@ Slice #$slice_number: $slice_title
 Branch: $branch
 Test kind: $test_kind
 
+Your team's worktree is already checked out on branch $branch and starts
+clean - it may be the same worktree the planner used for this issue.
+
 Brief:
 $brief
 
@@ -22,7 +25,8 @@ Fit_ test conventions:
 - A playwright end-to-end spec is named `*.e2e.ts`. A screen or layout change
   asserts `expectFitsViewport` from `tests/e2e-support.ts` at a 360px-wide
   viewport.
-- Test files only under `src/**` or `tests/**`; nothing else on this branch.
+- Test files only - a name matching one of the patterns above; nothing else
+  on this branch.
 
 Rules:
 

@@ -26,11 +26,15 @@ FIT_GITHUB_REPO = os.environ.get("FIT_GITHUB_REPO", "Gabes-Tint/Fit_")
 
 # --- Home for teams and logs ------------------------------------------------
 
+# FIT_FLOW_HOME is itself AGENTS_ARMY_TEAMS_DIR: aarmy resolves `--team
+# issue-<n>` straight to `FIT_FLOW_HOME/issue-<n>`, one team per issue,
+# reused across runs. A run's own log lives inside that team's folder
+# (`issue-<n>/logs/`) once the issue is known; a run that never picks one
+# (nothing to pick) never opens a log file at all.
 FIT_FLOW_HOME = Path(
     os.environ.get("FIT_FLOW_HOME", str(Path.home() / ".agents-army" / "fit_" / "workflow"))
 )
-TEAMS_DIR = FIT_FLOW_HOME / "teams"
-LOGS_DIR = FIT_FLOW_HOME / "logs"
+TEAMS_DIR = FIT_FLOW_HOME
 
 # --- Pacing ------------------------------------------------------------------
 

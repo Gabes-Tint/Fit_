@@ -25,6 +25,8 @@ def _git(*args: str, cwd: Path) -> str:
 class FakeWorld:
     """A story tracker (`gh`), an agent roster (`aarmy`), and a real git repo
     (`FIT_REPO`) with an `origin` remote, all rooted under one tmp_path.
+    `home` doubles as `FIT_FLOW_HOME` and `AGENTS_ARMY_TEAMS_DIR`, so each
+    issue's team lives at `home/issue-<n>`.
     """
 
     def __init__(self, tmp_path: Path):
@@ -76,38 +78,48 @@ class FakeWorld:
         self._save()
 
     def planner_answers_whose_call(self, story_number: int, **reply) -> None:
-        self._queue_turn(f"plan-{story_number}/planner", reply)
+        self._queue_turn(f"issue-{story_number}/planner", reply)
 
     def planner_answers_slices(self, story_number: int, **reply) -> None:
-        self._queue_turn(f"plan-{story_number}/planner", reply)
+        self._queue_turn(f"issue-{story_number}/planner", reply)
 
     def planner_fails(self, story_number: int, message: str = "planner turn failed") -> None:
-        self._queue_turn(f"plan-{story_number}/planner", None, exit_code=1, message=message)
+        self._queue_turn(f"issue-{story_number}/planner", None, exit_code=1, message=message)
+
+    def planner_leaves_a_file(self, story_number: int, path: str, content: str = "oops\n") -> None:
+        """The scripted turn commits nothing - the file is just left dirty
+        in the worktree, breaking the driver's post-turn clean check."""
+        self._queue_turn(
+            f"issue-{story_number}/planner",
+            None,
+            effects_only={"files": {path: content}},
+        )
 
     def mechanic_writes(
         self,
-        slug: str,
+        team_name: str,
         files: dict[str, str],
         test_files: list[str],
         why: str = "the behavior is not implemented yet",
         push: bool = True,
         commit: bool = True,
     ) -> None:
+        number = team_name.split("-")[1]
         self._queue_turn(
-            f"{slug}/mechanic",
+            f"{team_name}/mechanic",
             {"test_files": test_files, "why_they_fail": why},
             effects={
                 "files": files,
                 "commit": commit,
                 "push": push,
-                "commit_message": f"test: failing acceptance tests for #{slug.split('-')[1]}",
+                "commit_message": f"test: failing acceptance tests for #{number}",
             },
         )
 
     def mechanic_changes_without_pushing(
-        self, slug: str, files: dict[str, str], test_files: list[str]
+        self, team_name: str, files: dict[str, str], test_files: list[str]
     ) -> None:
-        self.mechanic_writes(slug, files, test_files, push=False)
+        self.mechanic_writes(team_name, files, test_files, push=False)
 
     def gh_fails_on(self, *substrings: str) -> None:
         """Any `gh` call whose argv (joined) contains one of these
@@ -131,10 +143,18 @@ class FakeWorld:
         exit_code: int = 0,
         message: str = "",
         effects: dict | None = None,
+        effects_only: dict | None = None,
     ) -> None:
+        """effects_only queues a turn whose reply the driver never reaches -
+        the effects apply, but no "reply" key is written, matching a
+        planner turn the driver rejects before parsing it (a dirty
+        worktree)."""
         self._load()
         turn = {"exit": exit_code}
-        if exit_code == 0:
+        if effects_only is not None:
+            turn["effects"] = effects_only
+            turn["reply"] = reply or {}
+        elif exit_code == 0:
             turn["reply"] = reply
             if effects is not None:
                 turn["effects"] = effects
@@ -163,11 +183,11 @@ class FakeWorld:
         )
         return result.returncode == 0
 
-    def planner_worktree_path(self, story_number: int) -> Path:
-        return self.repo / ".claude" / "worktrees" / f"plan-{story_number}"
+    def issue_worktree_path(self, number: int) -> Path:
+        return self.repo / ".claude" / "worktrees" / f"issue-{number}"
 
-    def slice_worktree_path(self, slug: str) -> Path:
-        return self.repo / ".claude" / "worktrees" / slug
+    def team_dir(self, number: int) -> Path:
+        return self.home / f"issue-{number}"
 
 
 @pytest.fixture

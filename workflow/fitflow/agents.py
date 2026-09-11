@@ -1,10 +1,12 @@
-"""The only module that shells out to `aarmy`. A team's `worktree` entry is
-a symlink to the git worktree the agent actually works in; talk() renders a
-prompt template, sends one turn, narrates the prompt and reply in full, and
-returns the schema-validated reply as a dict.
+"""The only module that shells out to `aarmy`. talk() renders a prompt
+template, sends one turn (always carrying the roster's backend/model/effort,
+so a roster change against an already-created agent fails loudly through
+aarmy's own config assertion rather than silently), narrates the prompt and
+reply in full, and returns the schema-validated reply as a dict.
 
-Any aarmy exit != 0 is a flow failure (AGENT_FAILED) - raised here so every
-call site does not have to repeat the same conversion.
+Teams themselves - creating or deleting them - are `fitflow.teams`'s job,
+not this module's: this module only ever talks to agents already living in
+a team `fitflow.teams` has ensured exists.
 """
 
 import json
@@ -22,38 +24,6 @@ PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 SCHEMAS_DIR = Path(__file__).resolve().parent / "schemas"
 
 _SESSION_LINE = re.compile(r"^\[(?P<name>\S+) session=(?P<session>\S+)\]$")
-
-
-def ensure_fresh_team(team: str, worktree: Path, story_number: int | None = None) -> None:
-    """Delete any stale team left by a dead run, then link `team/worktree`
-    to the real worktree this team's agents will work in."""
-    team_dir = settings.TEAMS_DIR / team
-    result = subprocess.run(
-        ["aarmy", "delete", "--team", team],
-        capture_output=True,
-        text=True,
-        env=_env(),
-    )
-    if result.returncode != 0 and "not found" not in (result.stderr + result.stdout).lower():
-        raise FlowFailure(
-            Outcome.AGENT_FAILED,
-            f"aarmy delete --team {team} failed: {result.stderr.strip()}",
-            story_number,
-        )
-    team_dir.mkdir(parents=True, exist_ok=True)
-    link = team_dir / "worktree"
-    if link.exists() or link.is_symlink():
-        link.unlink()
-    link.symlink_to(worktree)
-
-
-def delete_team(team: str) -> None:
-    subprocess.run(
-        ["aarmy", "delete", "--team", team],
-        capture_output=True,
-        text=True,
-        env=_env(),
-    )
 
 
 def render_prompt(name: str, **subs: str) -> str:
@@ -123,6 +93,27 @@ def talk(
     narrate.line(f"🤖⬅️  {role} replied in {_format_duration(elapsed)}")
     narrate.raw_json(reply_json)
     return reply
+
+
+def existing_roles(team: str) -> list[str] | None:
+    """The role names `aarmy list agents --team <team>` already knows about,
+    for narration only - None (rather than a guess) if the listing cannot
+    be read."""
+    result = subprocess.run(
+        ["aarmy", "list", "agents", "--team", team],
+        capture_output=True,
+        text=True,
+        env=_env(),
+    )
+    if result.returncode != 0:
+        return None
+    roles = []
+    for raw_line in result.stdout.splitlines():
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("registry:") or stripped == "no agents":
+            continue
+        roles.append(stripped.split()[0])
+    return roles
 
 
 def _format_duration(seconds: float) -> str:

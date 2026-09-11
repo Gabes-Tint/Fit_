@@ -1,9 +1,8 @@
-"""The only module that shells out to `git` and `bun`. Two kinds of worktree:
-the planner's own (cheap, detached, no install) and a slice's (via `bun run
-worktree:new`, which installs dependencies and creates the branch).
+"""The only module that shells out to `git` and `bun`. One worktree per
+issue, on branch `issue-<n>`, created once with `bun run worktree:new` and
+reused by every later run that touches that issue.
 """
 
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -27,69 +26,19 @@ def fetch_origin() -> None:
     _run_checked(["git", "fetch", "origin"], cwd=settings.FIT_REPO)
 
 
-def planner_worktree(plan_id: str) -> Path:
-    """A cheap, detached worktree at origin/main - no `bun install`. A
-    leftover from a killed run is cleared first, so it never poisons this
-    one: `worktree remove --force` the path (if git still tracks it) and
-    `worktree prune` (in case it does not).
-    """
-    path = settings.FIT_REPO / ".claude" / "worktrees" / f"plan-{plan_id}"
-    subprocess.run(
-        ["git", "worktree", "remove", "--force", str(path)],
-        cwd=settings.FIT_REPO,
-        capture_output=True,
-        text=True,
-    )
-    subprocess.run(
-        ["git", "worktree", "prune"], cwd=settings.FIT_REPO, capture_output=True, text=True
-    )
-    if path.exists():
-        # Not a worktree git ever knew about (a plain leftover directory) -
-        # the two commands above only clean up what git itself is tracking.
-        shutil.rmtree(path, ignore_errors=True)
-    _run_checked(
-        ["git", "worktree", "add", "--detach", str(path), "origin/main"],
-        cwd=settings.FIT_REPO,
-    )
-    return path
+def worktree_path(name: str) -> Path:
+    return settings.FIT_REPO / ".claude" / "worktrees" / name
 
 
-def remove_planner_worktree(path: Path) -> None:
-    """Removed on every exit, including failure."""
-    subprocess.run(
-        ["git", "worktree", "remove", "--force", str(path)],
-        cwd=settings.FIT_REPO,
-        capture_output=True,
-        text=True,
-    )
+def create_worktree(name: str) -> Path:
+    """`bun run worktree:new <name>` in the repo root; installs and creates
+    the branch `<name>` from `origin/main`."""
+    _run_checked(["bun", "run", "worktree:new", name], cwd=settings.FIT_REPO)
+    return worktree_path(name)
 
 
-def slice_worktree_path(slug: str) -> Path:
-    return settings.FIT_REPO / ".claude" / "worktrees" / slug
-
-
-def slice_worktree_exists(slug: str) -> bool:
-    """True if the worktree directory or the branch already exists."""
-    if slice_worktree_path(slug).exists():
-        return True
-    branch = _git("show-ref", "--verify", "--quiet", f"refs/heads/{slug}", cwd=settings.FIT_REPO)
-    return branch.returncode == 0
-
-
-def create_slice_worktree(slug: str) -> Path:
-    """`bun run worktree:new <slug>` in the repo root; installs and creates
-    the branch `<slug>` from `origin/main`."""
-    _run_checked(["bun", "run", "worktree:new", slug], cwd=settings.FIT_REPO)
-    return slice_worktree_path(slug)
-
-
-def remove_slice_worktree(path: Path) -> None:
-    subprocess.run(
-        ["git", "worktree", "remove", "--force", str(path)],
-        cwd=settings.FIT_REPO,
-        capture_output=True,
-        text=True,
-    )
+def current_branch(worktree: Path) -> str:
+    return _git("rev-parse", "--abbrev-ref", "HEAD", cwd=worktree).stdout.strip()
 
 
 def is_clean(worktree: Path) -> bool:

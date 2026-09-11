@@ -4,16 +4,16 @@ the reply: not spanning means exactly one slice, spanning means exactly two,
 domain then ui.
 """
 
-from fitflow import agents, audit, github, narrate, planner, settings
+from fitflow import agents, audit, github, narrate, settings, teams
 from fitflow.github import Story
 from fitflow.outcome import FlowFailure, Outcome
 from fitflow.slice import Slice
 
 
 def slice_at_layer_boundary(story: Story) -> list[Slice]:
-    team = planner.ensure(story.number)
+    team = teams.for_issue(story.number)
     reply = agents.talk(
-        team,
+        team.name,
         "planner",
         "slices",
         "slices",
@@ -22,6 +22,7 @@ def slice_at_layer_boundary(story: Story) -> list[Slice]:
         story_title=story.title,
         story_body=story.body or "(no body)",
     )
+    teams.verify_left_clean(team, story.number)
     spans = reply["spans_domain_and_ui"]
     raw_slices = reply["slices"]
     _render(raw_slices)

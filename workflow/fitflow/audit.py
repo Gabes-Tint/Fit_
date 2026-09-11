@@ -27,8 +27,11 @@ def child_created(number: int, layer: str) -> None:
     _children.append((number, layer))
 
 
-def worktree_created(slug: str) -> None:
-    _worktrees.append(slug)
+def worktree_created(name: str) -> None:
+    """name is a team/branch name, `issue-<n>` - only ever recorded for a
+    worktree this run actually created (`fitflow.teams`), never one it
+    merely reused from an earlier run."""
+    _worktrees.append(name)
 
 
 def reset_instructions() -> str:
@@ -39,6 +42,9 @@ def reset_instructions() -> str:
         lines.append(f"- remove the `in-progress` label from #{_story_number}")
     for number, layer in _children:
         lines.append(f"- close child #{number} ({layer})")
-    for slug in _worktrees:
-        lines.append(f"- `bun run worktree:done {slug} --force` and delete branch `{slug}`")
+    for name in _worktrees:
+        lines.append(
+            f"- `bun run worktree:done {name} --force` and `git push origin --delete {name}`; "
+            f"then `aarmy delete --team {name}` and remove `$FIT_FLOW_HOME/{name}`"
+        )
     return "\n".join(lines)
