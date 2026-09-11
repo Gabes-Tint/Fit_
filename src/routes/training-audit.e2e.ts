@@ -1,25 +1,29 @@
 import { expect } from '@playwright/test';
 import { test } from '../../tests/preview-server';
-import { openSampleJournal, signInThroughApi, expectFitsViewport } from '../../tests/e2e-support';
+import { signInThroughApi, openSampleJournal, expectFitsViewport } from '../../tests/e2e-support';
 
 test.describe('Training audit summary on home route', () => {
 	test.beforeEach(async ({ page, baseURL }) => {
 		await signInThroughApi(page, baseURL ?? '');
 		await openSampleJournal(page);
+		await expect(page.getByRole('heading', { name: 'Today', level: 1 })).toBeVisible();
 	});
 
-	test('displays an accessible element named "Training audit summary"', async ({ page }) => {
-		await expect(page.getByRole('region', { name: 'Training audit summary' })).toBeVisible();
-	});
-
-	test('displays formatted exercise summary in the training audit element', async ({ page }) => {
+	test('element with accessible name "Training audit summary" exists', async ({ page }) => {
 		const auditElement = page.getByRole('region', { name: 'Training audit summary' });
-		await expect(auditElement).toBeVisible();
-		await expect(auditElement).toContainText('·');
+		await expect(auditElement).toHaveCount(1);
 	});
 
-	test('fits within the 360px viewport', async ({ page }) => {
+	test('displays "Deadlift · 4 rounds" format when exercise and rounds are provided', async ({
+		page
+	}) => {
+		const auditElement = page.getByRole('region', { name: 'Training audit summary' });
+		await expect(auditElement).toContainText(/Deadlift\s+·\s+\d+\s+rounds?/);
+	});
+
+	test('fits within 360px viewport', async ({ page }) => {
 		await page.setViewportSize({ width: 360, height: 640 });
-		await expectFitsViewport(page);
+		const auditElement = page.getByRole('region', { name: 'Training audit summary' });
+		await expectFitsViewport(page, auditElement);
 	});
 });
