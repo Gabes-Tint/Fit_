@@ -122,48 +122,35 @@
 		{#each results as food (food.id)}
 			{@const serving = describePortion(food, 1, tend.state.units)}
 			{@const summary = `${serving} · ${food.kcal} kcal · ${food.protein}g protein`}
-			<li class="bg-background hover:bg-secondary flex flex-col rounded-2xl pr-1 transition-colors">
-				<!-- The name is the whole first line. ⓘ and + sit on the brand
-					line so a long USDA title is no longer truncated by those
-					controls. The serving numbers stay last (#337). -->
+			<li
+				class="bg-background hover:bg-secondary flex items-center gap-1 rounded-2xl pr-1 transition-colors"
+			>
 				<button
 					type="button"
 					onclick={() => onpick(food)}
-					class="min-w-0 w-full px-3 pt-3 pb-0.5 text-left"
+					class="flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-3 py-3 text-left"
 				>
-					<p class="min-w-0 truncate font-medium">{food.name}</p>
+					<div class="flex min-w-0 flex-1 flex-col">
+						<!-- The name takes the row: a source badge beside it stole
+							width from long USDA titles. The brand is its own line so
+							it cannot be skipped the way it was when folded into the
+							serving (#337). The numbers stay last. -->
+						<p class="min-w-0 truncate font-medium">{food.name}</p>
+						<BrandLabel brand={food.brand} />
+						<p class="text-muted-foreground truncate text-xs">{summary}</p>
+					</div>
 				</button>
-				<div class="flex min-w-0 items-center gap-1 pl-3">
-					{#if food.brand?.trim()}
-						<button
-							type="button"
-							onclick={() => onpick(food)}
-							class="min-w-0 flex-1 py-0.5 text-left"
-						>
-							<BrandLabel brand={food.brand} />
-						</button>
-					{:else}
-						<span class="min-w-0 flex-1"></span>
-					{/if}
-					<NutritionFactsButton name={food.name} onclick={() => showFacts(food)} />
-					{#if ondirectlog}
-						<button
-							type="button"
-							onclick={() => ondirectlog(food)}
-							aria-label={`Log ${food.name}`}
-							class="text-muted-foreground hover:bg-secondary flex size-10 shrink-0 items-center justify-center rounded-xl"
-						>
-							<Plus class="size-4" />
-						</button>
-					{/if}
-				</div>
-				<button
-					type="button"
-					onclick={() => onpick(food)}
-					class="min-w-0 w-full px-3 pt-0.5 pb-3 text-left"
-				>
-					<p class="text-muted-foreground truncate text-xs">{summary}</p>
-				</button>
+				<NutritionFactsButton name={food.name} onclick={() => showFacts(food)} />
+				{#if ondirectlog}
+					<button
+						type="button"
+						onclick={() => ondirectlog(food)}
+						aria-label={`Log ${food.name}`}
+						class="text-muted-foreground hover:bg-secondary flex size-10 shrink-0 items-center justify-center rounded-xl"
+					>
+						<Plus class="size-4" />
+					</button>
+				{/if}
 			</li>
 		{/each}
 	</ul>
