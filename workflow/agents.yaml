@@ -1,0 +1,15 @@
+# Basic capability selected for planning with tightly constrained judgments.
+# Example: haiku with low reasoning effort.
+# Interprets the story and defines its plan and slices.
+planner:
+  backend: claude
+  model: haiku
+  effort: low
+
+# Basic capability selected for focused, well-scoped test work.
+# Example: haiku with low reasoning effort.
+# Writes and corrects acceptance tests in the slice worktree.
+mechanic:
+  backend: claude
+  model: haiku
+  effort: low
