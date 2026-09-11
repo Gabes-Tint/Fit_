@@ -33,7 +33,7 @@ class FakeWorld:
         self.origin = tmp_path / "origin.git"
         self.repo = tmp_path / "repo"
         self.home = tmp_path / "flow-home"
-        self.world = {"issues": {}, "next_issue_number": 1000, "turns": {}, "test_runs": []}
+        self.world = {"issues": {}, "next_issue_number": 1000, "turns": {}, "test_outcomes": {}}
         self._init_git()
         self._save()
 
@@ -89,7 +89,7 @@ class FakeWorld:
         slug: str,
         files: dict[str, str],
         test_files: list[str],
-        why: str = "the behaviour is not implemented yet",
+        why: str = "the behavior is not implemented yet",
         push: bool = True,
         commit: bool = True,
     ) -> None:
@@ -109,9 +109,19 @@ class FakeWorld:
     ) -> None:
         self.mechanic_writes(slug, files, test_files, push=False)
 
-    def scripted_test_run(self, exit_code: int) -> None:
+    def gh_fails_on(self, *substrings: str) -> None:
+        """Any `gh` call whose argv (joined) contains one of these
+        substrings exits 1 instead of doing anything - simulating gh going
+        down mid-run."""
         self._load()
-        self.world["test_runs"].append(exit_code)
+        self.world.setdefault("gh_failures", []).extend(substrings)
+        self._save()
+
+    def scripted_test_outcome(self, file: str, outcome: str = "fail") -> None:
+        """outcome is "fail" (good - no implementation yet), "pass" (bad),
+        or "not_found" (the runner never ran this file at all)."""
+        self._load()
+        self.world.setdefault("test_outcomes", {})[file] = outcome
         self._save()
 
     def _queue_turn(

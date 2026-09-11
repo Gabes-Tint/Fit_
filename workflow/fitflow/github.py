@@ -49,7 +49,16 @@ def _story_from_json(payload: dict) -> Story:
 def list_open_stories() -> list[Story]:
     """Every open issue labelled `story`, lowest number first."""
     out = _run(
-        "issue", "list", "--state", "open", "--label", settings.STORY_LABEL, "--json", FIELDS
+        "issue",
+        "list",
+        "--state",
+        "open",
+        "--label",
+        settings.STORY_LABEL,
+        "--limit",
+        "1000",
+        "--json",
+        FIELDS,
     )
     stories = [_story_from_json(row) for row in json.loads(out)]
     return sorted(stories, key=lambda story: story.number)

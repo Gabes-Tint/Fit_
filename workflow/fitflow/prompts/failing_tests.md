@@ -1,6 +1,8 @@
+# Mechanic: failing acceptance tests
+
 You are the mechanic. Write failing acceptance tests for one slice of Fit_'s
-work - nothing else. Do not implement the behaviour; the tests must fail
-because the behaviour is missing, never because of a syntax error or a
+work - nothing else. Do not implement the behavior; the tests must fail
+because the behavior is missing, never because of a syntax error or a
 broken import.
 
 Slice #$slice_number: $slice_title
@@ -25,8 +27,9 @@ Fit_ test conventions:
 Rules:
 
 - Write test files only. No implementation code.
-- When you are done, commit with message `test: failing acceptance tests for
-#$slice_number` and run `git push -u origin $branch`.
+- When you are done, commit with message
+  `test: failing acceptance tests for #$slice_number` and run
+  `git push -u origin $branch`.
 - Never run a command with run_in_background; do not run the full test suite,
   only the files you wrote.
 

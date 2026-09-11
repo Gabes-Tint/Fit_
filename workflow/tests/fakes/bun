@@ -1,12 +1,24 @@
 #!/usr/bin/env python3
 """Fake `bun`: `run worktree:new <slug>` does a real `git worktree add`;
-`x vitest run ...` / `x playwright test ...` pop a scripted exit code."""
+`x vitest run ...` / `x playwright test ...` emit a JSON report (the same
+shape the real reporters use) built from a scripted outcome per file:
+"fail" (good - no implementation yet), "pass" (bad), or "not_found" (the
+runner never ran that file at all)."""
 
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+FLAGS = {
+    "run",
+    "test",
+    "vitest",
+    "playwright",
+    "--reporter=json",
+    "--project=mobile-chrome",
+}
 
 
 def world_dir():
@@ -42,15 +54,38 @@ def cmd_worktree_new(slug):
     return 0
 
 
-def cmd_test_run():
+def _files(argv):
+    return [arg for arg in argv[1:] if arg not in FLAGS and not arg.startswith("--")]
+
+
+def _vitest_report(files, outcomes):
+    entries = []
+    for f in files:
+        outcome = outcomes.get(f, "fail")
+        if outcome == "not_found":
+            continue
+        entries.append({"name": f"/worktree/{f}", "status": "failed" if outcome == "fail" else "passed"})
+    return {"testResults": entries}
+
+
+def _playwright_report(files, outcomes):
+    suites = []
+    for f in files:
+        outcome = outcomes.get(f, "fail")
+        if outcome == "not_found":
+            continue
+        status = "failed" if outcome == "fail" else "passed"
+        suites.append({"specs": [{"file": f, "tests": [{"results": [{"status": status}]}]}]})
+    return {"suites": suites}
+
+
+def cmd_test_run(argv):
     world = load()
-    runs = world.get("test_runs", [])
-    if not runs:
-        print("fake bun: no scripted test run left", file=sys.stderr)
-        return 1
-    exit_code = runs.pop(0)
-    save(world)
-    return exit_code
+    outcomes = world.get("test_outcomes", {})
+    files = _files(argv)
+    report = _playwright_report(files, outcomes) if "playwright" in argv else _vitest_report(files, outcomes)
+    print(json.dumps(report))
+    return 0
 
 
 def main() -> int:
@@ -59,7 +94,7 @@ def main() -> int:
     if argv[:2] == ["run", "worktree:new"]:
         return cmd_worktree_new(argv[2])
     if argv[:1] == ["x"]:
-        return cmd_test_run()
+        return cmd_test_run(argv)
     print(f"fake bun: unsupported command {argv}", file=sys.stderr)
     return 1
 

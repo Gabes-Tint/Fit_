@@ -3,6 +3,7 @@ the planner's own (cheap, detached, no install) and a slice's (via `bun run
 worktree:new`, which installs dependencies and creates the branch).
 """
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -22,9 +23,30 @@ def _run_checked(cmd: list[str], cwd: Path) -> str:
     return result.stdout
 
 
+def fetch_origin() -> None:
+    _run_checked(["git", "fetch", "origin"], cwd=settings.FIT_REPO)
+
+
 def planner_worktree(plan_id: str) -> Path:
-    """A cheap, detached worktree at origin/main - no `bun install`."""
+    """A cheap, detached worktree at origin/main - no `bun install`. A
+    leftover from a killed run is cleared first, so it never poisons this
+    one: `worktree remove --force` the path (if git still tracks it) and
+    `worktree prune` (in case it does not).
+    """
     path = settings.FIT_REPO / ".claude" / "worktrees" / f"plan-{plan_id}"
+    subprocess.run(
+        ["git", "worktree", "remove", "--force", str(path)],
+        cwd=settings.FIT_REPO,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ["git", "worktree", "prune"], cwd=settings.FIT_REPO, capture_output=True, text=True
+    )
+    if path.exists():
+        # Not a worktree git ever knew about (a plain leftover directory) -
+        # the two commands above only clean up what git itself is tracking.
+        shutil.rmtree(path, ignore_errors=True)
     _run_checked(
         ["git", "worktree", "add", "--detach", str(path), "origin/main"],
         cwd=settings.FIT_REPO,

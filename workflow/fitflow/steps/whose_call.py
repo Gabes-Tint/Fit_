@@ -10,7 +10,7 @@ DO_NOTHING = "Do nothing"
 
 @dataclass
 class Call:
-    is_gabriels: bool
+    is_for_gabriel: bool
     category: str
     reason: str
     question: str
@@ -36,13 +36,16 @@ def whose_call(story: Story) -> Call:
             ("Owner", reply["owner"]),
             ("Category", reply["category"]),
             ("Reason", reply["reason"]),
+            ("Question", reply["question"]),
+            ("Options", ", ".join(reply["options"]) or "(none)"),
+            ("Recommendation", reply["recommendation"]),
         ]
     )
-    is_gabriels = reply["owner"] == "gabriel"
-    side = "🧑 Gabriel's" if is_gabriels else "🧑‍💻 orchestrator's"
+    is_for_gabriel = reply["owner"] == "gabriel"
+    side = "🧑 Gabriel's" if is_for_gabriel else "🧑‍💻 orchestrator's"
     narrate.line(f"🔀 Whose call? → {side}")
     return Call(
-        is_gabriels=is_gabriels,
+        is_for_gabriel=is_for_gabriel,
         category=reply["category"],
         reason=reply["reason"],
         question=reply["question"],
@@ -66,6 +69,7 @@ def hand_to_gabriel(story: Story, call: Call) -> None:
         f"Options:\n{options_block}\n\n"
         f"Recommendation: {call.recommendation}"
     )
+    narrate.comment_posted(story.number, body)
     github.comment(story.number, body)
     narrate.line(
         f"✏️  #{story.number} labelled {settings.NEEDS_GABRIEL_LABEL}, "

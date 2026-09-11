@@ -3,10 +3,13 @@ any helper - every assertion is on go.py's exit code, its log, and the
 resulting fake-world state.
 """
 
+import subprocess
+
+import pytest
 from conftest import run_flow
 
 
-def test_picks_lowest_unheld_story_with_one_slice(world):
+def test_picks_lowest_story_not_held_with_one_slice(world):
     world.given_story(130, title="Faster first paint", labels=["story"])
     world.planner_answers_whose_call(
         130,
@@ -36,7 +39,7 @@ def test_picks_lowest_unheld_story_with_one_slice(world):
         files={"src/lib/paint.spec.ts": "// failing spec\n"},
         test_files=["src/lib/paint.spec.ts"],
     )
-    world.scripted_test_run(1)
+    world.scripted_test_outcome("src/lib/paint.spec.ts", "fail")
 
     result = run_flow(world)
 
@@ -49,6 +52,10 @@ def test_picks_lowest_unheld_story_with_one_slice(world):
     assert "📥 Sync: fetched origin" in result.stdout
     assert '📋 Picked #130 "Faster first paint"' in result.stdout
     assert "🔀 Whose call? → 🧑‍💻 orchestrator's" in result.stdout
+    assert "🔀 Spending flagged? → no, carry on" in result.stdout
+    assert "Slice 1:" in result.stdout
+    assert "Trim the log screen's first render." in result.stdout
+    assert "the behavior is not implemented yet" in result.stdout
     assert "🏁 Planned #130" in result.stdout
 
 
@@ -88,13 +95,13 @@ def test_split_story_creates_two_children_with_pushed_failing_tests(world):
         files={"src/lib/merge.spec.ts": "// failing\n"},
         test_files=["src/lib/merge.spec.ts"],
     )
-    world.scripted_test_run(1)
+    world.scripted_test_outcome("src/lib/merge.spec.ts", "fail")
     world.mechanic_writes(
         "story-1001-ui",
         files={"src/routes/merge.e2e.ts": "// failing\n"},
         test_files=["src/routes/merge.e2e.ts"],
     )
-    world.scripted_test_run(1)
+    world.scripted_test_outcome("src/routes/merge.e2e.ts", "fail")
 
     result = run_flow(world)
 
@@ -142,7 +149,7 @@ def test_explicit_issue_number_wins_over_lowest(world):
         files={"src/lib/x.spec.ts": "// failing\n"},
         test_files=["src/lib/x.spec.ts"],
     )
-    world.scripted_test_run(1)
+    world.scripted_test_outcome("src/lib/x.spec.ts", "fail")
 
     result = run_flow(world, "20")
 
@@ -158,15 +165,17 @@ def test_nothing_to_pick_when_every_story_is_held(world):
 
     assert result.returncode == 10, result.stdout + result.stderr
     assert world.issue(30)["labels"] == ["story", "paused"]
-    assert world.calls() == [] or all(
-        c.get("argv", [None])[0:2] != ["issue", "comment"] for c in world.calls()
-    )
+    assert all(c.get("argv", [None])[0:2] != ["issue", "comment"] for c in world.calls())
 
 
-import pytest as _pytest  # noqa: E402
+def test_explicit_issue_number_that_does_not_exist_cannot_be_picked(world):
+    result = run_flow(world, "999")
+
+    assert result.returncode == 20, result.stdout + result.stderr
+    assert all(c.get("argv", [None])[0:2] != ["issue", "comment"] for c in world.calls())
 
 
-@_pytest.mark.parametrize(
+@pytest.mark.parametrize(
     "state,labels",
     [
         ("CLOSED", ["story"]),
@@ -174,7 +183,7 @@ import pytest as _pytest  # noqa: E402
         ("OPEN", []),
     ],
 )
-def test_explicit_issue_that_is_held_or_closed_or_not_a_story_is_not_pickable(world, state, labels):
+def test_explicit_issue_held_closed_or_not_a_story_cannot_be_picked(world, state, labels):
     world.given_story(40, title="Bad pick", labels=labels, state=state)
 
     result = run_flow(world, "40")
@@ -182,7 +191,7 @@ def test_explicit_issue_that_is_held_or_closed_or_not_a_story_is_not_pickable(wo
     assert result.returncode == 20, result.stdout + result.stderr
 
 
-def test_gabriels_call_hands_off_without_a_worktree_or_mechanic(world):
+def test_gabriel_owning_the_call_hands_off_without_a_worktree_or_mechanic(world):
     world.given_story(50, title="Spend real money", labels=["story"])
     world.planner_answers_whose_call(
         50,
@@ -207,6 +216,10 @@ def test_gabriels_call_hands_off_without_a_worktree_or_mechanic(world):
     assert not any(
         c.get("tool") == "aarmy" and c["argv"][0:2] == ["talk", "mechanic"] for c in world.calls()
     )
+    assert "Question:" in result.stdout
+    assert "Should we buy the API plan?" in result.stdout
+    assert "Options:" in result.stdout
+    assert "Buy the plan" in result.stdout
 
 
 def test_spending_flagged_pauses_without_a_slicing_turn(world):
@@ -227,7 +240,11 @@ def test_spending_flagged_pauses_without_a_slicing_turn(world):
     issue = world.issue(60)
     assert "paused" in issue["labels"]
     assert any("spending is flagged" in c.lower() for c in issue["comments"])
-    assert not any(c.get("argv", [None])[:1] == ["slices"] for c in world.calls())
+    assert "🔀 Spending flagged? → yes, pausing" in result.stdout
+    planner_talks = [
+        c for c in world.calls() if c.get("tool") == "aarmy" and c["argv"][0] == "talk"
+    ]
+    assert len(planner_talks) == 1
 
 
 def test_planner_turn_failing_stops_the_flow_with_a_comment(world):
@@ -241,7 +258,62 @@ def test_planner_turn_failing_stops_the_flow_with_a_comment(world):
     assert any("stopped" in c.lower() for c in issue["comments"])
 
 
-def test_planner_breaking_the_slice_contract_is_a_hard_stop(world):
+@pytest.mark.parametrize(
+    "spans_domain_and_ui,slices",
+    [
+        (
+            False,
+            [
+                {
+                    "layer": "domain",
+                    "title": "a",
+                    "brief": "b",
+                    "acceptance": ["a"],
+                    "test_kind": "vitest",
+                },
+                {
+                    "layer": "ui",
+                    "title": "c",
+                    "brief": "d",
+                    "acceptance": ["a"],
+                    "test_kind": "playwright",
+                },
+            ],
+        ),
+        (
+            True,
+            [
+                {
+                    "layer": "domain",
+                    "title": "a",
+                    "brief": "b",
+                    "acceptance": ["a"],
+                    "test_kind": "vitest",
+                }
+            ],
+        ),
+        (
+            True,
+            [
+                {
+                    "layer": "ui",
+                    "title": "a",
+                    "brief": "b",
+                    "acceptance": ["a"],
+                    "test_kind": "playwright",
+                },
+                {
+                    "layer": "domain",
+                    "title": "c",
+                    "brief": "d",
+                    "acceptance": ["a"],
+                    "test_kind": "vitest",
+                },
+            ],
+        ),
+    ],
+)
+def test_planner_breaking_the_slice_contract_is_a_hard_stop(world, spans_domain_and_ui, slices):
     world.given_story(80, title="Contract break", labels=["story"])
     world.planner_answers_whose_call(
         80,
@@ -252,19 +324,7 @@ def test_planner_breaking_the_slice_contract_is_a_hard_stop(world):
         options=[],
         recommendation="",
     )
-    world.planner_answers_slices(
-        80,
-        spans_domain_and_ui=True,
-        slices=[
-            {
-                "layer": "domain",
-                "title": "Only one slice",
-                "brief": "b",
-                "acceptance": ["a"],
-                "test_kind": "vitest",
-            }
-        ],
-    )
+    world.planner_answers_slices(80, spans_domain_and_ui=spans_domain_and_ui, slices=slices)
 
     result = run_flow(world)
 
@@ -306,6 +366,7 @@ def test_mechanic_not_pushing_stops_the_flow(world):
 
     assert result.returncode == 23, result.stdout + result.stderr
     assert not world.branch_exists_on_origin("story-90-domain")
+    assert any("stopped" in c.lower() for c in world.issue(90)["comments"])
 
 
 def test_mechanic_changing_a_non_test_file_stops_the_flow(world):
@@ -341,6 +402,7 @@ def test_mechanic_changing_a_non_test_file_stops_the_flow(world):
     result = run_flow(world)
 
     assert result.returncode == 23, result.stdout + result.stderr
+    assert any("stopped" in c.lower() for c in world.issue(95)["comments"])
 
 
 def test_tests_that_already_pass_stop_the_flow(world):
@@ -372,11 +434,49 @@ def test_tests_that_already_pass_stop_the_flow(world):
         files={"src/lib/w.spec.ts": "// passes\n"},
         test_files=["src/lib/w.spec.ts"],
     )
-    world.scripted_test_run(0)
+    world.scripted_test_outcome("src/lib/w.spec.ts", "pass")
 
     result = run_flow(world)
 
     assert result.returncode == 24, result.stdout + result.stderr
+    assert any("stopped" in c.lower() for c in world.issue(100)["comments"])
+
+
+def test_playwright_file_that_never_ran_stops_the_flow(world):
+    world.given_story(105, title="Spec never ran", labels=["story"])
+    world.planner_answers_whose_call(
+        105,
+        owner="orchestrator",
+        category="none",
+        reason="r",
+        question="",
+        options=[],
+        recommendation="",
+    )
+    world.planner_answers_slices(
+        105,
+        spans_domain_and_ui=False,
+        slices=[
+            {
+                "layer": "ui",
+                "title": "Spec never ran",
+                "brief": "b",
+                "acceptance": ["a"],
+                "test_kind": "playwright",
+            }
+        ],
+    )
+    world.mechanic_writes(
+        "story-105-ui",
+        files={"src/routes/gone.e2e.ts": "// failing\n"},
+        test_files=["src/routes/gone.e2e.ts"],
+    )
+    world.scripted_test_outcome("src/routes/gone.e2e.ts", "not_found")
+
+    result = run_flow(world)
+
+    assert result.returncode == 24, result.stdout + result.stderr
+    assert any("stopped" in c.lower() for c in world.issue(105)["comments"])
 
 
 def test_slice_worktree_already_existing_stops_the_flow(world):
@@ -403,8 +503,6 @@ def test_slice_worktree_already_existing_stops_the_flow(world):
             }
         ],
     )
-    import subprocess
-
     subprocess.run(
         [
             "git",
@@ -423,6 +521,7 @@ def test_slice_worktree_already_existing_stops_the_flow(world):
     result = run_flow(world)
 
     assert result.returncode == 25, result.stdout + result.stderr
+    assert any("stopped" in c.lower() for c in world.issue(110)["comments"])
 
 
 def test_planner_worktree_is_removed_even_when_the_run_fails(world):
@@ -433,3 +532,63 @@ def test_planner_worktree_is_removed_even_when_the_run_fails(world):
 
     assert result.returncode == 21, result.stdout + result.stderr
     assert not world.planner_worktree_path(120).exists()
+
+
+def test_leftover_planner_worktree_from_a_dead_run_does_not_poison_the_next_one(world):
+    world.given_story(130, title="Leftover worktree", labels=["story"])
+    leftover = world.planner_worktree_path(130)
+    leftover.mkdir(parents=True)
+    (leftover / "junk").write_text("stale from a killed run\n")
+    world.planner_answers_whose_call(
+        130,
+        owner="orchestrator",
+        category="none",
+        reason="r",
+        question="",
+        options=[],
+        recommendation="",
+    )
+    world.planner_answers_slices(
+        130,
+        spans_domain_and_ui=False,
+        slices=[
+            {
+                "layer": "domain",
+                "title": "Leftover worktree",
+                "brief": "b",
+                "acceptance": ["a"],
+                "test_kind": "vitest",
+            }
+        ],
+    )
+    world.mechanic_writes(
+        "story-130-domain",
+        files={"src/lib/leftover.spec.ts": "// failing\n"},
+        test_files=["src/lib/leftover.spec.ts"],
+    )
+    world.scripted_test_outcome("src/lib/leftover.spec.ts", "fail")
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not world.planner_worktree_path(130).exists()
+
+
+def test_a_gh_failure_mid_run_stops_the_flow_as_a_tool_failure(world):
+    world.given_story(150, title="gh goes down", labels=["story"])
+    world.planner_answers_whose_call(
+        150,
+        owner="orchestrator",
+        category="none",
+        reason="r",
+        question="",
+        options=[],
+        recommendation="",
+    )
+    world.gh_fails_on("--add-label in-progress")
+
+    result = run_flow(world)
+
+    assert result.returncode == 26, result.stdout + result.stderr
+    assert "❌ TOOL_FAILED (exit 26)" in result.stdout
+    assert any("stopped" in c.lower() for c in world.issue(150)["comments"])

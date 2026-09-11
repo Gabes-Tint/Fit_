@@ -16,7 +16,7 @@ shell out to `gh`, `aarmy`, and `git`/`bun` respectively.
 
 ```sh
 cd workflow
-uv run go.py                 # pick the lowest-numbered open, unheld story
+uv run go.py                  # pick the lowest-numbered open story not held
 uv run go.py 351              # pick a specific issue
 uv run go.py --spend-flagged  # stop at "spending flagged?" instead of slicing
 ```
@@ -45,19 +45,20 @@ and `logs/`.
 
 ## Exit codes (`fitflow/outcome.py`)
 
-| code | name                 | meaning                                                  |
-| ---- | -------------------- | -------------------------------------------------------- |
-| 0    | PLANNED              | the story (or its slices) is ready for block 2           |
-| 2    | (argparse usage)     | bad arguments                                            |
-| 10   | NOTHING_TO_PICK      | no open, unheld story to pick                            |
-| 11   | NEEDS_GABRIEL        | the call is Gabriel's; handed off, labelled, assigned    |
-| 12   | PAUSED               | spending is flagged; filed only                          |
-| 20   | NOT_PICKABLE         | the named issue is closed, not a story, or held          |
-| 21   | AGENT_FAILED         | an `aarmy` turn exited non-zero                          |
-| 22   | AGENT_BROKE_CONTRACT | the planner's slice reply broke the driver's contract    |
-| 23   | TESTS_NOT_PUSHED     | the mechanic's tests are not clean, pushed, or test-only |
-| 24   | TESTS_DO_NOT_FAIL    | the acceptance tests passed with no implementation       |
-| 25   | WORKTREE_EXISTS      | the slice's worktree or branch already exists            |
+| code | name                 | meaning                                                                  |
+| ---- | -------------------- | ------------------------------------------------------------------------ |
+| 0    | PLANNED              | the story (or its slices) is ready for block 2                           |
+| 2    | (argparse usage)     | bad arguments                                                            |
+| 10   | NOTHING_TO_PICK      | no open story is free to pick                                            |
+| 11   | NEEDS_GABRIEL        | the call is Gabriel's; handed off, labelled, assigned                    |
+| 12   | PAUSED               | spending is flagged; filed only                                          |
+| 20   | CANNOT_PICK          | the named issue is closed, not a story, or held                          |
+| 21   | AGENT_FAILED         | an `aarmy` turn exited non-zero                                          |
+| 22   | AGENT_BROKE_CONTRACT | the planner's slice reply broke the driver's contract                    |
+| 23   | TESTS_NOT_PUSHED     | the mechanic's tests are not clean, pushed, or test-only                 |
+| 24   | TESTS_DO_NOT_FAIL    | the acceptance tests passed with no implementation                       |
+| 25   | WORKTREE_EXISTS      | the slice's worktree or branch already exists                            |
+| 26   | TOOL_FAILED          | `gh`/`git`/`bun` failed unexpectedly, or an agent's reply was unparsable |
 
 Every failure and stop is also a comment on the story explaining what
 happened and why (block 2 has nothing to go on otherwise).

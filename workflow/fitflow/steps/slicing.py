@@ -4,21 +4,10 @@ the reply: not spanning means exactly one slice, spanning means exactly two,
 domain then ui.
 """
 
-from dataclasses import dataclass
-
-from fitflow import agents, github, narrate, planner, settings
+from fitflow import agents, audit, github, narrate, planner, settings
 from fitflow.github import Story
 from fitflow.outcome import FlowFailure, Outcome
-
-
-@dataclass
-class Slice:
-    number: int
-    layer: str
-    title: str
-    brief: str
-    acceptance: list[str]
-    test_kind: str
+from fitflow.slice import Slice
 
 
 def slice_at_layer_boundary(story: Story) -> list[Slice]:
@@ -35,12 +24,28 @@ def slice_at_layer_boundary(story: Story) -> list[Slice]:
     )
     spans = reply["spans_domain_and_ui"]
     raw_slices = reply["slices"]
+    _render(raw_slices)
     _check_contract(spans, raw_slices, story.number)
     detail = f"✂️ yes, split into {len(raw_slices)}" if spans else "no"
     narrate.line(f"🔀 Spans domain and UI? → {detail}")
     if spans:
         return _split(story, raw_slices)
     return [_keep_as_is(story, raw_slices[0])]
+
+
+def _render(raw_slices: list[dict]) -> None:
+    for index, raw in enumerate(raw_slices, start=1):
+        narrate.line(f"   │ Slice {index}:")
+        narrate.fields(
+            [
+                ("Layer", raw.get("layer", "")),
+                ("Title", raw.get("title", "")),
+                ("Brief", raw.get("brief", "")),
+                ("Test kind", raw.get("test_kind", "")),
+            ]
+        )
+        for item in raw.get("acceptance", []):
+            narrate.line(f"   │   - {item}")
 
 
 def _check_contract(spans: bool, raw_slices: list[dict], story_number: int) -> None:
@@ -67,7 +72,9 @@ def _check_contract(spans: bool, raw_slices: list[dict], story_number: int) -> N
 def _split(story: Story, raw_slices: list[dict]) -> list[Slice]:
     slices = [_create_child(story, raw) for raw in raw_slices]
     children = ", ".join(f"#{s.number} ({s.layer})" for s in slices)
-    github.comment(story.number, f"Split into: {children}.")
+    body = f"Split into: {children}."
+    narrate.comment_posted(story.number, body)
+    github.comment(story.number, body)
     return slices
 
 
@@ -75,6 +82,7 @@ def _create_child(story: Story, raw: dict) -> Slice:
     title = f"{story.title} — {raw['layer']}"
     body = f"{_brief_body(raw)}\n\nPart of #{story.number}"
     number = github.create_issue(title, body, [settings.STORY_LABEL, settings.IN_PROGRESS_LABEL])
+    audit.child_created(number, raw["layer"])
     narrate.line(
         f'✏️  Created #{number} "{title}" ({settings.STORY_LABEL}, {settings.IN_PROGRESS_LABEL})'
     )
@@ -82,7 +90,9 @@ def _create_child(story: Story, raw: dict) -> Slice:
 
 
 def _keep_as_is(story: Story, raw: dict) -> Slice:
-    github.comment(story.number, _brief_body(raw))
+    body = _brief_body(raw)
+    narrate.comment_posted(story.number, body)
+    github.comment(story.number, body)
     return _slice_from(story.number, raw)
 
 

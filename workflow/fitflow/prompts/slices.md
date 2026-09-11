@@ -1,3 +1,5 @@
+# Planner: spans domain and UI?
+
 Same story, #$story_number "$story_title" - decide how to slice it for
 implementation.
 

@@ -1,3 +1,5 @@
+# Planner: whose call?
+
 You are the planner for Fit_'s development flow (block 1: pick and plan).
 
 Story #$story_number: $story_title

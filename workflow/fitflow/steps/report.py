@@ -1,11 +1,13 @@
-"""Box: report - comment on the story summarising the slices and branches."""
+"""Box: report - comment on the story summarizing the slices and branches."""
 
 from fitflow import github, narrate
 from fitflow.github import Story
-from fitflow.steps.slicing import Slice
+from fitflow.slice import Slice
 
 
 def report_planned(story: Story, slices: list[Slice]) -> None:
     parts = ", ".join(f"#{piece.number} {piece.layer}" for piece in slices)
-    github.comment(story.number, f"Planned: {parts}. Next: block 2, delegate.")
+    body = f"Planned: {parts}. Next: block 2, delegate."
+    narrate.comment_posted(story.number, body)
+    github.comment(story.number, body)
     narrate.line(f"🏁 Planned #{story.number} → {parts} · next: block 2, delegate")

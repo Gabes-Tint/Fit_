@@ -47,6 +47,7 @@ def issue_json(number, issue):
 def cmd_list(argv, world):
     state = opt(argv, "--state", "open")
     label = opt(argv, "--label")
+    limit = int(opt(argv, "--limit", "30"))
     rows = []
     for number_str, issue in world["issues"].items():
         if state and issue.get("state", "OPEN").lower() != state.lower():
@@ -55,7 +56,7 @@ def cmd_list(argv, world):
             continue
         rows.append(issue_json(int(number_str), issue))
     rows.sort(key=lambda row: row["number"])
-    print(json.dumps(rows))
+    print(json.dumps(rows[:limit]))
     return 0
 
 
@@ -118,9 +119,30 @@ COMMANDS = {
 }
 
 
+def _match_key(argv):
+    """argv joined, minus any --body value - a scripted failure substring
+    must never accidentally match text a comment quotes back (e.g. a prior
+    failure's own message)."""
+    filtered = []
+    skip_next = False
+    for arg in argv:
+        if skip_next:
+            skip_next = False
+            continue
+        if arg == "--body":
+            skip_next = True
+            continue
+        filtered.append(arg)
+    return " ".join(filtered)
+
+
 def main() -> int:
     argv = sys.argv[1:]
     record(argv)
+    world = load()
+    if any(substring in _match_key(argv) for substring in world.get("gh_failures", [])):
+        print(f"fake gh: scripted failure on {' '.join(argv)}", file=sys.stderr)
+        return 1
     if "-R" in argv:
         i = argv.index("-R")
         del argv[i : i + 2]

@@ -16,11 +16,11 @@ def pick_and_plan(issue: int | None, spend_flagged: bool) -> Outcome:
         return Outcome.NOTHING_TO_PICK
 
     call = steps.whose_call(story)
-    if call.is_gabriels:
+    if call.is_for_gabriel:
         steps.hand_to_gabriel(story, call)
         return Outcome.NEEDS_GABRIEL
 
-    if spend_flagged:
+    if steps.spending_flagged(spend_flagged):
         steps.pause(story)
         return Outcome.PAUSED
 

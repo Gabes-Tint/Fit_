@@ -1,16 +1,8 @@
 """Box: git fetch origin - step 0 of block 1."""
 
-import subprocess
-
-from fitflow import narrate, settings
+from fitflow import narrate, worktrees
 
 
 def sync() -> None:
-    subprocess.run(
-        ["git", "fetch", "origin"],
-        cwd=settings.FIT_REPO,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    worktrees.fetch_origin()
     narrate.line("📥 Sync: fetched origin")

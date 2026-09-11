@@ -7,9 +7,9 @@ confirm they fail.
 
 import re
 
-from fitflow import acceptance, agents, github, narrate, worktrees
+from fitflow import acceptance, agents, audit, github, narrate, worktrees
 from fitflow.outcome import FlowFailure, Outcome
-from fitflow.steps.slicing import Slice
+from fitflow.slice import Slice
 
 _TEST_FILE = re.compile(r"(\.spec\.ts|\.test\.ts|\.svelte\.spec\.ts|\.e2e\.ts)$")
 
@@ -21,6 +21,7 @@ def write_failing_tests(piece: Slice) -> None:
             Outcome.WORKTREE_EXISTS, f"worktree/branch '{slug}' already exists", piece.number
         )
     path = worktrees.create_slice_worktree(slug)
+    audit.worktree_created(slug)
     narrate.line(f"🌿 Worktree {slug} · branch {slug}")
     agents.ensure_fresh_team(slug, path, piece.number)
     reply = agents.talk(
@@ -37,6 +38,12 @@ def write_failing_tests(piece: Slice) -> None:
         acceptance="\n".join(f"- {item}" for item in piece.acceptance),
     )
     test_files = list(reply["test_files"])
+    narrate.fields(
+        [
+            ("Test files", ", ".join(test_files) or "(none)"),
+            ("Why they fail", reply["why_they_fail"]),
+        ]
+    )
     _verify_pushed(slug, path, test_files, piece.number)
     _verify_tests_fail(path, test_files, piece.number)
     _comment(piece.number, slug, path, test_files, reply["why_they_fail"])
@@ -71,7 +78,7 @@ def _check_reported_files_are_on_branch(
 
 def _check_every_changed_file_is_a_test(slug: str, changed: list[str], story_number: int) -> None:
     for changed_file in changed:
-        if not (changed_file.startswith("tests/") or _TEST_FILE.search(changed_file)):
+        if not _TEST_FILE.search(changed_file):
             raise FlowFailure(
                 Outcome.TESTS_NOT_PUSHED,
                 f"non-test file changed on {slug}: {changed_file}",
@@ -80,10 +87,9 @@ def _check_every_changed_file_is_a_test(slug: str, changed: list[str], story_num
 
 
 def _verify_tests_fail(path, test_files: list[str], story_number: int) -> None:
-    if not acceptance.run_and_check_failing(path, test_files):
-        raise FlowFailure(
-            Outcome.TESTS_DO_NOT_FAIL, "tests passed with no implementation", story_number
-        )
+    ok, why = acceptance.run_and_check_failing(path, test_files)
+    if not ok:
+        raise FlowFailure(Outcome.TESTS_DO_NOT_FAIL, why, story_number)
     narrate.line(f"🧪 {', '.join(test_files)} → failed, as it should ✔")
 
 
@@ -93,4 +99,5 @@ def _comment(story_number: int, slug: str, path, test_files: list[str], why: str
         f"Branch: {slug}\nCommit: {sha}\nTest files: {', '.join(test_files)}\n\n"
         f"Why they fail: {why}\n\nReady for block 2 (delegate)."
     )
+    narrate.comment_posted(story_number, body)
     github.comment(story_number, body)
