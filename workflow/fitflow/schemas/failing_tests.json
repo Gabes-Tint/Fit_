@@ -1,0 +1,9 @@
+{
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["test_files", "why_they_fail"],
+	"properties": {
+		"test_files": { "type": "array", "items": { "type": "string" } },
+		"why_they_fail": { "type": "string" }
+	}
+}
