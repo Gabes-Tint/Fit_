@@ -97,6 +97,19 @@ def _describe(error: Exception) -> str:
 # --- integration --------------------------------------------------------------
 
 
+def _merge_or_reject(story, path: Path, frozen_commit: str, describe) -> None:
+    try:
+        worktrees.merge_commit(path, frozen_commit)
+    except Exception as error:
+        worktrees.abort_merge(path)
+        raise FlowFailure(
+            Outcome.PLAN_REJECTED,
+            describe(error),
+            story.number,
+            add_blocked=True,
+        ) from error
+
+
 def _integrate(story, record: RunRecord) -> Path:
     slug = f"story-{story.number}"
     path = worktrees.integration_worktree_path(slug)
@@ -110,18 +123,16 @@ def _integrate(story, record: RunRecord) -> Path:
     path = worktrees.create_integration_worktree(slug)
     narrate.line(f"🌿 Integration worktree {slug} · branch {slug}")
     for piece in record.ordered():
-        try:
-            worktrees.merge_commit(path, piece.frozen_commit)
-        except Exception as error:
-            worktrees.abort_merge(path)
-            raise FlowFailure(
-                Outcome.PLAN_REJECTED,
+        _merge_or_reject(
+            story,
+            path,
+            piece.frozen_commit,
+            lambda error, piece=piece: (
                 f"merging {piece.slug} into {slug} conflicts: independent green slices "
                 "could not be combined; a revised plan in a new run is required "
-                f"({error})",
-                story.number,
-                add_blocked=True,
-            ) from error
+                f"({error})"
+            ),
+        )
         if not worktrees.is_ancestor(path, piece.frozen_commit):
             raise FlowFailure(
                 Outcome.TOOL_FAILED,
@@ -325,7 +336,16 @@ def _apply_fixes(story, record: RunRecord, path: Path, findings: list[Finding]) 
             finding for finding in findings if review.owns(piece.layer, finding.file)
         ]
         review_fix_turn(record, piece, review.findings_diagnostic(slice_findings))
-        worktrees.merge_commit(path, piece.frozen_commit)
+        _merge_or_reject(
+            story,
+            path,
+            piece.frozen_commit,
+            lambda error, piece=piece: (
+                f"the review fix for {piece.slug} conflicts with the integration branch "
+                f"{record.delivery['integration_branch']}; a revised plan in a new run "
+                f"is required ({error})"
+            ),
+        )
         if not worktrees.is_ancestor(path, piece.frozen_commit):
             raise FlowFailure(
                 Outcome.TOOL_FAILED,
