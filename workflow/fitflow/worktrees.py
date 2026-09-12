@@ -174,6 +174,13 @@ def integration_worktree_path(slug: str) -> Path:
     return settings.FIT_REPO / ".claude" / "worktrees" / slug
 
 
+def branch_exists(branch: str) -> bool:
+    result = _git(
+        "show-ref", "--verify", "--quiet", f"refs/heads/{branch}", cwd=settings.FIT_REPO
+    )
+    return result.returncode == 0
+
+
 def create_integration_worktree(slug: str) -> Path:
     """A plain worktree on a new branch `slug` from `origin/main` - git only,
     no install: nothing runs gates here."""

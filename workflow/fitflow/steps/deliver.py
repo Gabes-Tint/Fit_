@@ -99,9 +99,13 @@ def _describe(error: Exception) -> str:
 
 def _integrate(story, record: RunRecord) -> Path:
     slug = f"story-{story.number}"
-    if worktrees.integration_worktree_path(slug).exists():
+    path = worktrees.integration_worktree_path(slug)
+    if path.exists() or worktrees.branch_exists(slug):
         raise FlowFailure(
-            Outcome.WORKTREE_EXISTS, f"integration worktree '{slug}' already exists", story.number
+            Outcome.WORKTREE_EXISTS,
+            f"integration worktree/branch '{slug}' already exists; audit it, then "
+            "remove it manually before rerunning",
+            story.number,
         )
     path = worktrees.create_integration_worktree(slug)
     narrate.line(f"🌿 Integration worktree {slug} · branch {slug}")
