@@ -6,6 +6,7 @@ the run.
 """
 
 import json
+import subprocess
 
 from conftest import (
     builder_signals,
@@ -237,6 +238,12 @@ def test_reviewer_exhaustion_stops_and_needs_gabriel(world):
     assert "needs-gabriel" in world.issue(1000)["labels"]
     assert "blocked" in world.issue(1000)["labels"]
     assert _pr(world, 500)["state"] == "OPEN"
+    state = json.loads((world.home / "runs" / "story-1000.json").read_text())
+    piece = state["slices"]["domain"]
+    fix_attempts = [turn["attempt"] for turn in piece["turns"] if turn["kind"] == "review_fix"]
+    assert len(fix_attempts) == 2
+    assert fix_attempts[0] != fix_attempts[1]
+    assert fix_attempts[1] == fix_attempts[0] + 1
 
 
 def test_ci_red_is_rerun_once_then_green_merges(world):
@@ -371,6 +378,67 @@ def test_merge_conflict_between_slices_stops_for_a_replan(world):
     assert result.returncode == 27, result.stdout + result.stderr
     assert "blocked" in world.issue(1000)["labels"]
     assert _pr(world, 500) == {}
+
+
+def test_review_fix_conflicts_with_the_integration_branch_stops_for_a_replan(world):
+    """The fix round for one slice can add a file the other slice already
+    landed on the integration branch with different content - an add/add
+    conflict the initial join never saw. It must abort the merge and stop
+    for a revised plan, the same way an inter-slice conflict at _integrate
+    does, leaving the integration worktree clean."""
+    _given_planned_split(world, 1000)
+    world.planner_answers_delegate(
+        1000,
+        [
+            delegate_slice(1000, "domain", builder_signals()),
+            delegate_slice(1000, "ui", mechanic_signals()),
+        ],
+    )
+    _implement(
+        world,
+        "story-1000-domain",
+        "builder",
+        {"src/lib/domain/delivered.ts": "export const ok = 1;\n"},
+    )
+    _implement(
+        world,
+        "story-1001-ui",
+        "mechanic",
+        {"src/lib/shared.ts": "export const ui = 2;\n"},
+    )
+    world.reviewer_answers(
+        1000,
+        "fix",
+        [
+            {
+                "file": "src/lib/domain/delivered.ts",
+                "line": 1,
+                "category": "correctness",
+                "required_fix": "the constant must be 2",
+            }
+        ],
+    )
+    world.agent_implements(
+        "story-1000-domain",
+        "builder",
+        files={
+            "src/lib/domain/delivered.ts": "export const ok = 2;\n",
+            "src/lib/shared.ts": "export const domain = 1;\n",
+        },
+        changed_files=["src/lib/domain/delivered.ts", "src/lib/shared.ts"],
+    )
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 27, result.stdout + result.stderr
+    assert "blocked" in world.issue(1000)["labels"]
+    integration_path = world.slice_worktree_path("story-1000")
+    merge_head = subprocess.run(
+        ["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"],
+        cwd=integration_path,
+        capture_output=True,
+    )
+    assert merge_head.returncode != 0, "integration worktree left mid-merge"
 
 
 def test_a_phantom_finding_is_a_contract_failure(world):

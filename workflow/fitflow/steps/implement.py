@@ -325,7 +325,8 @@ def review_fix_turn(record: RunRecord, piece: SliceRecord, diagnostic: str) -> N
     with record.transition():
         piece.move("fixing")
         piece.diagnostics.append(diagnostic)
-        attempt = piece.attempts + 1
+        piece.attempts += 1
+        attempt = piece.attempts
         identity = record.begin_turn(piece, piece.role, attempt, "review_fix")
         record.save()
     narrate.line(f"🔧 {piece.role.capitalize()} #{piece.number} ({piece.layer}) review fix")
