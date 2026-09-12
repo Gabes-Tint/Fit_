@@ -249,17 +249,30 @@ needs clarification) and `❌` a failure. The exit code says which one; see
 
 ### After a run
 
-- **Exit 0:** the PR is merged, the merge commit carries its `v*` tag, the
-  deploys the configuration allowed are live and smoke-verified, every
-  worktree the run created is gone, the child issues are closed and the
-  story has lost `in-progress`. The final comment on the story says what
-  shipped where, and what was withheld.
-- **Stopped or failed:** read the comment the run left on the story. It says
-  why, and on a failure it lists everything the run created, whether each
-  slice worktree is clean or dirty, and how to undo it. Failed agent work is
-  preserved in place for audit; the story keeps `in-progress` and gains
-  `blocked`; inspect it before using the destructive `--force` cleanup
-  command:
+- **Exit 0 — shipped.** The PR is merged, the merge commit carries its `v*`
+  tag, main's own CI accepted it, and the deploys the configuration allowed
+  are live and smoke-verified. The APK, if one was built, is kept at
+  `~/.agents-army/fit_/workflow/releases/<tag>/app-release.apk`. The run
+  cleans up after itself: every worktree it created is gone, and the
+  branches it pushed are deleted on origin too, so nothing is left to tidy
+  by hand. The child issues are closed and the story has lost
+  `in-progress`. The final comment on the story says what shipped where,
+  what was withheld, and what was cleaned up.
+- **Exit 32 — the deploy failed.** The merge has landed; block 5 never
+  rolls anything back. What is live is whatever the last successful
+  activation left, and if QA came up before production failed, the comment
+  says so. The story is labelled `needs-gabriel` and assigned, not
+  `blocked`: there is nothing for a fresh run to retry. The run's record
+  under `~/.agents-army/fit_/workflow/runs/story-<n>.json` names each
+  deploy, the target it was moving and the reason it failed.
+- **Stopped or failed anywhere else.** Read the comment the run left on the
+  story. It says why, and on a failure it lists everything the run created,
+  whether each slice worktree is clean or dirty, and how to undo it. Failed
+  agent work is preserved in place for audit, and so are its worktree and
+  its branch on origin. Blocks 2-3 failures keep `in-progress` and add
+  `blocked`. Inspect the worktree before using the destructive `--force`
+  cleanup, which is the one thing the run will not do for you when it
+  cannot prove the work landed:
 
   ```sh
   gh issue edit <n> -R Gabes-Tint/Fit_ --remove-label in-progress
