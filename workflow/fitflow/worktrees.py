@@ -108,6 +108,10 @@ def local_head(worktree: Path) -> str:
     return _git("rev-parse", "HEAD", cwd=worktree).stdout.strip()
 
 
+def current_branch(worktree: Path) -> str:
+    return _git("rev-parse", "--abbrev-ref", "HEAD", cwd=worktree).stdout.strip()
+
+
 def remote_head(branch: str) -> str | None:
     """The sha `origin/<branch>` points to, or None if it does not exist."""
     result = _git("ls-remote", "origin", branch, cwd=settings.FIT_REPO)
@@ -121,3 +125,31 @@ def changed_files(worktree: Path, branch: str) -> list[str]:
     """Files touched on `branch` relative to `origin/main`."""
     result = _git("diff", "--name-only", f"origin/main...{branch}", cwd=worktree)
     return [line for line in result.stdout.splitlines() if line]
+
+
+def changed_since(worktree: Path, ref: str) -> list[str]:
+    """Working-tree files changed (modified or untracked) since `ref`."""
+    result = _git("status", "--porcelain", "--untracked-files=all", cwd=worktree)
+    changed = []
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        path = line[3:]
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1]
+        changed.append(path.strip())
+    return changed
+
+
+def content_at(worktree: Path, ref: str, path: str) -> str | None:
+    """A file's bytes at `ref` in this worktree, or None if it did not exist."""
+    result = _git("show", f"{ref}:{path}", cwd=worktree)
+    return result.stdout if result.returncode == 0 else None
+
+
+def commit_all(worktree: Path, message: str) -> str:
+    """Driver-controlled local commit of the whole working tree; returns
+    the new HEAD sha. Implementation agents never commit or push."""
+    _run_checked(["git", "add", "-A"], cwd=worktree)
+    _run_checked(["git", "commit", "-m", message], cwd=worktree)
+    return local_head(worktree)

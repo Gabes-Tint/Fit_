@@ -16,6 +16,13 @@ If a new domain module does not exist yet, dynamically import it inside the
 assertion and call the expected export in the promise chain, so a real
 assertion fails without adding a stub.
 
+No lint suppression is acceptable in a failing acceptance test - no
+`eslint-disable`, `eslint-enable`, `@ts-ignore` or `@ts-expect-error`; and a
+playwright component assertion goes through `/dev/component-harness`, never
+through `page.evaluate` imports or a route fixture of your own. The tests
+are immutable inputs to implementation, so they must lint clean both before
+and after the behavior exists.
+
 The tests must fail because the requested behavior is missing, not because of
 syntax, imports, or test-runner errors. Change no production files,
 configuration, dependencies, gates, thresholds, snapshots, or lock files.

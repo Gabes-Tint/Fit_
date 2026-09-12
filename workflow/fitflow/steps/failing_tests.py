@@ -6,18 +6,21 @@ Each slice gets one initial turn and at most two repair turns in the same
 session/worktree. The full independent validation runs after every turn.
 """
 
-import re
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from fitflow import acceptance, agents, audit, github, narrate, worktrees
+from fitflow import acceptance, agents, audit, gates, github, narrate, worktrees
+from fitflow.acceptance import TEST_FILE
 from fitflow.outcome import FlowFailure, Outcome
 from fitflow.slice import Slice
 
-_TEST_FILE = re.compile(r"(\.spec\.ts|\.test\.ts|\.svelte\.spec\.ts|\.e2e\.ts)$")
 _MAX_ATTEMPTS = 3
-_REPAIRABLE_OUTCOMES = {Outcome.TESTS_NOT_PUSHED, Outcome.TESTS_DO_NOT_FAIL}
+_REPAIRABLE_OUTCOMES = {
+    Outcome.TESTS_NOT_PUSHED,
+    Outcome.TESTS_DO_NOT_FAIL,
+    Outcome.TESTS_INVALID,
+}
 
 
 @dataclass(frozen=True)
@@ -27,11 +30,11 @@ class PreparedSlice:
     path: Path
 
 
-def write_failing_tests(slices: list[Slice], story_number: int) -> None:
+def write_failing_tests(slices: list[Slice], story_number: int) -> list[Slice]:
     prepared = [_prepare(piece) for piece in slices]
     if len(prepared) == 1:
         _run_mechanic(prepared[0])
-        return
+        return slices
 
     narrate.line(f"⚡ Starting {len(prepared)} mechanics in parallel")
     failures = _run_parallel(prepared)
@@ -45,6 +48,7 @@ def write_failing_tests(slices: list[Slice], story_number: int) -> None:
         if isinstance(first, FlowFailure):
             raise FlowFailure(first.outcome, first.why, story_number) from first
         raise first
+    return slices
 
 
 def _prepare(piece: Slice) -> PreparedSlice:
@@ -115,7 +119,7 @@ def _run_mechanic(prepared: PreparedSlice) -> None:
 def _run_attempt(prepared: PreparedSlice, attempt: int, diagnostic: str) -> None:
     piece, slug, path = prepared.piece, prepared.slug, prepared.path
     prompt = "failing_tests" if attempt == 1 else "correct_failing_tests"
-    reply = agents.talk(
+    reply, _session = agents.talk(
         slug,
         "mechanic",
         prompt,
@@ -141,6 +145,8 @@ def _run_attempt(prepared: PreparedSlice, attempt: int, diagnostic: str) -> None
         )
     _verify_pushed(slug, path, test_files, piece.test_kind, piece.number)
     _verify_tests_fail(path, test_files, piece.number)
+    piece.test_files = list(test_files)
+    piece.commit = worktrees.local_head(path)
     _comment(piece.number, slug, path, test_files, reply["why_they_fail"])
 
 
@@ -159,9 +165,37 @@ def _verify_pushed(
     _check_reported_files_are_on_branch(slug, test_files, changed, story_number)
     _check_every_changed_file_is_a_test(slug, changed, story_number)
     _check_files_match_test_kind(slug, changed, test_kind, story_number)
+    _check_test_quality(slug, path, test_files, story_number)
+    _check_failing_branch_lint(path, story_number)
     narrate.line(
-        f"🔍 Verify #{story_number}: tree clean ✔ · pushed ✔ · files on branch ✔ · only tests ✔"
+        f"🔍 Verify #{story_number}: tree clean ✔ · pushed ✔ · files on branch ✔ · "
+        "only tests ✔ · lint ✔"
     )
+
+
+def _check_test_quality(slug: str, path, test_files: list[str], story_number: int) -> None:
+    """The acceptance tests become immutable implementation inputs, so their
+    content must satisfy their own gates now: no lint suppressions, and a
+    playwright spec must exercise the component through the harness route
+    instead of importing product code in the browser context."""
+    for test_file in test_files:
+        target = path / test_file
+        if not target.exists():
+            continue
+        for diagnostic in (
+            acceptance.rejects_suppression(target),
+            acceptance.rejects_browser_module_import(target),
+        ):
+            if diagnostic:
+                raise FlowFailure(
+                    Outcome.TESTS_INVALID, f"{diagnostic} (branch {slug})", story_number
+                )
+
+
+def _check_failing_branch_lint(path, story_number: int) -> None:
+    diagnostic = gates.run_changed_lint(path, story_number)
+    if diagnostic is not None:
+        raise FlowFailure(Outcome.TESTS_INVALID, diagnostic, story_number)
 
 
 def _check_reported_files_are_on_branch(
@@ -176,7 +210,7 @@ def _check_reported_files_are_on_branch(
 
 def _check_every_changed_file_is_a_test(slug: str, changed: list[str], story_number: int) -> None:
     for changed_file in changed:
-        if not _TEST_FILE.search(changed_file):
+        if not TEST_FILE.search(changed_file):
             raise FlowFailure(
                 Outcome.TESTS_NOT_PUSHED,
                 f"non-test file changed on {slug}: {changed_file}",

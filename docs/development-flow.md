@@ -7,20 +7,23 @@ state, and invokes agents through `aarmy` only as bounded workers. It does not
 need an external Codex or Claude Code session to supervise or continuously
 monitor it.
 
-Only block 1, "Pick and plan", is implemented today. Blocks 2–5 describe the
-target architecture, not current Python behavior. The prose policy behind the
-flow lives in `ORCHESTRATOR.md`, `AGENTS.md` and `QUALITY.md`; this page is the
-map.
+Blocks 1-3 are implemented today, through the block 3 all-slice barrier:
+pick and plan, delegate (role selection and the pre-launch barrier), and the
+bounded implement/validate/correct/escalate loops ending at the all-slice
+join. Blocks 4-5, beginning with the implementation-branch push and PR
+creation, describe the target architecture, not current Python behavior. The prose policy
+behind the flow lives in `ORCHESTRATOR.md`, `AGENTS.md` and `QUALITY.md`;
+this page is the map.
 
-The proposed [delegation and implementation gates](../workflow/delegation-contract.md)
-define block 2's selection and validation rules, bounded repairs, and the block
-3 join. They are documentation only; no future gate is implemented yet.
+The [delegation and implementation gates](../workflow/delegation-contract.md)
+define block 2's selection and validation rules, bounded repairs, and the
+block 3 join. Their implemented part stops at that join; delivery is future.
 
 ```mermaid
 flowchart TD
     user["User manually runs workflow/go.py"]
     driver["Python driver owns the lifecycle"]
-    operator["Optional external operator<br/>select, start, observe, cancel only<br/>never mutate an active workflow"]
+    operator["Optional external operator<br/>select, start and observe only<br/>never mutate an active workflow"]
     user --> driver
     operator -.-> driver
 
@@ -61,13 +64,13 @@ flowchart TD
         all_succeeded -- yes --> planned
     end
 
-    subgraph delegate["2. Delegate — FUTURE"]
-        signals["FUTURE — driver derives slice signals<br/>known files/area and reference pattern<br/>open questions, sensitive area,<br/>technical decision required"]
+    subgraph delegate["2. Delegate"]
+        signals["The planner extracts the nine signals<br/>with evidence; the driver validates them<br/>and applies the precedence table itself"]
         size{"Required capability?"}
         mechanic["mechanic · basic capability<br/>determined task, nothing relevant to decide"]
-        builder["FUTURE builder · intermediate capability<br/>specified slice, known files/area,<br/>existing tests and known pattern"]
-        solver["FUTURE solver · advanced capability<br/>uncertain problem or obscure cause,<br/>sensitive auth or state/store work"]
-        assignment["FUTURE — validate assignment per slice<br/>role + resolved agents.yaml config<br/>worktree + brief + evidence/reason"]
+        builder["builder · intermediate capability<br/>specified slice, known files/area,<br/>existing tests and known pattern"]
+        solver["solver · advanced capability<br/>uncertain problem or obscure cause,<br/>sensitive auth or state/store work"]
+        assignment["Driver-built assignment per slice:<br/>role + agents.yaml config + signals,<br/>evidence and reason, then the<br/>pre-launch barrier for all slices"]
         launch["Pre-launch barrier for all assignments<br/>block 1 complete, valid inputs/configuration<br/>exclusive ownership and independent slices"]
         planned --> signals --> size
         size --> mechanic --> assignment
@@ -76,8 +79,8 @@ flowchart TD
         assignment --> launch
     end
 
-    subgraph build["3. Implement and pre-push gate — FUTURE"]
-        implement["Per-slice agent implements in the<br/>existing isolated worktree/session"]
+    subgraph build["3. Implement and validate"]
+        implement["Per-slice agent implements in the<br/>existing isolated worktree/team<br/>first turn establishes the role session"]
         before_turn["Before each turn<br/>verify ownership, identity and attempt budget"]
         turn_gate["After turn: driver validates scope, acceptance,<br/>foreground QUALITY.md pre-push reports"]
         result{"Per-slice implementation<br/>and gates result?"}
@@ -88,7 +91,8 @@ flowchart TD
         preserve["Stop; preserve worktree<br/>solver exhausted or infra/auth/<br/>network/tool failure"]
         freeze["Freeze approved slice<br/>while sibling corrects or escalates"]
         delivery_barrier{"Join all settled slices<br/>all succeeded and frozen commits unchanged?"}
-        push["git push, gh pr create<br/>body ends Closes #N"]
+        implemented["CURRENT END — implemented<br/>local driver-owned commits frozen<br/>story remains in-progress"]
+        push["FUTURE — block 4<br/>git push, gh pr create<br/>body ends Closes #N"]
         launch -- "one loop per slice; parallel when split" --> before_turn --> implement --> turn_gate --> result
         result -- approved --> freeze --> delivery_barrier
         result -- repairable --> attempts
@@ -97,13 +101,14 @@ flowchart TD
         attempts -- exhausted --> can_escalate
         can_escalate -- yes --> escalate --> before_turn
         can_escalate -- "no: solver" --> preserve
-        delivery_barrier -- yes --> push
+        delivery_barrier -- yes --> implemented
+        implemented -. "future delivery" .-> push
         delivery_barrier -- no --> stopped["Stop and preserve all worktrees<br/>report domain then UI"]
     end
 
     subgraph review["4. Review, CI, merge"]
         mechanical{"More than mechanical?"}
-        reviewer["reviewer (opus, read-only)<br/>server-side auth, regression coverage,<br/>threshold rationale, 360px viewport"]
+        reviewer["reviewer (advanced, read-only)<br/>future model resolved from configuration<br/>auth, regression coverage, thresholds, 360px"]
         verdict{"Verdict"}
         fix["Send fixes back to the agent"]
         claims["Driver verifies claims<br/>gh pr checks n, read the diff"]
@@ -144,7 +149,7 @@ flowchart TD
 
     subgraph resilience["Future implementation invariants"]
         bg["No background gate or operator takeover<br/>driver owns the validation verdict"]
-        dead["Uncertain interrupted turn: stop and preserve<br/>never blindly replay or reset attempts"]
+        dead["Coordinated cancellation is FUTURE<br/>today an external interruption leaves retained<br/>state for audit; never blindly replay"]
     end
 ```
 
@@ -152,35 +157,39 @@ flowchart TD
 
 - Diamonds are decisions the Python driver makes. Rectangles are driver
   commands or bounded agent work.
-- In the future Delegate block, the driver chooses the smallest role capable
+- In the Delegate block, the driver chooses the smallest role capable
   of the required judgment: uncertainty and decision load determine the rung,
-  never the number of files, lines or diff size. It derives structured signals
-  per slice: known files or area, a known reference pattern, open questions,
-  sensitive areas and whether a technical decision is required. Mechanic
+  never the number of files, lines or diff size. The planner extracts the
+  nine structured signals per slice with evidence — known files or area, a
+  known reference pattern, open questions, sensitive areas and whether a
+  technical decision is required — and the driver validates them and applies
+  the precedence table itself. Mechanic
   requires defined files and procedure with no relevant decision; builder is
   the default for normal implementation with a clear objective but real
   construction left to do; solver is reserved for uncertainty about solution
   or cause, authentication, shared state/store or other sensitive technical
-  work. Builder and solver are future roles and are not implemented today.
-- The target assignment contract is structured and driver-validated, with the
+  work.
+- The assignment contract is structured and driver-validated, with the
   chosen role, the signals or evidence used and a short justification. Its
   output also carries semantically the resolved configuration, existing
-  worktree and brief into block 3, so delegation is not decided again. This is
-  a future [documentary contract](../workflow/delegation-contract.md#proposed-assignment-envelope),
-  not an implemented schema. Immutable references avoid copying slice identity.
-- When Delegate is implemented, builder and solver will join planner and
-  mechanic in `workflow/agents.yaml`, each with backend, model and reasoning
-  effort. Python and the diagram do not fix model names. Suggested capacity
-  defaults are basic/low for mechanic, intermediate/medium for builder and
-  advanced/high for solver. The current loader intentionally accepts only the
-  implemented planner and mechanic roles.
-- The future block 2/3 policy gives each role level one initial implementation
+  worktree and brief into block 3, so delegation is not decided again. The
+  envelope shape is the [assignment
+  contract](../workflow/delegation-contract.md#assignment-envelope)
+  implemented in `fitflow/assignment.py`. Immutable references avoid copying
+  slice identity.
+- All four roles — planner, mechanic, builder and solver — live in
+  `workflow/agents.yaml`, each with backend, model and reasoning
+  effort; the loader requires all four before any side effect. Python and
+  the diagram do not fix model names. Seeded capacity defaults are
+  basic/low for mechanic, intermediate/medium for builder and
+  advanced/high for solver.
+- The block 2/3 policy gives each role level one initial implementation
   attempt and up to two repairs in the same agent, session and worktree. On
   exhaustion it escalates exactly one level—mechanic to builder or builder to
   solver. An exhausted solver stops and preserves the worktree. Infrastructure,
   authentication, network and tool failures stop immediately without retry or
-  capability escalation. This is separate from block 1's already implemented
-  loop for producing failing acceptance tests.
+  capability escalation. This is separate from block 1's loop for producing
+  failing acceptance tests.
 - Each slice selects its role independently. Domain and UI implementation and
   gates may run in parallel in their existing worktrees. An approved slice is
   frozen while its sibling repairs or escalates; the single join/barrier is at
@@ -195,31 +204,30 @@ flowchart TD
   structured synthesis which the driver validates, while current and recent
   source evidence remains available to the planner. The synthesis neither
   decides requirements nor overrides the issue record.
-- In the implemented block 1, the driver creates each slice worktree before
+- In block 1, the driver creates each slice worktree before
   the mechanic writes its failing tests. Its slicing contract has exactly two
   categories: UI means frontend/interface work in Svelte components and routes;
   domain means every non-UI change, including framework-free logic,
   server/backend code, persistence, migrations and database work. A story gets
   one slice when wholly in either category, or at most two ordered slices—domain
-  then UI—when it spans both. Block 2 will reuse that same worktree.
+  then UI—when it spans both. Block 2 reuses that same worktree, branch,
+  team and issue.
 - Child-issue, worktree and team setup stays sequential and deterministic.
   Then one-slice stories run one mechanic, while two-slice stories run the
   domain and UI mechanics concurrently in their isolated worktrees/teams. The
   Python driver joins the turns, validates every result, and reports planned
   only when all slices succeed; otherwise it identifies each failed slice in
-  deterministic domain/UI order and does not advance. This parallel mechanic
-  path is implemented in block 1.
-- Each mechanic slice loop permits three turns total: the initial turn and at
-  most two corrections in the same mechanic identity, AI Army team/session,
-  branch and worktree. The driver reruns its complete independent validation
-  after every turn. Only repairable test-work failures retry; launch,
-  authentication, network, malformed runner output and other external/tooling
-  failures stop immediately. Corrective prompts quote the concrete diagnostic,
-  forbid product implementation, and limit edits to acceptance tests. A slice
-  that succeeds is not rerun while its parallel sibling retries, and exhaustion
-  retains the last diagnostic for the terminal stop. Agent and infrastructure
-  failures preserve slice worktrees for audit and report whether each is clean
-  or dirty; cleanup is an explicit later action.
+  deterministic domain/UI order and does not advance.
+- Block 1's test-writing loop permits three turns total: the initial turn and
+  at most two corrections in the same mechanic identity, AI Army team/session,
+  branch and worktree, with only the failing-acceptance-test outcomes retryable.
+  Block 3's implementation loop applies the same budget to the selected role,
+  reusing the block 1 team, branch, worktree and acceptance tests, and the
+  driver makes the implementation commit itself and freezes the slice on
+  success. Both loops rerun their complete independent validation after every
+  turn; repairable failures retry, external and contract failures stop
+  immediately, and exhaustion retains the last diagnostic for the terminal
+  stop. Worktrees are preserved for audit; cleanup is an explicit later action.
 - Every gate tier is `bun scripts/quality/gate.ts <tier>` and leaves
   `reports/quality/gate-<tier>.json`. Re-run one step with `--only <step>`.
 - CI is the authority. Heavy tiers (`make deep`, `bun run verify:deep`) are

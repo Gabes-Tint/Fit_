@@ -12,7 +12,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from fitflow import agent_config, agents, audit, github, narrate, planner
+from fitflow import agent_config, agents, audit, github, narrate, planner, settings
 from fitflow.outcome import FlowFailure, Outcome
 
 
@@ -23,7 +23,9 @@ def run(flow: Callable[[int | None], Outcome]) -> None:
     except agent_config.AgentConfigError as error:
         print(f"configuration error: {error}", file=sys.stderr)
         raise SystemExit(2) from error
-    parser = argparse.ArgumentParser(description="Fit_ development flow, block 1: pick and plan.")
+    parser = argparse.ArgumentParser(
+        description="Fit_ development flow driver: blocks 1-3, plan, delegate, implement."
+    )
     parser.add_argument("issue", nargs="?", type=int, default=None, help="issue number to pick")
     args = parser.parse_args()
 
@@ -46,6 +48,9 @@ def run(flow: Callable[[int | None], Outcome]) -> None:
 def _report_failure(failure: FlowFailure) -> None:
     narrate.die(f"❌ {failure.outcome.name} (exit {int(failure.outcome)}) — {failure.why}")
     if failure.story_number is not None:
+        if failure.add_blocked:
+            github.add_label(failure.story_number, settings.BLOCKED_LABEL)
+            narrate.line(f"✏️  #{failure.story_number} labelled {settings.BLOCKED_LABEL}")
         _comment_stopped(failure.story_number, f"{failure.outcome.name} — {failure.why}")
 
 

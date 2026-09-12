@@ -1,9 +1,14 @@
 # Delegation and implementation gates
 
-Status: proposed policy for block 2 and implementation validation in block 3.
-None of this contract is implemented. Only block 1 runs today. This document
-defines decisions and barriers for future implementation; it does not add an
-executable schema, configuration, gate or acceptance scenario.
+Status: implemented for blocks 1-3's boundaries - selection, assignment,
+pre-launch barrier, bounded repair loops, one-rung escalation, the final
+join and the ordinary stop/preserve rules - as of the driver behind `go.py`. Delivery
+(push, PR, review, merge) is block 4 and not implemented. The recovery/resume
+and coordinated-cancellation clauses remain future: `go.py` stops and
+preserves instead of resuming, while an external process interruption may
+leave a deliberately uncertain retained record. This page distinguishes
+implemented behavior from those target invariants; behavioral changes belong
+in the driver and its tests.
 
 ## Inputs and ownership
 
@@ -25,37 +30,80 @@ passed is never the verdict. Work is confined to the assigned worktree, with
 no writes to its sibling or the shared checkout. Workflow source, prompts,
 agent configuration and gate policy cannot be changed during this run.
 
+Before the failing-test commit is accepted, the driver validates it as what
+it will become: an immutable input. It runs the repository's change-scoped
+lint over the branch (`bun run lint:changed`); a lint failure returns a
+precise, repairable diagnostic (outcome `TESTS_INVALID`, exit 31) to the
+same mechanic retry loop and never reaches implementation. It also rejects
+lint suppression directives (`eslint-disable`, `eslint-enable`,
+`@ts-ignore`, `@ts-expect-error`) inside acceptance tests outright: a
+directive that is only satisfied before the implementation exists, such as
+suppressing `no-unsafe-assignment` on a dynamic import of a module that does
+not exist yet (#377), turns into an unfixable lint break the moment the
+implementation lands, and an implementation worker cannot legally fix it.
+Consequently the mechanic must write assertions that lint clean both before
+and after the behavior exists (for a missing module: dynamic import through
+the promise chain with `unknown`-typed binding, not suppression).
+
+## The component harness
+
+A UI slice's acceptance tests are only `*.e2e.ts`, so a component no page
+renders yet would be unreachable. The repository owns one reusable harness
+route, `src/routes/dev/component-harness/+page.svelte`: it mounts any single
+component from `src/lib/components` or `src/lib/ui` at
+`/dev/component-harness?component=<path>&props=<json>`, and an unknown id
+renders the distinctive `harness: component not found` line. It covers only
+its two `import.meta.glob` directories - routes, the store, server code and
+the harness's own files cannot be exercised through it. A playwright
+acceptance test must go through the harness route for component assertions;
+importing product code inside `page.evaluate` is rejected (outcome
+`TESTS_INVALID`) the same way a new route fixture is: those are production
+files, and creating or modifying routes or production components stays
+prohibited.
+
+The harness itself is a test-only surface: the web server answers 404 for
+`/dev/` unless the run names `FIT_COMPONENT_HARNESS=yes` (`hooks.server.ts`),
+and the Capacitor static build refuses it outright (`+page.ts`), so the URL
+never mounts a component inside the shipped app - only the E2E preview
+servers open it, and those serve the same production build the tests are
+meant to validate.
+
 ## Selection gate
 
 These are the required signals for each slice. Every boolean needs explicit
 evidence for its value; omission is not `false`. An unresolved factual signal
 is rejected as incomplete input, rather than silently choosing a model.
 
-| Signal               | Type                                                                       | Meaning                                                                                                                                                                  |
-| -------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `objective_clear`    | boolean                                                                    | Observable acceptance criteria and scope determine the intended behavior.                                                                                                |
-| `area_known`         | boolean                                                                    | Concrete repository files or directories bound the implementation.                                                                                                       |
-| `pattern_known`      | boolean                                                                    | A cited existing implementation provides an applicable pattern.                                                                                                          |
-| `procedure_complete` | boolean                                                                    | Ordered instructions determine the edits without a relevant implementation choice.                                                                                       |
-| `solution_uncertain` | boolean                                                                    | Choosing the solution requires investigation beyond applying a known pattern.                                                                                            |
-| `cause_uncertain`    | boolean                                                                    | A defect's cause remains unresolved.                                                                                                                                     |
-| `technical_choice`   | `none`, `bounded`, `open`                                                  | No relevant choice, ordinary construction within a known pattern, or unresolved architectural/behavioral choice.                                                         |
-| `sensitive_areas`    | unique array of `auth`, `shared_state`, `store`, `security`, `persistence` | The requested change affects authorization, shared state, the store, a security boundary, or stored-data integrity/migration. Empty means all were checked and excluded. |
-| `human_decision`     | boolean                                                                    | Product, spend, infrastructure, secrets, gate lowering or data deletion still requires a decision under block 1's ownership policy.                                      |
+| Signal               | Type                                                                       | Meaning                                                                                                                                                                                                                                    |
+| -------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `objective_clear`    | boolean                                                                    | Observable acceptance criteria and scope determine the intended behavior.                                                                                                                                                                  |
+| `area_known`         | boolean                                                                    | Concrete repository files or directories bound the implementation.                                                                                                                                                                         |
+| `pattern_known`      | boolean                                                                    | A cited existing implementation provides an applicable pattern.                                                                                                                                                                            |
+| `procedure_complete` | boolean                                                                    | Ordered instructions determine the edits without a relevant implementation choice.                                                                                                                                                         |
+| `solution_uncertain` | boolean                                                                    | Choosing the solution requires investigation beyond applying a known pattern. Contradicts `technical_choice="bounded"`: a bounded choice is ordinary construction within a known pattern, so this is false whenever the choice is limited. |
+| `cause_uncertain`    | boolean                                                                    | A defect's cause remains unresolved.                                                                                                                                                                                                       |
+| `technical_choice`   | `none`, `bounded`, `open`                                                  | No relevant choice, ordinary construction within a known pattern, or unresolved architectural/behavioral choice.                                                                                                                           |
+| `sensitive_areas`    | unique array of `auth`, `shared_state`, `store`, `security`, `persistence` | The requested change affects authorization, shared state, the store, a security boundary, or stored-data integrity/migration. Empty means all were checked and excluded.                                                                   |
+| `human_decision`     | boolean                                                                    | Product, spend, infrastructure, secrets, gate lowering or data deletion still requires a decision under block 1's ownership policy.                                                                                                        |
 
 The driver checks the following rows in order; the first applicable row wins.
 Neither diff size nor file count participates.
 
-| Priority | Condition                                                                                      | Decision                                                           |
-| -------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| 1        | Missing, stale or contradictory evidence; invalid types; changed input identity                | Reject the contract; launch no worker.                             |
-| 2        | `human_decision=true`, or `objective_clear=false`                                              | Stop for clarification; no role can decide missing product intent. |
-| 3        | Any sensitive area, uncertain solution/cause, `technical_choice=open`, or unknown area/pattern | `solver`                                                           |
-| 4        | Complete procedure and `technical_choice=none`                                                 | `mechanic`                                                         |
-| 5        | Otherwise                                                                                      | `builder`                                                          |
+| Priority | Condition                                                                            | Decision                                                           |
+| -------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| 1        | Missing, stale or contradictory evidence; invalid types; changed input identity      | Reject the contract; launch no worker.                             |
+| 2        | `human_decision=true`, or `objective_clear=false`                                    | Stop for clarification; no role can decide missing product intent. |
+| 3        | Any sensitive area, uncertainty, `technical_choice=open`, or an unknown area/pattern | `solver`                                                           |
+| 4        | Complete procedure and `technical_choice=none`                                       | `mechanic`                                                         |
+| 5        | Otherwise                                                                            | `builder`                                                          |
 
-Row 4 is reached only with a clear objective, known area and pattern, no
-uncertainty and no sensitive area. A complete procedure claiming a bounded or
+Row 4 is reached only with a clear objective, known area, no uncertainty and
+no sensitive area. `pattern_known` is not a separate row-4 requirement: a
+truly complete procedure determines the edits itself, so a claimed missing
+pattern cannot force a full solution investigation while the same signals
+also claim `procedure_complete`; the capability model treats a complete
+procedure as its own pattern. When the procedure is not complete, an unknown
+pattern still selects solver at row 3. A complete procedure claiming a bounded or
 open choice contradicts its definition and fails row 1. A known area may still
 have an uncertain cause; that is valid and selects solver. Sensitivity always
 outranks an otherwise mechanical procedure. Builder handles ordinary
@@ -68,7 +116,7 @@ cannot establish absence of server authorization changes. Unsupported or
 conflicting claims stop at the contract gate. They do not consume an
 implementation attempt or trigger capability escalation.
 
-## Proposed assignment envelope
+## Assignment envelope
 
 This JSON is a documentary proposal for the driver-produced handoff. All
 listed fields are required; unknown fields and `null` are rejected at every
@@ -211,6 +259,10 @@ assertions or as success. No full local CI tier is implied.
 
 The driver determines affected specs, e2e files and mutation lanes from the
 actual diff under the recorded policy, not just the agent's reported files.
+That diff is the complete delta of the branch and worktree against the
+retained failing-test commit, recomputed at every validation: a prohibited
+gate, threshold, suppression-baseline, lockfile or workflow change (#379)
+cannot be hidden by the timing of a retry commit or an uncommitted edit.
 Any local commit happens under driver control before final validation; a
 successful slice has a clean, recorded implementation commit and evidence for
 those exact bytes. Implementation agents do not push or open PRs. Block 1's
@@ -236,7 +288,7 @@ a builder start six, and a solver start three, excluding block 1 turns.
 | `validating`     | Repairable failure at attempt 3, role below solver                                | `escalating` |
 | `escalating`     | Immediate next role, matching frozen configuration, new revision and attempt zero | `assigned`   |
 | `validating`     | Repairable failure at attempt 3 on solver                                         | `failed`     |
-| Any active state | External failure, contract violation, required human decision or cancellation     | `failed`     |
+| Any active state | External failure, contract violation or required human decision                   | `failed`     |
 
 Escalation preserves issue, team, branch, worktree, brief and accumulated
 implementation. The old role's worker must have ended. The next role uses its
@@ -277,17 +329,20 @@ choose their own retry category.
 | 4: `repairable`         | Actual assertion failure, type/lint diagnostic, valid failing gate verdict caused by implementation              | Same-role correction until attempt 3.                             |
 | 5: `capacity_exhausted` | Three validated repairable failures at this role                                                                 | Escalate one rung, or stop/preserve if solver.                    |
 
-Cancellation is a terminal stop with reason `cancelled`, not a code defect.
-Stop launching new turns, terminate and reap owned workers and gate processes,
-then record their actual state. Keep ownership until all writers are stopped;
-if termination cannot be confirmed, require manual recovery and do not permit
-a second run. Do not delete, reset or force-clean worktrees.
+Coordinated cancellation is a future invariant: it should become a terminal
+stop with reason `cancelled`, stop new turns, terminate and reap owned workers
+and gate processes, and then record their actual state. The current driver has
+no cancellation protocol or `cancelled` outcome. If it is interrupted
+externally, its retained record may remain non-terminal; a new run refuses that
+record and requires manual audit. Do not delete, reset or force-clean
+worktrees.
 
-For normal slice failures the sibling finishes its independent loop. An
-external failure ends the affected loop immediately, with no retries; the
-other loop may settle independently. A detected ownership escape or changed
-workflow invalidates the entire run and cancels active workers. No terminal
-outcome authorizes delivery. Preserve all worktrees, including successful ones.
+For all slice failures, including external or ownership failures, the affected
+loop ends immediately with no retry when its category requires that stop; an
+already-running sibling is not cooperatively cancelled and settles its
+independent loop before the join reports failures in deterministic order. No
+terminal outcome authorizes delivery. Preserve all worktrees, including
+successful ones.
 
 Record state changes on the parent story with run/slice identity, role,
 attempt, diagnostic category, evidence location and preserved branch/worktree
@@ -318,45 +373,26 @@ do not silently rerun a frozen sibling. How separate changes are integrated,
 reviewed and delivered belongs to later blocks; independent green slices
 alone do not establish that their eventual combination passes integration.
 
-An external Codex/Claude operator may select the story, start the driver,
-observe its reported progress/result and request cancellation. It cannot
-change prompts, configuration, the workflow or slice worktrees while the run
-is active. A workflow bug requires stopping and preserving this run, fixing
-the workflow separately with tests, then starting a new clean execution. This
+An external Codex/Claude operator may select the story, start the driver and
+observe its reported progress/result. It cannot change prompts, configuration,
+the workflow or slice worktrees while the run is active. Until coordinated
+cancellation exists, interrupting the process is an external stop that may
+leave retained state requiring audit, not a clean driver transition. A
+workflow bug requires stopping and preserving this run, fixing the workflow
+separately with tests, then starting a new clean execution. This
 non-interference rule is a launch/turn invariant, not a second state machine
 or a requirement for a continuous supervisor.
 
-## Future configuration boundary
+## Configuration boundary
 
 `workflow/agents.yaml` remains the sole source for backend, model and effort.
-The future loader must require planner, mechanic, builder and solver entries
+The loader requires planner, mechanic, builder and solver entries
 before any side effects, including roles that might only be reached by
 escalation. Keep exact keys, explicit nonempty values and backend-specific
 effort validation. No default model or fallback to a different role is allowed.
 Capacity labels describe responsibility, not a hardcoded model family; changing
 the configured model requires a new execution.
 
-Documentary example only, with intentionally symbolic model values:
-
-```yaml
-planner:
-  backend: claude
-  model: configured-planner-model
-  effort: low
-mechanic:
-  backend: claude
-  model: configured-basic-model
-  effort: low
-builder:
-  backend: claude
-  model: configured-intermediate-model
-  effort: medium
-solver:
-  backend: claude
-  model: configured-advanced-model
-  effort: high
-```
-
-Do not apply this example now: the current loader accepts only planner and
-mechanic and correctly rejects builder/solver. This document changes no
-executable configuration or current exit code.
+The seeded configuration (`haiku`/`low`, `haiku`/`low`, `sonnet`/`medium`,
+`opus`/`high`) follows the suggested capacity defaults; the values are
+configuration, not code.

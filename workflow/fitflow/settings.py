@@ -36,5 +36,6 @@ TALK_TIMEOUT = os.environ.get("FIT_FLOW_TALK_TIMEOUT", "1800")
 HOLDING_LABELS = {"in-progress", "blocked", "needs-gabriel", "paused"}
 STORY_LABEL = "story"
 IN_PROGRESS_LABEL = "in-progress"
+BLOCKED_LABEL = "blocked"
 NEEDS_GABRIEL_LABEL = "needs-gabriel"
 GABRIEL_LOGIN = "gabepsilva"

@@ -15,6 +15,72 @@ WORKFLOW_DIR = Path(__file__).parent.parent
 GO_PY = WORKFLOW_DIR / "go.py"
 GABRIEL_LOGIN = "gabepsilva"
 
+SIGNAL_NAMES = (
+    "objective_clear",
+    "area_known",
+    "pattern_known",
+    "procedure_complete",
+    "solution_uncertain",
+    "cause_uncertain",
+    "technical_choice",
+    "sensitive_areas",
+    "human_decision",
+)
+
+
+def mechanic_signals(**overrides) -> dict:
+    """Fully determined slice: selection row 4."""
+    signals = dict(
+        objective_clear=True,
+        area_known=True,
+        pattern_known=True,
+        procedure_complete=True,
+        solution_uncertain=False,
+        cause_uncertain=False,
+        technical_choice="none",
+        sensitive_areas=[],
+        human_decision=False,
+    )
+    signals.update(overrides)
+    return signals
+
+
+def builder_signals(**overrides) -> dict:
+    return mechanic_signals(procedure_complete=False, **overrides)
+
+
+def solver_signals(**overrides) -> dict:
+    return mechanic_signals(solution_uncertain=True, **overrides)
+
+
+def _evidence(story_number: int, layer: str, signals: dict) -> list[dict]:
+    base = f"run-{story_number}/{layer}"
+    refs = {
+        "objective_clear": f"{base}/brief",
+        "area_known": f"{base}/brief",
+        "pattern_known": f"{base}/brief",
+        "procedure_complete": f"{base}/brief",
+        "solution_uncertain": f"{base}/issue_context",
+        "cause_uncertain": f"{base}/issue_context",
+        "technical_choice": f"{base}/brief",
+        "sensitive_areas": f"{base}/failing_tests",
+        "human_decision": f"run-{story_number}/ownership",
+    }
+    return [
+        {"signal": name, "source_ref": refs[name], "detail": "scripted evidence"}
+        for name in SIGNAL_NAMES
+    ]
+
+
+def delegate_slice(story_number: int, layer: str, signals: dict) -> dict:
+    return {
+        "layer": layer,
+        "signals": signals,
+        "evidence": _evidence(story_number, layer, signals),
+        "unresolved": [],
+        "needs_sibling": False,
+    }
+
 
 def _git(*args: str, cwd: Path) -> str:
     result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
@@ -45,6 +111,14 @@ mechanic:
   backend: claude
   model: haiku
   effort: low
+builder:
+  backend: claude
+  model: sonnet
+  effort: medium
+solver:
+  backend: claude
+  model: opus
+  effort: high
 """
         )
         self._save()
@@ -55,12 +129,18 @@ mechanic:
         _git("config", "user.email", "test@example.com", cwd=self.repo)
         _git("config", "user.name", "Test", cwd=self.repo)
         (self.repo / "README.md").write_text("seed\n")
-        _git("add", "README.md", cwd=self.repo)
+        (self.repo / ".gitignore").write_text("reports/\n")
+        _git("add", "README.md", ".gitignore", cwd=self.repo)
         _git("commit", "-m", "seed", cwd=self.repo)
         _git("push", "-u", "origin", "main", cwd=self.repo)
 
     def _save(self) -> None:
-        (self.dir / "world.json").write_text(json.dumps(self.world, indent=2))
+        # atomic: the fake fakes read this file from their own processes, so a
+        # torn read must be impossible
+        path = self.dir / "world.json"
+        tmp = path.with_suffix(f".json.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(self.world, indent=2))
+        tmp.replace(path)
 
     def _load(self) -> None:
         self.world = json.loads((self.dir / "world.json").read_text())
@@ -119,6 +199,66 @@ mechanic:
     def planner_fails(self, story_number: int, message: str = "planner turn failed") -> None:
         self._queue_turn(f"plan-{story_number}/planner", None, exit_code=1, message=message)
 
+    def planner_answers_delegate(
+        self, story_number: int, slices: list[dict], session: str | None = None
+    ) -> None:
+        """The block 2 signals turn: one proposal per slice. A session
+        override scripts a backend that drifted out of the planner's
+        conversation."""
+        self._queue_turn(f"plan-{story_number}/planner", {"slices": slices}, session=session)
+
+    def planner_keeps_rejecting(self, story_number: int, slices: list[dict]) -> None:
+        """Queue the same invalid proposal three times: the planner's
+        bounded corrective loop re-asks before the run stops."""
+        for _ in range(3):
+            self.planner_answers_delegate(story_number, slices)
+
+    def agent_implements(
+        self,
+        slug: str,
+        role: str,
+        files: dict[str, str],
+        changed_files: list[str],
+        summary: str = "implemented the missing behavior",
+        push: bool = False,
+        commit: bool = False,
+        rendezvous: str | None = None,
+        session: str | None = None,
+    ) -> None:
+        """One implementation turn: the agent writes files into the worktree
+        but never commits or pushes - the driver owns commits."""
+        self._queue_turn(
+            f"{slug}/{role}",
+            {"changed_files": changed_files, "summary": summary},
+            effects={"files": files, "commit": commit, "push": push},
+            rendezvous=rendezvous,
+            session=session,
+        )
+
+    def agent_fails(
+        self,
+        slug: str,
+        role: str,
+        message: str,
+        files: dict[str, str] | None = None,
+        rendezvous: str | None = None,
+    ) -> None:
+        self._queue_turn(
+            f"{slug}/{role}",
+            None,
+            exit_code=1,
+            message=message,
+            effects={"files": files} if files else None,
+            rendezvous=rendezvous,
+        )
+
+    def agent_replies_raw(self, slug: str, role: str, raw: str) -> None:
+        """A successful exit with an unparsable reply body."""
+        self._queue_turn(f"{slug}/{role}", None, raw_reply=raw)
+
+    def agent_omits_session(self, slug: str, role: str, reply: dict) -> None:
+        self._queue_turn(f"{slug}/{role}", reply, omit_session=True)
+
     def mechanic_writes(
         self,
         slug: str,
@@ -127,6 +267,7 @@ mechanic:
         why: str = "the behavior is not implemented yet",
         push: bool = True,
         commit: bool = True,
+        delete: list[str] | None = None,
         rendezvous: str | None = None,
     ) -> None:
         self._queue_turn(
@@ -134,6 +275,7 @@ mechanic:
             {"test_files": test_files, "why_they_fail": why},
             effects={
                 "files": files,
+                "delete": delete or [],
                 "commit": commit,
                 "push": push,
                 "commit_message": f"test: failing acceptance tests for #{slug.split('-')[1]}",
@@ -181,10 +323,26 @@ mechanic:
         self.world.setdefault("gh_failures", []).extend(substrings)
         self._save()
 
-    def scripted_test_outcome(self, file: str, outcome: str = "fail") -> None:
-        """Outcome: fail, pass, import_error, not_found, or tool_error."""
+    def gh_fails_on_comment_body(self, *substrings: str) -> None:
+        """Any `gh issue comment` whose --body contains one of these
+        substrings exits 1 - for failing one specific comment."""
+        self._load()
+        self.world.setdefault("gh_fail_on_body", []).extend(substrings)
+        self._save()
+
+    def scripted_test_outcome(self, file: str, outcome: str | list[str]) -> None:
+        """Outcome: fail, pass, import_error, not_found, or tool_error.
+        A list is consumed one value per runner invocation."""
         self._load()
         self.world.setdefault("test_outcomes", {})[file] = outcome
+        self._save()
+
+    def given_gate_outcomes(self, **outcomes) -> None:
+        """Scripted results for `npm run <script>` and `bun run
+        test:mutation:<lane>`: pass, fail, or tool_error. A list is
+        consumed one value per invocation."""
+        self._load()
+        self.world.setdefault("gate_outcomes", {}).update(outcomes)
         self._save()
 
     def _queue_turn(
@@ -195,17 +353,14 @@ mechanic:
         message: str = "",
         effects: dict | None = None,
         rendezvous: str | None = None,
+        session: str | None = None,
+        omit_session: bool = False,
+        raw_reply: str | None = None,
     ) -> None:
         self._load()
-        turn = {"exit": exit_code}
-        if effects is not None:
-            turn["effects"] = effects
-        if exit_code == 0:
-            turn["reply"] = reply
-        else:
-            turn["message"] = message
-        if rendezvous is not None:
-            turn["rendezvous"] = rendezvous
+        turn = _turn_script(
+            reply, exit_code, message, effects, rendezvous, session, omit_session, raw_reply
+        )
         self.world.setdefault("turns", {}).setdefault(key, []).append(turn)
         self._save()
 
@@ -236,6 +391,25 @@ mechanic:
         return self.repo / ".claude" / "worktrees" / slug
 
 
+def _turn_script(
+    reply, exit_code, message, effects, rendezvous, session, omit_session, raw_reply
+) -> dict:
+    key = "reply" if exit_code == 0 else "message"
+    turn = {"exit": exit_code, key: reply if exit_code == 0 else message}
+    optional = {
+        "effects": effects,
+        "rendezvous": rendezvous,
+        "session": session,
+        "raw_reply": raw_reply,
+    }
+    for key, value in optional.items():
+        if value is not None:
+            turn[key] = value
+    if omit_session:
+        turn["omit_session"] = True
+    return turn
+
+
 @pytest.fixture
 def world(tmp_path: Path) -> FakeWorld:
     return FakeWorld(tmp_path)
@@ -243,7 +417,7 @@ def world(tmp_path: Path) -> FakeWorld:
 
 def run_flow(
     world: FakeWorld,
-    *args: str,
+    *args: str | int,
     cwd: Path | None = None,
     config_path: Path | None = None,
     use_default_config: bool = False,
@@ -259,7 +433,7 @@ def run_flow(
     else:
         env.pop("FIT_FLOW_AGENT_CONFIG", None)
     return subprocess.run(
-        [sys.executable, str(GO_PY), *args],
+        [sys.executable, str(GO_PY), *(str(arg) for arg in args)],
         cwd=cwd or WORKFLOW_DIR,
         capture_output=True,
         text=True,

@@ -42,28 +42,34 @@ A question for Gabriel is an issue (`needs-gabriel`): blocked, options including
 ## Cycle
 
 `workflow/go.py` is the planned driver for this complete cycle, from issue to
-production. Today it implements only block 1, **Pick and plan**; blocks 2–5
-remain the target flow.
+production. Today it implements blocks 1-3, **Pick and plan, Delegate, and
+Implement/validate** up to the all-slice barrier; review, merge, deploy
+(blocks 4-5), including the implementation push and PR creation, remain future.
 
-The future [delegation and implementation gates](workflow/delegation-contract.md)
+The [delegation and implementation gates](workflow/delegation-contract.md)
 define role selection, validation, corrections, escalation and the all-slice
-delivery barrier. An external operator may start, observe or cancel a run;
-it must not mutate the active workflow, configuration or slice worktrees.
+barrier; blocks 1-3 implement them through that barrier. An external operator
+may start and observe a run; it must not mutate the active workflow,
+configuration or slice worktrees. Coordinated cancellation is not implemented:
+an external interruption leaves retained state for audit rather than a clean
+resume point.
 
 1. **Sync** — fetch; issues; `needs-gabriel`; log. Answers → `decision`.
 2. **Pick** — explicit issue, or lowest-numbered open `story` not held. Empty → stop; queue replenishment is outside this run.
 3. **Plan** — `workflow/go.py` checks whose call (including spend), then creates one slice or exactly two, domain then UI. Domain includes all non-UI work; UI means Svelte interface/routes. Mechanics write failing tests in existing isolated worktrees. Screens: `expectFitsViewport` at 360px.
 4. **Delegate** — rung + why; issue, files, tests, gate; one worktree. Never the shared checkout.
-5. **Review** — diff + `gate-*.json`. Past mechanical → `reviewer`.
-6. **Merge** — `Closes #N`; `gh pr merge <n>`.
-7. **Deploy** — user-facing only; smoke; comment what to try.
-8. **Report** — one log comment.
+5. **Implement/validate** — bounded corrections and escalation in each retained worktree; the driver runs the foreground gates, commits and freezes each successful slice, then joins all slices. This is the current end of `go.py`.
+6. **Review** — future: push, open the PR, inspect diff + `gate-*.json`; past mechanical → `reviewer`.
+7. **Merge** — future: `Closes #N`; `gh pr merge <n>`.
+8. **Deploy** — future: user-facing only; smoke; comment what to try.
+9. **Report delivery** — future: one log comment after merge and deploy.
 
 ## Ladder
 
-Driver role configuration comes from `workflow/agents.yaml`; builder and solver
-are not implemented or configured yet. Choose the smallest capable rung by uncertainty and judgment,
-never by diff size. Target policy for future blocks 2–3: one initial attempt
+Driver role configuration comes from `workflow/agents.yaml`; all four roles
+(planner, mechanic, builder, solver) are required and configured. Choose the
+smallest capable rung by uncertainty and judgment,
+never by diff size. Policy: one initial attempt
 plus at most two repairs with the same agent/session/worktree; then escalate
 exactly one rung. An exhausted solver stops and preserves its worktree.
 Infrastructure, authentication, network and tool failures stop immediately
@@ -78,8 +84,9 @@ effort at startup; there is no runtime model fallback.
 | `reviewer` | builder/solver before `main`                              |
 
 Brief names the worktree. The driver waits for foreground checks and reads
-`gate-<tier>.json`; do not re-run to be sure. Today `workflow/go.py` uses `aarmy`
-only for Pick and plan. Future implementation slices run independently; a
+`gate-<tier>.json`; do not re-run to be sure. `workflow/go.py` uses `aarmy`
+for Pick and plan and for the delegate/implement loops. Implementation slices
+run independently; a
 successful slice stays frozen while its sibling repairs or escalates, and
 delivery waits for all slices to succeed.
 

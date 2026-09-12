@@ -31,6 +31,19 @@ def configure(roster: dict[str, AgentConfig]) -> None:
     _roster = dict(roster)
 
 
+def roster() -> dict[str, AgentConfig]:
+    """The frozen startup configuration, read-only."""
+    if _roster is None:
+        raise RuntimeError("agent configuration was not loaded")
+    return dict(_roster)
+
+
+def roster_entry(role: str) -> AgentConfig:
+    if _roster is None:
+        raise RuntimeError("agent configuration was not loaded")
+    return _roster[role]
+
+
 def ensure_fresh_team(team: str, worktree: Path, story_number: int | None = None) -> None:
     """Delete any stale team left by a dead run, then link `team/worktree`
     to the real worktree this team's agents will work in."""
@@ -75,11 +88,12 @@ def talk(
     schema_name: str,
     attribute_failures_to: int | None = None,
     **subs: str,
-) -> dict:
+) -> tuple[dict, str]:
     """One agent turn: render prompts/<prompt_name>.md, send it to <role> on
     <team> validated against schemas/<schema_name>.json, narrate prompt and
-    reply, and return the reply as a dict. Raises FlowFailure(AGENT_FAILED)
-    on any non-zero exit or an unparsable reply."""
+    reply, and return the schema-validated reply plus the session ID the
+    CLI printed for this turn. Raises FlowFailure(AGENT_FAILED) on any
+    non-zero exit, a reply without a session line, or an unparsable reply."""
     if _roster is None:
         raise RuntimeError("agent configuration was not loaded")
     agent = _roster[role]
@@ -122,18 +136,28 @@ def talk(
             attribute_failures_to,
         )
     lines = result.stdout.splitlines()
-    if not lines or not _SESSION_LINE.match(lines[0]):
+    match = _SESSION_LINE.match(lines[0]) if lines else None
+    if match is None:
         raise FlowFailure(
             Outcome.AGENT_FAILED,
-            f"aarmy talk {role} --team {team}: unexpected reply shape: {result.stdout!r}",
+            f"aarmy talk {role} --team {team}: reply carries no session id: {result.stdout!r}",
             attribute_failures_to,
         )
+    session = match.group("session")
     reply_json = "\n".join(lines[1:])
-    reply = json.loads(reply_json)
+    try:
+        reply = json.loads(reply_json)
+    except ValueError as error:
+        raise FlowFailure(
+            Outcome.TOOL_FAILED,
+            f"aarmy talk {role} --team {team}: unparsable reply: {error}",
+            attribute_failures_to,
+        ) from error
     with narrate.grouped():
         narrate.line(f"🤖⬅️  {role} replied in {_format_duration(elapsed)}")
+        narrate.fields([("Session", session)])
         narrate.raw_json(reply_json)
-    return reply
+    return reply, session
 
 
 def _format_duration(seconds: float) -> str:

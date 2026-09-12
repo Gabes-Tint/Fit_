@@ -12,7 +12,7 @@ from fitflow.slice import Slice
 
 def slice_at_layer_boundary(story: Story, issue_context: str) -> list[Slice]:
     team = planner.ensure(story.number)
-    reply = agents.talk(
+    reply, _session = agents.talk(
         team,
         "planner",
         "slices",

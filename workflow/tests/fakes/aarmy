@@ -27,7 +27,10 @@ def load():
 
 
 def save(world):
-    world_path().write_text(json.dumps(world, indent=2))
+    path = world_path()
+    tmp = path.with_suffix(f".json.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(world, indent=2))
+    tmp.replace(path)
 
 
 def record(entry):
@@ -83,14 +86,23 @@ def cmd_talk(argv):
         print(turn.get("message", "turn failed"), file=sys.stderr)
         return exit_code
     record_finished(role, team, True)
-    print(f"[{role} session=fake]")
-    print(json.dumps(turn["reply"], indent=2, sort_keys=True))
+    # a session id is per (team, role) pair; a scripted turn may override it
+    # (session=), drop it entirely (omit_session), or replace the reply body
+    # with raw text (raw_reply) to test the driver's parsing rules.
+    session = turn.get("session") or f"{team}/{role}"
+    body = turn["raw_reply"] if turn.get("raw_reply") is not None else json.dumps(
+        turn["reply"], indent=2, sort_keys=True
+    )
+    if turn.get("omit_session"):
+        print(body)
+    else:
+        print(f"[{role} session={session}]")
+        print(body)
     return 0
 
 
 def record_finished(role, team, ok):
-    if role == "mechanic":
-        record({"tool": "fake", "event": "mechanic_finished", "team": team, "ok": ok})
+    record({"tool": "fake", "event": "agent_finished", "role": role, "team": team, "ok": ok})
 
 
 def wait_for_peers(name, team):
@@ -111,6 +123,10 @@ def apply_effects(team, effects):
         target = worktree / path
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content)
+    for path in effects.get("delete", []):
+        target = worktree / path
+        if target.exists():
+            target.unlink()
     if effects.get("commit"):
         subprocess.run(["git", "add", "-A"], cwd=worktree, check=True, capture_output=True)
         message = effects.get("commit_message", "test: commit")

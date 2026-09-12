@@ -20,7 +20,7 @@ class Call:
 
 def whose_call(story: Story, issue_context: str) -> Call:
     team = planner.ensure(story.number)
-    reply = agents.talk(
+    reply, _session = agents.talk(
         team,
         "planner",
         "whose_call",

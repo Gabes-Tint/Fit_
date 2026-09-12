@@ -8,6 +8,8 @@ import re
 import subprocess
 from pathlib import Path
 
+TEST_FILE = re.compile(r"(\.spec\.ts|\.test\.ts|\.svelte\.spec\.ts|\.e2e\.ts)$")
+
 
 def _is_e2e(path: str) -> bool:
     return path.endswith(".e2e.ts") or path.endswith(".e2e.js")
@@ -24,6 +26,24 @@ def run_and_check_failing(worktree: Path, test_files: list[str]) -> tuple[bool, 
             return False, why, repairable
     if e2e_files:
         ok, why, repairable = _check_playwright(worktree, e2e_files)
+        if not ok:
+            return False, why, repairable
+    return True, "", False
+
+
+def run_and_check_passing(worktree: Path, test_files: list[str]) -> tuple[bool, str, bool]:
+    """The block 2 gate: every acceptance test must now run and pass.
+    A real failed assertion (or a broken import) is implementation-
+    repairable; an unparsable report or a file the runner never saw is a
+    tooling failure, never an implementation verdict."""
+    vitest_files = [f for f in test_files if not _is_e2e(f)]
+    e2e_files = [f for f in test_files if _is_e2e(f)]
+    if vitest_files:
+        ok, why, repairable = _check_vitest_passing(worktree, vitest_files)
+        if not ok:
+            return False, why, repairable
+    if e2e_files:
+        ok, why, repairable = _check_playwright_passing(worktree, e2e_files)
         if not ok:
             return False, why, repairable
     return True, "", False
@@ -67,6 +87,44 @@ def rejects_local_stand_in(path: Path) -> str | None:
     return None
 
 
+_SUPPRESSIONS = ("eslint-disable", "eslint-enable", "@ts-ignore", "@ts-expect-error")
+
+
+def rejects_suppression(path: Path) -> str | None:
+    """Reject a lint suppression in the acceptance tests themselves. Their
+    bytes become immutable inputs to implementation, so a directive that is
+    only satisfied before the implementation exists (#377) can never be
+    repaired afterwards: the tests must be written to pass their own lint
+    both before and after the behavior lands."""
+    source = path.read_text()
+    for directive in _SUPPRESSIONS:
+        if directive in source:
+            return (
+                f"{path.name} contains the lint suppression directive {directive}; "
+                "fix the assertion instead - the tests must carry no suppressions "
+                "and lint clean both before and after the implementation exists"
+            )
+    return None
+
+
+_BROWSER_IMPORT = re.compile(r"\bawait\s+import\s*\(")
+_EVALUATE = re.compile(r"\bevaluate\s*\(")
+
+
+def rejects_browser_module_import(path: Path) -> str | None:
+    """Reject a playwright spec that imports the product from the browser
+    context instead of exercising it through the component harness (#380):
+    a dynamic `import(...)` inside `page.evaluate` asserts that an import succeeds,
+    never rendered UI, and the exercise must go through the harness route."""
+    source = path.read_text()
+    if _BROWSER_IMPORT.search(source) and _EVALUATE.search(source):
+        return (
+            f"{path.name} imports the product with page.evaluate; exercise the "
+            "component through /dev/component-harness instead"
+        )
+    return None
+
+
 def _check_vitest(worktree: Path, files: list[str]) -> tuple[bool, str, bool]:
     result = subprocess.run(
         ["bun", "x", "vitest", "run", "--reporter=json", *files],
@@ -97,6 +155,62 @@ def _check_vitest_entry(entry: dict | None, filename: str) -> str | None:
     if entry.get("status") != "failed":
         return f"vitest {filename} passed with no implementation"
     return None
+
+
+def _check_vitest_passing(worktree: Path, files: list[str]) -> tuple[bool, str, bool]:
+    result = subprocess.run(
+        ["bun", "x", "vitest", "run", "--reporter=json", *files],
+        cwd=worktree,
+        capture_output=True,
+        text=True,
+    )
+    report = _parse_json(result.stdout)
+    if report is None:
+        return False, f"vitest produced no parsable JSON report for {', '.join(files)}", False
+    entries = report.get("testResults", [])
+    for f in files:
+        entry = next((e for e in entries if str(e.get("name", "")).endswith(f)), None)
+        if entry is None:
+            return False, f"vitest never ran {f} - no matching test file", False
+        assertions = entry.get("assertionResults", [])
+        if not assertions:
+            return False, f"vitest {f} failed before running any assertion", True
+        if entry.get("status") != "passed":
+            return False, f"vitest {f} still fails: the implementation is not done yet", True
+    return True, "", False
+
+
+def _check_playwright_passing(worktree: Path, files: list[str]) -> tuple[bool, str, bool]:
+    result = subprocess.run(
+        ["bun", "x", "playwright", "test", *files, "--project=mobile-chrome", "--reporter=json"],
+        cwd=worktree,
+        capture_output=True,
+        text=True,
+    )
+    report = _parse_json(result.stdout)
+    if report is None:
+        return (
+            False,
+            f"playwright produced no parsable JSON report for {', '.join(files)}",
+            False,
+        )
+    specs = list(_flatten_specs(report.get("suites", [])))
+    for f in files:
+        matching = [spec for spec in specs if str(spec.get("file", "")).endswith(f)]
+        if not matching:
+            return False, f"playwright never ran {f} - no matching spec", False
+        if not _all_passed(matching):
+            return False, f"playwright {f} still fails: the implementation is not done yet", True
+    return True, "", False
+
+
+def _all_passed(specs: list[dict]) -> bool:
+    for spec in specs:
+        for test in spec.get("tests", []):
+            for result in test.get("results", []):
+                if result.get("status") != "passed":
+                    return False
+    return True
 
 
 def _check_playwright(worktree: Path, files: list[str]) -> tuple[bool, str, bool]:

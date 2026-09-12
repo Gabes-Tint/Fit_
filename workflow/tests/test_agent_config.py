@@ -3,7 +3,11 @@
 from pathlib import Path
 
 import pytest
-from conftest import run_flow
+from conftest import (
+    delegate_slice,
+    mechanic_signals,
+    run_flow,
+)
 
 
 def _given_runnable_story(world, number: int) -> None:
@@ -34,7 +38,14 @@ def _given_runnable_story(world, number: int) -> None:
     world.mechanic_writes(
         f"story-{number}-domain", files={test_file: "// failing\n"}, test_files=[test_file]
     )
-    world.scripted_test_outcome(test_file, "fail")
+    world.scripted_test_outcome(test_file, ["fail", "pass"])
+    world.planner_answers_delegate(number, [delegate_slice(number, "domain", mechanic_signals())])
+    world.agent_implements(
+        f"story-{number}-domain",
+        "mechanic",
+        files={"src/lib/configured.ts": "export const configured = true;\n"},
+        changed_files=["src/lib/configured.ts"],
+    )
 
 
 def _option(argv: list[str], name: str) -> str:
@@ -51,6 +62,14 @@ mechanic:
   backend: opencode
   model: provider/model-test
   effort: custom-variant
+builder:
+  backend: grok
+  model: provider/builder-test
+  effort: another-variant
+solver:
+  backend: codex
+  model: provider/solver-test
+  effort: solver-variant
 """
     )
     _given_runnable_story(world, 200)
@@ -102,7 +121,10 @@ def test_default_config_is_resolved_beside_go_not_from_cwd(world):
     "config,diagnostic",
     [
         ("[]\n", "top level must be a mapping"),
-        ("planner: {backend: claude, model: opus, effort: medium}\n", "missing roles: mechanic"),
+        (
+            "planner: {backend: claude, model: opus, effort: medium}\n",
+            "missing roles: builder, mechanic, solver",
+        ),
         (
             """planner: {backend: claude, model: opus, effort: medium}
 mechanic: {backend: claude, model: haiku, effort: low}
@@ -113,36 +135,48 @@ reviewer: {backend: claude, model: opus, effort: high}
         (
             """planner: {backend: claude, model: opus}
 mechanic: {backend: claude, model: haiku, effort: low}
+builder: {backend: claude, model: sonnet, effort: medium}
+solver: {backend: claude, model: opus, effort: high}
 """,
             "missing keys: effort",
         ),
         (
             """planner: {backend: claude, model: opus, effort: medium, timeout: 1}
 mechanic: {backend: claude, model: haiku, effort: low}
+builder: {backend: claude, model: sonnet, effort: medium}
+solver: {backend: claude, model: opus, effort: high}
 """,
             "extra keys: timeout",
         ),
         (
             """planner: {backend: claude, model: 7, effort: medium}
 mechanic: {backend: claude, model: haiku, effort: low}
+builder: {backend: claude, model: sonnet, effort: medium}
+solver: {backend: claude, model: opus, effort: high}
 """,
             "planner.model must be a non-empty string",
         ),
         (
             """planner: {backend: claude, model: '', effort: medium}
 mechanic: {backend: claude, model: haiku, effort: low}
+builder: {backend: claude, model: sonnet, effort: medium}
+solver: {backend: claude, model: opus, effort: high}
 """,
             "planner.model must be a non-empty string",
         ),
         (
             """planner: {backend: unknown, model: opus, effort: medium}
 mechanic: {backend: claude, model: haiku, effort: low}
+builder: {backend: claude, model: sonnet, effort: medium}
+solver: {backend: claude, model: opus, effort: high}
 """,
             "backend must be one of claude, codex, grok, opencode",
         ),
         (
             """planner: {backend: claude, model: opus, effort: extreme}
 mechanic: {backend: claude, model: haiku, effort: low}
+builder: {backend: claude, model: sonnet, effort: medium}
+solver: {backend: claude, model: opus, effort: high}
 """,
             "effort for backend claude must be one of high, low, max, medium, xhigh",
         ),

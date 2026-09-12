@@ -6,7 +6,7 @@ from pathlib import Path
 import yaml
 
 DEFAULT_PATH = Path(__file__).resolve().parent.parent / "agents.yaml"
-ROLES = {"planner", "mechanic"}
+ROLES = {"planner", "mechanic", "builder", "solver"}
 KEYS = {"backend", "model", "effort"}
 BACKENDS = {"claude", "codex", "grok", "opencode"}
 EFFORTS_BY_BACKEND = {

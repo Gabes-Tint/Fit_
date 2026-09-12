@@ -1,15 +1,34 @@
 # Basic capability selected for planning with tightly constrained judgments.
 # Example: haiku with low reasoning effort.
-# Interprets the story and defines its plan and slices.
+# Interprets the story and defines its plan, slices and capability signals.
 planner:
   backend: claude
   model: haiku
   effort: low
 
-# Basic capability selected for focused, well-scoped test work.
-# Example: haiku with low reasoning effort.
-# Writes and corrects acceptance tests in the slice worktree.
+# Basic capability selected for focused, well-scoped work with nothing
+# relevant left to decide. Example: haiku with low reasoning effort.
+# Writes acceptance tests in block 1; implements a fully determined slice
+# in block 2, escalating to builder when its attempts run out.
 mechanic:
   backend: claude
   model: haiku
   effort: low
+
+# Intermediate capability selected for ordinary implementation with a clear
+# objective, known area and pattern, but real construction decisions left
+# to make. Example: sonnet with medium reasoning effort.
+# Escalates to solver when its attempts run out.
+builder:
+  backend: claude
+  model: sonnet
+  effort: medium
+
+# Advanced capability selected when the solution or cause is uncertain, or
+# the slice touches auth, shared state, the store or another sensitive area.
+# Example: opus with high reasoning effort.
+# The final rung: when its attempts run out, the run stops and preserves.
+solver:
+  backend: claude
+  model: opus
+  effort: high

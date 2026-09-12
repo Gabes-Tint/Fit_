@@ -6,7 +6,7 @@ resulting fake-world state.
 import subprocess
 
 import pytest
-from conftest import run_flow
+from conftest import delegate_slice, mechanic_signals, run_flow
 
 
 def _given_single_domain_slice(world, number: int, title: str) -> None:
@@ -142,7 +142,14 @@ def test_picks_lowest_story_not_held_with_one_slice(world):
         files={"src/lib/paint.spec.ts": "// failing spec\n"},
         test_files=["src/lib/paint.spec.ts"],
     )
-    world.scripted_test_outcome("src/lib/paint.spec.ts", "fail")
+    world.scripted_test_outcome("src/lib/paint.spec.ts", ["fail", "pass"])
+    world.planner_answers_delegate(130, [delegate_slice(130, "domain", mechanic_signals())])
+    world.agent_implements(
+        "story-130-domain",
+        "mechanic",
+        files={"src/lib/paint.ts": "export const paint = (ms: number) => ms;\n"},
+        changed_files=["src/lib/paint.ts"],
+    )
 
     result = run_flow(world)
 
@@ -171,7 +178,7 @@ def test_picks_lowest_story_not_held_with_one_slice(world):
         for c in world.calls()
         if c.get("tool") == "aarmy" and c["argv"][0:2] == ["talk", "planner"]
     ]
-    assert len(planner_prompts) == 2
+    assert len(planner_prompts) == 3
     slicing_prompt = planner_prompts[1]
     normalized_slicing_prompt = " ".join(slicing_prompt.split())
     assert '"ui" means frontend/interface work in Svelte components and routes' in slicing_prompt
@@ -179,7 +186,7 @@ def test_picks_lowest_story_not_held_with_one_slice(world):
     assert "server/backend code, persistence, migrations, and database changes" in slicing_prompt
     assert "Two is the maximum; never return a third slice." in normalized_slicing_prompt
     assert "wholly UI or wholly non-UI" in slicing_prompt
-    for prompt in planner_prompts:
+    for prompt in planner_prompts[:2]:
         first = prompt.index("2026-09-01T12:00:00Z | comment | author-one")
         label = prompt.index("2026-09-02T12:00:00Z | labeled | maintainer")
         later = prompt.index("2026-09-03T12:00:00Z | comment | reviewer-two")
@@ -239,14 +246,35 @@ def test_split_story_creates_two_children_with_pushed_failing_tests(world):
         files={"src/lib/merge.spec.ts": "// corrected failing test\n"},
         test_files=["src/lib/merge.spec.ts"],
     )
-    world.scripted_test_outcome("src/lib/merge.spec.ts", "fail")
+    world.scripted_test_outcome("src/lib/merge.spec.ts", ["fail", "pass"])
     world.mechanic_writes(
         "story-1001-ui",
         files={"src/routes/merge.e2e.ts": "// failing\n"},
         test_files=["src/routes/merge.e2e.ts"],
         rendezvous="split-success",
     )
-    world.scripted_test_outcome("src/routes/merge.e2e.ts", "fail")
+    world.scripted_test_outcome("src/routes/merge.e2e.ts", ["fail", "pass"])
+    world.planner_answers_delegate(
+        140,
+        [
+            delegate_slice(140, "domain", mechanic_signals()),
+            delegate_slice(140, "ui", mechanic_signals()),
+        ],
+    )
+    world.agent_implements(
+        "story-1000-domain",
+        "mechanic",
+        files={"src/lib/merge.ts": "export const merge = (a: number) => a;\n"},
+        changed_files=["src/lib/merge.ts"],
+        rendezvous="split-implement",
+    )
+    world.agent_implements(
+        "story-1001-ui",
+        "mechanic",
+        files={"src/routes/merge-page.ts": "export const banner = true;\n"},
+        changed_files=["src/routes/merge-page.ts"],
+        rendezvous="split-implement",
+    )
 
     result = run_flow(world)
 
@@ -262,6 +290,7 @@ def test_split_story_creates_two_children_with_pushed_failing_tests(world):
     story_comments = " ".join(world.issue(140)["comments"]).lower()
     assert "#1000" in story_comments
     assert "#1001" in story_comments
+    assert "implemented" in story_comments
     calls = world.calls()
     prepared = [
         index
@@ -276,7 +305,9 @@ def test_split_story_creates_two_children_with_pushed_failing_tests(world):
         and call.get("argv", [None, None])[0:2] == ["talk", "mechanic"]
     ]
     finished = [
-        index for index, call in enumerate(calls) if call.get("event") == "mechanic_finished"
+        index
+        for index, call in enumerate(calls)
+        if call.get("event") == "agent_finished" and call.get("role") == "mechanic"
     ]
     planned = next(
         index
@@ -285,10 +316,10 @@ def test_split_story_creates_two_children_with_pushed_failing_tests(world):
         and call.get("argv", [None, None, None])[0:3] == ["issue", "comment", "140"]
         and "Planned:" in call["argv"][call["argv"].index("--body") + 1]
     )
-    assert len(finished) == 3
+    assert len(finished) == 5
     assert len(prepared) == 2
     assert max(prepared) < min(mechanic_started)
-    assert max(finished) < planned
+    assert finished[2] < planned < finished[3]
     assert "Starting 2 mechanics in parallel" in result.stdout
     assert "Mechanic barrier: all 2 slices settled" in result.stdout
     mechanic_teams = [
@@ -297,8 +328,8 @@ def test_split_story_creates_two_children_with_pushed_failing_tests(world):
         if call.get("tool") == "aarmy"
         and call.get("argv", [None, None])[0:2] == ["talk", "mechanic"]
     ]
-    assert mechanic_teams.count("story-1000-domain") == 2
-    assert mechanic_teams.count("story-1001-ui") == 1
+    assert mechanic_teams.count("story-1000-domain") == 3
+    assert mechanic_teams.count("story-1001-ui") == 2
 
 
 @pytest.mark.parametrize("ui_fails", [False, True])
@@ -354,7 +385,11 @@ def test_parallel_mechanics_settle_before_reporting_ordered_failures(world, ui_f
     assert not any("Planned:" in comment for comment in world.issue(145)["comments"])
     assert any("Stopped: AGENT_FAILED" in comment for comment in world.issue(145)["comments"])
     assert not any("Stopped: AGENT_FAILED" in comment for comment in world.issue(1000)["comments"])
-    finished = [call for call in world.calls() if call.get("event") == "mechanic_finished"]
+    finished = [
+        call
+        for call in world.calls()
+        if call.get("event") == "agent_finished" and call.get("role") == "mechanic"
+    ]
     assert len(finished) == 2
     mechanic_calls = [
         call
@@ -421,7 +456,14 @@ def test_explicit_issue_number_wins_over_lowest(world):
         files={"src/lib/x.spec.ts": "// failing\n"},
         test_files=["src/lib/x.spec.ts"],
     )
-    world.scripted_test_outcome("src/lib/x.spec.ts", "fail")
+    world.scripted_test_outcome("src/lib/x.spec.ts", ["fail", "pass"])
+    world.planner_answers_delegate(20, [delegate_slice(20, "domain", mechanic_signals())])
+    world.agent_implements(
+        "story-20-domain",
+        "mechanic",
+        files={"src/lib/x.ts": "export const x = 1;\n"},
+        changed_files=["src/lib/x.ts"],
+    )
 
     result = run_flow(world, "20")
 
@@ -662,7 +704,14 @@ def test_mechanic_corrects_repairable_failure_on_first_retry(world):
     world.mechanic_writes(
         slug, files={test_file: "// corrected attempt two\n"}, test_files=[test_file]
     )
-    world.scripted_test_outcome(test_file, "fail")
+    world.scripted_test_outcome(test_file, ["fail", "pass"])
+    world.planner_answers_delegate(91, [delegate_slice(91, "domain", mechanic_signals())])
+    world.agent_implements(
+        "story-91-domain",
+        "mechanic",
+        files={"src/lib/retry.ts": "export const retry = (n: number) => n;\n"},
+        changed_files=["src/lib/retry.ts"],
+    )
 
     result = run_flow(world)
 
@@ -673,7 +722,7 @@ def test_mechanic_corrects_repairable_failure_on_first_retry(world):
         if call.get("tool") == "aarmy"
         and call.get("argv", [None, None])[0:2] == ["talk", "mechanic"]
     ]
-    assert len(mechanic_calls) == 2
+    assert len(mechanic_calls) == 3
     assert {call["argv"][call["argv"].index("--team") + 1] for call in mechanic_calls} == {slug}
     retry_prompt = mechanic_calls[1]["prompt"]
     normalized_retry_prompt = " ".join(retry_prompt.split())
@@ -699,7 +748,14 @@ def test_mechanic_can_succeed_only_on_second_retry(world):
     world.mechanic_writes(
         slug, files={test_file: "// corrected attempt three\n"}, test_files=[test_file]
     )
-    world.scripted_test_outcome(test_file, "fail")
+    world.scripted_test_outcome(test_file, ["fail", "pass"])
+    world.planner_answers_delegate(92, [delegate_slice(92, "domain", mechanic_signals())])
+    world.agent_implements(
+        "story-92-domain",
+        "mechanic",
+        files={"src/lib/final-retry.ts": "export const done = true;\n"},
+        changed_files=["src/lib/final-retry.ts"],
+    )
 
     result = run_flow(world)
 
@@ -710,7 +766,7 @@ def test_mechanic_can_succeed_only_on_second_retry(world):
         if call.get("tool") == "aarmy"
         and call.get("argv", [None, None])[0:2] == ["talk", "mechanic"]
     ]
-    assert len(mechanic_calls) == 3
+    assert len(mechanic_calls) == 4
     assert "passed validation on attempt 3" in result.stdout
 
 
@@ -974,7 +1030,14 @@ def test_leftover_planner_worktree_from_a_dead_run_does_not_poison_the_next_one(
         files={"src/lib/leftover.spec.ts": "// failing\n"},
         test_files=["src/lib/leftover.spec.ts"],
     )
-    world.scripted_test_outcome("src/lib/leftover.spec.ts", "fail")
+    world.scripted_test_outcome("src/lib/leftover.spec.ts", ["fail", "pass"])
+    world.planner_answers_delegate(130, [delegate_slice(130, "domain", mechanic_signals())])
+    world.agent_implements(
+        "story-130-domain",
+        "mechanic",
+        files={"src/lib/leftover.ts": "export const leftover = true;\n"},
+        changed_files=["src/lib/leftover.ts"],
+    )
 
     result = run_flow(world)
 
@@ -1000,3 +1063,321 @@ def test_a_gh_failure_mid_run_stops_the_flow_as_a_tool_failure(world):
     assert result.returncode == 26, result.stdout + result.stderr
     assert "❌ TOOL_FAILED (exit 26)" in result.stdout
     assert any("stopped" in c.lower() for c in world.issue(150)["comments"])
+
+
+# --- block 1 validates the failing-test branch itself (issues #377, #380) --------
+
+
+def test_lint_broken_acceptance_tests_are_rejected_in_block_1_and_repaired(world):
+    _given_single_domain_slice(world, 210, "Lint-clean acceptance tests")
+    slug = "story-210-domain"
+    test_file = "src/lib/wild-assert.spec.ts"
+    # attempt 1: the tests fail their own change-scoped lint (for a missing
+    # module, a bound `any` import is flagged, never suppressed)
+    world.mechanic_writes(
+        slug,
+        files={test_file: "const mod: any = 1;\nexpect(mod.missing()).toBe(true);\n"},
+        test_files=[test_file],
+    )
+    world.given_gate_outcomes(
+        **{
+            "lint:changed": [
+                "fail",
+                "pass",
+            ]
+        }
+    )
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// corrective attempt: unknown-typed dynamic import\n"},
+        test_files=[test_file],
+    )
+    world.scripted_test_outcome(test_file, ["fail", "pass"])
+    world.planner_answers_delegate(210, [delegate_slice(210, "domain", mechanic_signals())])
+    world.agent_implements(
+        slug,
+        "mechanic",
+        files={"src/lib/wild.ts": "export const wild = (n: number) => n;\n"},
+        changed_files=["src/lib/wild.ts"],
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "TESTS_INVALID: lint:changed failed on the acceptance tests" in result.stdout
+    # the diagnostic carries both streams: eslint writes the error body to
+    # stderr and its counting summary to stdout, and neither may be dropped
+    assert "no-unsafe-call" in result.stdout
+    assert "1 problem found in 1 file" in result.stdout
+    assert "🔁 Mechanic #210 retrying after attempt 1" in result.stdout
+    assert "🧪 Gates: lint:changed ✔" in result.stdout
+    assert "❌ BLOCKED" not in result.stdout
+    assert world.branch_exists_on_origin(slug)
+
+
+def test_acceptance_tests_that_always_fail_lint_exhaust_the_mechanic(world):
+    _given_single_domain_slice(world, 211, "Tests that never lint clean")
+    slug = "story-211-domain"
+    test_file = "src/lib/dirty.spec.ts"
+    for index in range(3):
+        world.mechanic_writes(
+            slug,
+            files={test_file: f"const mod: any = {index};\nexpect(mod.missing()).toBe(true);\n"},
+            test_files=[test_file],
+        )
+    world.given_gate_outcomes(**{"lint:changed": ["fail", "fail", "fail"]})
+
+    result = run_flow(world)
+
+    assert result.returncode == 31, result.stdout + result.stderr
+    assert "TESTS_INVALID (exit 31)" in result.stdout
+    assert "exhausted 3 attempts" in result.stdout
+    assert "Stopped: TESTS_INVALID" in "\n".join(world.issue(211)["comments"])
+    # block 3 never started: the flow stopped in block 1, after exactly the
+    # mechanic's three attempts and before any signal planning turn
+    signal_turns = [
+        call
+        for call in world.calls()
+        if call.get("tool") == "aarmy"
+        and call["argv"][call["argv"].index("--schema") + 1].endswith("delegate.json")
+    ]
+    assert signal_turns == []
+    assert len(_mechanic_talks(world)) == 3
+
+
+def _mechanic_talks(world) -> list[dict]:
+    return [
+        call
+        for call in world.calls()
+        if call.get("tool") == "aarmy" and call["argv"][0:2] == ["talk", "mechanic"]
+    ]
+
+
+def test_lint_suppression_directives_in_acceptance_tests_are_rejected(world):
+    _given_single_domain_slice(world, 212, "No suppression in acceptance tests")
+    slug = "story-212-domain"
+    test_file = "src/lib/suppressed.spec.ts"
+    # the #377 shape: a directive that only holds while the module is missing
+    world.mechanic_writes(
+        slug,
+        files={
+            test_file: (
+                "// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment\n"
+                "const mod: any = 1;\nexpect(mod.missing()).toBe(true);\n"
+            )
+        },
+        test_files=[test_file],
+    )
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// corrected, suppression-free\n"},
+        test_files=[test_file],
+    )
+    world.scripted_test_outcome(test_file, ["fail", "pass"])
+    world.planner_answers_delegate(212, [delegate_slice(212, "domain", mechanic_signals())])
+    world.agent_implements(
+        slug,
+        "mechanic",
+        files={"src/lib/suppressed.ts": "export const suppressed = true;\n"},
+        changed_files=["src/lib/suppressed.ts"],
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (
+        "TESTS_INVALID: suppressed.spec.ts contains the lint suppression directive" in result.stdout
+    )
+    assert "eslint-disable" in result.stdout
+    assert "Stopped: TESTS_INVALID" not in "\n".join(world.issue(212)["comments"])
+
+
+def test_a_component_spec_that_imports_in_the_browser_is_rejected(world):
+    world.given_story(213, title="Component in browser context", labels=["story"])
+    world.planner_answers_whose_call(
+        213,
+        owner="orchestrator",
+        category="none",
+        reason="r",
+        question="",
+        options=[],
+        recommendation="",
+    )
+    world.planner_answers_slices(
+        213,
+        spans_domain_and_ui=False,
+        slices=[
+            {
+                "layer": "ui",
+                "title": "Component in browser context",
+                "brief": "b",
+                "acceptance": ["a"],
+                "test_kind": "playwright",
+            }
+        ],
+    )
+    slug = "story-213-ui"
+    rejected = "src/routes/status-badge-import.e2e.ts"
+    corrected = "src/routes/status-badge-harness.e2e.ts"
+    world.mechanic_writes(
+        slug,
+        files={
+            rejected: (
+                "test('importable', async ({ page }) => {\n"
+                "  await page.goto('/');\n"
+                "  const canImport = await page.evaluate(async () => {\n"
+                "    return Boolean(await import('$lib/components/StatusBadge.svelte'));\n"
+                "  });\n"
+                "  expect(canImport).toBe(true);\n"
+                "});\n"
+            )
+        },
+        test_files=[rejected],
+    )
+    world.mechanic_writes(
+        slug,
+        files={
+            corrected: (
+                "test('renders badge', async ({ page }) => {\n"
+                "  await page.goto(\n"
+                "    '/dev/component-harness?component=components/StatusBadge'\n"
+                "  );\n"
+                "  await expect(page.getByText('harness: component not found')).toBeVisible();\n"
+                "});\n"
+            )
+        },
+        test_files=[corrected],
+        delete=[rejected],
+    )
+    world.scripted_test_outcome(corrected, ["fail", "pass"])
+    world.planner_answers_delegate(213, [delegate_slice(213, "ui", mechanic_signals())])
+    world.agent_implements(
+        slug,
+        "mechanic",
+        files={"src/lib/components/StatusBadge.svelte": "<span>ok</span>\n"},
+        changed_files=["src/lib/components/StatusBadge.svelte"],
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (
+        "TESTS_INVALID: status-badge-import.e2e.ts imports the product with page.evaluate"
+        in result.stdout
+    )
+    assert "/dev/component-harness" in result.stdout
+    # the accepted harness-based failing coverage later passed after
+    # implementation: the flow reached IMPLEMENTED without touching the test
+    assert "🏁 Implemented #213" in result.stdout
+
+
+def test_a_ui_route_fixture_is_rejected_like_a_production_file(world):
+    world.given_story(214, title="No invented routes", labels=["story"])
+    world.planner_answers_whose_call(
+        214,
+        owner="orchestrator",
+        category="none",
+        reason="r",
+        question="",
+        options=[],
+        recommendation="",
+    )
+    world.planner_answers_slices(
+        214,
+        spans_domain_and_ui=False,
+        slices=[
+            {
+                "layer": "ui",
+                "title": "No invented routes",
+                "brief": "b",
+                "acceptance": ["a"],
+                "test_kind": "playwright",
+            }
+        ],
+    )
+    slug = "story-214-ui"
+    test_file = "src/routes/status-badge.e2e.ts"
+    fixture = "src/routes/status-badge-harness-fixture/+page.svelte"
+    world.mechanic_writes(
+        slug,
+        files={
+            fixture: "<span>fixture</span>\n",
+            test_file: (
+                "test('renders badge', async ({ page }) => {\n"
+                "  await page.goto('/my-bad-fixture');\n"
+                "  await expect(page.getByText('fixture')).toBeVisible();\n"
+                "});\n"
+            ),
+        },
+        test_files=[fixture, test_file],
+    )
+    world.mechanic_writes(
+        slug,
+        files={
+            test_file: (
+                "test('renders badge', async ({ page }) => {\n"
+                "  await page.goto(\n"
+                "    '/dev/component-harness?component=components/StatusBadge'\n"
+                "  );\n"
+                "  await expect(page.getByText('ok')).toBeVisible();\n"
+                "});\n"
+            )
+        },
+        test_files=[test_file],
+        delete=["src/routes/status-badge-harness-fixture/+page.svelte"],
+    )
+    world.scripted_test_outcome(test_file, ["fail", "pass"])
+    world.planner_answers_delegate(214, [delegate_slice(214, "ui", mechanic_signals())])
+    world.agent_implements(
+        slug,
+        "mechanic",
+        files={"src/lib/components/StatusBadge.svelte": "<span>ok</span>\n"},
+        changed_files=["src/lib/components/StatusBadge.svelte"],
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (
+        "non-test file changed on story-214-ui: "
+        "src/routes/status-badge-harness-fixture/+page.svelte"
+    ) in result.stdout
+    assert "TESTS_NOT_PUSHED: non-test file changed" in result.stdout
+    assert "🏁 Implemented #214" in result.stdout
+
+
+def test_a_committed_non_test_file_across_a_retry_is_caught_by_the_branch_delta(world):
+    _given_single_domain_slice(world, 215, "Branch delta over a retry")
+    slug = "story-215-domain"
+    test_file = "src/lib/delta.spec.ts"
+    world.mechanic_writes(
+        slug,
+        files={
+            test_file: "// failing\n",
+            "quality/suppression-baseline.json": '{"maxUnjustified": 8}\n',
+        },
+        test_files=[test_file],
+    )
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// clean retry: the policy file is gone\n"},
+        test_files=[test_file],
+        delete=["quality/suppression-baseline.json"],
+    )
+    world.scripted_test_outcome(test_file, ["fail", "pass"])
+    world.planner_answers_delegate(215, [delegate_slice(215, "domain", mechanic_signals())])
+    world.agent_implements(
+        slug,
+        "mechanic",
+        files={"src/lib/delta.ts": "export const delta = true;\n"},
+        changed_files=["src/lib/delta.ts"],
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "quality/suppression-baseline.json not found on branch" not in result.stdout
+    assert "TESTS_NOT_PUSHED: " in result.stdout
+    assert "non-test file changed on story-215-domain: quality/suppression-baseline.json" in (
+        result.stdout
+    )
