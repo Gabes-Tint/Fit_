@@ -272,6 +272,22 @@ def test_ci_red_after_the_one_rerun_stops(world):
     assert "pr merge" not in gh_argv
 
 
+def test_checks_that_are_not_registered_yet_are_polled_not_fatal(world):
+    """The real `gh pr checks` exits 1 with no output seconds after a PR
+    opens; the driver must poll, not stop."""
+    _given_planned_story(world, 1000)
+    _delegate(world, 1000, "domain", mechanic_signals())
+    _implement(
+        world, "story-1000-domain", "mechanic", {"src/lib/delivered.ts": "export const ok = 1;\n"}
+    )
+    world.given_checks(500, ["none", "pass"])
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _pr(world, 500)["state"] == "MERGED"
+
+
 def test_ci_pending_past_the_timeout_is_a_tool_failure(world):
     _given_planned_story(world, 1000)
     _delegate(world, 1000, "domain", mechanic_signals())

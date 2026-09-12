@@ -348,49 +348,52 @@ def _stop_for_gabriel(story, why: str) -> None:
 
 def _claims(story, record: RunRecord) -> None:
     """The driver's own read of the PR's checks: all-green required, one
-    counted rerun, pending past the timeout is a tool failure."""
+    counted rerun, pending past the timeout is a tool failure. Checks that
+    have not registered yet - the normal state seconds after a PR opens -
+    are pending like any other."""
     pr_number = int(record.delivery["pr_number"])
     branch = record.delivery["integration_branch"]
     deadline = time.monotonic() + settings.CI_TIMEOUT
     while True:
         checks = github.pr_checks(pr_number)
-        _verify_check_shape(story, pr_number, checks)
         failed = [check.name for check in checks if check.state == "FAILURE"]
         pending = [check.name for check in checks if check.state == "PENDING"]
-        if not failed and not pending:
-            _require_all_green(story, pr_number, checks)
-            narrate.line(f"🟢 CI green on PR #{pr_number} ({len(checks)} checks)")
-            return
+        if not checks:
+            pending = ["(no checks registered yet)"]
         if failed:
-            if record.delivery.get("rerun_used"):
-                raise FlowFailure(
-                    Outcome.CAPACITY_EXHAUSTED,
-                    f"CI is red on PR #{pr_number} after the one allowed rerun: "
-                    f"{', '.join(failed)}",
-                    story.number,
-                    add_blocked=True,
-                )
-            _rerun(story, record, branch, failed)
+            _react_to_red(story, record, branch, pr_number, failed)
             continue
-        if time.monotonic() > deadline:
-            raise FlowFailure(
-                Outcome.TOOL_FAILED,
-                f"CI checks on PR #{pr_number} stayed pending past "
-                f"{settings.CI_TIMEOUT}s: {', '.join(pending)}",
-                story.number,
-                add_blocked=True,
-            )
-        time.sleep(settings.CI_POLL_SECONDS)
+        if pending:
+            _await_checks(story, pr_number, deadline, pending)
+            continue
+        _require_all_green(story, pr_number, checks)
+        narrate.line(f"🟢 CI green on PR #{pr_number} ({len(checks)} checks)")
+        return
 
 
-def _verify_check_shape(story, pr_number: int, checks: list) -> None:
-    if not checks:
+def _react_to_red(
+    story, record: RunRecord, branch: str, pr_number: int, failed: list[str]
+) -> None:
+    if record.delivery.get("rerun_used"):
         raise FlowFailure(
-            Outcome.TOOL_FAILED,
-            f"PR #{pr_number} reports no checks; nothing to trust",
+            Outcome.CAPACITY_EXHAUSTED,
+            f"CI is red on PR #{pr_number} after the one allowed rerun: {', '.join(failed)}",
             story.number,
             add_blocked=True,
         )
+    _rerun(story, record, branch, failed)
+
+
+def _await_checks(story, pr_number: int, deadline: float, pending: list[str]) -> None:
+    if time.monotonic() > deadline:
+        raise FlowFailure(
+            Outcome.TOOL_FAILED,
+            f"CI checks on PR #{pr_number} stayed pending past "
+            f"{settings.CI_TIMEOUT}s: {', '.join(pending)}",
+            story.number,
+            add_blocked=True,
+        )
+    time.sleep(settings.CI_POLL_SECONDS)
 
 
 def _require_all_green(story, pr_number: int, checks: list) -> None:

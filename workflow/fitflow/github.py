@@ -159,9 +159,34 @@ def view_pr(number: int) -> PullRequest:
 
 def pr_checks(number: int) -> list[Check]:
     """The PR's checks. Parsed from `gh pr checks --json name,state`, whose
-    state is one of SUCCESS, FAILURE, PENDING or SKIPPED."""
-    out = _run("pr", "checks", str(number), "--json", "name,state")
-    return [Check(row["name"], row["state"]) for row in json.loads(out)]
+    state is one of SUCCESS, FAILURE, PENDING or SKIPPED.
+
+    `gh pr checks` exits 8 when checks are pending or failing - that is a
+    normal answer, not an error, and the JSON it prints is still the
+    verdict. Exit 1 before CI has registered any check ("no checks
+    reported") is also normal moments after a PR opens; the caller polls.
+    Any other exit is a real gh failure."""
+    result = subprocess.run(
+        ["gh", "pr", "checks", str(number), "--json", "name,state", "-R", settings.FIT_GITHUB_REPO],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode in (0, 1, 8):
+        if result.returncode == 1 and not result.stdout.strip():
+            # "no checks reported on the '<branch>' branch": CI has not
+            # registered anything yet; the caller polls
+            return []
+        try:
+            rows = json.loads(result.stdout)
+        except ValueError as error:
+            raise RuntimeError(
+                f"gh pr checks {number} printed unparsable output: {result.stdout!r}"
+            ) from error
+        return [Check(row["name"], row["state"]) for row in rows]
+    raise RuntimeError(
+        f"gh pr checks {number} failed (exit {result.returncode}): "
+        f"{result.stderr.strip() or result.stdout.strip()}"
+    )
 
 
 def failed_run(branch: str) -> int | None:

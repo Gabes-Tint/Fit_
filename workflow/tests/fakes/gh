@@ -186,12 +186,18 @@ def cmd_pr_checks(argv, world):
         "fail": {"all-green": "FAILURE", "static": "SUCCESS", "e2e": "SUCCESS"},
         "pending": {"all-green": "PENDING", "static": "SUCCESS", "e2e": "SUCCESS"},
         "no_all_green": {"static": "SUCCESS", "e2e": "SUCCESS"},
+        "none": {},
     }.get(outcome)
     if states is None:
         print(f"fake gh: unknown check outcome {outcome!r}", file=sys.stderr)
         return 1
+    # the real `gh pr checks` exits 8 while checks are pending or failing,
+    # and exits 1 with no output before CI has registered any check; the
+    # driver's parsing must survive both
+    if not states:
+        return 1
     print(json.dumps([{"name": name, "state": state} for name, state in states.items()]))
-    return 0
+    return 0 if all(state == "SUCCESS" for state in states.values()) else 8
 
 
 def cmd_pr_merge(argv, world):
