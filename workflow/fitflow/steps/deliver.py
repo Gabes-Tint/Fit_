@@ -20,14 +20,13 @@ from fitflow import (
     narrate,
     review,
     settings,
+    turns,
     worktrees,
 )
 from fitflow.outcome import FlowFailure, Outcome
 from fitflow.review import Finding
 from fitflow.runstate import RunRecord
 from fitflow.steps.implement import review_fix_turn, verify_frozen
-
-_MAX_REVIEWER_ATTEMPTS = 3
 
 
 def run(story, record: RunRecord) -> Outcome:
@@ -213,7 +212,7 @@ def _reviewer_turn(
     a drifted session stops the run."""
     diagnostic = ""
     reviewer_session = ""
-    for attempt in range(1, _MAX_REVIEWER_ATTEMPTS + 1):
+    for attempt in range(1, turns.BUDGET + 1):
         prompt_name = "review" if attempt == 1 else "review_correct"
         reply, session = agents.talk(
             team,
@@ -239,10 +238,8 @@ def _reviewer_turn(
                 ),
             )
         except review.ReviewError as rejection:
-            if attempt == _MAX_REVIEWER_ATTEMPTS:
-                narrate.line(
-                    f"🛑 Reviewer exhausted {_MAX_REVIEWER_ATTEMPTS} attempts — {rejection}"
-                )
+            if attempt == turns.BUDGET:
+                narrate.line(f"🛑 Reviewer exhausted {turns.BUDGET} attempts — {rejection}")
                 raise FlowFailure(
                     Outcome.TOOL_FAILED,
                     f"reviewer reply never satisfied the contract: {rejection}",

@@ -26,13 +26,13 @@ from fitflow import (
     layers,
     narrate,
     runstate,
+    turns,
     worktrees,
 )
 from fitflow.acceptance import TEST_FILE
 from fitflow.outcome import FlowFailure, Outcome
 from fitflow.runstate import RunRecord, SliceRecord, retained_inputs
 
-_MAX_ATTEMPTS_PER_ROLE = 3
 _SUCCESSOR = {"mechanic": "builder", "builder": "solver"}
 _FORBIDDEN_PREFIXES = ("workflow/", "quality/", ".github/", "scripts/")
 _FORBIDDEN_FILES = {
@@ -180,7 +180,7 @@ def _run_slice(record: RunRecord, piece: SliceRecord) -> None:
         with record.transition():
             piece.diagnostics.append(diagnostic)
         narrate.line(f"🩺 #{piece.number} ({piece.layer}) diagnostic: {diagnostic}")
-        if attempt < _MAX_ATTEMPTS_PER_ROLE:
+        if attempt < turns.BUDGET:
             with record.transition():
                 piece.move("correcting")
                 record.save()
@@ -196,7 +196,7 @@ def narrate_turn_start(piece: SliceRecord, attempt: int) -> None:
     with narrate.grouped():
         narrate.line(
             f"🔧 {piece.role.capitalize()} #{piece.number} ({piece.layer}) "
-            f"attempt {attempt}/{_MAX_ATTEMPTS_PER_ROLE}"
+            f"attempt {attempt}/{turns.BUDGET}"
         )
 
 

@@ -10,12 +10,11 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from fitflow import acceptance, agents, audit, gates, github, narrate, worktrees
+from fitflow import acceptance, agents, audit, gates, github, narrate, turns, worktrees
 from fitflow.acceptance import TEST_FILE
 from fitflow.outcome import FlowFailure, Outcome
 from fitflow.slice import Slice
 
-_MAX_ATTEMPTS = 3
 _REPAIRABLE_OUTCOMES = {
     Outcome.TESTS_NOT_PUSHED,
     Outcome.TESTS_DO_NOT_FAIL,
@@ -90,30 +89,19 @@ def _failure(error: Exception) -> str:
 
 def _run_mechanic(prepared: PreparedSlice) -> None:
     piece = prepared.piece
-    diagnostic = ""
-    for attempt in range(1, _MAX_ATTEMPTS + 1):
+
+    def attempt_turn(attempt: int, diagnostic: str) -> None:
         with narrate.grouped():
             narrate.line(
-                f"🔧 Mechanic #{piece.number} ({piece.layer}) attempt {attempt}/{_MAX_ATTEMPTS}"
+                f"🔧 Mechanic #{piece.number} ({piece.layer}) attempt {attempt}/{turns.BUDGET}"
             )
-        try:
-            _run_attempt(prepared, attempt, diagnostic)
-        except FlowFailure as failure:
-            if failure.outcome not in _REPAIRABLE_OUTCOMES:
-                raise
-            diagnostic = f"{failure.outcome.name}: {failure.why}"
-            if attempt == _MAX_ATTEMPTS:
-                narrate.line(
-                    f"🛑 Mechanic #{piece.number} exhausted {_MAX_ATTEMPTS} attempts — {diagnostic}"
-                )
-                raise
-            narrate.line(
-                f"🔁 Mechanic #{piece.number} retrying after attempt {attempt} — {diagnostic}"
-            )
-            continue
-        if attempt > 1:
-            narrate.line(f"✅ Mechanic #{piece.number} passed validation on attempt {attempt}")
-        return
+        _run_attempt(prepared, attempt, diagnostic)
+
+    turns.repair_loop(
+        f"Mechanic #{piece.number}",
+        attempt_turn,
+        lambda failure: failure.outcome in _REPAIRABLE_OUTCOMES,
+    )
 
 
 def _run_attempt(prepared: PreparedSlice, attempt: int, diagnostic: str) -> None:
