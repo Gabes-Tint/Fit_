@@ -118,6 +118,23 @@ def verify_team_ownership(piece: "SliceRecord") -> None:
 
 # --- per-slice state machine -------------------------------------------------
 
+# Block 3's level loop, exactly as narrated in implement._run_slice:
+# assigned -> running -> validating -> (correcting -> running | escalating ->
+# (assigned | failed) | succeeded | failed). Block 2's delegation re-confirms
+# "assigned" on the freshly created record (a no-op transition), and block 4's
+# review_fix_turn is the one sanctioned exit from "succeeded", into "fixing"
+# and back through "validating". Every unlisted transition is prohibited.
+_TRANSITIONS: dict[str, frozenset[str]] = {
+    "assigned": frozenset({"assigned", "running"}),
+    "running": frozenset({"validating", "failed"}),
+    "validating": frozenset({"correcting", "escalating", "succeeded", "failed"}),
+    "correcting": frozenset({"running"}),
+    "escalating": frozenset({"assigned", "failed"}),
+    "succeeded": frozenset({"fixing"}),
+    "fixing": frozenset({"validating"}),
+    "failed": frozenset(),
+}
+
 
 @dataclass
 class SliceRecord:
@@ -151,6 +168,15 @@ class SliceRecord:
 
     def turn_identity(self, role: str, revision: int, attempt: int) -> dict:
         return {"layer": self.layer, "role": role, "revision": revision, "attempt": attempt}
+
+    def move(self, state: str) -> None:
+        """The only sanctioned way to change `state`. Callers must already
+        hold the run's `transition()` lock; an unlisted jump is a driver bug,
+        not a repairable condition."""
+        allowed = _TRANSITIONS.get(self.state, frozenset())
+        if state not in allowed:
+            raise RuntimeError(f"prohibited slice transition {self.state} → {state}")
+        self.state = state
 
 
 @dataclass

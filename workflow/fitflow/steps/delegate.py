@@ -271,7 +271,7 @@ def _decide(record: RunRecord, story, proposals: list[dict]) -> None:
         piece.role = decision.role
         piece.revision = 0
         piece.attempts = 0
-        piece.state = "assigned"
+        piece.move("assigned")
         piece.assignments.append(envelope)
         narrate.line(f"🎯 #{piece.number} ({piece.layer}) → {decision.role} · {decision.reason}")
     record.save()

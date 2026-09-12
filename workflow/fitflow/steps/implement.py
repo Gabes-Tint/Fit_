@@ -153,7 +153,7 @@ def _run_slice(record: RunRecord, piece: SliceRecord) -> None:
         with record.transition():
             piece.attempts += 1
             attempt = piece.attempts
-            piece.state = "running"
+            piece.move("running")
             record.save()
         prompt_name = "implement" if attempt == 1 else "correct_implementation"
         narrate_turn_start(piece, attempt)
@@ -169,7 +169,7 @@ def _run_slice(record: RunRecord, piece: SliceRecord) -> None:
             # "failed" instead of being left in an active state, and the
             # settled turn's verdict becomes the diagnostic, not a green
             with record.transition():
-                piece.state = "failed"
+                piece.move("failed")
                 piece.turns[-1]["result"] = "failed"
                 piece.turns[-1]["why"] = failure.why
                 record.save()
@@ -182,7 +182,7 @@ def _run_slice(record: RunRecord, piece: SliceRecord) -> None:
         narrate.line(f"🩺 #{piece.number} ({piece.layer}) diagnostic: {diagnostic}")
         if attempt < _MAX_ATTEMPTS_PER_ROLE:
             with record.transition():
-                piece.state = "correcting"
+                piece.move("correcting")
                 record.save()
             narrate.line(
                 f"🔁 {piece.role.capitalize()} #{piece.number} ({piece.layer}) "
@@ -212,7 +212,7 @@ def _launch_turn(
     except FlowFailure as failure:
         with record.transition():
             record.end_turn(piece, identity, "failed", failure.why)
-            piece.state = "failed"
+            piece.move("failed")
             record.save()
         raise _blocked(failure) from failure
     try:
@@ -224,7 +224,7 @@ def _launch_turn(
     except FlowFailure as failure:
         with record.transition():
             record.end_turn(piece, identity, "failed", failure.why, session)
-            piece.state = "failed"
+            piece.move("failed")
             record.save()
         raise _blocked(failure) from failure
     return reply, session
@@ -323,7 +323,7 @@ def review_fix_turn(record: RunRecord, piece: SliceRecord, diagnostic: str) -> N
     consume block 3's attempt budget - the review loop has its own."""
     _pre_turn_barrier(record, piece)
     with record.transition():
-        piece.state = "fixing"
+        piece.move("fixing")
         piece.diagnostics.append(diagnostic)
         attempt = piece.attempts + 1
         identity = record.begin_turn(piece, piece.role, attempt, "review_fix")
@@ -336,14 +336,14 @@ def review_fix_turn(record: RunRecord, piece: SliceRecord, diagnostic: str) -> N
         failure = _validate_turn(record, piece, reply, frozen_ok=True)
     except FlowFailure as failure:
         with record.transition():
-            piece.state = "failed"
+            piece.move("failed")
             piece.turns[-1]["result"] = "failed"
             piece.turns[-1]["why"] = failure.why
             record.save()
         raise
     if failure is not None:
         with record.transition():
-            piece.state = "failed"
+            piece.move("failed")
             piece.turns[-1]["result"] = "failed"
             piece.turns[-1]["why"] = failure
             record.save()
@@ -359,7 +359,7 @@ def review_fix_turn(record: RunRecord, piece: SliceRecord, diagnostic: str) -> N
 def _escalate_or_stop(record: RunRecord, piece: SliceRecord, diagnostic: str) -> None:
     if piece.role == "solver":
         with record.transition():
-            piece.state = "failed"
+            piece.move("failed")
             record.save()
         raise FlowFailure(
             Outcome.CAPACITY_EXHAUSTED,
@@ -370,10 +370,11 @@ def _escalate_or_stop(record: RunRecord, piece: SliceRecord, diagnostic: str) ->
     old_role = piece.role
     successor = _SUCCESSOR[old_role]
     with record.transition():
+        piece.move("escalating")
         piece.role = successor
         piece.revision += 1
         piece.attempts = 0
-        piece.state = "assigned"
+        piece.move("assigned")
     prior = piece.assignments[-1]
     envelope = {
         "version": 1,
@@ -426,7 +427,7 @@ def _validate_turn(
     Returns a repairable diagnostic; contract violations and tooling
     failures raise at once and never consume a correction."""
     with record.transition():
-        piece.state = "validating"
+        piece.move("validating")
         record.save()
     narrate.line(f"📦 Validating #{piece.number} ({piece.layer})")
     _check_reply_structure(record, piece, reply)
@@ -564,7 +565,7 @@ def _freeze(record: RunRecord, piece: SliceRecord) -> None:
     with record.transition():
         piece.implementation_sha = sha
         piece.frozen_commit = sha
-        piece.state = "succeeded"
+        piece.move("succeeded")
         record.save()
     narrate.line(f"🔒 #{piece.number} ({piece.layer}) frozen at {sha[:12]}")
 
