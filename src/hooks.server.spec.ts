@@ -15,6 +15,8 @@ type RequestOptions = {
 	method?: string;
 	origin?: string;
 	authorization?: string;
+	/** The site-absolute path the request is aimed at, when it matters. */
+	path?: string;
 	/** What the route or the static middleware answered with, when it matters. */
 	resolved?: Response;
 };
@@ -23,15 +25,17 @@ function handleInput(
 	cookie: string | undefined,
 	options: RequestOptions = {}
 ): Parameters<Handle>[0] {
+	const site = `${SITE}${options.path ?? '/today'}`;
 	const headers = new Headers();
 	if (options.origin !== undefined) headers.set('origin', options.origin);
 	if (options.authorization !== undefined) headers.set('authorization', options.authorization);
 	const event = {
 		cookies: { get: vi.fn((name: string) => (name === SESSION_COOKIE ? cookie : undefined)) },
 		locals: { auth: null },
-		url: new URL(`${SITE}/today`),
-		request: new Request(`${SITE}/today`, { method: options.method ?? 'GET', headers })
+		url: new URL(site),
+		request: new Request(site, { method: options.method ?? 'GET', headers })
 	};
+
 	return {
 		event: event as unknown as Parameters<Handle>[0]['event'],
 		resolve: vi.fn(() => Promise.resolve(options.resolved ?? new Response('resolved')))
@@ -39,7 +43,6 @@ function handleInput(
 }
 
 const resolves: RequestAuthDependencies = { database: () => database, resolve: () => auth };
-
 async function errorBody(response: Response): Promise<unknown> {
 	return (await response.json()) as unknown;
 }
@@ -74,6 +77,49 @@ describe('createHandle', () => {
 		const input = handleInput(TOKEN);
 		await expect(createHandle(dependencies)(input)).rejects.toThrow('authentication failed closed');
 		expect(input.resolve).not.toHaveBeenCalled();
+	});
+});
+
+describe('createHandle dev surfaces', () => {
+	it('closes every /dev/ request when no flag names the harness as enabled', async () => {
+		const input = handleInput(undefined, { path: '/dev/component-harness?component=StatusBadge' });
+		const response = await createHandle(resolves, {})(input);
+		expect(response.status).toBe(404);
+		expect(await response.text()).toBe('Not found');
+		expect(input.resolve).not.toHaveBeenCalled();
+		expect(input.event.locals.auth).toBeNull();
+	});
+
+	it('closes /dev/ without a database lookup, so a probe costs nothing', async () => {
+		const dependencies: RequestAuthDependencies = {
+			database: vi.fn(() => database),
+			resolve: () => auth
+		};
+		const input = handleInput(undefined, { path: '/dev/component-harness' });
+		await createHandle(dependencies, {})(input);
+		expect(dependencies.database).not.toHaveBeenCalled();
+	});
+
+	it('does not let a foreign-origin state change through the harness flag either', async () => {
+		const input = handleInput(TOKEN, {
+			method: 'POST',
+			origin: 'https://evil.example',
+			path: '/dev/component-harness'
+		});
+		const response = await createHandle(resolves, { FIT_COMPONENT_HARNESS: 'yes' })(input);
+		expect(response.status).toBe(403);
+	});
+
+	it('serves /dev/ to the E2E preview servers, which set the flag', async () => {
+		const input = handleInput(undefined, { path: '/dev/component-harness?component=StatusBadge' });
+		const response = await createHandle(resolves, { FIT_COMPONENT_HARNESS: 'yes' })(input);
+		expect(await response.text()).toBe('resolved');
+	});
+
+	it('rejects any other value of the flag, not only its absence', async () => {
+		const input = handleInput(undefined, { path: '/dev/component-harness' });
+		const response = await createHandle(resolves, { FIT_COMPONENT_HARNESS: 'true' })(input);
+		expect(response.status).toBe(404);
 	});
 });
 
