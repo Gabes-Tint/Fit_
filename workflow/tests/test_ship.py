@@ -50,6 +50,18 @@ def _bun_calls(world, script: str) -> list[dict]:
     ]
 
 
+def _ci_polls(world) -> list[dict]:
+    """Every `gh run list --commit <sha>` the run made: one per poll of
+    main's own CI, so the count is how long the driver waited."""
+    return [
+        call
+        for call in world.calls()
+        if call.get("tool") == "gh"
+        and call["argv"][:2] == ["run", "list"]
+        and "--commit" in call["argv"]
+    ]
+
+
 def _comments(world, number: int = 1000) -> list[str]:
     return world.issue(number)["comments"]
 
@@ -187,6 +199,29 @@ def test_ship_to_qa_withholds_production_and_android(world):
     comment = _shipped_comment(world)
     assert "withheld by configuration" in comment
     assert "Android: skipped" in comment
+
+
+def test_ship_to_qa_does_not_wait_for_an_answer_nothing_will_read(world):
+    """Production is withheld by configuration either way, so the flake
+    signal is decided from what main's CI already says. Waiting would spend
+    FIT_FLOW_MAIN_CI_TIMEOUT on a run whose verdict changes nothing."""
+    _shippable(world)
+    world.given_main_ci(500, push="running", merge_group="success")
+
+    result = run_flow(
+        world,
+        "1000",
+        env_extra={"FIT_FLOW_SHIP_TO": "qa", "FIT_FLOW_MAIN_CI_TIMEOUT": "30"},
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    # one poll to accept main's CI, one to read the push run's current
+    # state - a run that waited would poll for the whole 30 seconds
+    assert len(_ci_polls(world)) == 2
+    ship, _ = _ship_record(world)
+    assert ship["flaky"]["decided"] == "not awaited: SHIP_TO=qa"
+    assert ship["flaky"]["flaky"] is True
+    assert "withheld by configuration" in _shipped_comment(world)
 
 
 def test_android_no_skips_the_apk_after_a_production_deploy(world):

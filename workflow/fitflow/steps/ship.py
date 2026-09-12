@@ -67,7 +67,7 @@ def _ship(story, record: RunRecord) -> list[str]:
     _await_main_ci(record, merge_sha)
     path = _release_worktree(record, merge_sha)
     _deploy(story, record, path, "qa", config.qa, merge_sha, tunnel=True)
-    flaky = _flaky(record, merge_sha)
+    flaky = _flaky(record, merge_sha, awaited=config.to_prod)
     if config.to_prod and not flaky["flaky"]:
         _deploy(story, record, path, "prod", config.prod, merge_sha, tunnel=False)
     deferred = _android(record, path, config)
@@ -387,10 +387,11 @@ def _hand_to_gabriel(story) -> None:
 # --- the flaky decision ---------------------------------------------------------
 
 
-def _flaky(record: RunRecord, merge_sha: str) -> dict:
+def _flaky(record: RunRecord, merge_sha: str, awaited: bool) -> dict:
     """Whether a retried shard is why this commit looks green, in which
     case production waits for a human. Conservative by construction: an
-    unfinished push run counts as flaky rather than as evidence of green."""
+    unfinished push run counts as flaky rather than as evidence of green.
+    Waited on only when production is what the answer would gate."""
     reran = [
         name for name in record.delivery.get("rerun_failed", []) if name.startswith(_E2E_PREFIX)
     ]
@@ -399,34 +400,51 @@ def _flaky(record: RunRecord, merge_sha: str) -> dict:
             "flaky": True,
             "why": f"block 4's one counted rerun reran {', '.join(reran)}",
         }
+    elif awaited:
+        decision = _awaited_verdict(merge_sha)
     else:
-        decision = _push_run_verdict(record, merge_sha)
+        settled, push = _verdict_now(merge_sha)
+        decision = settled or {
+            "flaky": True,
+            "why": f"main's push run for {merge_sha[:12]} has not finished ({push.url})",
+        }
+    if not awaited:
+        decision["decided"] = "not awaited: SHIP_TO=qa"
     _remember(record, "flaky", decision)
     narrate.line(("🎲 Flaky: " if decision["flaky"] else "🎯 Not flaky: ") + decision["why"])
     return decision
 
 
-def _push_run_verdict(record: RunRecord, merge_sha: str) -> dict:
+def _verdict_now(merge_sha: str) -> tuple[dict | None, object]:
     """`failOnFlakyTests` means a shard that only passed on its retry fails
     main's push run, which the merge queue's run of the same commit never
-    hit - so a red push run beside a green queue run is the signature."""
+    hit - so a red push run beside a green queue run is the signature. The
+    verdict is None while the push run is still going and could still say
+    either; the run itself comes back with it, for whoever must wait."""
+    push, queue = _qualifying(github.ci_runs_for(merge_sha))
+    if _green(push):
+        return {"flaky": False, "why": f"main's push run for {merge_sha[:12]} is green"}, push
+    if push is None:
+        return {
+            "flaky": True,
+            "why": f"main has no push run for {merge_sha[:12]}, so nothing re-executed "
+            "this commit under the flake policy",
+        }, push
+    if not _pending(push):
+        return {
+            "flaky": True,
+            "why": f"main's push run concluded {push.conclusion!r} ({push.url}) while the "
+            f"merge_group run {queue.url if queue else '(none)'} succeeded",
+        }, push
+    return None, push
+
+
+def _awaited_verdict(merge_sha: str) -> dict:
     deadline = time.monotonic() + settings.MAIN_CI_TIMEOUT
     while True:
-        push, queue = _qualifying(github.ci_runs_for(merge_sha))
-        if _green(push):
-            return {"flaky": False, "why": f"main's push run for {merge_sha[:12]} is green"}
-        if push is None:
-            return {
-                "flaky": True,
-                "why": f"main has no push run for {merge_sha[:12]}, so nothing re-executed "
-                "this commit under the flake policy",
-            }
-        if not _pending(push):
-            return {
-                "flaky": True,
-                "why": f"main's push run concluded {push.conclusion!r} ({push.url}) while the "
-                f"merge_group run {queue.url if queue else '(none)'} succeeded",
-            }
+        decision, push = _verdict_now(merge_sha)
+        if decision is not None:
+            return decision
         if time.monotonic() > deadline:
             return {
                 "flaky": True,
@@ -603,9 +621,9 @@ def _deploy_line(record: RunRecord, name: str, label: str) -> str:
     result = _ship_value(record, name)
     if result is None:
         flaky = _ship_value(record, "flaky") or {}
-        if flaky.get("flaky"):
-            return f"{label} withheld: {flaky['why']}."
-        return f"{label} withheld by configuration (FIT_FLOW_SHIP_TO=qa)."
+        if flaky.get("decided") or not flaky.get("flaky"):
+            return f"{label} withheld by configuration (FIT_FLOW_SHIP_TO=qa)."
+        return f"{label} withheld: {flaky['why']}."
     return f"{label} {result['origin']} ✔ smoke ok."
 
 

@@ -567,7 +567,12 @@ Production is withheld when either signal shows:
 An unfinished push run at the timeout is treated as flaky rather than
 green. Withholding is not a failure: QA stays live, the run cleans up,
 comments that production was withheld and why, and ends `SHIPPED`.
-`FIT_FLOW_SHIP_TO=qa` withholds production the same way, by configuration.
+`FIT_FLOW_SHIP_TO=qa` withholds production the same way, by configuration -
+and because nothing then reads the flake signal, it is decided from what is
+already known (the rerun evidence and the push run's current state) instead
+of being waited on, recorded with `"decided": "not awaited: SHIP_TO=qa"`.
+Waiting out `FIT_FLOW_MAIN_CI_TIMEOUT` for an answer that gates nothing is
+an hour the run spends saying nothing.
 
 ### Android
 

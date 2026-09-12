@@ -136,7 +136,7 @@ flowchart TD
         deploy_qa["bun run deploy --tunnel<br/>recorded as started before it runs<br/>FIT_DEPLOY_HOST / FIT_PUBLIC_ORIGIN name QA"]
         smoke_qa{"reports/deploy/smoke.json, cleared before the deploy:<br/>written, ok, and the live release is this commit?"}
         stop_deploy["DEPLOY_FAILED<br/>needs-gabriel, assigned, never a rollback"]
-        flaky{"Flaky signal?<br/>an End-to-end job in the counted rerun, or<br/>main push red while merge_group is green"}
+        flaky{"Flaky signal?<br/>an End-to-end job in the counted rerun, or<br/>main push red while merge_group is green<br/>awaited only when production is the next box"}
         ship_to{"FIT_FLOW_SHIP_TO"}
         deploy_prod["bun run deploy<br/>recorded as started before it runs<br/>FIT_DEPLOY_HOST / FIT_PUBLIC_ORIGIN name prod"]
         smoke_prod{"smoke.json, cleared before the deploy:<br/>written and ok for this commit?"}
