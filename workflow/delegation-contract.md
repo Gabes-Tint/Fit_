@@ -1,9 +1,11 @@
 # Delegation and implementation gates
 
-Status: implemented for blocks 1-3's boundaries - selection, assignment,
+Status: implemented for blocks 1-4's boundaries - selection, assignment,
 pre-launch barrier, bounded repair loops, one-rung escalation, the final
-join and the ordinary stop/preserve rules - as of the driver behind `go.py`. Delivery
-(push, PR, review, merge) is block 4 and not implemented. The recovery/resume
+join and the ordinary stop/preserve rules, and the delivery gates (push,
+PR, review, merge) - as of the driver behind `go.py`. Block 5 (after
+merge: tag, deploy, smoke, android, worktree cleanup) is not implemented.
+The recovery/resume
 and coordinated-cancellation clauses remain future: `go.py` stops and
 preserves instead of resuming, while an external process interruption may
 leave a deliberately uncertain retained record. This page distinguishes
@@ -370,8 +372,113 @@ not a new synchronization point inside every parallel correction loop. Before
 any implementation push or PR creation, the driver checks the successful join
 and unchanged approved commits again. Any later edits invalidate delivery;
 do not silently rerun a frozen sibling. How separate changes are integrated,
-reviewed and delivered belongs to later blocks; independent green slices
+reviewed and delivered is block 4, below; independent green slices
 alone do not establish that their eventual combination passes integration.
+
+## Delivery gates (block 4)
+
+Block 4 has one agent - the reviewer - and the same discipline as blocks 2
+and 3: the agent may propose a verdict, but the driver independently
+verifies every claim and owns every transition. There is no parallel join
+here; the block is sequential, and its barriers are orderings enforced in
+code.
+
+### Pre-delivery barrier and integration
+
+Before anything is pushed, the driver re-verifies the block 3 join: every
+slice `succeeded`, its worktree clean, and `HEAD` still exactly the frozen
+commit. Then it builds one integration branch `story-<n>` in a driver-owned
+worktree: created from `origin/main`, then `git merge` of each frozen
+implementation commit in domain-then-UI order. Merging - not cherry-picking
+
+- preserves the frozen commits byte-for-byte, so the approved SHAs remain
+  the approved SHAs. A merge conflict stops the run with outcome
+  `PLAN_REJECTED` and `blocked`: independent green slices that cannot combine
+  were not independent, and that needs a revised plan in a new run, never a
+  driver-resolved edit. After the merges, every frozen commit must be an
+  ancestor of the integration head. The branch is pushed, and exactly one PR
+  is opened with `gh pr create`, its body ending `Closes #N`. The PR is the
+  run's only delivery vehicle: no stacked per-slice PRs.
+
+### The mechanical predicate
+
+Whether a reviewer runs is a deterministic driver decision recomputed from
+the retained signals, never a judgment call at delivery time: the change is
+mechanical if and only if every slice's final assignment signals still
+select row 4 - complete procedure, `technical_choice="none"`, no sensitive
+area, no uncertainty. Diff size and file count do not participate, exactly
+as in selection. Anything else - any builder or solver slice, any sensitive
+area - is reviewed.
+
+### The reviewer
+
+`workflow/agents.yaml` carries a fifth role, `reviewer` (advanced,
+read-only), required by the loader like the other four. The reviewer works
+on a driver-created team whose worktree link points at the integration
+worktree, and receives the PR's actual diff - computed by the driver from
+git, never the PR body's self-description - plus the run's acceptance and
+gate evidence.
+
+The reply is strict: exactly `verdict` (`merge` or `fix`) and `findings`;
+each finding exactly `file`, `line`, `category`, `required_fix`;
+`category` one of `correctness`, `security`, `data-loss`, `concurrency`,
+`contract`, `regression-coverage`, `threshold-policy`. A malformed reply is
+a contract rejection retried in the same reviewer session, at most three
+attempts, like the planner's signals loop; exhaustion is an external-tool
+stop, never a guessed verdict. Every finding's `file` must be in the actual
+diff - a phantom file is a contract failure. `fix` with no findings and
+`merge` with findings are both rejections. Review criteria mirror the
+repository's review guidelines: concrete correctness, security, data-loss,
+concurrency or contract defects; authorization enforced on the server; no
+threshold, snapshot, scanner-policy, container-digest or lockfile change
+accepted without justification.
+
+The reviewer is read-only by verification, not by trust: after its turn the
+driver asserts the integration worktree is clean at the pushed head. A
+reviewer that wrote anything is a contract failure.
+
+### The fix loop
+
+A `fix` verdict is the one sanctioned exit from `succeeded`. Each finding is
+routed to its slice by the layer boundaries - a finding outside every slice
+is a contract failure. Affected slices, in domain-then-UI order, each take
+one fix turn: the same role, session and worktree, the findings as the
+diagnostic, then the full block 3 validation (scope, acceptance bytes,
+gates) and a new driver-made freeze commit. The slice transitions
+`succeeded` → `fixing` → `validating` → `succeeded`; the fix turn is
+recorded with kind `review_fix` and does not consume block 3's attempt
+budget - the review loop has its own. A fix turn that fails validation ends
+the round as a repairable failure of the round, not a new escalation: the
+escalation ladder is spent by definition once block 3 succeeded.
+
+After the fixes, the driver merges the new frozen commits into the
+integration branch (the superseded commits remain ancestors), pushes, and
+re-reviews. Two review rounds are budgeted; exhaustion stops with
+`CAPACITY_EXHAUSTED` and `blocked` - a defect the implementer cannot fix
+under review is a human call, routed to `needs-gabriel`, not a capability
+escalation.
+
+### Claims, CI and merge
+
+The driver never trusts the PR's own state: it runs `gh pr checks` itself
+and reads the parsed check list. The required check `all-green` must be
+present and successful, and no check may have failed. A missing,
+unparsable or pending-past-timeout check state is an external tool failure,
+never green. On red, the driver reruns the failed checks exactly once
+(`gh run list` + `gh run rerun --failed`, the count persisted in the run
+record) and polls again; a second red stops the run with
+`CAPACITY_EXHAUSTED` and `blocked` - "then investigate" is a human act.
+
+The merge is a fixed command shape - `gh pr merge <n>`, merge queue, no
+strategy flag, never update-branch - executed only behind the pre-merge
+barrier: the PR exists for this story, its head is the integration branch's
+current push, all-green is green after at most one rerun, and the reviewer
+verdict (or the mechanical path) is recorded. Merge unreachability is
+enforced by code order, not convention. After the merge the driver comments
+on the story with the PR and the delivered commits; block 5 (tag, deploy,
+smoke, android, worktree cleanup) is not implemented and remains future.
+Success ends the run with outcome `DELIVERED` (exit 0); the story keeps
+`in-progress` until block 5 exists.
 
 An external Codex/Claude operator may select the story, start the driver and
 observe its reported progress/result. It cannot change prompts, configuration,
@@ -386,9 +493,9 @@ or a requirement for a continuous supervisor.
 ## Configuration boundary
 
 `workflow/agents.yaml` remains the sole source for backend, model and effort.
-The loader requires planner, mechanic, builder and solver entries
+The loader requires planner, mechanic, builder, solver and reviewer entries
 before any side effects, including roles that might only be reached by
-escalation. Keep exact keys, explicit nonempty values and backend-specific
+escalation or only run at delivery. Keep exact keys, explicit nonempty values and backend-specific
 effort validation. No default model or fallback to a different role is allowed.
 Capacity labels describe responsibility, not a hardcoded model family; changing
 the configured model requires a new execution.

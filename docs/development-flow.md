@@ -7,17 +7,19 @@ state, and invokes agents through `aarmy` only as bounded workers. It does not
 need an external Codex or Claude Code session to supervise or continuously
 monitor it.
 
-Blocks 1-3 are implemented today, through the block 3 all-slice barrier:
-pick and plan, delegate (role selection and the pre-launch barrier), and the
-bounded implement/validate/correct/escalate loops ending at the all-slice
-join. Blocks 4-5, beginning with the implementation-branch push and PR
-creation, describe the target architecture, not current Python behavior. The prose policy
+Blocks 1-4 are implemented today, through block 4's merge: pick and plan,
+delegate (role selection and the pre-launch barrier), the bounded
+implement/validate/correct/escalate loops ending at the all-slice join, and
+delivery (integration branch, PR, review, CI, merge). Block 5, after the
+merge - tag, deploy, smoke, android, cleanup - describes the target
+architecture, not current Python behavior. The prose policy
 behind the flow lives in `ORCHESTRATOR.md`, `AGENTS.md` and `QUALITY.md`;
 this page is the map.
 
 The [delegation and implementation gates](../workflow/delegation-contract.md)
-define block 2's selection and validation rules, bounded repairs, and the
-block 3 join. Their implemented part stops at that join; delivery is future.
+define block 2's selection and validation rules, bounded repairs, the
+block 3 join, and block 4's delivery gates. Their implemented part stops
+after the merge; what happens after a merge is future.
 
 ```mermaid
 flowchart TD
@@ -91,8 +93,8 @@ flowchart TD
         preserve["Stop; preserve worktree<br/>solver exhausted or infra/auth/<br/>network/tool failure"]
         freeze["Freeze approved slice<br/>while sibling corrects or escalates"]
         delivery_barrier{"Join all settled slices<br/>all succeeded and frozen commits unchanged?"}
-        implemented["CURRENT END — implemented<br/>local driver-owned commits frozen<br/>story remains in-progress"]
-        push["FUTURE — block 4<br/>git push, gh pr create<br/>body ends Closes #N"]
+        implemented["Block 3 end — implemented<br/>local driver-owned commits frozen<br/>story remains in-progress"]
+        push["git push, gh pr create<br/>body ends Closes #N"]
         launch -- "one loop per slice; parallel when split" --> before_turn --> implement --> turn_gate --> result
         result -- approved --> freeze --> delivery_barrier
         result -- repairable --> attempts
@@ -101,32 +103,32 @@ flowchart TD
         attempts -- exhausted --> can_escalate
         can_escalate -- yes --> escalate --> before_turn
         can_escalate -- "no: solver" --> preserve
-        delivery_barrier -- yes --> implemented
-        implemented -. "future delivery" .-> push
+        delivery_barrier -- yes --> implemented --> push
         delivery_barrier -- no --> stopped["Stop and preserve all worktrees<br/>report domain then UI"]
     end
 
     subgraph review["4. Review, CI, merge"]
-        mechanical{"More than mechanical?"}
-        reviewer["reviewer (advanced, read-only)<br/>future model resolved from configuration<br/>auth, regression coverage, thresholds, 360px"]
-        verdict{"Verdict"}
-        fix["Send fixes back to the agent"]
-        claims["Driver verifies claims<br/>gh pr checks n, read the diff"]
+        mechanical{"More than mechanical?<br/>every slice's signals still row 4"}
+        reviewer["reviewer (advanced, read-only)<br/>model resolved from configuration<br/>auth, regression coverage, thresholds, 360px"]
+        verdict{"Verdict<br/>strict schema; findings must cite the diff"}
+        fix["Fix turns in the affected slices<br/>same role, session and worktree<br/>re-validate, re-freeze, re-review"]
+        claims["Driver verifies claims<br/>gh pr checks parsed by the driver"]
         ci["ci.yml: gate.ts ci --job ...<br/>static, unit, build, mutation-security,<br/>e2e x4 browsers, security, self-test<br/>required check: all-green"]
         green{"all-green?"}
-        rerun["bun run ci:rerun-failed once,<br/>then investigate"]
+        rerun["gh run rerun --failed once,<br/>counted in the run record"]
         merge["gh pr merge n<br/>merge queue, no strategy flag,<br/>never update-branch"]
         push --> mechanical
         mechanical -- yes --> reviewer --> verdict
         mechanical -- no --> claims
         verdict -- "do not merge / fix" --> fix
+        fix --> claims
         verdict -- merge --> claims
         claims --> ci --> green
         green -- no --> rerun --> ci
         green -- yes --> merge
     end
 
-    subgraph after["5. After merge"]
+    subgraph after["5. After merge — FUTURE"]
         tag["version-tag.yml<br/>bun run version:next, patch tag"]
         qa{"main CI green?"}
         deploy_qa["bun run deploy (QA 10.10.0.198)"]
@@ -135,7 +137,7 @@ flowchart TD
         smoke["bun run deploy:smoke"]
         android["bun run android:release / make android"]
         done["bun run worktree:done slug<br/>gh issue comment: merged, deployed, next"]
-        merge --> tag --> qa
+        merge -. "future: after merge" .-> tag --> qa
         qa -- yes --> deploy_qa --> flaky
         flaky -- no --> deploy_prod --> smoke --> done
         flaky -- yes --> done

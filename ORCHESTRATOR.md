@@ -42,13 +42,14 @@ A question for Gabriel is an issue (`needs-gabriel`): blocked, options including
 ## Cycle
 
 `workflow/go.py` is the planned driver for this complete cycle, from issue to
-production. Today it implements blocks 1-3, **Pick and plan, Delegate, and
-Implement/validate** up to the all-slice barrier; review, merge, deploy
-(blocks 4-5), including the implementation push and PR creation, remain future.
+production. Today it implements blocks 1-4, **Pick and plan, Delegate,
+Implement/validate, and Review/CI/merge** through the merge; block 5, after
+the merge (tag, deploy, smoke, android, cleanup), remains future.
 
 The [delegation and implementation gates](workflow/delegation-contract.md)
-define role selection, validation, corrections, escalation and the all-slice
-barrier; blocks 1-3 implement them through that barrier. An external operator
+define role selection, validation, corrections, escalation, the all-slice
+barrier and the delivery gates; blocks 1-4 implement them through the merge.
+An external operator
 may start and observe a run; it must not mutate the active workflow,
 configuration or slice worktrees. Coordinated cancellation is not implemented:
 an external interruption leaves retained state for audit rather than a clean

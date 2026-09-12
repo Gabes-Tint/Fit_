@@ -9,15 +9,16 @@ invoked through `aarmy` are bounded workers under the Python driver's control;
 their replies must match JSON schemas.
 
 The [delegation and implementation gates](delegation-contract.md) are
-implemented for blocks 1-3: role selection, pre-launch validation, bounded
-repairs, escalation and the final all-slice barrier. Delivery (implementation
-push, PR, review, CI, merge, deploy) begins in block 4 and is not implemented. An
+implemented for blocks 1-4: role selection, pre-launch validation, bounded
+repairs, escalation, the final all-slice barrier, and delivery (integration
+branch, PR, review, CI, merge). Block 5 - after the merge: tag, deploy,
+smoke, android, worktree cleanup - is not implemented. An
 optional external operator may start and observe a run, but cannot mutate the
 workflow or worktrees while it runs. Coordinated cancellation is not
 implemented: an external interruption leaves retained state for audit, and a
 new invocation refuses to replay it automatically.
 
-Blocks 1-3 run in one `go.py` invocation. Block 1 runs every command and
+Blocks 1-4 run in one `go.py` invocation. Block 1 runs every command and
 check itself, calling agents only at the judgment boxes ("whose call?",
 "spans domain and UI?") and to write the failing tests. Block 2 asks the
 planner to extract each slice's nine capability signals with evidence, then
