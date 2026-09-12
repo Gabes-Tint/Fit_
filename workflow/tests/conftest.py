@@ -481,6 +481,16 @@ reviewer:
             return []
         return [json.loads(line) for line in path.read_text().splitlines() if line]
 
+    def label_edits(self, number: int) -> list[list[str]]:
+        """Every `gh issue edit <n> --add-label/--remove-label` this run made,
+        in order. A story is held in block 1 and released in block 5, so the
+        end state alone no longer says whether it was ever held."""
+        return [
+            call["argv"][3:5]
+            for call in self.calls()
+            if call.get("tool") == "gh" and call["argv"][:3] == ["issue", "edit", str(number)]
+        ]
+
     def branch_exists_on_origin(self, branch: str) -> bool:
         result = subprocess.run(
             ["git", "ls-remote", "--exit-code", "origin", branch],

@@ -155,7 +155,9 @@ def test_picks_lowest_story_not_held_with_one_slice(world):
 
     assert result.returncode == 0, result.stdout + result.stderr
     issue = world.issue(130)
-    assert "in-progress" in issue["labels"]
+    # held in block 1, released again by block 5's cleanup
+    assert ["--add-label", "in-progress"] in world.label_edits(130)
+    assert ["--remove-label", "in-progress"] in world.label_edits(130)
     assert any("brief" in c.lower() or "trim the log" in c.lower() for c in issue["comments"])
     assert world.branch_exists_on_origin(slug)
     assert not world.planner_worktree_path(130).exists()
@@ -297,6 +299,8 @@ def test_split_story_creates_two_children_with_pushed_failing_tests(world):
         for index, call in enumerate(calls)
         if call.get("tool") == "bun"
         and call.get("argv", [None, None])[0:2] == ["run", "worktree:new"]
+        # block 1's two slice worktrees; block 5 creates a release one later
+        and call["argv"][2].startswith("story-")
     ]
     mechanic_started = [
         index
@@ -468,8 +472,8 @@ def test_explicit_issue_number_wins_over_lowest(world):
     result = run_flow(world, "20")
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "in-progress" in world.issue(20)["labels"]
-    assert "in-progress" not in world.issue(10)["labels"]
+    assert ["--add-label", "in-progress"] in world.label_edits(20)
+    assert world.label_edits(10) == []
 
 
 def test_nothing_to_pick_when_every_story_is_held(world):

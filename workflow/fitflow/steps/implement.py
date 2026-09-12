@@ -473,9 +473,7 @@ def _check_worktree_state(
     head = worktrees.local_head(path)
     # A review fix turn runs after the driver's freeze commit, so its HEAD
     # is the frozen commit; anything else is an agent commit.
-    if head != piece.failing_sha and (
-        not frozen_ok or head != piece.frozen_commit
-    ):
+    if head != piece.failing_sha and (not frozen_ok or head != piece.frozen_commit):
         raise _contract(
             record, piece, f"local HEAD moved to {head[:7]}; implementation agents never commit"
         )

@@ -63,9 +63,7 @@ def test_mechanical_requires_row_four_for_every_slice():
             ui=mechanic_signals(sensitive_areas=["auth"]),
         )
     )
-    assert is_mechanical(
-        _record(domain=mechanic_signals(), ui=mechanic_signals())
-    )
+    assert is_mechanical(_record(domain=mechanic_signals(), ui=mechanic_signals()))
 
 
 def test_reply_validation_accepts_merge_and_fix():
@@ -85,9 +83,7 @@ def test_reply_validation_accepts_merge_and_fix():
         },
         ["src/lib/x.ts"],
     )
-    assert findings == [
-        Finding("src/lib/x.ts", 3, "correctness", "do the other thing")
-    ]
+    assert findings == [Finding("src/lib/x.ts", 3, "correctness", "do the other thing")]
 
 
 def test_reply_validation_rejects_malformed_replies():

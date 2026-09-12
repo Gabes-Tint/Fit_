@@ -153,7 +153,5 @@ def findings_diagnostic(findings: list[Finding]) -> str:
     implementer the way every other diagnostic is."""
     lines = ["the reviewer rejected the delivery with these findings:"]
     for finding in findings:
-        lines.append(
-            f"- {finding.file}:{finding.line} [{finding.category}] {finding.required_fix}"
-        )
+        lines.append(f"- {finding.file}:{finding.line} [{finding.category}] {finding.required_fix}")
     return "\n".join(lines)

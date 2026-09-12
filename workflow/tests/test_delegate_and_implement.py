@@ -168,7 +168,7 @@ def test_single_slice_implements_on_the_first_attempt(world):
         text=True,
     ).stdout.split()[0]
     assert remote != local
-    assert "in-progress" in world.issue(400)["labels"]
+    assert ["--add-label", "in-progress"] in world.label_edits(400)
     assert "blocked" not in world.issue(400)["labels"]
 
 
@@ -665,7 +665,7 @@ def test_run_state_file_records_the_run_for_audit(world):
     assert state["slices"]["domain"]["state"] == "succeeded"
     # the run now continues through block 4's merge, so the terminal outcome
     # is the delivery, not the block 3 boundary
-    assert state["terminal"] == "DELIVERED"
+    assert state["terminal"] == "SHIPPED"
     assert state["delivery"]["pr_number"] == 500
     assert state["delivery"]["verdict"] == "mechanical"
     assert state["slices"]["domain"]["frozen_commit"]

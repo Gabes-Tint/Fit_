@@ -3,6 +3,7 @@ the planner's own (cheap, detached, no install) and a slice's (via `bun run
 worktree:new`, which installs dependencies and creates the branch).
 """
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -175,9 +176,7 @@ def integration_worktree_path(slug: str) -> Path:
 
 
 def branch_exists(branch: str) -> bool:
-    result = _git(
-        "show-ref", "--verify", "--quiet", f"refs/heads/{branch}", cwd=settings.FIT_REPO
-    )
+    result = _git("show-ref", "--verify", "--quiet", f"refs/heads/{branch}", cwd=settings.FIT_REPO)
     return result.returncode == 0
 
 
@@ -199,9 +198,7 @@ def merge_commit(worktree: Path, sha: str) -> None:
 
 
 def abort_merge(worktree: Path) -> None:
-    subprocess.run(
-        ["git", "merge", "--abort"], cwd=worktree, capture_output=True, text=True
-    )
+    subprocess.run(["git", "merge", "--abort"], cwd=worktree, capture_output=True, text=True)
 
 
 def reset_to_origin_main(worktree: Path) -> None:
@@ -223,3 +220,110 @@ def diff_files_against_main(worktree: Path, branch: str) -> list[str]:
     """Files the integration branch changes against origin/main."""
     result = _git("diff", "--name-only", f"origin/main...{branch}", cwd=worktree)
     return [line for line in result.stdout.splitlines() if line]
+
+
+# --- Block 5: the release checkout, the deploys and the cleanup ----------------
+
+
+def tags_at(sha: str) -> list[str]:
+    """The `v*` tags origin has on one commit. Asked of the remote, not of
+    this clone: `version-tag.yml` creates the tag seconds after the merge
+    and nothing here has fetched it."""
+    result = _git("ls-remote", "--tags", "origin", cwd=settings.FIT_REPO)
+    tags = []
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) != 2 or parts[0] != sha:
+            continue
+        name = parts[1].removeprefix("refs/tags/").removesuffix("^{}")
+        if name.startswith("v"):
+            tags.append(name)
+    return sorted(set(tags))
+
+
+def create_release_worktree(slug: str, sha: str) -> Path:
+    """An installed worktree at exactly one commit. `bun run worktree:new`
+    for the install, then hard-reset off origin/main onto the commit being
+    shipped - which is where the deploy's own `HEAD` check will look."""
+    path = create_slice_worktree(slug)
+    _run_checked(["git", "reset", "--hard", sha], cwd=path)
+    return path
+
+
+def is_ancestor_of(sha: str, descendant: str) -> bool:
+    """Whether `sha` is reachable from `descendant`, asked of the repo."""
+    result = _git("merge-base", "--is-ancestor", sha, descendant, cwd=settings.FIT_REPO)
+    return result.returncode == 0
+
+
+def _stream(cmd: list[str], cwd: Path, env: dict[str, str], on_line) -> tuple[int, list[str]]:
+    """Run a command, narrating each line as it arrives. A deploy takes
+    minutes; a silent wait says nothing about which step it is on."""
+    process = subprocess.Popen(
+        cmd,
+        cwd=cwd,
+        env={**os.environ, **env},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    lines: list[str] = []
+    assert process.stdout is not None
+    for line in process.stdout:
+        lines.append(line.rstrip())
+        on_line(lines[-1])
+    return process.wait(), lines
+
+
+def run_deploy(worktree: Path, host: str, origin: str, tunnel: bool, on_line) -> int:
+    """`bun run deploy`, with the target in the two variables
+    `scripts/deploy/config.ts` reads and nothing else. `deploy.ts` runs the
+    smoke check itself, so `deploy:smoke` is never a second invocation."""
+    command = ["bun", "run", "deploy", *(["--tunnel"] if tunnel else [])]
+    code, _ = _stream(
+        command,
+        worktree,
+        {settings.DEPLOY_HOST_VARIABLE: host, settings.PUBLIC_ORIGIN_VARIABLE: origin},
+        on_line,
+    )
+    return code
+
+
+def run_android_release(worktree: Path, origin: str, on_line) -> tuple[int, list[str]]:
+    """`bun run android:release`, pointed at an origin explicitly:
+    `release-plan.ts` defaults the shell to production and reads the origin
+    from `--server-url=`, not from the environment."""
+    return _stream(
+        ["bun", "run", "android:release", f"--server-url={origin}"],
+        worktree,
+        {},
+        on_line,
+    )
+
+
+def worktree_done(slug: str, force: bool) -> tuple[int, str]:
+    """`bun run worktree:done <slug>`; returns its exit code and output."""
+    result = subprocess.run(
+        ["bun", "run", "worktree:done", slug, *(["--force"] if force else [])],
+        cwd=settings.FIT_REPO,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode, (result.stdout + result.stderr).strip()
+
+
+def branch_tip(branch: str) -> str:
+    """The commit a local branch points at, or "" if there is no such branch."""
+    result = _git("rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", cwd=settings.FIT_REPO)
+    return result.stdout.strip()
+
+
+def delete_branch_at(branch: str, expected_sha: str) -> bool:
+    """Delete a local branch, and only when its tip is still the commit the
+    run recorded. `worktree:done` leaves these behind: main squashes, so
+    they are never merged into origin/main by the test it applies."""
+    tip = _git("rev-parse", branch, cwd=settings.FIT_REPO).stdout.strip()
+    if tip != expected_sha:
+        return False
+    return _git("branch", "-D", branch, cwd=settings.FIT_REPO).returncode == 0

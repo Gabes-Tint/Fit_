@@ -122,7 +122,7 @@ def test_the_record_carries_every_ship_result(world):
     ]
 
 
-def test_cleanup_removes_every_worktree_closes_the_child_and_unholds_the_story(world):
+def test_cleanup_removes_every_worktree_closes_the_child_and_frees_the_story(world):
     _shippable(world)
 
     result = run_flow(world, "1000")

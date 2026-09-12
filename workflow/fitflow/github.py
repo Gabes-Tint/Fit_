@@ -108,6 +108,14 @@ def add_label(number: int, label: str) -> None:
     _run("issue", "edit", str(number), "--add-label", label)
 
 
+def remove_label(number: int, label: str) -> None:
+    _run("issue", "edit", str(number), "--remove-label", label)
+
+
+def close_issue(number: int, comment: str) -> None:
+    _run("issue", "close", str(number), "--comment", comment)
+
+
 def assign(number: int, login: str) -> None:
     _run("issue", "edit", str(number), "--add-assignee", login)
 
@@ -213,3 +221,56 @@ def rerun_failed_runs(run_id: int) -> None:
 def merge_pr(number: int) -> None:
     """Merge through the merge queue: no strategy flag, never update-branch."""
     _run("pr", "merge", str(number))
+
+
+# --- The merge commit and main's own CI (block 5) ------------------------------
+
+
+@dataclass
+class Run:
+    """One `ci.yml` workflow run, as `main-ci-gate.ts` reads them."""
+
+    database_id: int
+    event: str
+    status: str  # queued, in_progress or completed
+    conclusion: str | None  # success, failure, cancelled, ... while completed
+    head_sha: str
+    head_branch: str
+    url: str
+
+
+def merge_commit(number: int) -> str:
+    """The commit a merged PR actually put on main. Not the integration
+    branch's head: main takes squash merges, so what landed is a commit
+    the driver never made. Empty when GitHub has not settled it yet."""
+    out = _run("pr", "view", str(number), "--json", "mergeCommit")
+    payload = json.loads(out).get("mergeCommit") or {}
+    return payload.get("oid") or ""
+
+
+def ci_runs_for(sha: str) -> list[Run]:
+    """Every `ci.yml` run GitHub reports for one commit, newest first.
+    `--commit` matches on SHA alone, so the caller checks the branch per
+    event exactly as `scripts/deploy/main-ci-gate.ts` does."""
+    out = _run(
+        "run",
+        "list",
+        "--workflow",
+        "ci.yml",
+        "--commit",
+        sha,
+        "--json",
+        "databaseId,event,status,conclusion,headSha,headBranch,url",
+    )
+    return [
+        Run(
+            database_id=row.get("databaseId", 0),
+            event=row.get("event", ""),
+            status=row.get("status", ""),
+            conclusion=row.get("conclusion"),
+            head_sha=row.get("headSha", ""),
+            head_branch=row.get("headBranch", ""),
+            url=row.get("url", ""),
+        )
+        for row in json.loads(out or "[]")
+    ]
