@@ -370,6 +370,12 @@ def _claims(story, record: RunRecord) -> None:
         if not checks or settings.REQUIRED_CHECK not in {check.name for check in checks}:
             waiting = [*waiting, "(the required check has not registered yet)"]
         if failed:
+            if waiting:
+                # a failed job while others still run: the workflow run is
+                # not completed, and `gh run rerun --failed` refuses an
+                # in-progress run - wait for the run to settle first
+                _await_checks(story, pr_number, deadline, waiting)
+                continue
             _react_to_red(story, record, branch, pr_number, failed)
             continue
         if waiting:

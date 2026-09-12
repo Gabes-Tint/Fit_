@@ -192,6 +192,13 @@ def cmd_pr_checks(argv, world):
             "Static analysis": "SUCCESS",
             "End-to-end (mobile-chrome)": "SUCCESS",
         },
+        # a job failed while the run is still executing: the driver must
+        # wait for the run to complete before `gh run rerun --failed`
+        "fail_running": {
+            "Quality and security": "FAILURE",
+            "Static analysis": "SUCCESS",
+            "End-to-end (mobile-chrome)": "IN_PROGRESS",
+        },
         "pending": {
             "Quality and security": "PENDING",
             "Static analysis": "IN_PROGRESS",

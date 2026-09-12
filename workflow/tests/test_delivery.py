@@ -255,6 +255,24 @@ def test_ci_red_is_rerun_once_then_green_merges(world):
     assert _pr(world, 500)["state"] == "MERGED"
 
 
+def test_a_failure_while_the_run_is_still_executing_waits_before_rerunning(world):
+    """`gh run rerun --failed` refuses an in-progress run; the driver waits
+    for the workflow to settle, then reruns once."""
+    _given_planned_story(world, 1000)
+    _delegate(world, 1000, "domain", mechanic_signals())
+    _implement(
+        world, "story-1000-domain", "mechanic", {"src/lib/delivered.ts": "export const ok = 1;\n"}
+    )
+    world.given_checks(500, ["fail_running", "fail", "pass"])
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    gh_argv = [" ".join(call["argv"][:2]) for call in _gh_calls(world)]
+    assert gh_argv.count("run rerun") == 1
+    assert _pr(world, 500)["state"] == "MERGED"
+
+
 def test_ci_red_after_the_one_rerun_stops(world):
     _given_planned_story(world, 1000)
     _delegate(world, 1000, "domain", mechanic_signals())
