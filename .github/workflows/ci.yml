@@ -385,6 +385,47 @@ jobs:
         with:
           name: security
 
+  # The Python driver behind workflow/go.py has its own pytest suite (209
+  # tests as of writing) that only ever ran on a developer's machine. This
+  # job gates it the same way every other lane is gated, so a driver change
+  # that breaks its own tests fails the merge instead of surfacing later.
+  workflow:
+    name: Workflow driver
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          python-version: '3.12'
+
+      - name: Install locked dependencies
+        working-directory: workflow
+        run: uv sync --frozen
+
+      - name: Lint
+        working-directory: workflow
+        run: uv run ruff check .
+
+      # fitflow/steps/deliver.py, fitflow/steps/implement.py, fitflow/review.py,
+      # fitflow/worktrees.py and tests/test_review.py are unformatted on this
+      # branch already; a sibling branch owns them and reformatting here would
+      # collide with its diff. The check stays a gate -- it fails until that
+      # branch lands and reformats them, same as any other broken gate would.
+      - name: Format check
+        working-directory: workflow
+        run: uv run ruff format --check .
+
+      - name: Test
+        working-directory: workflow
+        run: uv run pytest -q
+
   # Decides whether the self-test's `mutation` group (below) can find anything
   # on this run. That group proves Stryker itself still kills a planted
   # mutant in a fixture project -- it never mutates the app -- so only the
@@ -548,6 +589,7 @@ jobs:
         e2e,
         e2e-report,
         security,
+        workflow,
         self-test,
         self-test-scope,
         self-test-mutation
@@ -586,11 +628,12 @@ jobs:
           E2E: ${{ needs.e2e.result }}
           E2E_REPORT: ${{ needs.e2e-report.result }}
           SECURITY: ${{ needs.security.result }}
+          WORKFLOW: ${{ needs.workflow.result }}
           SELF_TEST: ${{ needs.self-test.result }}
           SELF_TEST_SCOPE: ${{ needs.self-test-scope.result }}
         run: |
-          echo "Gate results: static=$STATIC unit=$UNIT mutation=$MUTATION build=$BUILD e2e=$E2E e2e-report=$E2E_REPORT security=$SECURITY self-test=$SELF_TEST self-test-scope=$SELF_TEST_SCOPE"
-          for result in "$STATIC" "$UNIT" "$MUTATION" "$BUILD" "$E2E" "$E2E_REPORT" "$SECURITY" "$SELF_TEST" "$SELF_TEST_SCOPE"; do
+          echo "Gate results: static=$STATIC unit=$UNIT mutation=$MUTATION build=$BUILD e2e=$E2E e2e-report=$E2E_REPORT security=$SECURITY workflow=$WORKFLOW self-test=$SELF_TEST self-test-scope=$SELF_TEST_SCOPE"
+          for result in "$STATIC" "$UNIT" "$MUTATION" "$BUILD" "$E2E" "$E2E_REPORT" "$SECURITY" "$WORKFLOW" "$SELF_TEST" "$SELF_TEST_SCOPE"; do
             if [[ "$result" != "success" ]]; then
               echo "::error::A required gate did not succeed."
               exit 1
