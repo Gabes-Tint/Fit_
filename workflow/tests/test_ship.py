@@ -337,6 +337,26 @@ def test_a_worktree_that_cannot_be_cleaned_up_is_reported_after_the_comment(worl
     assert any("story-1000-domain" in body for body in _comments(world))
 
 
+def test_a_worktree_whose_status_cannot_be_read_is_never_forced(world):
+    """An unreadable status is not an empty one. `worktree:done --force` is
+    the only thing standing between a corrupt index and an agent's
+    uncommitted work, so a status that fails counts as dirty."""
+    _shippable(world)
+    world.given_status_unreadable("story-1000-domain")
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 26, result.stdout + result.stderr
+    assert world.slice_worktree_path("story-1000-domain").exists()
+    assert [
+        call["argv"]
+        for call in _bun_calls(world, "worktree:done")
+        if "story-1000-domain" in call["argv"] and "--force" in call["argv"]
+    ] == []
+    reported = [body for body in _comments(world) if "status could not be read" in body]
+    assert reported and "story-1000-domain" in reported[-1]
+
+
 def test_a_missing_deploy_target_stops_before_any_side_effect(world):
     _shippable(world)
 

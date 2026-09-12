@@ -454,7 +454,7 @@ def _cleanup(record: RunRecord, merge_sha: str) -> list[str]:
         path = worktrees.slice_worktree_path(slug)
         if path.exists() and not worktrees.is_clean(path):
             kept.append(slug)
-            failures.append(f"{slug} has uncommitted work and was preserved for audit")
+            failures.append(f"{slug} was not removed: {worktrees.status_summary(path)}")
             continue
         code, output = worktrees.worktree_done(slug, force=landed)
         if code != 0:

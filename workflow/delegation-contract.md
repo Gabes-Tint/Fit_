@@ -580,8 +580,11 @@ forcing: the worktree is clean, and its recorded commit is an ancestor of
 the integration head the merged PR carried. `--force` then bypasses exactly
 the refusal the driver has already answered; the local branch is deleted
 separately, and only when its tip is still the sha the record names. A
-refusal the driver cannot answer this way is `TOOL_FAILED` - after the
-final comment, never before.
+worktree whose status cannot be read is not a clean one: a failed `status`
+prints nothing, and forcing on that silence destroys work nobody has seen,
+so it is preserved and reported with the reason the read failed. A refusal
+the driver cannot answer this way is `TOOL_FAILED` - after the final
+comment, never before.
 
 Each child (slice) issue is closed with `Delivered in PR #n (tag vX.Y.Z)`,
 and the `in-progress` label comes off the story, whose own closure was the

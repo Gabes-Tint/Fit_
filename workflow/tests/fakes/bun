@@ -259,6 +259,18 @@ def _smoke_report(ok, release, expected, failure=None):
     return report
 
 
+def _break_scripted_indexes(world):
+    """Mid-run damage, scripted by `given_status_unreadable`: a linked
+    worktree whose index stops being readable. Applied while the deploy
+    runs because that is after the work is frozen and before cleanup,
+    which is exactly where an unreadable status used to read as clean."""
+    repo = Path(os.environ["FIT_REPO"])
+    for slug in world.get("unreadable_status", []):
+        index = repo / ".git" / "worktrees" / slug / "index"
+        if index.exists():
+            index.write_bytes(b"not an index")
+
+
 def cmd_deploy(argv):
     """`bun run deploy [--tunnel]`: the env and the checkout it was given
     are the contract with the real script, so both are recorded."""
@@ -275,7 +287,9 @@ def cmd_deploy(argv):
     if host == "" or origin == "":
         print("FIT_DEPLOY_HOST must name the deployment target", file=sys.stderr)
         return 1
-    outcome = load().get("deploy_outcomes", {}).get(host, "ok")
+    world = load()
+    _break_scripted_indexes(world)
+    outcome = world.get("deploy_outcomes", {}).get(host, "ok")
     report_path = cwd / "reports" / "deploy" / "smoke.json"
     print(f"Deploying {head} to {host}.")
     if outcome == "health_failed":

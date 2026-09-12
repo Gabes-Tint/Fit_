@@ -94,15 +94,26 @@ def remove_slice_worktree(path: Path) -> None:
 
 
 def is_clean(worktree: Path) -> bool:
+    """Clean means the command said so. A status that fails prints nothing
+    to stdout, and reading that silence as an empty diff is how a corrupt
+    index becomes a `worktree:done --force` on work nobody has seen."""
     status = _git("status", "--porcelain", cwd=worktree)
+    if status.returncode != 0:
+        return False
     return status.stdout.strip() == ""
 
 
 def status_summary(worktree: Path) -> str:
-    status = _git("status", "--porcelain", "--untracked-files=all", cwd=worktree).stdout.strip()
-    if not status:
+    status = _git("status", "--porcelain", "--untracked-files=all", cwd=worktree)
+    if status.returncode != 0:
+        return f"status could not be read: {_failure(status)}"
+    if not status.stdout.strip():
         return "clean"
-    return f"dirty (preserved for audit): {status.replace(chr(10), '; ')}"
+    return f"dirty (preserved for audit): {status.stdout.strip().replace(chr(10), '; ')}"
+
+
+def _failure(result: subprocess.CompletedProcess) -> str:
+    return (result.stderr.strip() or result.stdout.strip()).replace(chr(10), "; ")
 
 
 def local_head(worktree: Path) -> str:

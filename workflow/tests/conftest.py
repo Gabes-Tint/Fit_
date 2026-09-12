@@ -424,6 +424,13 @@ reviewer:
         self.world["android_outcome"] = outcome
         self._save()
 
+    def given_status_unreadable(self, slug: str) -> None:
+        """This worktree's index stops being readable while the deploy runs,
+        so `status` fails there instead of printing an empty diff."""
+        self._load()
+        self.world.setdefault("unreadable_status", []).append(slug)
+        self._save()
+
     def given_worktree_done_fails(self, slug: str) -> None:
         """`worktree:done` refuses this slug even with --force."""
         self._load()
