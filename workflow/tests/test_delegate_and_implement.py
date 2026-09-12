@@ -761,6 +761,47 @@ def test_a_crashed_gate_run_is_an_external_stop(world):
     assert len(_talks(world, "mechanic", "story-462-domain")) == 2  # no retry
 
 
+def test_a_crashed_gate_run_is_retried_once_then_judged(world):
+    """A fresh worktree's first mutation run can lose a transient race; the
+    driver re-runs the gate once, the way QUALITY.md tells a human to,
+    before judging the crash an external failure."""
+    _given_planned_story(world, 465)
+    _delegate_mechanic(world, 465)
+    _implement(
+        world,
+        "story-465-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = true;\n"},
+    )
+    world.given_gate_outcomes(**{"verify:changed": ["tool_error", "pass"]})
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "retrying once" in result.stdout
+    # block 1's failing-tests turn plus the implementation turn; the gate
+    # retry consumed no agent turn
+    assert len(_talks(world, "mechanic", "story-465-domain")) == 2
+
+
+def test_a_gate_that_crashes_twice_is_an_external_stop(world):
+    _given_planned_story(world, 466)
+    _delegate_mechanic(world, 466)
+    _implement(
+        world,
+        "story-466-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = true;\n"},
+    )
+    world.given_gate_outcomes(**{"verify:changed": "tool_error"})
+
+    result = run_flow(world)
+
+    assert result.returncode == 26, result.stdout + result.stderr
+    assert "left no gate report" in result.stdout
+    assert len(_talks(world, "mechanic", "story-466-domain")) == 2  # no retry
+
+
 def test_a_stale_gate_report_is_an_external_stop(world):
     _given_planned_story(world, 463)
     _delegate_mechanic(world, 463)

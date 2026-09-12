@@ -73,19 +73,38 @@ def run_changed_lint(worktree: Path, story_number: int) -> str | None:
 
 def run_turn_gates(worktree: Path, story_number: int) -> str | None:
     """Run the pre-push gate for this turn's diff. Returns a repairable
-    diagnostic, or None when the gate passed."""
-    started = time.time()
-    try:
-        result = subprocess.run(
-            ["bun", "run", "verify:changed"],
-            cwd=worktree,
-            capture_output=True,
-            text=True,
-        )
-    except OSError as error:
-        raise FlowFailure(
-            Outcome.TOOL_FAILED, f"verify:changed could not run: {error}", story_number
-        ) from error
+    diagnostic, or None when the gate passed.
+
+    A crashed run (any exit outside {0, 1}) is retried once before it is
+    judged an external tool failure - the same single re-run QUALITY.md
+    prescribes to a human reading a crashed lane - because a fresh
+    worktree's first mutation run can lose a transient Vite/ProjectReader
+    race."""
+    for attempt in (1, 2):
+        started = time.time()
+        try:
+            result = subprocess.run(
+                ["bun", "run", "verify:changed"],
+                cwd=worktree,
+                capture_output=True,
+                text=True,
+            )
+        except OSError as error:
+            raise FlowFailure(
+                Outcome.TOOL_FAILED, f"verify:changed could not run: {error}", story_number
+            ) from error
+        if result.returncode not in (0, 1) and attempt == 1:
+            from fitflow import narrate
+
+            narrate.line(f"🔁 verify:changed crashed (exit {result.returncode}); retrying once")
+            continue
+        return _verdict_from_report(worktree, story_number, started, result)
+    raise AssertionError("unreachable: the loop returns on attempt 2")
+
+
+def _verdict_from_report(
+    worktree: Path, story_number: int, started: float, result: subprocess.CompletedProcess
+) -> str | None:
     report_path = worktree / _REPORT
     report = _fresh_report(report_path, started, story_number)
     failed = report.get("failed") or []
