@@ -369,43 +369,50 @@ def _escalate_or_stop(record: RunRecord, piece: SliceRecord, diagnostic: str) ->
         )
     old_role = piece.role
     successor = _SUCCESSOR[old_role]
-    with record.transition():
-        piece.move("escalating")
-        piece.role = successor
-        piece.revision += 1
-        piece.attempts = 0
-        piece.move("assigned")
+    revision = piece.revision + 1
     prior = piece.assignments[-1]
     envelope = {
         "version": 1,
         "slice_ref": prior["slice_ref"],
-        "revision": piece.revision,
+        "revision": revision,
         "role": successor,
         "config": record.config[successor],
         "signals": prior["signals"],
         "evidence": prior["evidence"],
         "reason": (
-            f"Escalation revision {piece.revision}: {old_role} exhausted its 3 attempts "
+            f"Escalation revision {revision}: {old_role} exhausted its 3 attempts "
             f"(last diagnostic: {diagnostic}); raised exactly one level, signals unchanged."
         ),
     }
+    # Validated against the still-unmutated piece: a rejection must leave
+    # the exhausted role's record exactly as it was, not a successor role
+    # with a fresh, never-run attempt count.
     try:
         assignment.validate_envelope(
             envelope,
             role=successor,
-            revision=piece.revision,
+            revision=revision,
             config=agents.roster_entry(successor),
             retained=retained_inputs(record.story_number, piece.layer, len(piece.acceptance)),
         )
     except assignment.AssignmentError as error:
+        with record.transition():
+            piece.move("escalating")
+            piece.move("failed")
+            record.save()
         raise FlowFailure(
             Outcome.PLAN_REJECTED,
             f"escalation assignment for {piece.slug} rejected: {error}",
             record.story_number,
             add_blocked=True,
         ) from error
-    piece.assignments.append(envelope)
     with record.transition():
+        piece.move("escalating")
+        piece.role = successor
+        piece.revision = revision
+        piece.attempts = 0
+        piece.assignments.append(envelope)
+        piece.move("assigned")
         record.save()
     narrate.line(
         f"⏫ #{piece.number} ({piece.layer}) escalating {old_role} → {successor} "
