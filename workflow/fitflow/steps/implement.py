@@ -315,6 +315,47 @@ def _talk(piece: SliceRecord, prompt_name: str, attempt: int) -> tuple[dict, str
     )
 
 
+def review_fix_turn(record: RunRecord, piece: SliceRecord, diagnostic: str) -> None:
+    """One block 4 fix turn: the review findings as the diagnostic, the same
+    role, session and worktree, then the full block 3 validation and a new
+    driver-made freeze commit. This is the one sanctioned exit from
+    `succeeded`; the turn is recorded with kind `review_fix` and does not
+    consume block 3's attempt budget - the review loop has its own."""
+    _pre_turn_barrier(record, piece)
+    with record.transition():
+        piece.state = "fixing"
+        piece.diagnostics.append(diagnostic)
+        attempt = piece.attempts + 1
+        identity = record.begin_turn(piece, piece.role, attempt, "review_fix")
+        record.save()
+    narrate.line(f"🔧 {piece.role.capitalize()} #{piece.number} ({piece.layer}) review fix")
+    reply, session = _launch_turn(record, piece, identity, "correct_implementation", attempt)
+    with record.transition():
+        record.end_turn(piece, identity, "ok", reply["summary"], session)
+    try:
+        failure = _validate_turn(record, piece, reply, frozen_ok=True)
+    except FlowFailure as failure:
+        with record.transition():
+            piece.state = "failed"
+            piece.turns[-1]["result"] = "failed"
+            piece.turns[-1]["why"] = failure.why
+            record.save()
+        raise
+    if failure is not None:
+        with record.transition():
+            piece.state = "failed"
+            piece.turns[-1]["result"] = "failed"
+            piece.turns[-1]["why"] = failure
+            record.save()
+        raise FlowFailure(
+            Outcome.CAPACITY_EXHAUSTED,
+            f"{piece.slug}: the review fix turn failed validation: {failure}",
+            record.story_number,
+            add_blocked=True,
+        )
+    _freeze(record, piece)
+
+
 def _escalate_or_stop(record: RunRecord, piece: SliceRecord, diagnostic: str) -> None:
     if piece.role == "solver":
         with record.transition():
@@ -378,7 +419,9 @@ def _escalate_or_stop(record: RunRecord, piece: SliceRecord, diagnostic: str) ->
     )
 
 
-def _validate_turn(record: RunRecord, piece: SliceRecord, reply: dict) -> str | None:
+def _validate_turn(
+    record: RunRecord, piece: SliceRecord, reply: dict, frozen_ok: bool = False
+) -> str | None:
     """The driver's own independent check of one implementation turn.
     Returns a repairable diagnostic; contract violations and tooling
     failures raise at once and never consume a correction."""
@@ -390,10 +433,12 @@ def _validate_turn(record: RunRecord, piece: SliceRecord, reply: dict) -> str | 
     with narrate.grouped():
         narrate.fields([("Reported files", ", ".join(reply["changed_files"]))])
     path = worktrees.slice_worktree_path(piece.slug)
-    changed = _check_worktree_state(record, piece, path)
-    if changed is None:
-        return "no changes were made in the worktree"
+    changed = _check_worktree_state(record, piece, path, frozen_ok=frozen_ok)
     if not changed:
+        # even a no-change turn must describe the truth: a reply reporting
+        # phantom files when nothing changed is a contract failure, not a
+        # repairable diagnostic
+        _check_reported_files(record, piece, reply["changed_files"], [])
         return "no changes were made in the worktree"
     _check_reported_files(record, piece, reply["changed_files"], changed)
     _check_scope(record, piece, changed)
@@ -413,15 +458,24 @@ def _validate_turn(record: RunRecord, piece: SliceRecord, reply: dict) -> str | 
     return None
 
 
-def _check_worktree_state(record: RunRecord, piece: SliceRecord, path) -> list[str] | None:
+def _check_worktree_state(
+    record: RunRecord, piece: SliceRecord, path, frozen_ok: bool = False
+) -> list[str] | None:
     head = worktrees.local_head(path)
-    if head != piece.failing_sha:
+    # A review fix turn runs after the driver's freeze commit, so its HEAD
+    # is the frozen commit; anything else is an agent commit.
+    if head != piece.failing_sha and (
+        not frozen_ok or head != piece.frozen_commit
+    ):
         raise _contract(
             record, piece, f"local HEAD moved to {head[:7]}; implementation agents never commit"
         )
     if worktrees.remote_head(piece.slug) != piece.failing_sha:
         raise _contract(record, piece, "branch was pushed; implementation agents never push")
-    changed = worktrees.changed_since(path, piece.failing_sha)
+    if head == piece.failing_sha:
+        changed = worktrees.changed_since(path, piece.failing_sha)
+    else:
+        changed = worktrees.changed_between(path, piece.failing_sha)
     return changed or None
 
 
@@ -534,6 +588,11 @@ def _verify_frozen(record: RunRecord) -> None:
                 record.story_number,
                 add_blocked=True,
             )
+
+
+# Block 4 re-verifies the join before anything is pushed; a public name for
+# the same check so deliver.py does not reach into privates.
+verify_frozen = _verify_frozen
 
 
 def _report(story, record: RunRecord) -> None:

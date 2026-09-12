@@ -447,9 +447,11 @@ diagnostic, then the full block 3 validation (scope, acceptance bytes,
 gates) and a new driver-made freeze commit. The slice transitions
 `succeeded` → `fixing` → `validating` → `succeeded`; the fix turn is
 recorded with kind `review_fix` and does not consume block 3's attempt
-budget - the review loop has its own. A fix turn that fails validation ends
-the round as a repairable failure of the round, not a new escalation: the
-escalation ladder is spent by definition once block 3 succeeded.
+budget - the review loop has its own. A fix turn that fails validation
+stops the run with `CAPACITY_EXHAUSTED` and `blocked`: the implementer
+could not repair the finding under review, and that is a human call, not a
+new escalation - the escalation ladder is spent by definition once block 3
+succeeded.
 
 After the fixes, the driver merges the new frozen commits into the
 integration branch (the superseded commits remain ancestors), pushes, and

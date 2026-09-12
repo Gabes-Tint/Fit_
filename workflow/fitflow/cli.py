@@ -24,7 +24,7 @@ def run(flow: Callable[[int | None], Outcome]) -> None:
         print(f"configuration error: {error}", file=sys.stderr)
         raise SystemExit(2) from error
     parser = argparse.ArgumentParser(
-        description="Fit_ development flow driver: blocks 1-3, plan, delegate, implement."
+        description="Fit_ development flow driver: blocks 1-4, plan, delegate, implement, deliver."
     )
     parser.add_argument("issue", nargs="?", type=int, default=None, help="issue number to pick")
     args = parser.parse_args()

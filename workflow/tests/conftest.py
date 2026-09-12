@@ -119,6 +119,10 @@ solver:
   backend: claude
   model: opus
   effort: high
+reviewer:
+  backend: claude
+  model: opus
+  effort: high
 """
         )
         self._save()
@@ -323,6 +327,37 @@ solver:
         self.world.setdefault("gh_failures", []).extend(substrings)
         self._save()
 
+    # --- block 4 ---------------------------------------------------------
+
+    def reviewer_answers(
+        self, story_number: int, verdict: str = "merge", findings: list[dict] | None = None
+    ) -> None:
+        self._queue_turn(
+            f"story-{story_number}-review/reviewer",
+            {"verdict": verdict, "findings": findings or []},
+        )
+
+    def reviewer_fails(self, story_number: int, message: str = "reviewer turn failed") -> None:
+        self._queue_turn(
+            f"story-{story_number}-review/reviewer", None, exit_code=1, message=message
+        )
+
+    def reviewer_writes(self, story_number: int, files: dict[str, str]) -> None:
+        """A reviewer turn that violates its read-only contract by writing
+        to the integration worktree."""
+        self._queue_turn(
+            f"story-{story_number}-review/reviewer",
+            {"verdict": "merge", "findings": []},
+            effects={"files": files},
+        )
+
+    def given_checks(self, pr_number: int, outcomes: str | list[str]) -> None:
+        """Scripted `gh pr checks` results for a PR: pass, fail, or pending.
+        A list is consumed one value per invocation."""
+        self._load()
+        self.world.setdefault("check_outcomes", {})[f"pr-{pr_number}"] = outcomes
+        self._save()
+
     def gh_fails_on_comment_body(self, *substrings: str) -> None:
         """Any `gh issue comment` whose --body contains one of these
         substrings exits 1 - for failing one specific comment."""
@@ -421,6 +456,7 @@ def run_flow(
     cwd: Path | None = None,
     config_path: Path | None = None,
     use_default_config: bool = False,
+    env_extra: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
     env = dict(os.environ)
     env["PATH"] = f"{FAKES_DIR}:{env['PATH']}"
@@ -428,6 +464,11 @@ def run_flow(
     env["FIT_REPO"] = str(world.repo)
     env["FIT_GITHUB_REPO"] = "Gabes-Tint/Fit_"
     env["FIT_FLOW_HOME"] = str(world.home)
+    # the fake gh answers checks instantly; polling sleeps would only slow
+    # the suite down
+    env.setdefault("FIT_FLOW_CI_POLL_SECONDS", "0")
+    if env_extra:
+        env.update(env_extra)
     if not use_default_config:
         env["FIT_FLOW_AGENT_CONFIG"] = str(config_path or world.agent_config)
     else:

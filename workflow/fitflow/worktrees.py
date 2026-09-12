@@ -141,6 +141,21 @@ def changed_since(worktree: Path, ref: str) -> list[str]:
     return changed
 
 
+def changed_between(worktree: Path, ref: str) -> list[str]:
+    """Committed changes from `ref` to HEAD plus untracked working-tree
+    files - the accumulated diff when the driver has already frozen a
+    commit on top of `ref`."""
+    result = _git("diff", "--name-only", f"{ref}..HEAD", cwd=worktree)
+    committed = [line for line in result.stdout.splitlines() if line]
+    untracked = []
+    for line in _git(
+        "status", "--porcelain", "--untracked-files=all", cwd=worktree
+    ).stdout.splitlines():
+        if line.startswith("??"):
+            untracked.append(line[3:].strip())
+    return committed + untracked
+
+
 def content_at(worktree: Path, ref: str, path: str) -> str | None:
     """A file's bytes at `ref` in this worktree, or None if it did not exist."""
     result = _git("show", f"{ref}:{path}", cwd=worktree)
@@ -153,3 +168,51 @@ def commit_all(worktree: Path, message: str) -> str:
     _run_checked(["git", "add", "-A"], cwd=worktree)
     _run_checked(["git", "commit", "-m", message], cwd=worktree)
     return local_head(worktree)
+
+
+def integration_worktree_path(slug: str) -> Path:
+    return settings.FIT_REPO / ".claude" / "worktrees" / slug
+
+
+def create_integration_worktree(slug: str) -> Path:
+    """A plain worktree on a new branch `slug` from `origin/main` - git only,
+    no install: nothing runs gates here."""
+    path = integration_worktree_path(slug)
+    _run_checked(
+        ["git", "worktree", "add", "-b", slug, str(path), "origin/main"],
+        cwd=settings.FIT_REPO,
+    )
+    return path
+
+
+def merge_commit(worktree: Path, sha: str) -> None:
+    """Merge one frozen commit into the integration branch. A conflict
+    raises CalledProcessError; the caller aborts and classifies."""
+    _run_checked(["git", "merge", "--no-edit", sha], cwd=worktree)
+
+
+def abort_merge(worktree: Path) -> None:
+    subprocess.run(
+        ["git", "merge", "--abort"], cwd=worktree, capture_output=True, text=True
+    )
+
+
+def reset_to_origin_main(worktree: Path) -> None:
+    """The driver's own integration worktree: re-point it at origin/main
+    before re-merging frozen commits."""
+    _run_checked(["git", "reset", "--hard", "origin/main"], cwd=worktree)
+
+
+def is_ancestor(worktree: Path, sha: str) -> bool:
+    result = _git("merge-base", "--is-ancestor", sha, "HEAD", cwd=worktree)
+    return result.returncode == 0
+
+
+def push_branch(worktree: Path, branch: str) -> None:
+    _run_checked(["git", "push", "-u", "origin", branch], cwd=worktree)
+
+
+def diff_files_against_main(worktree: Path, branch: str) -> list[str]:
+    """Files the integration branch changes against origin/main."""
+    result = _git("diff", "--name-only", f"origin/main...{branch}", cwd=worktree)
+    return [line for line in result.stdout.splitlines() if line]

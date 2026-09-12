@@ -124,3 +124,66 @@ def create_issue(title: str, body: str, labels: list[str]) -> int:
         args += ["--label", label]
     url = _run(*args).strip()
     return int(url.rsplit("/", 1)[-1])
+
+
+# --- Pull requests and checks (block 4) --------------------------------------
+
+
+@dataclass
+class PullRequest:
+    number: int
+    state: str
+    head_ref: str
+
+
+@dataclass
+class Check:
+    name: str
+    state: str  # SUCCESS, FAILURE, PENDING or SKIPPED
+
+
+def create_pr(title: str, body: str, head: str) -> int:
+    """Open a PR from `head` at the repository's default branch. `gh pr
+    create` prints the URL; the number is its trailing path segment."""
+    url = _run("pr", "create", "--title", title, "--body", body, "--head", head).strip()
+    return int(url.rsplit("/", 1)[-1])
+
+
+def view_pr(number: int) -> PullRequest:
+    out = _run("pr", "view", str(number), "--json", "number,state,headRefName")
+    payload = json.loads(out)
+    return PullRequest(
+        number=payload["number"], state=payload["state"], head_ref=payload["headRefName"]
+    )
+
+
+def pr_checks(number: int) -> list[Check]:
+    """The PR's checks. Parsed from `gh pr checks --json name,state`, whose
+    state is one of SUCCESS, FAILURE, PENDING or SKIPPED."""
+    out = _run("pr", "checks", str(number), "--json", "name,state")
+    return [Check(row["name"], row["state"]) for row in json.loads(out)]
+
+
+def failed_run(branch: str) -> int | None:
+    """The database id of the branch's most recent check run, or None."""
+    out = _run(
+        "run",
+        "list",
+        "--branch",
+        branch,
+        "--limit",
+        "1",
+        "--json",
+        "databaseId,status,conclusion",
+    )
+    rows = json.loads(out)
+    return rows[0]["databaseId"] if rows else None
+
+
+def rerun_failed_runs(run_id: int) -> None:
+    _run("run", "rerun", "--failed", str(run_id))
+
+
+def merge_pr(number: int) -> None:
+    """Merge through the merge queue: no strategy flag, never update-branch."""
+    _run("pr", "merge", str(number))

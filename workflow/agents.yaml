@@ -32,3 +32,11 @@ solver:
   backend: claude
   model: opus
   effort: high
+
+# Advanced capability, read-only, at delivery (block 4). Reviews the PR's
+# actual diff against the repository's review guidelines and returns a
+# verdict; it never writes to the worktree, and the driver verifies that.
+reviewer:
+  backend: claude
+  model: opus
+  effort: high

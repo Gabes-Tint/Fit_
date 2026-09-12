@@ -36,7 +36,7 @@ def begin() -> None:
     _buffer = []
     _log_file = None
     stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    line(f"🧭 Fit_ flow · blocks 1-3: plan, delegate, implement · {stamp}")
+    line(f"🧭 Fit_ flow · blocks 1-4: plan, delegate, implement, deliver · {stamp}")
 
 
 def open_for_issue(issue_number: int) -> None:

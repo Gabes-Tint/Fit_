@@ -1,6 +1,7 @@
 """One module per box of the diagram. This is exactly what go.py calls."""
 
 from fitflow.steps.delegate import run as run_delegate
+from fitflow.steps.deliver import run as run_deliver
 from fitflow.steps.failing_tests import write_failing_tests
 from fitflow.steps.hold import hold
 from fitflow.steps.implement import run as run_implement
@@ -11,10 +12,12 @@ from fitflow.steps.sync import sync
 from fitflow.steps.whose_call import hand_to_gabriel, whose_call
 
 delegate = run_delegate
+deliver = run_deliver
 implement = run_implement
 
 __all__ = [
     "delegate",
+    "deliver",
     "hand_to_gabriel",
     "hold",
     "implement",

@@ -70,6 +70,10 @@ solver:
   backend: codex
   model: provider/solver-test
   effort: solver-variant
+reviewer:
+  backend: claude
+  model: opus
+  effort: high
 """
     )
     _given_runnable_story(world, 200)
@@ -123,20 +127,21 @@ def test_default_config_is_resolved_beside_go_not_from_cwd(world):
         ("[]\n", "top level must be a mapping"),
         (
             "planner: {backend: claude, model: opus, effort: medium}\n",
-            "missing roles: builder, mechanic, solver",
+            "missing roles: builder, mechanic, reviewer, solver",
         ),
         (
             """planner: {backend: claude, model: opus, effort: medium}
 mechanic: {backend: claude, model: haiku, effort: low}
 reviewer: {backend: claude, model: opus, effort: high}
 """,
-            "extra roles: reviewer",
+            "missing roles: builder, solver",
         ),
         (
             """planner: {backend: claude, model: opus}
 mechanic: {backend: claude, model: haiku, effort: low}
 builder: {backend: claude, model: sonnet, effort: medium}
 solver: {backend: claude, model: opus, effort: high}
+reviewer: {backend: claude, model: opus, effort: high}
 """,
             "missing keys: effort",
         ),
@@ -145,6 +150,7 @@ solver: {backend: claude, model: opus, effort: high}
 mechanic: {backend: claude, model: haiku, effort: low}
 builder: {backend: claude, model: sonnet, effort: medium}
 solver: {backend: claude, model: opus, effort: high}
+reviewer: {backend: claude, model: opus, effort: high}
 """,
             "extra keys: timeout",
         ),
@@ -153,6 +159,7 @@ solver: {backend: claude, model: opus, effort: high}
 mechanic: {backend: claude, model: haiku, effort: low}
 builder: {backend: claude, model: sonnet, effort: medium}
 solver: {backend: claude, model: opus, effort: high}
+reviewer: {backend: claude, model: opus, effort: high}
 """,
             "planner.model must be a non-empty string",
         ),
@@ -161,6 +168,7 @@ solver: {backend: claude, model: opus, effort: high}
 mechanic: {backend: claude, model: haiku, effort: low}
 builder: {backend: claude, model: sonnet, effort: medium}
 solver: {backend: claude, model: opus, effort: high}
+reviewer: {backend: claude, model: opus, effort: high}
 """,
             "planner.model must be a non-empty string",
         ),
@@ -169,6 +177,7 @@ solver: {backend: claude, model: opus, effort: high}
 mechanic: {backend: claude, model: haiku, effort: low}
 builder: {backend: claude, model: sonnet, effort: medium}
 solver: {backend: claude, model: opus, effort: high}
+reviewer: {backend: claude, model: opus, effort: high}
 """,
             "backend must be one of claude, codex, grok, opencode",
         ),
@@ -177,6 +186,7 @@ solver: {backend: claude, model: opus, effort: high}
 mechanic: {backend: claude, model: haiku, effort: low}
 builder: {backend: claude, model: sonnet, effort: medium}
 solver: {backend: claude, model: opus, effort: high}
+reviewer: {backend: claude, model: opus, effort: high}
 """,
             "effort for backend claude must be one of high, low, max, medium, xhigh",
         ),

@@ -132,12 +132,112 @@ def cmd_api(argv, world):
     return 0
 
 
+def _pr(world, number):
+    pull = world.get("prs", {}).get(str(number))
+    if pull is None:
+        print(f"pull request #{number} not found", file=sys.stderr)
+        return None
+    return pull
+
+
+def cmd_pr_create(argv, world):
+    title = opt(argv, "--title")
+    body = opt(argv, "--body")
+    head = opt(argv, "--head")
+    number = world.get("next_pr_number", 500)
+    world["next_pr_number"] = number + 1
+    world.setdefault("prs", {})[str(number)] = {
+        "title": title,
+        "body": body,
+        "head": head,
+        "state": "OPEN",
+        "merged": False,
+    }
+    save(world)
+    print(f"https://github.com/Gabes-Tint/Fit_/pull/{number}")
+    return 0
+
+
+def cmd_pr_view(argv, world):
+    number = int(argv[2])
+    pull = _pr(world, number)
+    if pull is None:
+        return 1
+    print(json.dumps({"number": number, "state": pull["state"], "headRefName": pull["head"]}))
+    return 0
+
+
+def cmd_pr_checks(argv, world):
+    number = int(argv[2])
+    pull = _pr(world, number)
+    if pull is None:
+        return 1
+    outcomes = world.get("check_outcomes", {}).get(f"pr-{number}")
+    if isinstance(outcomes, list) and outcomes:
+        # consumed one value per invocation, like the test runners' fakes
+        outcome = outcomes.pop(0)
+        if not outcomes:
+            world["check_outcomes"][f"pr-{number}"] = outcome
+        save(world)
+    else:
+        outcome = outcomes if outcomes else "pass"
+    states = {
+        "pass": {"all-green": "SUCCESS", "static": "SUCCESS", "e2e": "SUCCESS"},
+        "fail": {"all-green": "FAILURE", "static": "SUCCESS", "e2e": "SUCCESS"},
+        "pending": {"all-green": "PENDING", "static": "SUCCESS", "e2e": "SUCCESS"},
+        "no_all_green": {"static": "SUCCESS", "e2e": "SUCCESS"},
+    }.get(outcome)
+    if states is None:
+        print(f"fake gh: unknown check outcome {outcome!r}", file=sys.stderr)
+        return 1
+    print(json.dumps([{"name": name, "state": state} for name, state in states.items()]))
+    return 0
+
+
+def cmd_pr_merge(argv, world):
+    number = int(argv[2])
+    pull = _pr(world, number)
+    if pull is None:
+        return 1
+    pull["state"] = "MERGED"
+    pull["merged"] = True
+    save(world)
+    return 0
+
+
+def cmd_run_list(argv, world):
+    branch = opt(argv, "--branch")
+    print(
+        json.dumps(
+            [
+                {
+                    "databaseId": world.setdefault("run_ids", {}).setdefault(branch, 4242),
+                    "status": "COMPLETED",
+                    "conclusion": "FAILURE",
+                }
+            ]
+        )
+    )
+    return 0
+
+
+def cmd_run_rerun(argv, world):
+    print(f"reran failed jobs of run {argv[-1]}")
+    return 0
+
+
 COMMANDS = {
     ("issue", "list"): cmd_list,
     ("issue", "view"): cmd_view,
     ("issue", "edit"): cmd_edit,
     ("issue", "comment"): cmd_comment,
     ("issue", "create"): cmd_create,
+    ("pr", "create"): cmd_pr_create,
+    ("pr", "view"): cmd_pr_view,
+    ("pr", "checks"): cmd_pr_checks,
+    ("pr", "merge"): cmd_pr_merge,
+    ("run", "list"): cmd_run_list,
+    ("run", "rerun"): cmd_run_rerun,
 }
 
 

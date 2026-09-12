@@ -6,13 +6,15 @@ from enum import IntEnum
 class Outcome(IntEnum):
     """Every way a run can end. The value is the process exit code.
 
-    Blocks 1-3 all end in this vocabulary: PLANNED (aliased as IMPLEMENTED)
-    is the full run's success - planned, delegated, implemented and every
-    slice gate passed - while 20-26 belong mostly to block 1, 27-29 to
-    blocks 2-3 and 31 to block 1's acceptance-test defect gate."""
+    Blocks 1-4 all end in this vocabulary: PLANNED (aliased as IMPLEMENTED
+    and DELIVERED) is the full run's success - planned, delegated,
+    implemented, every slice gate passed and the PR merged - while 20-26
+    belong mostly to block 1, 27-29 to blocks 2-3 and 31 to block 1's
+    acceptance-test defect gate."""
 
     PLANNED = 0
     IMPLEMENTED = 0  # alias: exit 0 after blocks 2-3 also pass
+    DELIVERED = 0  # alias: exit 0 after block 4's merge also passes
     NOTHING_TO_PICK = 10
     NEEDS_GABRIEL = 11
     CANNOT_PICK = 20

@@ -168,6 +168,9 @@ class RunRecord:
     config: dict[str, dict[str, str]]
     slices: dict[str, SliceRecord] = field(default_factory=dict)
     terminal: str = ""  # empty while the run is live; the outcome name when stopped
+    # Block 4's delivery state: integration branch and head, the PR number,
+    # review rounds and their findings, and whether the one CI rerun is spent.
+    delivery: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self._lock = threading.RLock()
@@ -199,6 +202,7 @@ class RunRecord:
             "base_sha": self.base_sha,
             "config": self.config,
             "terminal": self.terminal,
+            "delivery": self.delivery,
             "slices": {layer: asdict(record) for layer, record in self.slices.items()},
         }
 
@@ -216,6 +220,7 @@ class RunRecord:
             config=payload["config"],
             slices=slices,
             terminal=payload.get("terminal", ""),
+            delivery=payload.get("delivery", {}),
         )
 
     # --- turn identities ------------------------------------------------------

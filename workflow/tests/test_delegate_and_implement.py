@@ -257,6 +257,7 @@ def test_solver_signals_select_the_solver_role_and_config(world):
         "solver",
         files={"src/lib/delegate.ts": "export const delegate = true;\n"},
     )
+    world.reviewer_answers(403, "merge")
 
     result = run_flow(world)
 
@@ -662,7 +663,11 @@ def test_run_state_file_records_the_run_for_audit(world):
     state = json.loads((world.home / "runs" / "story-451.json").read_text())
     assert state["story_number"] == 451
     assert state["slices"]["domain"]["state"] == "succeeded"
-    assert state["terminal"] == "IMPLEMENTED"
+    # the run now continues through block 4's merge, so the terminal outcome
+    # is the delivery, not the block 3 boundary
+    assert state["terminal"] == "DELIVERED"
+    assert state["delivery"]["pr_number"] == 500
+    assert state["delivery"]["verdict"] == "mechanical"
     assert state["slices"]["domain"]["frozen_commit"]
     assert state["slices"]["domain"]["assignments"][0]["role"] == "mechanic"
     assert state["slices"]["domain"]["assignments"][0]["config"]["model"] == "haiku"
@@ -1186,6 +1191,7 @@ def test_an_unknown_pattern_without_a_procedure_still_selects_the_solver(world):
         "solver",
         files={"src/lib/delegate.ts": "export const delegate = true;\n"},
     )
+    world.reviewer_answers(405, "merge")
 
     result = run_flow(world)
 
