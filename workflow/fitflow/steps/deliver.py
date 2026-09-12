@@ -351,28 +351,39 @@ def _stop_for_gabriel(story, why: str) -> None:
 
 
 def _claims(story, record: RunRecord) -> None:
-    """The driver's own read of the PR's checks: all-green required, one
-    counted rerun, pending past the timeout is a tool failure. Checks that
-    have not registered yet - the normal state seconds after a PR opens -
-    are pending like any other."""
+    """The driver's own read of the PR's checks: the required check green,
+    one counted rerun, pending past the timeout is a tool failure. Checks
+    that have not registered yet - the normal state seconds after a PR
+    opens - are pending like any other, and so is the required check before
+    its needs finish."""
     pr_number = int(record.delivery["pr_number"])
     branch = record.delivery["integration_branch"]
     deadline = time.monotonic() + settings.CI_TIMEOUT
     while True:
         checks = github.pr_checks(pr_number)
-        failed = [check.name for check in checks if check.state == "FAILURE"]
-        pending = [check.name for check in checks if check.state == "PENDING"]
-        if not checks:
-            pending = ["(no checks registered yet)"]
+        failed = [check.name for check in checks if check.state in _FAILED_STATES]
+        waiting = [
+            check.name
+            for check in checks
+            if check.state not in _FAILED_STATES and check.state not in _GREEN_STATES
+        ]
+        if not checks or settings.REQUIRED_CHECK not in {check.name for check in checks}:
+            waiting = [*waiting, "(the required check has not registered yet)"]
         if failed:
             _react_to_red(story, record, branch, pr_number, failed)
             continue
-        if pending:
-            _await_checks(story, pr_number, deadline, pending)
+        if waiting:
+            _await_checks(story, pr_number, deadline, waiting)
             continue
         _require_all_green(story, pr_number, checks)
         narrate.line(f"🟢 CI green on PR #{pr_number} ({len(checks)} checks)")
         return
+
+
+# `gh pr checks --json state` vocabulary, classified. A cancelled or timed
+# out run is not green; NEUTRAL (e.g. a skipped-not-applicable job) is.
+_FAILED_STATES = {"FAILURE", "CANCELLED", "TIMED_OUT"}
+_GREEN_STATES = {"SUCCESS", "SKIPPED", "NEUTRAL"}
 
 
 def _react_to_red(
@@ -403,17 +414,10 @@ def _await_checks(story, pr_number: int, deadline: float, pending: list[str]) ->
 def _require_all_green(story, pr_number: int, checks: list) -> None:
     names = {check.name: check.state for check in checks}
     required = names.get(settings.REQUIRED_CHECK)
-    if required is None:
+    if required != "SUCCESS":
         raise FlowFailure(
             Outcome.TOOL_FAILED,
-            f"PR #{pr_number} has no {settings.REQUIRED_CHECK} check",
-            story.number,
-            add_blocked=True,
-        )
-    if required not in ("SUCCESS", "SKIPPED"):
-        raise FlowFailure(
-            Outcome.TOOL_FAILED,
-            f"PR #{pr_number}'s {settings.REQUIRED_CHECK} is {required}, not green",
+            f"PR #{pr_number}'s {settings.REQUIRED_CHECK} check is {required!r}, not green",
             story.number,
             add_blocked=True,
         )

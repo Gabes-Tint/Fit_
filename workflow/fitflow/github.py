@@ -159,7 +159,8 @@ def view_pr(number: int) -> PullRequest:
 
 def pr_checks(number: int) -> list[Check]:
     """The PR's checks. Parsed from `gh pr checks --json name,state`, whose
-    state is one of SUCCESS, FAILURE, PENDING or SKIPPED.
+    state is one of SUCCESS, SKIPPED, NEUTRAL, FAILURE, CANCELLED,
+    TIMED_OUT, PENDING, IN_PROGRESS or QUEUED.
 
     `gh pr checks` exits 8 when checks are pending or failing - that is a
     normal answer, not an error, and the JSON it prints is still the

@@ -310,7 +310,7 @@ def test_ci_without_the_required_check_is_a_tool_failure(world):
     )
     world.given_checks(500, "no_all_green")
 
-    result = run_flow(world, "1000")
+    result = run_flow(world, "1000", env_extra={"FIT_FLOW_CI_TIMEOUT": "0"})
 
     assert result.returncode == 26, result.stdout + result.stderr
 
