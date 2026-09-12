@@ -385,8 +385,7 @@ jobs:
         with:
           name: security
 
-  # The Python driver behind workflow/go.py has its own pytest suite (209
-  # tests as of writing) that only ever ran on a developer's machine. This
+  # The Python driver behind workflow/go.py has its own pytest suite. This
   # job gates it the same way every other lane is gated, so a driver change
   # that breaks its own tests fails the merge instead of surfacing later.
   workflow:
@@ -397,7 +396,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up uv
@@ -413,11 +411,6 @@ jobs:
         working-directory: workflow
         run: uv run ruff check .
 
-      # fitflow/steps/deliver.py, fitflow/steps/implement.py, fitflow/review.py,
-      # fitflow/worktrees.py and tests/test_review.py are unformatted on this
-      # branch already; a sibling branch owns them and reformatting here would
-      # collide with its diff. The check stays a gate -- it fails until that
-      # branch lands and reformats them, same as any other broken gate would.
       - name: Format check
         working-directory: workflow
         run: uv run ruff format --check .
