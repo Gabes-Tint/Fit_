@@ -7,19 +7,18 @@ state, and invokes agents through `aarmy` only as bounded workers. It does not
 need an external Codex or Claude Code session to supervise or continuously
 monitor it.
 
-Blocks 1-4 are implemented today, through block 4's merge: pick and plan,
-delegate (role selection and the pre-launch barrier), the bounded
-implement/validate/correct/escalate loops ending at the all-slice join, and
-delivery (integration branch, PR, review, CI, merge). Block 5, after the
-merge - tag, deploy, smoke, android, cleanup - describes the target
-architecture, not current Python behavior. The prose policy
-behind the flow lives in `ORCHESTRATOR.md`, `AGENTS.md` and `QUALITY.md`;
-this page is the map.
+Blocks 1-5 are implemented today, from picking a story to a deployed
+release: pick and plan, delegate (role selection and the pre-launch
+barrier), the bounded implement/validate/correct/escalate loops ending at
+the all-slice join, delivery (integration branch, PR, review, CI, merge),
+and ship (the merge commit's tag, main's own CI, the QA deploy, the flaky
+decision, the production deploy, the Android release and cleanup). The
+prose policy behind the flow lives in `ORCHESTRATOR.md`, `AGENTS.md` and
+`QUALITY.md`; this page is the map.
 
 The [delegation and implementation gates](../workflow/delegation-contract.md)
 define block 2's selection and validation rules, bounded repairs, the
-block 3 join, and block 4's delivery gates. Their implemented part stops
-after the merge; what happens after a merge is future.
+block 3 join, block 4's delivery gates and block 5's ship gates.
 
 ```mermaid
 flowchart TD
@@ -128,20 +127,34 @@ flowchart TD
         green -- yes --> merge
     end
 
-    subgraph after["5. After merge — FUTURE"]
-        tag["version-tag.yml<br/>bun run version:next, patch tag"]
-        qa{"main CI green?"}
-        deploy_qa["bun run deploy (QA 10.10.0.198)"]
-        flaky{"Any flaky e2e shard?"}
-        deploy_prod["bun run deploy (prod fit-be.i.psilva.org)"]
-        smoke["bun run deploy:smoke"]
-        android["bun run android:release / make android"]
-        done["bun run worktree:done slug<br/>gh issue comment: merged, deployed, next"]
-        merge -. "future: after merge" .-> tag --> qa
-        qa -- yes --> deploy_qa --> flaky
-        flaky -- no --> deploy_prod --> smoke --> done
-        flaky -- yes --> done
-        deploy_qa -.-> android
+    subgraph after["5. After merge — ship"]
+        merge_sha["gh pr view --json mergeCommit<br/>the exact commit that landed"]
+        tag["Wait for version-tag.yml<br/>a v* tag on origin pointing at the merge commit"]
+        main_ci{"main CI green for that commit?<br/>a successful ci.yml push run on main,<br/>or a successful merge_group run for it"}
+        stop_ci["TOOL_FAILED<br/>post-merge red main is a human call"]
+        release_wt["release-story-n worktree at the merge commit<br/>bun run worktree:new, reset, verified clean"]
+        deploy_qa["bun run deploy --tunnel<br/>FIT_DEPLOY_HOST / FIT_PUBLIC_ORIGIN name QA"]
+        smoke_qa{"reports/deploy/smoke.json ok,<br/>and the live release is this commit?"}
+        stop_deploy["DEPLOY_FAILED<br/>needs-gabriel, assigned, never a rollback"]
+        flaky{"Flaky signal?<br/>an End-to-end job in the counted rerun, or<br/>main push red while merge_group is green"}
+        ship_to{"FIT_FLOW_SHIP_TO"}
+        deploy_prod["bun run deploy<br/>FIT_DEPLOY_HOST / FIT_PUBLIC_ORIGIN name prod"]
+        smoke_prod{"smoke.json ok for this commit?"}
+        android["bun run android:release --server-url<br/>APK path and sha256 recorded"]
+        cleanup["bun run worktree:done for every slice,<br/>the integration and the release worktree<br/>child issues closed, in-progress removed"]
+        shipped["gh issue comment: PR, tag, QA, prod,<br/>android, cleanup, next<br/>terminal SHIPPED"]
+        merge --> merge_sha --> tag --> main_ci
+        main_ci -- no --> stop_ci
+        main_ci -- yes --> release_wt --> deploy_qa --> smoke_qa
+        smoke_qa -- no --> stop_deploy
+        smoke_qa -- yes --> flaky
+        flaky -- yes --> cleanup
+        flaky -- no --> ship_to
+        ship_to -- qa --> cleanup
+        ship_to -- prod --> deploy_prod --> smoke_prod
+        smoke_prod -- no --> stop_deploy
+        smoke_prod -- yes --> android --> cleanup
+        cleanup --> shipped
     end
 
     subgraph scheduled["Scheduled, never gating a merge"]
@@ -230,6 +243,27 @@ flowchart TD
   turn; repairable failures retry, external and contract failures stop
   immediately, and exhaustion retains the last diagnostic for the terminal
   stop. Worktrees are preserved for audit; cleanup is an explicit later action.
+- Block 5 runs in the same invocation, immediately after the merge, and
+  believes nothing a script tells it. It reads the merge commit from the PR,
+  waits for `version-tag.yml`'s tag to point at that commit, and applies
+  `main-ci-gate.ts`'s own acceptance itself - a successful `ci.yml` `push`
+  run on `main` for the commit, or a successful `merge_group` run for it.
+  Each deploy runs in a throwaway `release-story-<n>` worktree reset to the
+  merge commit, and is judged by reading `reports/deploy/smoke.json`
+  afterwards: `ok`, and a passed release check naming that same commit. The
+  flaky decision is what withholds production - an `End-to-end` job in
+  block 4's one counted rerun, or main's `push` run red beside a green
+  `merge_group` run, is the `failOnFlakyTests` signature, and an unfinished
+  push run counts as flaky too. Withheld production is not a failure: the
+  run still cleans up, comments and ends `SHIPPED`. A deploy that fails is
+  `DEPLOY_FAILED` with `needs-gabriel`, never a rollback and never a
+  `blocked` retry of blocks 1-4 - the merge has already landed.
+- The deploy targets are configuration, never repository content:
+  `FIT_FLOW_QA_DEPLOY_HOST`, `FIT_FLOW_QA_PUBLIC_ORIGIN` and, when
+  `FIT_FLOW_SHIP_TO=prod`, `FIT_FLOW_PROD_DEPLOY_HOST` and
+  `FIT_FLOW_PROD_PUBLIC_ORIGIN`. They are validated beside the agent roster
+  at startup, before any side effect, so a run never merges a pull request
+  and only then discovers it cannot deploy what it merged.
 - Every gate tier is `bun scripts/quality/gate.ts <tier>` and leaves
   `reports/quality/gate-<tier>.json`. Re-run one step with `--only <step>`.
 - CI is the authority. Heavy tiers (`make deep`, `bun run verify:deep`) are
