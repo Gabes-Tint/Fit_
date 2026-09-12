@@ -595,7 +595,11 @@ removed with `bun run worktree:done <slug>`. Because main squashes, those
 branches are never ancestors of `origin/main` and `worktree:done` would
 refuse them, so the driver establishes the same fact by other means before
 forcing: the worktree is clean, and its recorded commit is an ancestor of
-the integration head the merged PR carried. `--force` then bypasses exactly
+the integration head the merged PR carried. That head is read from the pull
+request itself - `gh pr view <n> --json headRefOid,mergeCommit` - and the
+integration worktree is forced only when the PR is `MERGED` and its
+`headRefOid` is the commit this run integrated. A local branch still
+pointing at that commit proves only that nobody moved it. `--force` then bypasses exactly
 the refusal the driver has already answered; the local branch is deleted
 separately, and only when its tip is still the sha the record names. A
 worktree whose status cannot be read is not a clean one: a failed `status`

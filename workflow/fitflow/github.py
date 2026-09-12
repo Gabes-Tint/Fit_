@@ -248,6 +248,28 @@ def merge_commit(number: int) -> str:
     return payload.get("oid") or ""
 
 
+@dataclass
+class MergeRecord:
+    """What the pull request itself says about the merge: the head commit
+    it carried and the squash commit main took."""
+
+    state: str
+    head_sha: str
+    merge_sha: str
+
+
+def merge_record(number: int) -> MergeRecord:
+    """The PR's own account of what landed. `headRefOid` is the only thing
+    that ties a commit the driver pushed to the merge: main squashes, so no
+    ancestry test in this clone can find that commit on main."""
+    payload = json.loads(_run("pr", "view", str(number), "--json", "state,headRefOid,mergeCommit"))
+    return MergeRecord(
+        state=payload.get("state") or "",
+        head_sha=payload.get("headRefOid") or "",
+        merge_sha=(payload.get("mergeCommit") or {}).get("oid") or "",
+    )
+
+
 def ci_runs_for(sha: str) -> list[Run]:
     """Every `ci.yml` run GitHub reports for one commit, newest first.
     `--commit` matches on SHA alone, so the caller checks the branch per

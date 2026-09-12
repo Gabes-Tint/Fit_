@@ -564,7 +564,7 @@ def _cleanup_targets(record: RunRecord, merge_sha: str) -> list[tuple[str, str, 
         for piece in record.ordered()
     ]
     branch = record.delivery["integration_branch"]
-    targets.append((branch, integration, _tip_is(branch, integration)))
+    targets.append((branch, integration, _integration_landed(record, integration)))
     release = _ship_value(record, "release_worktree") or {}
     if release:
         targets.append(
@@ -576,6 +576,25 @@ def _cleanup_targets(record: RunRecord, merge_sha: str) -> list[tuple[str, str, 
             )
         )
     return targets
+
+
+def _integration_landed(record: RunRecord, integration: str) -> bool:
+    """The pull request's own record, not the local tip. A branch still
+    pointing at the sha the driver pushed says only that nobody moved it;
+    what makes forcing safe is GitHub saying it merged that exact commit."""
+    pr_number = int(record.delivery["pr_number"])
+    try:
+        merged = github.merge_record(pr_number)
+    except RuntimeError as error:
+        narrate.line(f"⚠️  PR #{pr_number} could not be read: {error}")
+        return False
+    if merged.state == "MERGED" and merged.head_sha == integration:
+        return True
+    narrate.line(
+        f"⚠️  PR #{pr_number} is {merged.state} at {merged.head_sha[:12] or '(no head)'}, "
+        f"not the {integration[:12]} this run integrated; it will not be forced"
+    )
+    return False
 
 
 def _tip_is(branch: str, sha: str) -> bool:

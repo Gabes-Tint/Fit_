@@ -178,12 +178,16 @@ def cmd_pr_view(argv, world):
     pull = _pr(world, number)
     if pull is None:
         return 1
-    fields = (opt(argv, "--json") or "").split(",")
-    if "mergeCommit" in fields:
-        sha = pull.get("mergeCommit")
-        print(json.dumps({"mergeCommit": {"oid": sha} if sha else None}))
-        return 0
-    print(json.dumps({"number": number, "state": pull["state"], "headRefName": pull["head"]}))
+    sha = pull.get("mergeCommit")
+    available = {
+        "number": number,
+        "state": pull["state"],
+        "headRefName": pull["head"],
+        "headRefOid": pull.get("headRefOid", ""),
+        "mergeCommit": {"oid": sha} if sha else None,
+    }
+    fields = [field for field in (opt(argv, "--json") or "").split(",") if field in available]
+    print(json.dumps({field: available[field] for field in fields}))
     return 0
 
 
@@ -277,6 +281,11 @@ def cmd_pr_merge(argv, world):
         return 1
     work = _work_clone()
     _git(work, "checkout", "-B", "main", "origin/main")
+    # what GitHub then reports as headRefOid: the commit the PR merged, which
+    # a scenario can script as something else to stand for a branch someone
+    # pushed to after the driver froze it
+    override = world.get("pr_head_override", {}).get(str(number))
+    pull["headRefOid"] = override or _git(work, "rev-parse", f"origin/{pull['head']}")
     _git(work, "merge", "--squash", f"origin/{pull['head']}")
     _git(work, "commit", "-m", f"{pull['title']} (#{number})")
     sha = _git(work, "rev-parse", "HEAD")

@@ -424,6 +424,28 @@ def test_a_worktree_that_cannot_be_cleaned_up_is_reported_after_the_comment(worl
     assert any("story-1000-domain" in body for body in _comments(world))
 
 
+def test_the_integration_worktree_is_forced_only_on_the_prs_own_record(world):
+    """A local branch still pointing at the sha the driver pushed says only
+    that nobody moved it. What makes `--force` safe is GitHub saying it
+    merged that exact commit, so a PR that merged another head is not
+    proof and the worktree is preserved."""
+    _shippable(world)
+    world.given_pr_merged_another_head(500)
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 26, result.stdout + result.stderr
+    assert world.slice_worktree_path("story-1000").exists()
+    assert [
+        call["argv"]
+        for call in _bun_calls(world, "worktree:done")
+        if "story-1000" in call["argv"] and "--force" in call["argv"]
+    ] == []
+    ship, _ = _ship_record(world)
+    assert ship["cleanup"]["kept"] == ["story-1000"]
+    assert any("story-1000" in body for body in _comments(world))
+
+
 def test_a_worktree_whose_status_cannot_be_read_is_never_forced(world):
     """An unreadable status is not an empty one. `worktree:done --force` is
     the only thing standing between a corrupt index and an agent's

@@ -425,6 +425,14 @@ reviewer:
         self.world["android_outcome"] = outcome
         self._save()
 
+    def given_pr_merged_another_head(self, pr_number: int, sha: str = "f" * 40) -> None:
+        """GitHub reports the PR merged a head commit the driver never
+        froze - someone pushed to the branch, so what landed is not what
+        this run integrated."""
+        self._load()
+        self.world.setdefault("pr_head_override", {})[str(pr_number)] = sha
+        self._save()
+
     def given_status_unreadable(self, slug: str) -> None:
         """This worktree's index stops being readable while the deploy runs,
         so `status` fails there instead of printing an empty diff."""
