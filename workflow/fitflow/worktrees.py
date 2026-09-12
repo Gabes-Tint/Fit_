@@ -15,6 +15,12 @@ def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess:
     return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
 
 
+class ReadError(RuntimeError):
+    """A read-only command exited non-zero, so its answer is unknown rather
+    than empty. Absence and failure look identical on stdout, and every
+    caller here treats absence as a fact worth acting on."""
+
+
 def _run_checked(cmd: list[str], cwd: Path) -> str:
     result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
     if result.returncode != 0:
@@ -241,6 +247,8 @@ def tags_at(sha: str) -> list[str]:
     this clone: `version-tag.yml` creates the tag seconds after the merge
     and nothing here has fetched it."""
     result = _git("ls-remote", "--tags", "origin", cwd=settings.FIT_REPO)
+    if result.returncode != 0:
+        raise ReadError(f"origin's tags could not be read: {_failure(result)}")
     tags = []
     for line in result.stdout.splitlines():
         parts = line.split()
@@ -325,8 +333,13 @@ def worktree_done(slug: str, force: bool) -> tuple[int, str]:
 
 
 def branch_tip(branch: str) -> str:
-    """The commit a local branch points at, or "" if there is no such branch."""
+    """The commit a local branch points at, or "" if there is no such
+    branch. `--quiet` makes an unknown ref exit 1 silently, so anything
+    that also complains failed to look and is raised: cleanup reads a tip
+    to decide whether work is safe to throw away."""
     result = _git("rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", cwd=settings.FIT_REPO)
+    if result.returncode != 0 and result.stderr.strip():
+        raise ReadError(f"the tip of {branch} could not be read: {_failure(result)}")
     return result.stdout.strip()
 
 

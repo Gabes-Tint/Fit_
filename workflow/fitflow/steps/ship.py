@@ -121,24 +121,46 @@ def _merge_sha(record: RunRecord) -> str:
 
 
 def _await_tag(record: RunRecord, merge_sha: str) -> str:
-    """`version-tag.yml` tags every merge to main; the driver never tags."""
+    """`version-tag.yml` tags every merge to main; the driver never tags. A
+    read that fails is a failure to look, not an answer that there is no
+    tag: it is narrated as itself, retried inside the same deadline, and
+    named as itself if the deadline passes."""
     deadline = time.monotonic() + settings.MAIN_CI_TIMEOUT
     while True:
-        tags = worktrees.tags_at(merge_sha)
+        tags, unreadable = _tags_now(merge_sha)
         if tags:
             _remember(record, "tag", tags[0])
             narrate.line(f"🏷️  {merge_sha[:12]} is tagged {tags[0]}")
             return tags[0]
         if time.monotonic() > deadline:
-            raise _stop(
-                record,
-                Outcome.TOOL_FAILED,
-                f"no v* tag points at {merge_sha[:12]} after "
-                f"{settings.MAIN_CI_TIMEOUT}s; version-tag.yml should have "
-                "tagged this merge, so read that workflow's run before shipping",
-            )
-        narrate.line(f"⏳ Waiting for version-tag.yml to tag {merge_sha[:12]}")
+            raise _stop(record, Outcome.TOOL_FAILED, _untagged_why(merge_sha, unreadable))
+        narrate.line(
+            f"⏳ {unreadable}, retrying"
+            if unreadable
+            else f"⏳ Waiting for version-tag.yml to tag {merge_sha[:12]}"
+        )
         time.sleep(settings.CI_POLL_SECONDS)
+
+
+def _tags_now(merge_sha: str) -> tuple[list[str], str]:
+    try:
+        return worktrees.tags_at(merge_sha), ""
+    except worktrees.ReadError as error:
+        return [], str(error)
+
+
+def _untagged_why(merge_sha: str, unreadable: str) -> str:
+    if unreadable:
+        return (
+            f"{unreadable}, through the {settings.MAIN_CI_TIMEOUT}s allowed for "
+            f"{merge_sha[:12]}'s tag; nothing here says whether version-tag.yml "
+            "tagged the merge, only that origin could not be asked"
+        )
+    return (
+        f"no v* tag points at {merge_sha[:12]} after {settings.MAIN_CI_TIMEOUT}s; "
+        "version-tag.yml should have tagged this merge, so read that workflow's "
+        "run before shipping"
+    )
 
 
 # --- main's own CI ------------------------------------------------------------
@@ -518,24 +540,34 @@ def _cleanup_targets(record: RunRecord, merge_sha: str) -> list[tuple[str, str, 
         (
             piece.slug,
             piece.frozen_commit,
-            worktrees.branch_tip(piece.slug) == piece.frozen_commit
+            _tip_is(piece.slug, piece.frozen_commit)
             and worktrees.is_ancestor_of(piece.frozen_commit, integration),
         )
         for piece in record.ordered()
     ]
     branch = record.delivery["integration_branch"]
-    targets.append((branch, integration, worktrees.branch_tip(branch) == integration))
+    targets.append((branch, integration, _tip_is(branch, integration)))
     release = _ship_value(record, "release_worktree") or {}
     if release:
         targets.append(
             (
                 release["slug"],
                 merge_sha,
-                worktrees.branch_tip(release["slug"]) == merge_sha
+                _tip_is(release["slug"], merge_sha)
                 and worktrees.is_ancestor_of(merge_sha, "origin/main"),
             )
         )
     return targets
+
+
+def _tip_is(branch: str, sha: str) -> bool:
+    """A tip that cannot be read is not a match. Forcing needs proof, and
+    the target is preserved and reported rather than taken on trust."""
+    try:
+        return worktrees.branch_tip(branch) == sha
+    except worktrees.ReadError as error:
+        narrate.line(f"⚠️  {error}; {branch} will not be forced")
+        return False
 
 
 def _close_children(record: RunRecord) -> None:

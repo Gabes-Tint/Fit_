@@ -503,9 +503,13 @@ is an external tool failure.
 
 `version-tag.yml` tags that commit on push to main; the driver never tags.
 It polls `git ls-remote --tags origin` until a `v*` tag points at the merge
-commit, bounded by `FIT_FLOW_MAIN_CI_TIMEOUT`. A timeout is `TOOL_FAILED`
-naming `version-tag.yml` - an untagged commit has no version for the build
-to bake in, and guessing one would ship a release whose name is a lie.
+commit, bounded by `FIT_FLOW_MAIN_CI_TIMEOUT`. A poll that fails to read
+origin is narrated and retried inside the same deadline rather than counted
+as "no tag": a timeout after a failed read is `TOOL_FAILED` saying origin
+could not be asked, and a timeout after origin answered is `TOOL_FAILED`
+naming `version-tag.yml`. They are different people's problems. An untagged
+commit has no version for the build to bake in, and guessing one would ship
+a release whose name is a lie.
 
 ### Main's own CI
 
