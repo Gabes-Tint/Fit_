@@ -413,8 +413,9 @@ reviewer:
 
     def given_deploy(self, target: str, outcome: str) -> None:
         """`bun run deploy` against the QA or prod host: ok, health_failed
-        (no report written at all), smoke_failed, or wrong_release (a green
-        report about some other commit)."""
+        (exits 1 with no report written at all), crash (exits 9 the same
+        way), no_report (exits 0 having written nothing), smoke_failed, or
+        wrong_release (a green report about some other commit)."""
         self._load()
         self.world.setdefault("deploy_outcomes", {})[HOSTS[target]] = outcome
         self._save()

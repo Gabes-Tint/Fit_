@@ -538,8 +538,12 @@ registration throttle is ten to the hour.
 The exit code is not the verdict. The driver reads
 `reports/deploy/smoke.json` from the release worktree itself and requires
 `ok` true and a passed check named `the live release is this commit` whose
-detail names the merge commit. A non-zero exit, a missing report, `ok`
-false, or a report about some other commit is `DEPLOY_FAILED` (exit 32):
+detail names the merge commit. Both deploys run in that one checkout, so
+the report is deleted before each of them: a report read after a deploy was
+written by that deploy, and a missing one is its own silence rather than
+the other deploy's answer. A non-zero exit, a missing report - after a
+clean exit as much as after a crash - `ok` false, or a report about some
+other commit is `DEPLOY_FAILED` (exit 32):
 the story is labelled `needs-gabriel` and assigned, and the comment carries
 the target and the report's `failure` string. A failed production deploy
 says QA is live. There is no rollback: what is live is what the last

@@ -310,6 +310,11 @@ def cmd_deploy(argv):
         # report is written at all
         print(f"{head} never answered on /signin; rolled back.", file=sys.stderr)
         return 1
+    if outcome == "no_report":
+        # `deploy.ts` returned 0 without ever writing a report - the case a
+        # previous deploy's report in the same checkout used to answer for
+        print("Activated, but the smoke check never ran.")
+        return 0
     if outcome == "crash":
         # killed mid-activation: the symlink may already have moved and
         # nothing was ever verified

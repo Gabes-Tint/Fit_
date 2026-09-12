@@ -317,6 +317,38 @@ def test_a_deploy_is_recorded_as_started_before_it_is_invoked(world):
     ship, _ = _ship_record(world)
     assert ship["prod"]["started"] == seen["started"]
     assert ship["prod"]["ok"] is False
+    assert "exited 9 before the smoke check ran" in ship["prod"]["why"]
+
+
+def test_qas_smoke_report_cannot_pass_for_production(world):
+    """Both deploys run in the same checkout. The report is removed before
+    each one, so production that writes none fails on its own silence
+    rather than on QA's answer from a minute earlier."""
+    _shippable(world)
+    world.given_deploy("prod", "no_report")
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 32, result.stdout + result.stderr
+    assert len(_bun_calls(world, "deploy")) == 2
+    ship, _ = _ship_record(world)
+    assert ship["qa"]["ok"] is True
+    assert ship["prod"]["ok"] is False
+    assert "exited 0 and left no reports/deploy/smoke.json" in ship["prod"]["why"]
+    assert any("nothing was verified" in body for body in _comments(world))
+
+
+def test_a_qa_deploy_that_writes_no_report_after_a_clean_exit_is_not_a_deploy(world):
+    _shippable(world)
+    world.given_deploy("qa", "no_report")
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 32, result.stdout + result.stderr
+    assert len(_bun_calls(world, "deploy")) == 1
+    ship, _ = _ship_record(world)
+    assert ship["qa"]["ok"] is False
+    assert "nothing was verified" in ship["qa"]["why"]
 
 
 def test_a_failed_production_deploy_says_qa_is_live(world):

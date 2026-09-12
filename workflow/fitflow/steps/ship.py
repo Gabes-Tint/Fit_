@@ -258,13 +258,32 @@ def _release_worktree(record: RunRecord, merge_sha: str) -> Path:
 # --- the deploys ---------------------------------------------------------------
 
 
+def _report_path(path: Path) -> Path:
+    return path / "reports" / "deploy" / "smoke.json"
+
+
+def _verdict(path: Path, merge_sha: str, code: int) -> tuple[bool, str]:
+    """Both deploys run in the same checkout, so the report is removed
+    before each one: a report found here was written by this deploy, and
+    its absence is this deploy's silence rather than the previous one's
+    answer. The exit code only explains that silence."""
+    if not _report_path(path).exists():
+        if code != 0:
+            return False, f"bun run deploy exited {code} before the smoke check ran"
+        return False, (
+            "bun run deploy exited 0 and left no reports/deploy/smoke.json, so nothing was verified"
+        )
+    ok, why = _smoke_verdict(path, merge_sha)
+    if code != 0 and ok:
+        return False, f"bun run deploy exited {code}"
+    return ok, why
+
+
 def _smoke_verdict(path: Path, merge_sha: str) -> tuple[bool, str]:
     """`deploy.ts`'s exit code is not the verdict; the report it left is.
     `smoke.json` carries no commit of its own - the release it asserted is
     in one check's detail - so that is what is compared."""
-    report_path = path / "reports" / "deploy" / "smoke.json"
-    if not report_path.exists():
-        return False, "the deploy wrote no reports/deploy/smoke.json, so nothing was verified"
+    report_path = _report_path(path)
     try:
         report = json.loads(report_path.read_text())
     except ValueError as error:
@@ -300,12 +319,11 @@ def _mark_started(record: RunRecord, name: str, target) -> str:
 def _deploy(story, record, path: Path, name: str, target, merge_sha: str, tunnel: bool) -> None:
     narrate.line(f"🚀 Deploying {merge_sha[:12]} to {name} ({target.origin})")
     started = _mark_started(record, name, target)
+    _report_path(path).unlink(missing_ok=True)
     code = worktrees.run_deploy(
         path, target.host, target.origin, tunnel, lambda line: narrate.block([line])
     )
-    ok, why = _smoke_verdict(path, merge_sha)
-    if code != 0 and ok:
-        ok, why = False, f"bun run deploy exited {code}"
+    ok, why = _verdict(path, merge_sha, code)
     _remember(
         record,
         name,
