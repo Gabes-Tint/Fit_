@@ -238,6 +238,12 @@ def test_reviewer_exhaustion_stops_and_needs_gabriel(world):
     assert "needs-gabriel" in world.issue(1000)["labels"]
     assert "blocked" in world.issue(1000)["labels"]
     assert _pr(world, 500)["state"] == "OPEN"
+    state = json.loads((world.home / "runs" / "story-1000.json").read_text())
+    piece = state["slices"]["domain"]
+    fix_attempts = [turn["attempt"] for turn in piece["turns"] if turn["kind"] == "review_fix"]
+    assert len(fix_attempts) == 2
+    assert fix_attempts[0] != fix_attempts[1]
+    assert fix_attempts[1] == fix_attempts[0] + 1
 
 
 def test_ci_red_is_rerun_once_then_green_merges(world):
