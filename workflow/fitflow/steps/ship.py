@@ -12,6 +12,7 @@ the smoke report it left behind. Each result is persisted under
 got.
 """
 
+import datetime
 import json
 import time
 from pathlib import Path
@@ -286,8 +287,19 @@ def _smoke_verdict(path: Path, merge_sha: str) -> tuple[bool, str]:
     return True, ""
 
 
+def _mark_started(record: RunRecord, name: str, target) -> str:
+    """Persisted before the deploy is invoked rather than after it returns.
+    A run killed mid-activation has already moved the symlink on the host;
+    a record that mentions the target only once the deploy answered would
+    say nothing was attempted there."""
+    started = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds")
+    _remember(record, name, {"started": started, "target": target.origin, "ok": None})
+    return started
+
+
 def _deploy(story, record, path: Path, name: str, target, merge_sha: str, tunnel: bool) -> None:
     narrate.line(f"🚀 Deploying {merge_sha[:12]} to {name} ({target.origin})")
+    started = _mark_started(record, name, target)
     code = worktrees.run_deploy(
         path, target.host, target.origin, tunnel, lambda line: narrate.block([line])
     )
@@ -297,7 +309,14 @@ def _deploy(story, record, path: Path, name: str, target, merge_sha: str, tunnel
     _remember(
         record,
         name,
-        {"ok": ok, "host": target.host, "origin": target.origin, "tunnel": tunnel, "why": why},
+        {
+            "started": started,
+            "ok": ok,
+            "host": target.host,
+            "origin": target.origin,
+            "tunnel": tunnel,
+            "why": why,
+        },
     )
     if ok:
         narrate.line(f"✅ {name} is live at {merge_sha[:12]} · smoke ok")

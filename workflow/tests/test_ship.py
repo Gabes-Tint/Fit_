@@ -299,6 +299,26 @@ def test_a_green_smoke_report_about_another_commit_is_not_a_deploy(world):
     assert len(_bun_calls(world, "deploy")) == 1
 
 
+def test_a_deploy_is_recorded_as_started_before_it_is_invoked(world):
+    """A run killed mid-activation has already moved the symlink on the
+    host. The record must name the target it was moving, so the marker is
+    persisted before the deploy runs - which is what the deploy itself
+    reads back here - and overwritten with the verdict afterwards."""
+    _shippable(world)
+    world.given_deploy("prod", "crash")
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 32, result.stdout + result.stderr
+    seen = _bun_calls(world, "deploy")[1]["ship"]["prod"]
+    assert seen["target"] == PROD_ORIGIN
+    assert seen["ok"] is None
+    assert seen["started"]
+    ship, _ = _ship_record(world)
+    assert ship["prod"]["started"] == seen["started"]
+    assert ship["prod"]["ok"] is False
+
+
 def test_a_failed_production_deploy_says_qa_is_live(world):
     _shippable(world)
     world.given_deploy("prod", "smoke_failed")

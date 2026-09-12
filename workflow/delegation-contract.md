@@ -486,7 +486,11 @@ keeps `in-progress` until block 5's cleanup removes it.
 Everything after the merge, in one run, on the same retained record. Each
 sub-result is persisted under `delivery.ship` as it settles - `merge_sha`,
 `tag`, `main_ci`, `qa`, `flaky`, `prod`, `android`, `cleanup` - so the
-record says exactly how far the ship got. Nothing here is a retry of blocks
+record says exactly how far the ship got. A deploy is recorded twice: a
+`{started, target, ok: null}` marker before the deploy is invoked, then the
+verdict over it, keeping `started`. A run killed between the two has
+already moved the symlink on that host, and a record written only on the
+way out would say the target was never touched. Nothing here is a retry of blocks
 1-4: the merge has landed, so a block 5 failure is reported and the run
 stops, never labelled `blocked` for a fresh picker.
 
@@ -524,8 +528,9 @@ every later smoke assertion a lie.
 
 ### Deploy and smoke
 
-`bun run deploy --tunnel` for QA, `bun run deploy` for production, with
-`FIT_DEPLOY_HOST` and `FIT_PUBLIC_ORIGIN` naming the target - the exact
+`bun run deploy --tunnel` for QA, `bun run deploy` for production, each
+marked started in the record before it is invoked, with `FIT_DEPLOY_HOST`
+and `FIT_PUBLIC_ORIGIN` naming the target - the exact
 variable names `scripts/deploy/config.ts` reads. `deploy:smoke` is never
 run separately: `deploy.ts` already runs it, and the public name's
 registration throttle is ten to the hour.

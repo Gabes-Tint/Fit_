@@ -271,6 +271,18 @@ def _break_scripted_indexes(world):
             index.write_bytes(b"not an index")
 
 
+def _ship_record_now():
+    """What the driver has persisted at the moment the deploy starts. A run
+    killed here is the case the started marker exists for, so the record as
+    the deploy found it is part of the contract, not an implementation
+    detail."""
+    home = Path(os.environ.get("FIT_FLOW_HOME", ""))
+    states = sorted((home / "runs").glob("story-*.json")) if str(home) else []
+    if not states:
+        return {}
+    return json.loads(states[-1].read_text()).get("delivery", {}).get("ship", {})
+
+
 def cmd_deploy(argv):
     """`bun run deploy [--tunnel]`: the env and the checkout it was given
     are the contract with the real script, so both are recorded."""
@@ -283,6 +295,7 @@ def cmd_deploy(argv):
         env={"FIT_DEPLOY_HOST": host, "FIT_PUBLIC_ORIGIN": origin},
         cwd=str(cwd),
         head=head,
+        ship=_ship_record_now(),
     )
     if host == "" or origin == "":
         print("FIT_DEPLOY_HOST must name the deployment target", file=sys.stderr)
@@ -297,6 +310,11 @@ def cmd_deploy(argv):
         # report is written at all
         print(f"{head} never answered on /signin; rolled back.", file=sys.stderr)
         return 1
+    if outcome == "crash":
+        # killed mid-activation: the symlink may already have moved and
+        # nothing was ever verified
+        print("ssh: connection closed by remote host", file=sys.stderr)
+        return 9
     report_path.parent.mkdir(parents=True, exist_ok=True)
     if outcome == "smoke_failed":
         failure = "sign-in returns a session: POST /api/sessions -> 500"

@@ -133,12 +133,12 @@ flowchart TD
         main_ci{"main CI green for that commit?<br/>a successful ci.yml push run on main,<br/>or a successful merge_group run for it"}
         stop_ci["TOOL_FAILED<br/>post-merge red main is a human call"]
         release_wt["release-story-n worktree at the merge commit<br/>bun run worktree:new, reset, verified clean"]
-        deploy_qa["bun run deploy --tunnel<br/>FIT_DEPLOY_HOST / FIT_PUBLIC_ORIGIN name QA"]
+        deploy_qa["bun run deploy --tunnel<br/>recorded as started before it runs<br/>FIT_DEPLOY_HOST / FIT_PUBLIC_ORIGIN name QA"]
         smoke_qa{"reports/deploy/smoke.json ok,<br/>and the live release is this commit?"}
         stop_deploy["DEPLOY_FAILED<br/>needs-gabriel, assigned, never a rollback"]
         flaky{"Flaky signal?<br/>an End-to-end job in the counted rerun, or<br/>main push red while merge_group is green"}
         ship_to{"FIT_FLOW_SHIP_TO"}
-        deploy_prod["bun run deploy<br/>FIT_DEPLOY_HOST / FIT_PUBLIC_ORIGIN name prod"]
+        deploy_prod["bun run deploy<br/>recorded as started before it runs<br/>FIT_DEPLOY_HOST / FIT_PUBLIC_ORIGIN name prod"]
         smoke_prod{"smoke.json ok for this commit?"}
         android["bun run android:release --server-url<br/>APK kept at FIT_FLOW_HOME/releases/tag<br/>re-hashed there, path and sha256 recorded"]
         cleanup["bun run worktree:done for every slice,<br/>the integration and the release worktree<br/>child issues closed, in-progress removed"]
