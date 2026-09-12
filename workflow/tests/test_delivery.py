@@ -274,12 +274,15 @@ def test_a_failure_while_the_run_is_still_executing_waits_before_rerunning(world
 
 
 def test_ci_red_after_the_one_rerun_stops(world):
+    # the rerun registers (checks visibly leave FAILURE for "pending") and
+    # then genuinely fails again - a second, real red, not an echo of the
+    # pre-rerun answer.
     _given_planned_story(world, 1000)
     _delegate(world, 1000, "domain", mechanic_signals())
     _implement(
         world, "story-1000-domain", "mechanic", {"src/lib/delivered.ts": "export const ok = 1;\n"}
     )
-    world.given_checks(500, ["fail", "fail"])
+    world.given_checks(500, ["fail", "pending", "fail"])
 
     result = run_flow(world, "1000")
 
@@ -288,6 +291,26 @@ def test_ci_red_after_the_one_rerun_stops(world):
     gh_argv = [" ".join(call["argv"][:2]) for call in _gh_calls(world)]
     assert gh_argv.count("run rerun") == 1
     assert "pr merge" not in gh_argv
+
+
+def test_a_stale_failure_reading_right_after_the_rerun_is_not_a_second_red(world):
+    """`gh pr checks` can still answer the pre-rerun FAILURE once more
+    right after `gh run rerun --failed` - the rerun has not registered
+    yet. That stale echo must not be read as a second, genuine failure and
+    spend the one counted rerun's outcome before it ever ran."""
+    _given_planned_story(world, 1000)
+    _delegate(world, 1000, "domain", mechanic_signals())
+    _implement(
+        world, "story-1000-domain", "mechanic", {"src/lib/delivered.ts": "export const ok = 1;\n"}
+    )
+    world.given_checks(500, ["fail", "fail", "pending", "pass"])
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    gh_argv = [" ".join(call["argv"][:2]) for call in _gh_calls(world)]
+    assert gh_argv.count("run rerun") == 1
+    assert _pr(world, 500)["state"] == "MERGED"
 
 
 def test_checks_that_are_not_registered_yet_are_polled_not_fatal(world):

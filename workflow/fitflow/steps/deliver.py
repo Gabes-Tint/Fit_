@@ -376,7 +376,7 @@ def _claims(story, record: RunRecord) -> None:
                 # in-progress run - wait for the run to settle first
                 _await_checks(story, pr_number, deadline, waiting)
                 continue
-            _react_to_red(story, record, branch, pr_number, failed)
+            _react_to_red(story, record, branch, pr_number, failed, deadline)
             continue
         if waiting:
             _await_checks(story, pr_number, deadline, waiting)
@@ -393,7 +393,7 @@ _GREEN_STATES = {"SUCCESS", "SKIPPED", "NEUTRAL"}
 
 
 def _react_to_red(
-    story, record: RunRecord, branch: str, pr_number: int, failed: list[str]
+    story, record: RunRecord, branch: str, pr_number: int, failed: list[str], deadline: float
 ) -> None:
     if record.delivery.get("rerun_used"):
         raise FlowFailure(
@@ -403,6 +403,26 @@ def _react_to_red(
             add_blocked=True,
         )
     _rerun(story, record, branch, failed)
+    _await_rerun_registration(story, pr_number, deadline, failed)
+
+
+def _await_rerun_registration(story, pr_number: int, deadline: float, reran: list[str]) -> None:
+    """`gh pr checks` can still report the stale FAILURE for the very
+    checks just reran - the rerun has not registered yet, and
+    `gh run rerun --failed` does not make that instantaneous. Reading that
+    stale red as a second, genuine failure would spend the one counted
+    rerun before it ever ran, so wait for each reran check to leave its
+    failed state before resuming normal judgement."""
+    while True:
+        checks = github.pr_checks(pr_number)
+        states = {check.name: check.state for check in checks}
+        still_failed = [name for name in reran if states.get(name) in _FAILED_STATES]
+        if not still_failed:
+            return
+        narrate.line(
+            f"⏳ Waiting for the rerun to register on PR #{pr_number}: {', '.join(still_failed)}"
+        )
+        _await_checks(story, pr_number, deadline, still_failed)
 
 
 def _await_checks(story, pr_number: int, deadline: float, pending: list[str]) -> None:
