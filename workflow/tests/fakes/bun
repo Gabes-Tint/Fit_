@@ -37,14 +37,24 @@ def save(world):
     tmp.replace(path)
 
 
-def record(argv):
+def record(argv, **extra):
     with (world_dir() / "calls.jsonl").open("a") as f:
-        f.write(json.dumps({"tool": "bun", "argv": argv}) + "\n")
+        f.write(json.dumps({"tool": "bun", "argv": argv, **extra}) + "\n")
+
+
+def git(cwd, *args, check=True):
+    result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+    if check and result.returncode != 0:
+        raise RuntimeError(f"fake bun: git {' '.join(args)}: {result.stderr}")
+    return result
 
 
 def cmd_worktree_new(slug):
     repo = Path(os.environ["FIT_REPO"])
     path = repo / ".claude" / "worktrees" / slug
+    # the real `worktree:new` fetches first, so the new worktree is based on
+    # the origin/main that exists now rather than the one this clone last saw
+    git(repo, "fetch", "origin")
     result = subprocess.run(
         ["git", "worktree", "add", "-b", slug, str(path), "origin/main"],
         cwd=repo,
@@ -55,6 +65,41 @@ def cmd_worktree_new(slug):
         print(result.stderr, file=sys.stderr)
         return 1
     print(str(path))
+    return 0
+
+
+def cmd_worktree_done(argv):
+    """`worktree:done`'s decision, from `scripts/dev/worktree.ts`: refuse
+    uncommitted work or commits origin/main has never seen unless --force,
+    and delete the branch only when it is merged."""
+    slug = argv[2]
+    force = "--force" in argv
+    repo = Path(os.environ["FIT_REPO"])
+    path = repo / ".claude" / "worktrees" / slug
+    world = load()
+    if slug in world.get("worktree_done_failures", []):
+        print(f"Refusing:\n  {path} has uncommitted changes", file=sys.stderr)
+        return 1
+    if not path.exists():
+        print(f"Refusing: {path} does not exist", file=sys.stderr)
+        return 1
+    git(repo, "fetch", "origin")
+    branch = git(path, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    dirty = git(path, "status", "--porcelain").stdout.strip() != ""
+    ahead = git(path, "log", "--oneline", f"origin/main..{branch}").stdout.strip()
+    reasons = []
+    if dirty:
+        reasons.append(f"{path} has uncommitted changes")
+    if ahead:
+        reasons.append(f"{branch} has commits origin/main does not: {ahead}")
+    if reasons and not force:
+        print("Refusing:\n" + "\n".join(f"  {reason}" for reason in reasons), file=sys.stderr)
+        return 1
+    git(repo, "worktree", "remove", *(["--force"] if force else []), str(path))
+    if ahead:
+        print(f"Leaving branch {branch}: not merged into origin/main.")
+    else:
+        git(repo, "branch", "-d", branch)
     return 0
 
 
@@ -70,9 +115,7 @@ def _vitest_report(files, outcomes):
             continue
         status = "failed" if outcome in {"fail", "import_error"} else "passed"
         assertions = [] if outcome == "import_error" else [{"status": status}]
-        entries.append(
-            {"name": f"/worktree/{f}", "status": status, "assertionResults": assertions}
-        )
+        entries.append({"name": f"/worktree/{f}", "status": status, "assertionResults": assertions})
     return {"testResults": entries}
 
 
@@ -114,7 +157,9 @@ def cmd_test_run(argv):
         print("test runner unavailable")
         return 1
     report = (
-        _playwright_report(files, effective) if "playwright" in argv else _vitest_report(files, effective)
+        _playwright_report(files, effective)
+        if "playwright" in argv
+        else _vitest_report(files, effective)
     )
     print(json.dumps(report))
     return 0
@@ -197,11 +242,87 @@ def cmd_verify_changed():
     return 0
 
 
+def _smoke_report(ok, release, expected, failure=None):
+    """The fields `scripts/deploy/smoke.ts` writes: no commit of its own,
+    only the check whose detail names the release it asserted."""
+    passed = [
+        {"name": "the sign-in page is served by this app", "detail": "GET /signin -> 200"},
+        {
+            "name": "the live release is this commit",
+            "detail": f"/opt/fit/current -> {release}, expected {expected}",
+        },
+    ]
+    report = {"ok": ok, "ranAt": "2026-09-12T00:00:00.000Z", "passed": passed}
+    if failure is not None:
+        report["failure"] = failure
+    return report
+
+
+def cmd_deploy(argv):
+    """`bun run deploy [--tunnel]`: the env and the checkout it was given
+    are the contract with the real script, so both are recorded."""
+    cwd = Path.cwd()
+    head = git(cwd, "rev-parse", "HEAD").stdout.strip()
+    host = os.environ.get("FIT_DEPLOY_HOST", "")
+    origin = os.environ.get("FIT_PUBLIC_ORIGIN", "")
+    record(
+        argv,
+        env={"FIT_DEPLOY_HOST": host, "FIT_PUBLIC_ORIGIN": origin},
+        cwd=str(cwd),
+        head=head,
+    )
+    if host == "" or origin == "":
+        print("FIT_DEPLOY_HOST must name the deployment target", file=sys.stderr)
+        return 1
+    outcome = load().get("deploy_outcomes", {}).get(host, "ok")
+    report_path = cwd / "reports" / "deploy" / "smoke.json"
+    print(f"Deploying {head} to {host}.")
+    if outcome == "health_failed":
+        # activation failed: `deploy.ts` returns before `smoke()`, so no
+        # report is written at all
+        print(f"{head} never answered on /signin; rolled back.", file=sys.stderr)
+        return 1
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    if outcome == "smoke_failed":
+        failure = "sign-in returns a session: POST /api/sessions -> 500"
+        report_path.write_text(json.dumps(_smoke_report(False, head, head, failure), indent=2))
+        print(f"  FAIL {failure}", file=sys.stderr)
+        return 1
+    if outcome == "wrong_release":
+        # green report, wrong release: the exit code says shipped and only
+        # reading the report says which commit
+        report_path.write_text(json.dumps(_smoke_report(True, "deadbeef", "deadbeef"), indent=2))
+        return 0
+    report_path.write_text(json.dumps(_smoke_report(True, head, head), indent=2))
+    return 0
+
+
+_APK = "android/app/build/outputs/apk/release/app-release.apk"
+_APK_SHA = "3b1f" + "0" * 60
+
+
+def cmd_android_release(argv):
+    cwd = Path.cwd()
+    record(argv, cwd=str(cwd))
+    if load().get("android_outcome", "ok") != "ok":
+        print("apksigner refused the APK it just built", file=sys.stderr)
+        return 1
+    print(f"\nAPK: {cwd / _APK}")
+    print(f"SHA-256: {_APK_SHA}")
+    return 0
+
+
 def main() -> int:
     argv = sys.argv[1:]
+    if argv[:2] == ["run", "deploy"]:
+        return cmd_deploy(argv)
+    if argv[:2] == ["run", "android:release"]:
+        return cmd_android_release(argv)
     record(argv)
     if argv[:2] == ["run", "worktree:new"]:
         return cmd_worktree_new(argv[2])
+    if argv[:2] == ["run", "worktree:done"]:
+        return cmd_worktree_done(argv)
     if argv[:1] == ["x"]:
         return cmd_test_run(argv)
     if argv[:2] == ["run", "lint:changed"]:

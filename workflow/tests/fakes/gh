@@ -5,6 +5,7 @@
 
 import json
 import os
+import subprocess
 import sys
 import fcntl
 from pathlib import Path
@@ -82,9 +83,23 @@ def cmd_edit(argv, world):
     label = opt(argv, "--add-label")
     if label and label not in issue.setdefault("labels", []):
         issue["labels"].append(label)
+    removed = opt(argv, "--remove-label")
+    if removed and removed in issue.setdefault("labels", []):
+        issue["labels"].remove(removed)
     login = opt(argv, "--add-assignee")
     if login and login not in issue.setdefault("assignees", []):
         issue["assignees"].append(login)
+    save(world)
+    return 0
+
+
+def cmd_issue_close(argv, world):
+    number = int(argv[2])
+    issue = world["issues"][str(number)]
+    issue["state"] = "CLOSED"
+    body = opt(argv, "--comment")
+    if body:
+        issue.setdefault("comments", []).append(body)
     save(world)
     return 0
 
@@ -163,6 +178,11 @@ def cmd_pr_view(argv, world):
     pull = _pr(world, number)
     if pull is None:
         return 1
+    fields = (opt(argv, "--json") or "").split(",")
+    if "mergeCommit" in fields:
+        sha = pull.get("mergeCommit")
+        print(json.dumps({"mergeCommit": {"oid": sha} if sha else None}))
+        return 0
     print(json.dumps({"number": number, "state": pull["state"], "headRefName": pull["head"]}))
     return 0
 
@@ -192,6 +212,13 @@ def cmd_pr_checks(argv, world):
             "Static analysis": "SUCCESS",
             "End-to-end (mobile-chrome)": "SUCCESS",
         },
+        # the shard kind block 5 reads as a flake signal when it is what the
+        # one counted rerun reran
+        "fail_e2e": {
+            "Quality and security": "FAILURE",
+            "Static analysis": "SUCCESS",
+            "End-to-end (mobile-chrome)": "FAILURE",
+        },
         # a job failed while the run is still executing: the driver must
         # wait for the run to complete before `gh run rerun --failed`
         "fail_running": {
@@ -219,18 +246,55 @@ def cmd_pr_checks(argv, world):
     return 0 if all(state == "SUCCESS" for state in states.values()) else 8
 
 
+def _work_clone():
+    """A clone of the fake origin the merge queue works in, kept between
+    calls so a second merge sees the first one's main."""
+    work = Path(os.environ["FAKE_WORLD"]) / "merge-queue"
+    if not work.exists():
+        origin = json.loads((Path(os.environ["FAKE_WORLD"]) / "world.json").read_text())["origin"]
+        _git(work.parent, "clone", origin, "merge-queue")
+        _git(work, "config", "user.email", "queue@example.com")
+        _git(work, "config", "user.name", "Merge queue")
+    _git(work, "fetch", "origin", "--prune", "--tags")
+    return work
+
+
+def _git(cwd, *args):
+    result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"fake gh: git {' '.join(args)} failed: {result.stderr}")
+    return result.stdout.strip()
+
+
 def cmd_pr_merge(argv, world):
+    """The merge queue's squash merge, for real, in a clone of the fake
+    origin - so the merge commit the driver ships is a commit that exists
+    and is not any branch the driver pushed. `version-tag.yml` runs on that
+    push, so the scripted tag is created here too."""
     number = int(argv[2])
     pull = _pr(world, number)
     if pull is None:
         return 1
+    work = _work_clone()
+    _git(work, "checkout", "-B", "main", "origin/main")
+    _git(work, "merge", "--squash", f"origin/{pull['head']}")
+    _git(work, "commit", "-m", f"{pull['title']} (#{number})")
+    sha = _git(work, "rev-parse", "HEAD")
+    _git(work, "push", "origin", "main")
+    tag = world.get("tags", {}).get(f"pr-{number}", world.get("default_tag"))
+    if tag:
+        _git(work, "tag", tag, sha)
+        _git(work, "push", "origin", tag)
     pull["state"] = "MERGED"
     pull["merged"] = True
+    pull["mergeCommit"] = sha
     save(world)
     return 0
 
 
 def cmd_run_list(argv, world):
+    if "--commit" in argv:
+        return _main_ci_runs(argv, world)
     branch = opt(argv, "--branch")
     print(
         json.dumps(
@@ -246,6 +310,69 @@ def cmd_run_list(argv, world):
     return 0
 
 
+# One scripted state per poll, per event. "running" is a run that has not
+# concluded; the last value of an exhausted list sticks, like the check
+# outcomes above.
+_RUN_STATES = {
+    "queued": ("queued", None),
+    "running": ("in_progress", None),
+    "success": ("completed", "success"),
+    "failure": ("completed", "failure"),
+    "cancelled": ("completed", "cancelled"),
+}
+
+
+def _next_state(world, key, default):
+    scripted = world.setdefault("main_ci", {}).get(key, default)
+    if isinstance(scripted, list) and scripted:
+        head = scripted.pop(0)
+        if not scripted:
+            world["main_ci"][key] = head
+        save(world)
+        return head
+    return scripted if isinstance(scripted, str) else None
+
+
+def _main_ci_runs(argv, world):
+    """`gh run list --workflow ci.yml --commit <sha>`: main's own push run
+    and the merge queue's run of the same commit, scripted per PR."""
+    sha = opt(argv, "--commit")
+    number = next(
+        (n for n, pull in world.get("prs", {}).items() if pull.get("mergeCommit") == sha), None
+    )
+    rows = []
+    push = _next_state(world, f"pr-{number}/push", "success")
+    if push is not None:
+        status, conclusion = _RUN_STATES[push]
+        rows.append(
+            {
+                "databaseId": 7001,
+                "event": "push",
+                "status": status,
+                "conclusion": conclusion,
+                "headSha": sha,
+                "headBranch": "main",
+                "url": "https://github.test/runs/7001",
+            }
+        )
+    merge_group = _next_state(world, f"pr-{number}/merge_group", None)
+    if merge_group is not None:
+        status, conclusion = _RUN_STATES[merge_group]
+        rows.append(
+            {
+                "databaseId": 7002,
+                "event": "merge_group",
+                "status": status,
+                "conclusion": conclusion,
+                "headSha": sha,
+                "headBranch": f"gh-readonly-queue/main/pr-{number}-{sha[:7]}",
+                "url": "https://github.test/runs/7002",
+            }
+        )
+    print(json.dumps(rows))
+    return 0
+
+
 def cmd_run_rerun(argv, world):
     print(f"reran failed jobs of run {argv[-1]}")
     return 0
@@ -257,6 +384,7 @@ COMMANDS = {
     ("issue", "edit"): cmd_edit,
     ("issue", "comment"): cmd_comment,
     ("issue", "create"): cmd_create,
+    ("issue", "close"): cmd_issue_close,
     ("pr", "create"): cmd_pr_create,
     ("pr", "view"): cmd_pr_view,
     ("pr", "checks"): cmd_pr_checks,
