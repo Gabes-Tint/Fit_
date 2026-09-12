@@ -560,11 +560,15 @@ comments that production was withheld and why, and ends `SHIPPED`.
 
 Only after a successful production deploy, and only when
 `FIT_FLOW_ANDROID=yes`: `bun run android:release --server-url=<production
-origin>` in the release worktree, with the APK path and sha256 the script
-prints recorded. The toolchain lives on this machine only, so a failure
-there says nothing about the deploy that already succeeded: it is recorded
-and reported, the run still cleans up and comments, and only then ends
-`TOOL_FAILED`. Never a rollback.
+origin>` in the release worktree. The build lands inside that worktree,
+which cleanup then removes, so the driver copies the APK to
+`FIT_FLOW_HOME/releases/<tag>/app-release.apk` and hashes it where it now
+lives: the recorded and reported `apk` and `sha256` are that surviving
+file's. A copy whose hash is not the one `android:release` printed is a
+failed Android release, not a delivery. The toolchain lives on this machine
+only, so a failure there says nothing about the deploy that already
+succeeded: it is recorded and reported, the run still cleans up and
+comments, and only then ends `TOOL_FAILED`. Never a rollback.
 
 ### Cleanup and the final comment
 

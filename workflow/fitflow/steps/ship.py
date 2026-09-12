@@ -16,7 +16,7 @@ import json
 import time
 from pathlib import Path
 
-from fitflow import github, narrate, settings, worktrees
+from fitflow import github, narrate, releases, settings, worktrees
 from fitflow.outcome import FlowFailure, Outcome
 from fitflow.runstate import RunRecord
 
@@ -395,17 +395,46 @@ def _android(record: RunRecord, path: Path, config) -> list[str]:
     )
     if code != 0:
         why = next((line for line in reversed(lines) if line.strip()), f"exited {code}")
-        _remember(record, "android", {"ok": False, "skipped": False, "why": why})
-        narrate.line(f"❌ The Android release failed: {why}")
-        return [f"the Android release failed after a deploy that stands: {why}"]
-    result = {
-        "ok": True,
-        "apk": _printed(lines, "APK: "),
-        "sha256": _printed(lines, "SHA-256: "),
-    }
-    _remember(record, "android", result)
-    narrate.line(f"📱 APK {result['apk']} · sha256 {result['sha256'][:12]}")
+        return _android_failed(record, why)
+    try:
+        apk, sha256 = _keep_apk(record, lines)
+    except _ApkNotKeptError as failure:
+        return _android_failed(record, str(failure))
+    _remember(record, "android", {"ok": True, "apk": str(apk), "sha256": sha256})
+    narrate.line(f"📱 APK {apk} · sha256 {sha256[:12]}")
     return []
+
+
+class _ApkNotKeptError(Exception):
+    """The build succeeded but nothing verifiable survived it."""
+
+
+def _keep_apk(record: RunRecord, lines: list[str]) -> tuple[Path, str]:
+    """The APK, out of the release worktree `_cleanup` is about to remove
+    and into `FIT_FLOW_HOME/releases/<tag>`, hashed where it now lives: a
+    path inside a worktree that no longer exists is not a delivery."""
+    built = _printed(lines, "APK: ")
+    printed = _printed(lines, "SHA-256: ")
+    if not built or not printed:
+        raise _ApkNotKeptError("android:release printed no APK path and sha256 to keep")
+    tag = _ship_value(record, "tag") or "untagged"
+    try:
+        kept = releases.keep_apk(tag, Path(built))
+    except OSError as error:
+        raise _ApkNotKeptError(f"the APK {built} could not be kept: {error}") from error
+    sha256 = releases.sha256(kept)
+    if sha256 != printed:
+        raise _ApkNotKeptError(
+            f"the APK kept at {kept} hashes to {sha256[:12]}, not the {printed[:12]} "
+            "android:release printed for what it built"
+        )
+    return kept, sha256
+
+
+def _android_failed(record: RunRecord, why: str) -> list[str]:
+    _remember(record, "android", {"ok": False, "skipped": False, "why": why})
+    narrate.line(f"❌ The Android release failed: {why}")
+    return [f"the Android release failed after a deploy that stands: {why}"]
 
 
 def _printed(lines: list[str], prefix: str) -> str:

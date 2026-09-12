@@ -151,7 +151,9 @@ reviewer:
         _git("config", "user.email", "test@example.com", cwd=self.repo)
         _git("config", "user.name", "Test", cwd=self.repo)
         (self.repo / "README.md").write_text("seed\n")
-        (self.repo / ".gitignore").write_text("reports/\n")
+        # what the real repository ignores and block 5 writes into a
+        # worktree: the deploy's reports, and the APK the release build makes
+        (self.repo / ".gitignore").write_text("reports/\nandroid/app/build/\n")
         _git("add", "README.md", ".gitignore", cwd=self.repo)
         _git("commit", "-m", "seed", cwd=self.repo)
         _git("push", "-u", "origin", "main", cwd=self.repo)

@@ -6,7 +6,9 @@ and the exact `bun run deploy` invocations - argv, environment and the
 checkout's head - because those are the contract with the real scripts.
 """
 
+import hashlib
 import json
+from pathlib import Path
 
 from conftest import (
     PROD_HOST,
@@ -94,7 +96,41 @@ def test_a_full_ship_deploys_qa_then_production_and_builds_the_apk(world):
     assert "tag v0.4.0" in comment
     assert merge_sha[:12] in comment
     assert QA_ORIGIN in comment and PROD_ORIGIN in comment
-    assert "app-release.apk" in comment
+    # the APK the comment names is a file that still exists, hashing to the
+    # sha256 the record carries - the worktree it was built in is gone
+    ship, _ = _ship_record(world)
+    apk = Path(ship["android"]["apk"])
+    assert apk.name == "app-release.apk"
+    assert str(apk) in comment
+    assert apk.exists(), apk
+    assert hashlib.sha256(apk.read_bytes()).hexdigest() == ship["android"]["sha256"]
+    assert not world.slice_worktree_path("release-story-1000").exists()
+
+
+def test_the_apk_is_kept_under_the_flow_home_release_for_its_tag(world):
+    _shippable(world)
+    world.given_tag("v0.4.2")
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    ship, _ = _ship_record(world)
+    assert ship["android"]["apk"] == str(world.home / "releases" / "v0.4.2" / "app-release.apk")
+
+
+def test_an_apk_that_does_not_hash_to_what_was_built_is_not_a_release(world):
+    """The copy out of the worktree is re-hashed where it landed: a build
+    the driver cannot show it kept intact is reported, not claimed."""
+    _shippable(world)
+    world.given_android("wrong_sha")
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 26, result.stdout + result.stderr
+    ship, _ = _ship_record(world)
+    assert ship["android"]["ok"] is False
+    assert "hashes to" in ship["android"]["why"]
+    assert "Android: failed" in _shipped_comment(world)
 
 
 def test_the_record_carries_every_ship_result(world):

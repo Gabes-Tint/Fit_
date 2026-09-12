@@ -140,7 +140,7 @@ flowchart TD
         ship_to{"FIT_FLOW_SHIP_TO"}
         deploy_prod["bun run deploy<br/>FIT_DEPLOY_HOST / FIT_PUBLIC_ORIGIN name prod"]
         smoke_prod{"smoke.json ok for this commit?"}
-        android["bun run android:release --server-url<br/>APK path and sha256 recorded"]
+        android["bun run android:release --server-url<br/>APK kept at FIT_FLOW_HOME/releases/tag<br/>re-hashed there, path and sha256 recorded"]
         cleanup["bun run worktree:done for every slice,<br/>the integration and the release worktree<br/>child issues closed, in-progress removed"]
         shipped["gh issue comment: PR, tag, QA, prod,<br/>android, cleanup, next<br/>terminal SHIPPED"]
         merge --> merge_sha --> tag --> main_ci

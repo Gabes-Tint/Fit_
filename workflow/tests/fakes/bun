@@ -5,6 +5,7 @@ shape the real reporters use) built from a scripted outcome per file:
 "fail" (good - no implementation yet), "pass" (bad), "not_found" (the
 runner never ran that file), or "tool_error" (no JSON report)."""
 
+import hashlib
 import json
 import os
 import subprocess
@@ -298,17 +299,27 @@ def cmd_deploy(argv):
 
 
 _APK = "android/app/build/outputs/apk/release/app-release.apk"
-_APK_SHA = "3b1f" + "0" * 60
 
 
 def cmd_android_release(argv):
+    """A real file at `RELEASE_APK_PATH`, with the sha256 it really has -
+    the driver copies that file out of this worktree and re-hashes it, so
+    a printed constant would prove nothing. "wrong_sha" prints a hash of
+    something else, which is what a truncated copy looks like."""
     cwd = Path.cwd()
     record(argv, cwd=str(cwd))
-    if load().get("android_outcome", "ok") != "ok":
+    outcome = load().get("android_outcome", "ok")
+    if outcome not in {"ok", "wrong_sha"}:
         print("apksigner refused the APK it just built", file=sys.stderr)
         return 1
-    print(f"\nAPK: {cwd / _APK}")
-    print(f"SHA-256: {_APK_SHA}")
+    server = next((arg for arg in argv if arg.startswith("--server-url=")), "")
+    body = f"fake signed apk {server}\n".encode()
+    apk = cwd / _APK
+    apk.parent.mkdir(parents=True, exist_ok=True)
+    apk.write_bytes(body)
+    digest = hashlib.sha256(body if outcome == "ok" else body + b"not what was built")
+    print(f"\nAPK: {apk}")
+    print(f"SHA-256: {digest.hexdigest()}")
     return 0
 
 
