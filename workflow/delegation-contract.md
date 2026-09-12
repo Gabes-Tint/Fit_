@@ -1,10 +1,10 @@
 # Delegation and implementation gates
 
-Status: implemented for blocks 1-4's boundaries - selection, assignment,
+Status: implemented for blocks 1-5's boundaries - selection, assignment,
 pre-launch barrier, bounded repair loops, one-rung escalation, the final
-join and the ordinary stop/preserve rules, and the delivery gates (push,
-PR, review, merge) - as of the driver behind `go.py`. Block 5 (after
-merge: tag, deploy, smoke, android, worktree cleanup) is not implemented.
+join and the ordinary stop/preserve rules, the delivery gates (push, PR,
+review, merge) and the ship gates (tag, main CI, deploy, smoke, the flaky
+decision, android, cleanup) - as of the driver behind `go.py`.
 The recovery/resume
 and coordinated-cancellation clauses remain future: `go.py` stops and
 preserves instead of resuming, while an external process interruption may
@@ -477,10 +477,149 @@ barrier: the PR exists for this story, its head is the integration branch's
 current push, all-green is green after at most one rerun, and the reviewer
 verdict (or the mechanical path) is recorded. Merge unreachability is
 enforced by code order, not convention. After the merge the driver comments
-on the story with the PR and the delivered commits; block 5 (tag, deploy,
-smoke, android, worktree cleanup) is not implemented and remains future.
-Success ends the run with outcome `DELIVERED` (exit 0); the story keeps
-`in-progress` until block 5 exists.
+on the story with the PR and the delivered commits, records the terminal
+`DELIVERED`, and continues into block 5 in the same invocation; the story
+keeps `in-progress` until block 5's cleanup removes it.
+
+## Ship gates (block 5)
+
+Everything after the merge, in one run, on the same retained record. Each
+sub-result is persisted under `delivery.ship` as it settles - `merge_sha`,
+`tag`, `main_ci`, `qa`, `flaky`, `prod`, `android`, `cleanup` - so the
+record says exactly how far the ship got. A deploy is recorded twice: a
+`{started, target, ok: null}` marker before the deploy is invoked, then the
+verdict over it, keeping `started`. A run killed between the two has
+already moved the symlink on that host, and a record written only on the
+way out would say the target was never touched. Nothing here is a retry of blocks
+1-4: the merge has landed, so a block 5 failure is reported and the run
+stops, never labelled `blocked` for a fresh picker.
+
+### The merge commit and its tag
+
+The commit to ship is `gh pr view <n> --json mergeCommit`, not the
+integration branch's head: main takes squash merges, so the commit that
+landed is one the driver never made. An empty `mergeCommit` on a merged PR
+is an external tool failure.
+
+`version-tag.yml` tags that commit on push to main; the driver never tags.
+It polls `git ls-remote --tags origin` until a `v*` tag points at the merge
+commit, bounded by `FIT_FLOW_MAIN_CI_TIMEOUT`. A poll that fails to read
+origin is narrated and retried inside the same deadline rather than counted
+as "no tag": a timeout after a failed read is `TOOL_FAILED` saying origin
+could not be asked, and a timeout after origin answered is `TOOL_FAILED`
+naming `version-tag.yml`. They are different people's problems. An untagged
+commit has no version for the build to bake in, and guessing one would ship
+a release whose name is a lie.
+
+### Main's own CI
+
+The same acceptance `scripts/deploy/main-ci-gate.ts` applies, recomputed
+here rather than delegated to the deploy: a successful `ci.yml` `push` run
+on `main` for the merge commit, or a successful `merge_group` run whose
+head SHA is that commit, read from `gh run list --workflow ci.yml --commit
+<sha>`. The driver polls until one qualifies; a qualifying run that
+concludes without success, with no other qualifying, is `TOOL_FAILED`
+naming the run's URL. A red main after a merge is a human call.
+
+### The release worktree
+
+Both deploys run from a `release-story-<n>` worktree created by `bun run
+worktree:new` (which installs) and hard-reset to the merge commit. The
+driver then verifies the worktree's own head is that commit and that it is
+clean, because `deploy.ts` names the release directory after `HEAD` and
+refuses a dirty tree - a release whose name is not what it contains makes
+every later smoke assertion a lie.
+
+### Deploy and smoke
+
+`bun run deploy --tunnel` for QA, `bun run deploy` for production, each
+marked started in the record before it is invoked, with `FIT_DEPLOY_HOST`
+and `FIT_PUBLIC_ORIGIN` naming the target - the exact
+variable names `scripts/deploy/config.ts` reads. `deploy:smoke` is never
+run separately: `deploy.ts` already runs it, and the public name's
+registration throttle is ten to the hour.
+
+The exit code is not the verdict. The driver reads
+`reports/deploy/smoke.json` from the release worktree itself and requires
+`ok` true and a passed check named `the live release is this commit` whose
+detail names the merge commit. Both deploys run in that one checkout, so
+the report is deleted before each of them: a report read after a deploy was
+written by that deploy, and a missing one is its own silence rather than
+the other deploy's answer. A non-zero exit, a missing report - after a
+clean exit as much as after a crash - `ok` false, or a report about some
+other commit is `DEPLOY_FAILED` (exit 32):
+the story is labelled `needs-gabriel` and assigned, and the comment carries
+the target and the report's `failure` string. A failed production deploy
+says QA is live. There is no rollback: what is live is what the last
+successful activation left, and choosing to go back is Gabriel's.
+
+### The flaky decision
+
+Production is withheld when either signal shows:
+
+- block 4 spent its one counted rerun and the failed job names it reran
+  (persisted as `delivery.rerun_failed`) include an `End-to-end` job;
+- main's `push` run for the merge commit concluded without success while a
+  `merge_group` run for the same commit succeeded - `failOnFlakyTests`
+  means a shard that only passed on a retry fails the push run the queue
+  run never hit.
+
+An unfinished push run at the timeout is treated as flaky rather than
+green. Withholding is not a failure: QA stays live, the run cleans up,
+comments that production was withheld and why, and ends `SHIPPED`.
+`FIT_FLOW_SHIP_TO=qa` withholds production the same way, by configuration -
+and because nothing then reads the flake signal, it is decided from what is
+already known (the rerun evidence and the push run's current state) instead
+of being waited on, recorded with `"decided": "not awaited: SHIP_TO=qa"`.
+Waiting out `FIT_FLOW_MAIN_CI_TIMEOUT` for an answer that gates nothing is
+an hour the run spends saying nothing.
+
+### Android
+
+Only after a successful production deploy, and only when
+`FIT_FLOW_ANDROID=yes`: `bun run android:release --server-url=<production
+origin>` in the release worktree. The build lands inside that worktree,
+which cleanup then removes, so the driver copies the APK to
+`FIT_FLOW_HOME/releases/<tag>/app-release.apk` and hashes it where it now
+lives: the recorded and reported `apk` and `sha256` are that surviving
+file's. A copy whose hash is not the one `android:release` printed is a
+failed Android release, not a delivery. The toolchain lives on this machine
+only, so a failure there says nothing about the deploy that already
+succeeded: it is recorded and reported, the run still cleans up and
+comments, and only then ends `TOOL_FAILED`. Never a rollback.
+
+### Cleanup and the final comment
+
+Every slice worktree, the integration worktree and the release worktree are
+removed with `bun run worktree:done <slug>`. Because main squashes, those
+branches are never ancestors of `origin/main` and `worktree:done` would
+refuse them, so the driver establishes the same fact by other means before
+forcing: the worktree is clean, and its recorded commit is an ancestor of
+the integration head the merged PR carried. That head is read from the pull
+request itself - `gh pr view <n> --json headRefOid,mergeCommit` - and the
+integration worktree is forced only when the PR is `MERGED` and its
+`headRefOid` is the commit this run integrated. A local branch still
+pointing at that commit proves only that nobody moved it. `--force` then bypasses exactly
+the refusal the driver has already answered; the local branch is deleted
+separately, and only when its tip is still the sha the record names. A
+worktree whose status cannot be read is not a clean one: a failed `status`
+prints nothing, and forcing on that silence destroys work nobody has seen,
+so it is preserved and reported with the reason the read failed. A refusal
+the driver cannot answer this way is `TOOL_FAILED` - after the final
+comment, never before. A target that was proven landed and removed also
+loses its branch on origin (`git push origin --delete <slug>`, recorded in
+`cleanup.remote_deleted` as the slug and the commit it was deleted at, the
+only trace left of it): the worktree and the local branch are gone, so
+origin holds the last copy of something nothing will use again. A preserved
+worktree keeps its remote branch - that is the audit trail.
+
+Each child (slice) issue is closed with `Delivered in PR #n (tag vX.Y.Z)`,
+and the `in-progress` label comes off the story, whose own closure was the
+PR's `Closes #N`. The final comment on the story names the PR and merge
+commit, the tag, each deploy target with its smoke result or the reason it
+was withheld, the Android outcome, what was cleaned up, and the next step.
+The terminal `SHIPPED` is persisted only after that comment succeeds; a
+crash off the beaten path persists `TOOL_FAILED`. Success is exit 0.
 
 An external Codex/Claude operator may select the story, start the driver and
 observe its reported progress/result. It cannot change prompts, configuration,
@@ -505,3 +644,16 @@ the configured model requires a new execution.
 The seeded configuration (`haiku`/`low`, `haiku`/`low`, `sonnet`/`medium`,
 `opus`/`high`) follows the suggested capacity defaults; the values are
 configuration, not code.
+
+Block 5's deploy targets follow the same rule, and `scripts/deploy/config.ts`
+already states why: the machines are infrastructure Gabriel owns, so they
+arrive in the environment and nothing in this repository names them.
+`FIT_FLOW_QA_DEPLOY_HOST` and `FIT_FLOW_QA_PUBLIC_ORIGIN` are required
+whenever block 5 can run; `FIT_FLOW_PROD_DEPLOY_HOST` and
+`FIT_FLOW_PROD_PUBLIC_ORIGIN` are required when `FIT_FLOW_SHIP_TO=prod`
+(the default). `FIT_FLOW_SHIP_TO=qa` stops after QA, and `FIT_FLOW_ANDROID`
+(`yes` by default) decides whether the APK is built. All of them are
+validated where the agent roster is - at startup, before any side effect -
+and a missing one is a configuration error naming the variable, exit 2.
+There is no default host: guessing a deployment target is worse than
+stopping.

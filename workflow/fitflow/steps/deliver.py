@@ -33,7 +33,13 @@ def run(story, record: RunRecord) -> Outcome:
     """Block 4 for the joined run: deliver and merge. DELIVERED is persisted
     only after the final GitHub comment succeeds. The terminal string is the
     literal, not Outcome.DELIVERED.name: PLANNED is that value's first alias
-    and the audit record must say what actually happened."""
+    and the audit record must say what actually happened.
+
+    It is no longer the end of the run - block 5 ships the merge and
+    overwrites the terminal with SHIPPED - but it is written here anyway,
+    because it is true the moment the merge lands: a record left saying
+    DELIVERED is a run that merged and then died somewhere in block 5,
+    which is exactly what an audit needs to be told."""
     _deliver(story, record)
     _report_gate(story, record)
     _persist_terminal(record, "DELIVERED")
@@ -143,9 +149,7 @@ def _integrate(story, record: RunRecord) -> Path:
     head = worktrees.local_head(path)
     worktrees.push_branch(path, slug)
     with record.transition():
-        record.delivery.update(
-            integration_branch=slug, integration_sha=head, worktree=str(path)
-        )
+        record.delivery.update(integration_branch=slug, integration_sha=head, worktree=str(path))
         record.save()
     narrate.line(f"⇪ Pushed {slug} at {head[:12]}")
     return path
@@ -155,9 +159,7 @@ def _open_pr(story, record: RunRecord, path: Path) -> int:
     number = record.delivery.get("pr_number")
     if number:
         return int(number)
-    parts = ", ".join(
-        f"{piece.layer} at {piece.frozen_commit[:12]}" for piece in record.ordered()
-    )
+    parts = ", ".join(f"{piece.layer} at {piece.frozen_commit[:12]}" for piece in record.ordered())
     body = (
         f"Implements #{story.number}.\n\n"
         f"Slices: {parts}.\n"
@@ -244,9 +246,7 @@ def _reviewer_turn(
         try:
             verdict, findings = review.validate_reply(
                 reply,
-                worktrees.diff_files_against_main(
-                    path, record.delivery["integration_branch"]
-                ),
+                worktrees.diff_files_against_main(path, record.delivery["integration_branch"]),
             )
         except review.ReviewError as rejection:
             if attempt == turns.BUDGET:
@@ -307,12 +307,9 @@ def _verify_read_only(story, record: RunRecord, path: Path) -> None:
 def _fix_note(record: RunRecord, rounds: int) -> str:
     if rounds == 1:
         return ""
-    return (
-        "Fixes were applied since the last review for these findings:\n"
-        + "\n".join(
-            f"- {item['file']}:{item['line']} [{item['category']}]"
-            for item in record.delivery.get("findings", [])
-        )
+    return "Fixes were applied since the last review for these findings:\n" + "\n".join(
+        f"- {item['file']}:{item['line']} [{item['category']}]"
+        for item in record.delivery.get("findings", [])
     )
 
 
@@ -329,9 +326,7 @@ def _apply_fixes(story, record: RunRecord, path: Path, findings: list[Finding]) 
     narrate.line(f"🛠 Review findings routed to slices: {', '.join(affected)}")
     for layer in affected:
         piece = record.slices[layer]
-        slice_findings = [
-            finding for finding in findings if review.owns(piece.layer, finding.file)
-        ]
+        slice_findings = [finding for finding in findings if review.owns(piece.layer, finding.file)]
         review_fix_turn(record, piece, review.findings_diagnostic(slice_findings))
         _merge_or_reject(
             story,
@@ -478,6 +473,10 @@ def _rerun(story, record: RunRecord, branch: str, failed: list[str]) -> None:
     github.rerun_failed_runs(run_id)
     with record.transition():
         record.delivery["rerun_used"] = True
+        # which jobs were reran, not just that one rerun was spent: block 5
+        # reads an End-to-end job here as the flake signal that withholds
+        # production
+        record.delivery["rerun_failed"] = list(failed)
         record.save()
     narrate.line(f"🔁 Reran failed checks for {branch} (run {run_id}): {', '.join(failed)}")
 

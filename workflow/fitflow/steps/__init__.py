@@ -7,6 +7,7 @@ from fitflow.steps.hold import hold
 from fitflow.steps.implement import run as run_implement
 from fitflow.steps.pick import pick_story
 from fitflow.steps.report import report_planned
+from fitflow.steps.ship import run as run_ship
 from fitflow.steps.slicing import slice_at_layer_boundary
 from fitflow.steps.sync import sync
 from fitflow.steps.whose_call import hand_to_gabriel, whose_call
@@ -14,6 +15,7 @@ from fitflow.steps.whose_call import hand_to_gabriel, whose_call
 delegate = run_delegate
 deliver = run_deliver
 implement = run_implement
+ship = run_ship
 
 __all__ = [
     "delegate",
@@ -23,6 +25,7 @@ __all__ = [
     "implement",
     "pick_story",
     "report_planned",
+    "ship",
     "slice_at_layer_boundary",
     "sync",
     "whose_call",

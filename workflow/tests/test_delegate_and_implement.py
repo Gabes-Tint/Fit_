@@ -7,7 +7,6 @@ the fake-world state after the run.
 import fcntl
 import json
 import re
-import subprocess
 
 from conftest import (
     delegate_slice,
@@ -154,21 +153,13 @@ def test_single_slice_implements_on_the_first_attempt(world):
     assert any("Implemented:" in comment for comment in world.issue(400)["comments"])
     # one initial mechanic turn, no corrections, no escalation
     assert len(_talks(world, "mechanic", "story-400-domain")) == 2  # block 1 + block 3
-    # implementation stayed local: the branch remote is still the failing-test commit
-    remote = subprocess.run(
-        ["git", "ls-remote", "origin", "story-400-domain"],
-        cwd=world.repo,
-        capture_output=True,
-        text=True,
-    ).stdout.split()[0]
-    local = subprocess.run(
-        ["git", "rev-parse", "story-400-domain"],
-        cwd=world.repo,
-        capture_output=True,
-        text=True,
-    ).stdout.split()[0]
-    assert remote != local
-    assert "in-progress" in world.issue(400)["labels"]
+    # implementation stayed local: what origin had for the slice branch - and
+    # what block 5's cleanup recorded deleting - is the failing-test commit,
+    # never the commit the driver froze after the implementation turn
+    state = json.loads((world.home / "runs" / "story-400.json").read_text())
+    deleted = state["delivery"]["ship"]["cleanup"]["remote_deleted"]["story-400-domain"]
+    assert deleted != state["slices"]["domain"]["frozen_commit"]
+    assert ["--add-label", "in-progress"] in world.label_edits(400)
     assert "blocked" not in world.issue(400)["labels"]
 
 
@@ -665,7 +656,7 @@ def test_run_state_file_records_the_run_for_audit(world):
     assert state["slices"]["domain"]["state"] == "succeeded"
     # the run now continues through block 4's merge, so the terminal outcome
     # is the delivery, not the block 3 boundary
-    assert state["terminal"] == "DELIVERED"
+    assert state["terminal"] == "SHIPPED"
     assert state["delivery"]["pr_number"] == 500
     assert state["delivery"]["verdict"] == "mechanical"
     assert state["slices"]["domain"]["frozen_commit"]

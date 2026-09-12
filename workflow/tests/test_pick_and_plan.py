@@ -155,9 +155,13 @@ def test_picks_lowest_story_not_held_with_one_slice(world):
 
     assert result.returncode == 0, result.stdout + result.stderr
     issue = world.issue(130)
-    assert "in-progress" in issue["labels"]
+    # held in block 1, released again by block 5's cleanup
+    assert ["--add-label", "in-progress"] in world.label_edits(130)
+    assert ["--remove-label", "in-progress"] in world.label_edits(130)
     assert any("brief" in c.lower() or "trim the log" in c.lower() for c in issue["comments"])
-    assert world.branch_exists_on_origin(slug)
+    # pushed in block 1, and deleted on origin by block 5 once it landed
+    assert slug in world.ship_record(130)["cleanup"]["remote_deleted"]
+    assert not world.branch_exists_on_origin(slug)
     assert not world.planner_worktree_path(130).exists()
     assert "📥 Sync: fetched origin" in result.stdout
     assert '📋 Picked #130 "Faster first paint"' in result.stdout
@@ -285,8 +289,10 @@ def test_split_story_creates_two_children_with_pushed_failing_tests(world):
     assert set(ui_child["labels"]) >= {"story", "in-progress"}
     assert "part of #140" in domain_child["body"].lower()
     assert "part of #140" in ui_child["body"].lower()
-    assert world.branch_exists_on_origin("story-1000-domain")
-    assert world.branch_exists_on_origin("story-1001-ui")
+    # both were pushed in block 1; block 5 deleted them on origin once they
+    # landed, and the record says at which commit
+    deleted = world.ship_record(140)["cleanup"]["remote_deleted"]
+    assert "story-1000-domain" in deleted and "story-1001-ui" in deleted
     story_comments = " ".join(world.issue(140)["comments"]).lower()
     assert "#1000" in story_comments
     assert "#1001" in story_comments
@@ -297,6 +303,8 @@ def test_split_story_creates_two_children_with_pushed_failing_tests(world):
         for index, call in enumerate(calls)
         if call.get("tool") == "bun"
         and call.get("argv", [None, None])[0:2] == ["run", "worktree:new"]
+        # block 1's two slice worktrees; block 5 creates a release one later
+        and call["argv"][2].startswith("story-")
     ]
     mechanic_started = [
         index
@@ -468,8 +476,8 @@ def test_explicit_issue_number_wins_over_lowest(world):
     result = run_flow(world, "20")
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "in-progress" in world.issue(20)["labels"]
-    assert "in-progress" not in world.issue(10)["labels"]
+    assert ["--add-label", "in-progress"] in world.label_edits(20)
+    assert world.label_edits(10) == []
 
 
 def test_nothing_to_pick_when_every_story_is_held(world):
@@ -1112,7 +1120,8 @@ def test_lint_broken_acceptance_tests_are_rejected_in_block_1_and_repaired(world
     assert "🔁 Mechanic #210 retrying after attempt 1" in result.stdout
     assert "🧪 Gates: lint:changed ✔" in result.stdout
     assert "❌ BLOCKED" not in result.stdout
-    assert world.branch_exists_on_origin(slug)
+    # the repaired tests were pushed, and shipped: block 5 deleted the branch
+    assert slug in world.ship_record(210)["cleanup"]["remote_deleted"]
 
 
 def test_acceptance_tests_that_always_fail_lint_exhaust_the_mechanic(world):

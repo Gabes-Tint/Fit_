@@ -20,11 +20,15 @@ def run(flow: Callable[[int | None], Outcome]) -> None:
     config_path = Path(os.environ.get("FIT_FLOW_AGENT_CONFIG", agent_config.DEFAULT_PATH))
     try:
         agents.configure(agent_config.load(config_path))
-    except agent_config.AgentConfigError as error:
+        # Block 5's targets are validated here too, with the roster and
+        # before any side effect: a run must never merge a pull request and
+        # only then discover it cannot deploy what it merged.
+        settings.ship_config()
+    except (agent_config.AgentConfigError, settings.ConfigurationError) as error:
         print(f"configuration error: {error}", file=sys.stderr)
         raise SystemExit(2) from error
     parser = argparse.ArgumentParser(
-        description="Fit_ development flow driver: blocks 1-4, plan, delegate, implement, deliver."
+        description="Fit_ development flow driver: blocks 1-5, plan to shipped release."
     )
     parser.add_argument("issue", nargs="?", type=int, default=None, help="issue number to pick")
     args = parser.parse_args()

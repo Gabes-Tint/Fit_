@@ -15,6 +15,15 @@ WORKFLOW_DIR = Path(__file__).parent.parent
 GO_PY = WORKFLOW_DIR / "go.py"
 GABRIEL_LOGIN = "gabepsilva"
 
+# Block 5's deploy targets. Never real names: the driver refuses to start
+# without them, and the point of the assertions is that the exact strings
+# the environment carried reach `bun run deploy` unchanged.
+QA_HOST = "deploy@qa.invalid"
+QA_ORIGIN = "https://qa.invalid"
+PROD_HOST = "deploy@prod.invalid"
+PROD_ORIGIN = "https://prod.invalid"
+HOSTS = {"qa": QA_HOST, "prod": PROD_HOST}
+
 SIGNAL_NAMES = (
     "objective_clear",
     "area_known",
@@ -100,7 +109,16 @@ class FakeWorld:
         self.repo = tmp_path / "repo"
         self.home = tmp_path / "flow-home"
         self.agent_config = self.dir / "agents.yaml"
-        self.world = {"issues": {}, "next_issue_number": 1000, "turns": {}, "test_outcomes": {}}
+        self.world = {
+            "issues": {},
+            "next_issue_number": 1000,
+            "turns": {},
+            "test_outcomes": {},
+            "origin": str(self.origin),
+            # `version-tag.yml` tags every merge; a scenario that wants an
+            # untagged merge says so with `given_no_tag`
+            "default_tag": "v0.0.1",
+        }
         self._init_git()
         self.given_agent_config(
             """planner:
@@ -133,7 +151,9 @@ reviewer:
         _git("config", "user.email", "test@example.com", cwd=self.repo)
         _git("config", "user.name", "Test", cwd=self.repo)
         (self.repo / "README.md").write_text("seed\n")
-        (self.repo / ".gitignore").write_text("reports/\n")
+        # what the real repository ignores and block 5 writes into a
+        # worktree: the deploy's reports, and the APK the release build makes
+        (self.repo / ".gitignore").write_text("reports/\nandroid/app/build/\n")
         _git("add", "README.md", ".gitignore", cwd=self.repo)
         _git("commit", "-m", "seed", cwd=self.repo)
         _git("push", "-u", "origin", "main", cwd=self.repo)
@@ -358,6 +378,74 @@ reviewer:
         self.world.setdefault("check_outcomes", {})[f"pr-{pr_number}"] = outcomes
         self._save()
 
+    # --- block 5 ---------------------------------------------------------
+
+    def given_tag(self, name: str, pr_number: int | None = None) -> None:
+        """The tag `version-tag.yml` puts on the merge commit."""
+        self._load()
+        if pr_number is None:
+            self.world["default_tag"] = name
+        else:
+            self.world.setdefault("tags", {})[f"pr-{pr_number}"] = name
+        self._save()
+
+    def given_no_tag(self) -> None:
+        """The merge lands and no tag ever appears."""
+        self._load()
+        self.world["default_tag"] = None
+        self.world["tags"] = {}
+        self._save()
+
+    def given_main_ci(
+        self,
+        pr_number: int,
+        push: str | list[str] | None = "success",
+        merge_group: str | list[str] | None = None,
+    ) -> None:
+        """Main's own CI for the merge commit: one state per poll, per
+        event, from queued, running, success, failure and cancelled. None
+        means that event has no run at all."""
+        self._load()
+        runs = self.world.setdefault("main_ci", {})
+        runs[f"pr-{pr_number}/push"] = push
+        runs[f"pr-{pr_number}/merge_group"] = merge_group
+        self._save()
+
+    def given_deploy(self, target: str, outcome: str) -> None:
+        """`bun run deploy` against the QA or prod host: ok, health_failed
+        (exits 1 with no report written at all), crash (exits 9 the same
+        way), no_report (exits 0 having written nothing), smoke_failed, or
+        wrong_release (a green report about some other commit)."""
+        self._load()
+        self.world.setdefault("deploy_outcomes", {})[HOSTS[target]] = outcome
+        self._save()
+
+    def given_android(self, outcome: str) -> None:
+        self._load()
+        self.world["android_outcome"] = outcome
+        self._save()
+
+    def given_pr_merged_another_head(self, pr_number: int, sha: str = "f" * 40) -> None:
+        """GitHub reports the PR merged a head commit the driver never
+        froze - someone pushed to the branch, so what landed is not what
+        this run integrated."""
+        self._load()
+        self.world.setdefault("pr_head_override", {})[str(pr_number)] = sha
+        self._save()
+
+    def given_status_unreadable(self, slug: str) -> None:
+        """This worktree's index stops being readable while the deploy runs,
+        so `status` fails there instead of printing an empty diff."""
+        self._load()
+        self.world.setdefault("unreadable_status", []).append(slug)
+        self._save()
+
+    def given_worktree_done_fails(self, slug: str) -> None:
+        """`worktree:done` refuses this slug even with --force."""
+        self._load()
+        self.world.setdefault("worktree_done_failures", []).append(slug)
+        self._save()
+
     def gh_fails_on_comment_body(self, *substrings: str) -> None:
         """Any `gh issue comment` whose --body contains one of these
         substrings exits 1 - for failing one specific comment."""
@@ -410,6 +498,22 @@ reviewer:
         if not path.exists():
             return []
         return [json.loads(line) for line in path.read_text().splitlines() if line]
+
+    def label_edits(self, number: int) -> list[list[str]]:
+        """Every `gh issue edit <n> --add-label/--remove-label` this run made,
+        in order. A story is held in block 1 and released in block 5, so the
+        end state alone no longer says whether it was ever held."""
+        return [
+            call["argv"][3:5]
+            for call in self.calls()
+            if call.get("tool") == "gh" and call["argv"][:3] == ["issue", "edit", str(number)]
+        ]
+
+    def ship_record(self, story_number: int) -> dict:
+        """`delivery.ship` from the run's retained state - block 5's own
+        account of what it shipped and cleaned up."""
+        state = json.loads((self.home / "runs" / f"story-{story_number}.json").read_text())
+        return state["delivery"].get("ship", {})
 
     def branch_exists_on_origin(self, branch: str) -> bool:
         result = subprocess.run(
@@ -467,6 +571,10 @@ def run_flow(
     # the fake gh answers checks instantly; polling sleeps would only slow
     # the suite down
     env.setdefault("FIT_FLOW_CI_POLL_SECONDS", "0")
+    env["FIT_FLOW_QA_DEPLOY_HOST"] = QA_HOST
+    env["FIT_FLOW_QA_PUBLIC_ORIGIN"] = QA_ORIGIN
+    env["FIT_FLOW_PROD_DEPLOY_HOST"] = PROD_HOST
+    env["FIT_FLOW_PROD_PUBLIC_ORIGIN"] = PROD_ORIGIN
     if env_extra:
         env.update(env_extra)
     if not use_default_config:
