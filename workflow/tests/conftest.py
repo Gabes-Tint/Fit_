@@ -509,6 +509,12 @@ reviewer:
             if call.get("tool") == "gh" and call["argv"][:3] == ["issue", "edit", str(number)]
         ]
 
+    def ship_record(self, story_number: int) -> dict:
+        """`delivery.ship` from the run's retained state - block 5's own
+        account of what it shipped and cleaned up."""
+        state = json.loads((self.home / "runs" / f"story-{story_number}.json").read_text())
+        return state["delivery"].get("ship", {})
+
     def branch_exists_on_origin(self, branch: str) -> bool:
         result = subprocess.run(
             ["git", "ls-remote", "--exit-code", "origin", branch],

@@ -606,7 +606,12 @@ worktree whose status cannot be read is not a clean one: a failed `status`
 prints nothing, and forcing on that silence destroys work nobody has seen,
 so it is preserved and reported with the reason the read failed. A refusal
 the driver cannot answer this way is `TOOL_FAILED` - after the final
-comment, never before.
+comment, never before. A target that was proven landed and removed also
+loses its branch on origin (`git push origin --delete <slug>`, recorded in
+`cleanup.remote_deleted` as the slug and the commit it was deleted at, the
+only trace left of it): the worktree and the local branch are gone, so
+origin holds the last copy of something nothing will use again. A preserved
+worktree keeps its remote branch - that is the audit trail.
 
 Each child (slice) issue is closed with `Delivered in PR #n (tag vX.Y.Z)`,
 and the `in-progress` label comes off the story, whose own closure was the

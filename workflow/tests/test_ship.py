@@ -188,6 +188,33 @@ def test_cleanup_removes_every_worktree_closes_the_child_and_frees_the_story(wor
     assert "in-progress" not in world.issue(1000)["labels"]
 
 
+def test_a_shipped_run_deletes_the_branches_it_pushed(world):
+    """Once the work is proven landed and the worktree is gone, origin is
+    the last copy of a branch nothing will ever use again. A branch whose
+    worktree was preserved is left alone: it is the audit trail."""
+    _shippable(world)
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not world.branch_exists_on_origin("story-1000-domain")
+    assert not world.branch_exists_on_origin("story-1000")
+    ship, _ = _ship_record(world)
+    assert sorted(ship["cleanup"]["remote_deleted"]) == ["story-1000", "story-1000-domain"]
+
+
+def test_a_preserved_worktree_keeps_its_branch_on_origin(world):
+    _shippable(world)
+    world.given_status_unreadable("story-1000-domain")
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 26, result.stdout + result.stderr
+    assert world.branch_exists_on_origin("story-1000-domain")
+    ship, _ = _ship_record(world)
+    assert "story-1000-domain" not in ship["cleanup"]["remote_deleted"]
+
+
 def test_ship_to_qa_withholds_production_and_android(world):
     _shippable(world)
 

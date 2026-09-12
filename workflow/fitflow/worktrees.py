@@ -351,3 +351,12 @@ def delete_branch_at(branch: str, expected_sha: str) -> bool:
     if tip != expected_sha:
         return False
     return _git("branch", "-D", branch, cwd=settings.FIT_REPO).returncode == 0
+
+
+def delete_remote_branch(branch: str) -> bool:
+    """Delete the branch on origin. Only ever called for work already proven
+    landed: after the worktree and the local branch are gone, origin is the
+    last copy, and a shipped story should not leave one behind. False when
+    origin has no such branch, which is not a failure - the release branch
+    was never pushed."""
+    return _git("push", "origin", "--delete", branch, cwd=settings.FIT_REPO).returncode == 0

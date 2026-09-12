@@ -141,7 +141,7 @@ flowchart TD
         deploy_prod["bun run deploy<br/>recorded as started before it runs<br/>FIT_DEPLOY_HOST / FIT_PUBLIC_ORIGIN name prod"]
         smoke_prod{"smoke.json, cleared before the deploy:<br/>written and ok for this commit?"}
         android["bun run android:release --server-url<br/>APK kept at FIT_FLOW_HOME/releases/tag<br/>re-hashed there, path and sha256 recorded"]
-        cleanup["bun run worktree:done for every slice,<br/>the integration and the release worktree<br/>child issues closed, in-progress removed"]
+        cleanup["bun run worktree:done for every slice,<br/>the integration and the release worktree<br/>branches deleted on origin once proven landed<br/>child issues closed, in-progress removed"]
         shipped["gh issue comment: PR, tag, QA, prod,<br/>android, cleanup, next<br/>terminal SHIPPED"]
         merge --> merge_sha --> tag --> main_ci
         main_ci -- no --> stop_ci

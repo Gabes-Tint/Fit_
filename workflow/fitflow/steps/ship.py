@@ -526,25 +526,45 @@ def _cleanup(record: RunRecord, merge_sha: str) -> list[str]:
     hold. `worktree:done` refuses a branch origin/main has never seen, and
     main squashes, so none of these ever satisfy it - the driver
     establishes the same fact itself and only then forces."""
-    removed, kept, failures = [], [], []
+    removed, kept, deleted, failures = [], [], {}, []
     for slug, tip, landed in _cleanup_targets(record, merge_sha):
-        path = worktrees.slice_worktree_path(slug)
-        if path.exists() and not worktrees.is_clean(path):
+        failure = _remove_target(slug, tip, landed)
+        if failure:
             kept.append(slug)
-            failures.append(f"{slug} was not removed: {worktrees.status_summary(path)}")
-            continue
-        code, output = worktrees.worktree_done(slug, force=landed)
-        if code != 0:
-            kept.append(slug)
-            failures.append(f"worktree:done refused {slug}: {output}")
+            failures.append(failure)
             continue
         removed.append(slug)
-        if worktrees.branch_exists(slug):
-            worktrees.delete_branch_at(slug, tip)
-    _remember(record, "cleanup", {"removed": removed, "kept": kept})
+        deleted.update(_delete_remote(slug) if landed else {})
+    _remember(record, "cleanup", {"removed": removed, "kept": kept, "remote_deleted": deleted})
     narrate.line(f"🧹 Removed {', '.join(removed) if removed else 'nothing'}")
+    if deleted:
+        narrate.line(f"🌐 Deleted on origin: {', '.join(sorted(deleted))}")
     _close_children(record)
     return failures
+
+
+def _delete_remote(slug: str) -> dict:
+    """The branch on origin, and the commit it was at when it went - the
+    record is all that is left of a deleted branch, so it says what was
+    deleted, not merely that something was."""
+    head = worktrees.remote_head(slug)
+    if head is None or not worktrees.delete_remote_branch(slug):
+        return {}
+    return {slug: head}
+
+
+def _remove_target(slug: str, tip: str, landed: bool) -> str:
+    """The failure to report, or "" once the worktree and its local branch
+    are gone."""
+    path = worktrees.slice_worktree_path(slug)
+    if path.exists() and not worktrees.is_clean(path):
+        return f"{slug} was not removed: {worktrees.status_summary(path)}"
+    code, output = worktrees.worktree_done(slug, force=landed)
+    if code != 0:
+        return f"worktree:done refused {slug}: {output}"
+    if worktrees.branch_exists(slug):
+        worktrees.delete_branch_at(slug, tip)
+    return ""
 
 
 def _cleanup_targets(record: RunRecord, merge_sha: str) -> list[tuple[str, str, bool]]:

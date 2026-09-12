@@ -156,7 +156,9 @@ def test_mechanical_delivery_merges_without_a_reviewer(world):
     assert "pr merge" in gh_argv
     assert _pr(world, 500)["state"] == "MERGED"
     assert "Closes #1000" in _pr(world, 500)["body"]
-    assert world.branch_exists_on_origin("story-1000")
+    # the integration branch was pushed for the PR, and block 5 deleted it on
+    # origin once the PR's own record proved it landed
+    assert "story-1000" in world.ship_record(1000)["cleanup"]["remote_deleted"]
     assert any("Delivered" in comment for comment in world.issue(1000)["comments"])
 
 
