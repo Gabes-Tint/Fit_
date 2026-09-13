@@ -106,14 +106,19 @@ def _talks(world, role: str, team: str) -> list[dict]:
     ]
 
 
-def _stopped_by_a_gate_crash(world, number: int) -> None:
+def _stopped_by_a_gate_crash(
+    world, number: int, files: dict[str, str] | None = None, changed: list[str] | None = None
+) -> None:
     """A first run whose only implementation turn was fine, and whose
     validation then died on a tool failure - a stop the driver, not the
     agent, is responsible for."""
     _given_planned_story(world, number)
     _delegate_mechanic(world, number)
     world.agent_implements(
-        f"story-{number}-domain", "mechanic", files=IMPLEMENTATION, changed_files=CHANGED
+        f"story-{number}-domain",
+        "mechanic",
+        files=files or IMPLEMENTATION,
+        changed_files=changed or CHANGED,
     )
     world.given_gate_outcomes(**{"verify:changed": "tool_error"})
     result = run_flow(world, number)
@@ -211,6 +216,68 @@ def test_resume_never_relaunches_beside_a_turn_still_running(world):
     assert result.returncode == 29, result.stdout + result.stderr
     assert "a mechanic turn is still running on this machine" in result.stdout
     assert len(_talks(world, "mechanic", "story-603-domain")) == 2  # nothing relaunched
+
+
+def test_a_run_stopped_with_an_application_script_in_its_tree_resumes_and_freezes(world):
+    """#337's own tree: the slice's diff carries `scripts/eval/`, the search
+    evaluation harness the story was about. That is application tooling, not
+    a gate, so re-validating the retained turn passes on the same bytes
+    instead of stopping on it."""
+    _stopped_by_a_gate_crash(
+        world,
+        606,
+        files={
+            "src/lib/server/catalog/plain-food.ts": "export const plain = true;\n",
+            "scripts/eval/search-eval.ts": "// the search evaluation harness\n",
+        },
+        changed=["scripts/eval/search-eval.ts", "src/lib/server/catalog/plain-food.ts"],
+    )
+    world.given_gate_outcomes(**{"verify:changed": "pass"})
+
+    result = run_flow(world, 606, "--resume")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "re-validating mechanic attempt 1 from its retained reply" in result.stdout
+    assert "forbidden file changed" not in result.stdout
+    assert "🔒 #606 (domain) frozen at" in result.stdout
+    assert len(_talks(world, "mechanic", "story-606-domain")) == 2  # nothing new was asked
+
+
+def test_a_resumed_run_relaunches_the_correction_a_forbidden_change_earned(world):
+    """A forbidden change is corrected, not stopped on - and the correction
+    survives the run that died before it reached an agent. The resumed run
+    relaunches it with the same diagnostic, the file still sitting in the
+    worktree, and the slice freezes once the agent puts it back."""
+    _given_planned_story(world, 607)
+    _delegate_mechanic(world, 607)
+    world.agent_implements(
+        "story-607-domain",
+        "mechanic",
+        files={**IMPLEMENTATION, "quality/thresholds.json": "{}\n"},
+        changed_files=["quality/thresholds.json", *CHANGED],
+    )
+    world.agent_fails("story-607-domain", "mechanic", "provider unavailable")
+    first = run_flow(world, 607)
+    assert first.returncode == 21, first.stdout + first.stderr
+    assert "forbidden file changed: quality/thresholds.json" in first.stdout
+    assert (world.slice_worktree_path("story-607-domain") / "quality/thresholds.json").exists()
+
+    world.agent_implements(
+        "story-607-domain",
+        "mechanic",
+        files={},
+        delete=["quality/thresholds.json"],
+        changed_files=CHANGED,
+        summary="put the thresholds back; the slice does not need them",
+    )
+
+    result = run_flow(world, 607, "--resume")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "relaunching mechanic attempt 2" in result.stdout
+    relaunched = _talks(world, "mechanic", "story-607-domain")[-1]["prompt"]
+    assert "forbidden file changed: quality/thresholds.json" in relaunched
+    assert "🔒 #607 (domain) frozen at" in result.stdout
 
 
 def test_resume_refuses_a_worktree_that_changed_since_the_turn_ended(world):
