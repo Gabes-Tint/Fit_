@@ -346,6 +346,16 @@ Classify from driver evidence in the precedence below. If a tool failure
 prevents establishing a code defect, report the tool failure. Workers cannot
 choose their own retry category.
 
+This classification's own no-retry rule sits above one narrower exception:
+`github.py` and `agents.py` each retry once, transparently, before a `gh`
+call or an `aarmy talk` ever reaches this table - a GitHub 5xx ("Something
+went wrong while executing your query"), an HTTP 5xx, a network timeout,
+a DNS failure, a rate limit, or (for `aarmy talk` only) a backend that
+returned no message at all. That retry is a transport-level correction for
+a passing blip, not a retry/escalation of the turn itself; if the retry
+also fails, the failure reaches this table exactly as before and is
+classified and stopped the same way.
+
 | Precedence and type     | Examples                                                                                                         | Action                                                            |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | 1: `contract`           | Malformed assignment/reply, escaped worktree, changed workflow, weakened acceptance or policy, identity mismatch | Stop immediately; preserve; no retry/escalation.                  |

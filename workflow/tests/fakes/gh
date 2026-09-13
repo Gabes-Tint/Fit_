@@ -173,6 +173,21 @@ def cmd_pr_create(argv, world):
     return 0
 
 
+def cmd_pr_list(argv, world):
+    head = opt(argv, "--head")
+    state = opt(argv, "--state", "open")
+    rows = []
+    for number_str, pull in world.get("prs", {}).items():
+        if state and pull.get("state", "OPEN").lower() != state.lower():
+            continue
+        if head and pull.get("head") != head:
+            continue
+        rows.append({"number": int(number_str)})
+    rows.sort(key=lambda row: row["number"])
+    print(json.dumps(rows))
+    return 0
+
+
 def cmd_pr_view(argv, world):
     number = int(argv[2])
     pull = _pr(world, number)
@@ -395,6 +410,7 @@ COMMANDS = {
     ("issue", "create"): cmd_create,
     ("issue", "close"): cmd_issue_close,
     ("pr", "create"): cmd_pr_create,
+    ("pr", "list"): cmd_pr_list,
     ("pr", "view"): cmd_pr_view,
     ("pr", "checks"): cmd_pr_checks,
     ("pr", "merge"): cmd_pr_merge,
@@ -420,10 +436,33 @@ def _match_key(argv):
     return " ".join(filtered)
 
 
+def _consume_transient_failure(world, argv):
+    """One-shot (or `times`-shot) transient failure scripted by
+    `gh_fails_transiently`: pops (decrements) the first matching entry and
+    returns it, or None if nothing matches or it is exhausted."""
+    key = _match_key(argv)
+    for entry in world.get("gh_transient_failures", []):
+        if entry["substring"] in key and entry.get("times", 0) > 0:
+            entry["times"] -= 1
+            save(world)
+            return entry
+    return None
+
+
 def main() -> int:
     argv = sys.argv[1:]
     record(argv)
     world = load()
+    transient = _consume_transient_failure(world, argv)
+    if transient is not None:
+        if transient.get("after_write") and tuple(argv[:2]) == ("pr", "create"):
+            create_argv = list(argv)
+            if "-R" in create_argv:
+                i = create_argv.index("-R")
+                del create_argv[i : i + 2]
+            cmd_pr_create(create_argv, load())
+        print(transient["message"], file=sys.stderr)
+        return 1
     if any(substring in _match_key(argv) for substring in world.get("gh_failures", [])):
         print(f"fake gh: scripted failure on {' '.join(argv)}", file=sys.stderr)
         return 1

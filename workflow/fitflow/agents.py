@@ -15,7 +15,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from fitflow import narrate, settings
+from fitflow import github, narrate, settings
 from fitflow.agent_config import AgentConfig
 from fitflow.outcome import FlowFailure, Outcome
 
@@ -23,7 +23,15 @@ PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 SCHEMAS_DIR = Path(__file__).resolve().parent / "schemas"
 
 _SESSION_LINE = re.compile(r"^\[(?P<name>\S+) session=(?P<session>\S+)\]$")
+# An aarmy backend that returned no message at all - "reported an error:
+# None", "error: None" - is indistinguishable from a passing blip, so it
+# gets the same one retry as a transient gh failure.
+_EMPTY_BACKEND_ERROR = re.compile(r"error:\s*none\b", re.IGNORECASE)
 _roster: dict[str, AgentConfig] | None = None
+
+
+def _is_retryable_talk_failure(message: str) -> bool:
+    return bool(_EMPTY_BACKEND_ERROR.search(message)) or github.is_transient(message)
 
 
 def configure(roster: dict[str, AgentConfig]) -> None:
@@ -103,30 +111,7 @@ def talk(
         narrate.line(f"🤖➡️  {label}")
         narrate.block(prompt_text.splitlines())
     started = time.monotonic()
-    result = subprocess.run(
-        [
-            "aarmy",
-            "talk",
-            role,
-            "--team",
-            team,
-            "-b",
-            agent.backend,
-            "-m",
-            agent.model,
-            "-e",
-            agent.effort,
-            "--timeout",
-            settings.TALK_TIMEOUT,
-            "--schema",
-            str(SCHEMAS_DIR / f"{schema_name}.json"),
-            "-p",
-            prompt_text,
-        ],
-        capture_output=True,
-        text=True,
-        env=_env(),
-    )
+    result = _talk_with_retry(team, role, agent, schema_name, prompt_text)
     elapsed = time.monotonic() - started
     if result.returncode != 0:
         raise FlowFailure(
@@ -158,6 +143,53 @@ def talk(
         narrate.fields([("Session", session)])
         narrate.raw_json(reply_json)
     return reply, session
+
+
+def _talk_with_retry(
+    team: str, role: str, agent: AgentConfig, schema_name: str, prompt_text: str
+) -> subprocess.CompletedProcess:
+    """One `aarmy talk`, retried once when it fails with no message at all
+    - an empty-message backend error is indistinguishable from a passing
+    blip - or with a transient signature. The retry stays inside this same
+    role: it is not one of the role's attempts, only narrated as one."""
+    result = _talk_once(team, role, agent, schema_name, prompt_text)
+    if result.returncode == 0:
+        return result
+    message = result.stderr.strip() or result.stdout.strip()
+    if not _is_retryable_talk_failure(message):
+        return result
+    narrate.line(f"🔁 {role} backend error with no message, retrying once")
+    time.sleep(settings.TRANSIENT_RETRY_SECONDS)
+    return _talk_once(team, role, agent, schema_name, prompt_text)
+
+
+def _talk_once(
+    team: str, role: str, agent: AgentConfig, schema_name: str, prompt_text: str
+) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [
+            "aarmy",
+            "talk",
+            role,
+            "--team",
+            team,
+            "-b",
+            agent.backend,
+            "-m",
+            agent.model,
+            "-e",
+            agent.effort,
+            "--timeout",
+            settings.TALK_TIMEOUT,
+            "--schema",
+            str(SCHEMAS_DIR / f"{schema_name}.json"),
+            "-p",
+            prompt_text,
+        ],
+        capture_output=True,
+        text=True,
+        env=_env(),
+    )
 
 
 def _format_duration(seconds: float) -> str:

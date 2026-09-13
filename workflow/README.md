@@ -380,14 +380,15 @@ The validated entries in `agents.yaml` are passed explicitly as flags on every
 
 ### Settings
 
-| variable                   | default                                                     |
-| -------------------------- | ----------------------------------------------------------- |
-| `FIT_REPO`                 | the git top level above this folder                         |
-| `FIT_GITHUB_REPO`          | `Gabes-Tint/Fit_`                                           |
-| `FIT_FLOW_HOME`            | `~/.agents-army/fit_/workflow` (`teams/`, `logs/`, `runs/`) |
-| `FIT_FLOW_TALK_TIMEOUT`    | `1800` seconds per agent turn                               |
-| `FIT_FLOW_CI_TIMEOUT`      | `1800` seconds waiting on a PR's checks (block 4)           |
-| `FIT_FLOW_CI_POLL_SECONDS` | `30` seconds between polls                                  |
+| variable                           | default                                                                                     |
+| ---------------------------------- | ------------------------------------------------------------------------------------------- |
+| `FIT_REPO`                         | the git top level above this folder                                                         |
+| `FIT_GITHUB_REPO`                  | `Gabes-Tint/Fit_`                                                                           |
+| `FIT_FLOW_HOME`                    | `~/.agents-army/fit_/workflow` (`teams/`, `logs/`, `runs/`)                                 |
+| `FIT_FLOW_TALK_TIMEOUT`            | `1800` seconds per agent turn                                                               |
+| `FIT_FLOW_CI_TIMEOUT`              | `1800` seconds waiting on a PR's checks (block 4)                                           |
+| `FIT_FLOW_CI_POLL_SECONDS`         | `30` seconds between polls                                                                  |
+| `FIT_FLOW_TRANSIENT_RETRY_SECONDS` | `15` seconds before the one retry of a `gh` call or an `aarmy talk` that failed transiently |
 
 ### Ship settings (block 5)
 
