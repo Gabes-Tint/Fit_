@@ -33,6 +33,28 @@ def _pick_explicit(issue: int) -> Story:
     return story
 
 
+def pick_for_resume(issue: int) -> Story:
+    """The story a `--resume` continues: a story, not on a human hold.
+    `in-progress` and `blocked` are the run's own marks and do not stop it
+    from picking its own story back up. Whether it may be closed is the
+    record's to say (a merged PR closes it before block 5 ends), so the
+    resume box checks that."""
+    try:
+        story = github.view(issue)
+    except RuntimeError as error:
+        raise FlowFailure(Outcome.CANNOT_PICK, f"#{issue} does not exist: {error}") from error
+    if settings.STORY_LABEL not in story.labels:
+        raise FlowFailure(Outcome.CANNOT_PICK, f"#{issue} is not labelled '{settings.STORY_LABEL}'")
+    human = settings.HUMAN_HOLD_LABELS & set(story.labels)
+    if human:
+        raise FlowFailure(
+            Outcome.CANNOT_PICK,
+            f"#{issue} is held by {', '.join(sorted(human))}; remove the label to resume",
+        )
+    _announce(story)
+    return story
+
+
 def _pick_lowest() -> Story | None:
     stories = github.list_open_stories()
     held = [story for story in stories if _held_by(story)]

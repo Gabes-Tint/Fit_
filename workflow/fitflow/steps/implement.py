@@ -80,17 +80,9 @@ def _run_block3(record: RunRecord) -> None:
     """The parallel loops and the final barrier. A tile that dies off the
     beaten path is named honestly: this phase has not reported anywhere."""
     try:
-        pieces = record.ordered()
-        if len(pieces) == 1:
-            _run_slice(record, pieces[0])
-        else:
-            narrate.line(f"⚡ Starting {len(pieces)} implementation loops in parallel")
-            failures = _run_parallel(record, pieces)
-            narrate.line(f"⏳ Implementation barrier: all {len(pieces)} slices settled")
-            if failures:
-                for piece, failure in failures:
-                    narrate.line(f"❌ #{piece.number} ({piece.layer}): {_describe(failure)}")
-                raise failures[0][1]
+        # a resumed run brings frozen slices along: they are never rerun,
+        # only re-verified at the join
+        _run_loops(record, [piece for piece in record.ordered() if piece.state != "succeeded"])
         _verify_frozen(record)
     except FlowFailure as failure:
         _persist_terminal(record, failure.outcome.name)
@@ -103,6 +95,21 @@ def _run_block3(record: RunRecord) -> None:
             record.story_number,
             True,
         ) from error
+
+
+def _run_loops(record: RunRecord, pieces: list[SliceRecord]) -> None:
+    if len(pieces) == 1:
+        _run_slice(record, pieces[0])
+        return
+    if not pieces:
+        return
+    narrate.line(f"⚡ Starting {len(pieces)} implementation loops in parallel")
+    failures = _run_parallel(record, pieces)
+    narrate.line(f"⏳ Implementation barrier: all {len(pieces)} slices settled")
+    if failures:
+        for piece, failure in failures:
+            narrate.line(f"❌ #{piece.number} ({piece.layer}): {_describe(failure)}")
+        raise failures[0][1]
 
 
 def _report_gate(story, record: RunRecord, stage: str) -> None:
@@ -154,7 +161,19 @@ def _run_parallel(
 def _run_slice(record: RunRecord, piece: SliceRecord) -> None:
     """One slice's level loop: assigned → running → validating →
     (correcting → running | escalating → assigned | succeeded | failed).
-    Every unlisted transition is prohibited."""
+    Every unlisted transition is prohibited.
+
+    A resumed slice may arrive "running" with its last turn already
+    completed: that turn's verdict is pending, and it is re-derived from
+    the reply and worktree the turn left - no new agent call."""
+    if piece.state == "running":
+        last = piece.turns[-1]
+        narrate.line(
+            f"♻️  #{piece.number} ({piece.layer}) re-validating {piece.role} attempt "
+            f"{last['attempt']} from its retained reply, without a new agent call"
+        )
+        if _settle(record, piece, last["reply"], piece.attempts):
+            return
     while True:
         _pre_turn_barrier(record, piece)
         with record.transition():
@@ -167,36 +186,46 @@ def _run_slice(record: RunRecord, piece: SliceRecord) -> None:
         identity = record.begin_turn(piece, piece.role, attempt, prompt_name)
         reply, session = _launch_turn(record, piece, identity, prompt_name, attempt)
         with record.transition():
-            record.end_turn(piece, identity, "ok", reply["summary"], session)
-        try:
-            diagnostic = _validate_turn(record, piece, reply)
-        except FlowFailure as failure:
-            # a contract violation or external tool failure during
-            # validation still settles the stop: the slice lands in
-            # "failed" instead of being left in an active state, and the
-            # settled turn's verdict becomes the diagnostic, not a green
-            with record.transition():
-                piece.move("failed")
-                piece.turns[-1]["result"] = "failed"
-                piece.turns[-1]["why"] = failure.why
-                record.save()
-            raise
-        if diagnostic is None:
-            _freeze(record, piece)
+            digest = worktrees.working_tree_digest(worktrees.slice_worktree_path(piece.slug))
+            record.end_turn(piece, identity, "ok", reply["summary"], session, reply, digest)
+        if _settle(record, piece, reply, attempt):
             return
+
+
+def _settle(record: RunRecord, piece: SliceRecord, reply: dict, attempt: int) -> bool:
+    """Judge one completed turn. True once the slice is frozen; False when
+    the loop must launch again (a correction, or the escalated role's first
+    attempt); raises when the run stops."""
+    try:
+        diagnostic = _validate_turn(record, piece, reply)
+    except FlowFailure as failure:
+        # a contract violation or external tool failure during
+        # validation still settles the stop: the slice lands in
+        # "failed" instead of being left in an active state, and the
+        # settled turn's verdict becomes the diagnostic, not a green
         with record.transition():
-            piece.diagnostics.append(diagnostic)
-        narrate.line(f"🩺 #{piece.number} ({piece.layer}) diagnostic: {diagnostic}")
-        if attempt < turns.BUDGET:
-            with record.transition():
-                piece.move("correcting")
-                record.save()
-            narrate.line(
-                f"🔁 {piece.role.capitalize()} #{piece.number} ({piece.layer}) "
-                f"correcting after attempt {attempt}"
-            )
-            continue
-        _escalate_or_stop(record, piece, diagnostic)
+            piece.move("failed")
+            piece.turns[-1]["result"] = "failed"
+            piece.turns[-1]["why"] = failure.why
+            record.save()
+        raise
+    if diagnostic is None:
+        _freeze(record, piece)
+        return True
+    with record.transition():
+        piece.diagnostics.append(diagnostic)
+    narrate.line(f"🩺 #{piece.number} ({piece.layer}) diagnostic: {diagnostic}")
+    if attempt < turns.BUDGET:
+        with record.transition():
+            piece.move("correcting")
+            record.save()
+        narrate.line(
+            f"🔁 {piece.role.capitalize()} #{piece.number} ({piece.layer}) "
+            f"correcting after attempt {attempt}"
+        )
+        return False
+    _escalate_or_stop(record, piece, diagnostic)
+    return False
 
 
 def narrate_turn_start(piece: SliceRecord, attempt: int) -> None:
@@ -259,7 +288,11 @@ def _check_session(record: RunRecord, piece: SliceRecord, session: str) -> None:
     a correction must come from the same session the role recorded, and an
     escalated role must establish a new session identity. A changed,
     missing or reused session id is a contract failure."""
-    completed = [entry for entry in piece.turns if entry["status"] == "completed"]
+    # a turn that failed before the CLI printed a session (a launch error)
+    # is no evidence either way; a voided turn that did print one still is
+    completed = [
+        entry for entry in piece.turns if entry["status"] == "completed" and entry.get("session")
+    ]
     same_role = [entry for entry in completed if entry["role"] == piece.role]
     if same_role and same_role[-1].get("session") != session:
         raise _contract(
@@ -296,7 +329,9 @@ def _check_worktree_before_turn(record: RunRecord, piece: SliceRecord, path) -> 
 
 
 def _check_previous_turn_settled(record: RunRecord, piece: SliceRecord, path) -> None:
-    if piece.revision == 0 and piece.attempts == 0 and not worktrees.is_clean(path):
+    # a relaunch of a voided first attempt (see steps/resume.py) starts on
+    # whatever the dead turn left: that is accumulated work, not dirt
+    if not piece.turns and not worktrees.is_clean(path):
         raise _contract(record, piece, "the initial launch must start from a clean worktree")
 
 

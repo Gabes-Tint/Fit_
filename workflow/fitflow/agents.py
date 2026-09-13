@@ -75,6 +75,19 @@ def ensure_fresh_team(team: str, worktree: Path, story_number: int | None = None
     link.symlink_to(worktree)
 
 
+def turn_in_flight(team: str, role: str) -> bool:
+    """Whether an `aarmy talk <role> --team <team>` is still running on
+    this machine - a turn a killed driver left behind. A resume refuses to
+    relaunch beside it: two agents in one worktree is the one thing the
+    per-slice team exists to prevent."""
+    result = subprocess.run(
+        ["pgrep", "-f", f"aarmy talk {role} --team {team}( |$)"],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0 and result.stdout.strip() != ""
+
+
 def delete_team(team: str) -> None:
     subprocess.run(
         ["aarmy", "delete", "--team", team],

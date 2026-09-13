@@ -55,9 +55,11 @@ define role selection, validation, corrections, escalation, the all-slice
 barrier, the delivery gates and the ship gates; blocks 1-5 implement them.
 An external operator
 may start and observe a run; it must not mutate the active workflow,
-configuration or slice worktrees. Coordinated cancellation is not implemented:
-an external interruption leaves retained state for audit rather than a clean
-resume point.
+configuration or slice worktrees. A stopped run is continued with
+`go.py <n> --resume` (re-validates the last turn on the bytes it left, no
+replay) or undone with `go.py <n> --reset` (archives the record, removes
+what the run created). Coordinated cancellation is not implemented: an
+interruption is an external stop that `--resume` reconciles afterwards.
 
 1. **Sync** — fetch; issues; `needs-gabriel`; log. Answers → `decision`.
 2. **Pick** — explicit issue, or lowest-numbered open `story` not held. Empty → stop; queue replenishment is outside this run.

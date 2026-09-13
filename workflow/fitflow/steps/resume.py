@@ -1,0 +1,200 @@
+"""Box: resume - reconcile the retained record with what the run left
+behind, and say where the flow continues.
+
+A resumed run replays nothing: every slice goes back to the point its last
+turn actually reached. A turn that ended with a valid reply has its
+verdict re-derived from that reply and the worktree it left - the same
+bytes, proven by the digest recorded when the turn ended, and no new agent
+call - so a run stopped by a driver defect continues once the driver is
+fixed. A turn the driver never saw end, or one that failed before it
+produced a reply, is voided and relaunched under the same attempt number:
+counters are not reset, the ledger keeps the voided entry, and a turn
+still running on this machine is never relaunched beside. A slice with no
+accepted assignment sends the run back to block 2; a slice interrupted
+inside a review fix is not reconciled here - `--reset` is the honest
+answer for it.
+"""
+
+from fitflow import agents, audit, github, narrate, settings, worktrees
+from fitflow.outcome import FlowFailure, Outcome
+from fitflow.runstate import RunRecord, SliceRecord
+
+# Where a resumed run continues, in flow order.
+DELEGATE = "delegate"
+IMPLEMENT = "implement"
+DELIVER = "deliver"
+SHIP = "ship"
+
+
+def reconcile(story, record: RunRecord) -> str:
+    """The stage to continue from, after every slice is put back where its
+    last turn left it. Raises when nothing can honestly continue."""
+    narrate.line(
+        f"♻️  Resuming #{story.number} from its retained run "
+        f"(terminal: {record.terminal or '(none: interrupted)'})"
+    )
+    if record.terminal == "SHIPPED":
+        raise FlowFailure(
+            Outcome.CANNOT_PICK, f"#{story.number} already shipped; nothing to resume"
+        )
+    if _pr_merged(record):
+        _take_back(story)
+        return SHIP
+    if story.state != "OPEN":
+        raise FlowFailure(Outcome.CANNOT_PICK, f"#{story.number} is {story.state.lower()}")
+    _take_back(story)
+    if any(not piece.assignments for piece in record.ordered()):
+        _require_never_launched(record)
+        narrate.line("♻️  No slice has an accepted assignment: continuing at block 2")
+        return DELEGATE
+    for piece in record.ordered():
+        _reconcile_slice(record, piece)
+    return _after_block3(record)
+
+
+def _take_back(story) -> None:
+    """The story is this run's again: `blocked` was the stopped run's mark,
+    and `in-progress` holds it off the pick list while this one works."""
+    if settings.BLOCKED_LABEL in story.labels:
+        github.remove_label(story.number, settings.BLOCKED_LABEL)
+        narrate.line(f"✏️  #{story.number} label {settings.BLOCKED_LABEL} removed")
+    if settings.IN_PROGRESS_LABEL not in story.labels:
+        github.add_label(story.number, settings.IN_PROGRESS_LABEL)
+        narrate.line(f"✏️  #{story.number} labelled {settings.IN_PROGRESS_LABEL}")
+    audit.held()
+
+
+def _pr_merged(record: RunRecord) -> bool:
+    pr_number = record.delivery.get("pr_number")
+    if not pr_number:
+        return False
+    state = github.view_pr(int(pr_number)).state
+    if state == "MERGED":
+        narrate.line(f"♻️  PR #{pr_number} is merged: continuing at block 5")
+        return True
+    if state != "OPEN":
+        raise FlowFailure(
+            Outcome.RUN_STATE_CONFLICT,
+            f"PR #{pr_number} is {state}, neither open nor merged; audit it, then "
+            f"`go.py {record.story_number} --reset`",
+            record.story_number,
+        )
+    return False
+
+
+def _after_block3(record: RunRecord) -> str:
+    if any(piece.state != "succeeded" for piece in record.ordered()):
+        return IMPLEMENT
+    if record.terminal == "IMPLEMENTED":
+        narrate.line("♻️  Every slice is frozen and reported: continuing at block 4")
+        return DELIVER
+    narrate.line("♻️  Every slice is frozen: continuing at block 3's report")
+    return IMPLEMENT
+
+
+def _require_never_launched(record: RunRecord) -> None:
+    for piece in record.ordered():
+        if piece.turns:
+            raise FlowFailure(
+                Outcome.RUN_STATE_CONFLICT,
+                f"{piece.slug} has turns but no accepted assignment; audit the record, "
+                f"then `go.py {record.story_number} --reset`",
+                record.story_number,
+            )
+
+
+def _reconcile_slice(record: RunRecord, piece: SliceRecord) -> None:
+    if piece.state == "succeeded":
+        return
+    if _in_review_fix(piece):
+        raise _conflict(record, piece, f"was interrupted ({piece.state}) during a review fix")
+    if not piece.turns:
+        _never_launched(record, piece)
+        return
+    _reconcile_turn(record, piece, piece.turns[-1])
+
+
+def _reconcile_turn(record: RunRecord, piece: SliceRecord, last: dict) -> None:
+    if last["status"] == "running":
+        _require_not_in_flight(record, piece)
+        _void(record, piece, last, "the driver stopped while the turn was running")
+    elif last["result"] == "void":
+        _back_to_launch(record, piece, "its voided attempt")
+    elif last.get("reply") is not None:
+        _reopen_for_validation(record, piece, last)
+    else:
+        _void(record, piece, last, last["why"] or "the turn produced no valid reply")
+
+
+def _never_launched(record: RunRecord, piece: SliceRecord) -> None:
+    """Failed before any launch (the launch barrier): back to the launch."""
+    with record.transition():
+        piece.resume_to("assigned")
+        record.save()
+    narrate.line(f"♻️  #{piece.number} ({piece.layer}) never launched: back to assigned")
+
+
+def _in_review_fix(piece: SliceRecord) -> bool:
+    return piece.state in ("fixing", "escalating") or bool(
+        piece.turns and piece.turns[-1]["kind"] == "review_fix"
+    )
+
+
+def _require_not_in_flight(record: RunRecord, piece: SliceRecord) -> None:
+    if agents.turn_in_flight(piece.team, piece.role):
+        raise FlowFailure(
+            Outcome.EXECUTION_HELD,
+            f"{piece.slug}: a {piece.role} turn is still running on this machine; "
+            "wait for it to end, or stop it, before resuming",
+            record.story_number,
+        )
+
+
+def _reopen_for_validation(record: RunRecord, piece: SliceRecord, last: dict) -> None:
+    """A turn that ended with a valid reply is judged again, on the bytes
+    it left; bytes that moved since are not that turn's work."""
+    path = worktrees.slice_worktree_path(piece.slug)
+    if not path.exists():
+        raise _conflict(record, piece, "worktree is missing")
+    digest = worktrees.working_tree_digest(path)
+    if last.get("digest") and digest != last["digest"]:
+        raise _conflict(
+            record,
+            piece,
+            f"worktree changed since {piece.role} attempt {last['attempt']} ended; "
+            "audit it, then reset",
+        )
+    with record.transition():
+        piece.resume_to("running")
+        record.save()
+
+
+def _void(record: RunRecord, piece: SliceRecord, last: dict, why: str) -> None:
+    """The ledger keeps the entry, marked void; the attempt number is
+    reserved again by the relaunch."""
+    with record.transition():
+        last["status"] = "completed"
+        last["result"] = "void"
+        last["why"] = f"voided on resume: {why}"
+        piece.attempts = max(0, piece.attempts - 1)
+        record.save()
+    _back_to_launch(record, piece, f"attempt {last['attempt']} voided ({why})")
+
+
+def _back_to_launch(record: RunRecord, piece: SliceRecord, note: str) -> None:
+    state = "correcting" if piece.attempts > 0 else "assigned"
+    with record.transition():
+        piece.resume_to(state)
+        record.save()
+    narrate.line(
+        f"♻️  #{piece.number} ({piece.layer}) {note}: relaunching {piece.role} "
+        f"attempt {piece.attempts + 1}"
+    )
+
+
+def _conflict(record: RunRecord, piece: SliceRecord, why: str) -> FlowFailure:
+    return FlowFailure(
+        Outcome.RUN_STATE_CONFLICT,
+        f"{piece.slug} {why}; audit it, then `go.py {record.story_number} --reset`",
+        record.story_number,
+    )

@@ -168,9 +168,16 @@ flowchart TD
         nightly["nightly.yml<br/>Trivy + ZAP, opens an issue on findings"]
     end
 
+    subgraph recovery["Recovery: go.py n --resume / --reset"]
+        resume["--resume reconciles the retained record<br/>turn ended with a reply: re-validate those bytes, no agent call<br/>turn died or never replied: void it, relaunch the same attempt<br/>no assignment: back to block 2 · PR merged: block 5"]
+        refuse["Refused honestly: bytes changed, a turn still running here,<br/>a review fix interrupted, a human hold, already shipped"]
+        reset["--reset removes worktrees, branches, teams,<br/>closes an open PR and the children, drops in-progress/blocked,<br/>archives runs/story-n.json"]
+        resume --> refuse
+    end
+
     subgraph resilience["Future implementation invariants"]
         bg["No background gate or operator takeover<br/>driver owns the validation verdict"]
-        dead["Coordinated cancellation is FUTURE<br/>today an external interruption leaves retained<br/>state for audit; never blindly replay"]
+        dead["Coordinated cancellation is FUTURE<br/>an interruption is an external stop;<br/>--resume reconciles it afterwards, never blindly replays"]
     end
 ```
 
@@ -261,6 +268,24 @@ flowchart TD
   worktrees kept. `quality/`, `.github/` and `scripts/` remain forbidden to
   an implementation turn outright: they are the gates the work is judged
   by.
+- A stopped run is continued with `go.py <n> --resume`, which replays
+  nothing: every turn the driver saw end is recorded with its reply and a
+  digest of the working tree at that moment, so its verdict is re-derived
+  from those exact bytes without another agent call - the way a run stopped
+  by a driver defect continues once the driver is fixed. A turn the driver
+  never saw end, or one that failed before it produced a reply, is voided in
+  the ledger and relaunched under the same attempt number; counters never
+  reset. A record with no accepted assignment goes back to block 2 on the
+  failing tests block 1 already pushed; a merged PR goes straight to block
+  5, where a deploy the record shows live is not repeated. It refuses when
+  it cannot be honest: the worktree's bytes moved since the turn ended, a
+  turn is still running on this machine, a review fix was interrupted, the
+  story carries a human hold, or the run already shipped. `go.py <n>
+--reset` is the destructive counterpart: it narrates each worktree's
+  state, removes worktrees, branches and teams, closes an open PR and the
+  child issues, drops `in-progress` and `blocked`, and archives the record
+  as `runs/story-<n>.<stamp>.reset.json`. A merged PR and a human hold are
+  left alone.
 - Block 5 runs in the same invocation, immediately after the merge, and
   believes nothing a script tells it. It reads the merge commit from the PR,
   waits for `version-tag.yml`'s tag to point at that commit, and applies

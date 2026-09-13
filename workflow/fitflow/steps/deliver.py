@@ -56,6 +56,10 @@ def _deliver(story, record: RunRecord) -> None:
             record.delivery["verdict"] = "mechanical"
             record.save()
             narrate.line("🪙 Mechanical change: every slice's signals still select row 4")
+        elif record.delivery.get("verdict") == "merge":
+            # a resumed run: the reviewer already approved exactly this head
+            rounds = record.delivery.get("rounds", 1)
+            narrate.line(f"✅ Review verdict retained: merge, after {rounds} round(s)")
         else:
             _review_loop(story, record, path)
         _claims(story, record)
@@ -132,6 +136,8 @@ def _merge_or_reject(story, path: Path, frozen_commit: str, describe) -> None:
 def _integrate(story, record: RunRecord) -> Path:
     slug = f"story-{story.number}"
     path = worktrees.integration_worktree_path(slug)
+    if record.delivery.get("integration_branch"):
+        return _retained_integration(record, path)
     if path.exists() or worktrees.branch_exists(slug):
         raise FlowFailure(
             Outcome.WORKTREE_EXISTS,
@@ -167,6 +173,27 @@ def _integrate(story, record: RunRecord) -> Path:
         record.save()
     narrate.line(f"⇪ Pushed {slug} at {head[:12]}")
     return path
+
+
+def _retained_integration(record: RunRecord, path: Path) -> Path:
+    """A resumed run's integration worktree, accepted only at exactly the
+    head the record says it pushed."""
+    slug = record.delivery["integration_branch"]
+    head = record.delivery["integration_sha"]
+    if (
+        path.exists()
+        and worktrees.local_head(path) == head
+        and worktrees.is_clean(path)
+        and worktrees.remote_head(slug) == head
+    ):
+        narrate.line(f"🌿 Integration worktree {slug} retained at {head[:12]} · clean ✔ · pushed ✔")
+        return path
+    raise FlowFailure(
+        Outcome.RUN_STATE_CONFLICT,
+        f"the integration worktree {slug} is not at the retained {head[:12]}, clean and "
+        f"pushed; audit it, then `go.py {record.story_number} --reset`",
+        record.story_number,
+    )
 
 
 def _open_pr(story, record: RunRecord, path: Path) -> int:

@@ -15,9 +15,13 @@ branch, PR, review, CI, merge - withheld for a change to the driver itself),
 and ship (the merge commit's tag, main's own CI, the QA deploy, the flaky
 decision, the production deploy, the Android release and cleanup). An
 optional external operator may start and observe a run, but cannot mutate the
-workflow or worktrees while it runs. Coordinated cancellation is not
-implemented: an external interruption leaves retained state for audit, and a
-new invocation refuses to replay it automatically.
+workflow or worktrees while it runs. A stopped or interrupted run leaves its
+retained record and worktrees in place; `go.py <n> --resume` continues it
+from the exact point its last turn reached (never replaying a turn that
+ended, never relaunching beside one still running), and `go.py <n> --reset`
+undoes what it created and archives the record. Coordinated cancellation is
+not implemented: an interruption is an external stop that `--resume`
+reconciles afterwards.
 
 Blocks 1-5 run in one `go.py` invocation. Block 1 runs every command and
 check itself, calling agents only at the judgment boxes ("whose call?",
@@ -219,11 +223,19 @@ To watch it work with nothing real touched, run the tests instead (below).
 cd workflow
 uv run go.py 351                  # plan, delegate and implement issue #351
 uv run go.py                      # pick the lowest-numbered open story not held
+uv run go.py 351 --resume         # continue #351's stopped run where it left off
+uv run go.py 351 --reset          # undo what a run created for #351, archive its record
 FIT_FLOW_SHIP_TO=qa uv run go.py 351    # ...and also deploy to QA
 FIT_FLOW_SHIP_TO=prod uv run go.py 351  # ...and also deploy to QA, then prod
 ```
 
 From the repository root: `uv run --project workflow workflow/go.py 351`.
+
+| argument   | what                                                                                                                                                                                                                                                                                                              |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `issue`    | the story to pick; without it, the lowest-numbered open story not held                                                                                                                                                                                                                                            |
+| `--resume` | needs `issue`. Continues the story's retained run: a turn that ended with a valid reply is re-validated on the bytes it left (no new agent call); a turn that died or failed before replying is voided and relaunched under the same attempt number; block 2, 4 and 5 re-enter from what the record already holds |
+| `--reset`  | needs `issue`. Removes the slice, integration and release worktrees and their local and remote branches, deletes the teams, closes an open PR and the child issues, drops `in-progress` and `blocked`, and archives `runs/story-<n>.json` as `runs/story-<n>.<stamp>.reset.json`. Destructive on purpose          |
 
 "Held" means labelled `in-progress`, `blocked`, `needs-gabriel` or `paused`.
 Exit 0 means the whole flow ran: every slice implemented and validated, and
@@ -296,19 +308,26 @@ needs clarification) and `❌` a failure. The exit code says which one; see
   PR yourself; the story closes with it (`Closes #N`), and the run's
   worktrees are then cleaned up with `go.py <n> --reset`.
 - **Stopped or failed anywhere else.** Read the comment the run left on the
-  story. It says why, and on a failure it lists everything the run created,
-  whether each slice worktree is clean or dirty, and how to undo it. Failed
-  agent work is preserved in place for audit, and so are its worktree and
-  its branch on origin. Blocks 2-3 failures keep `in-progress` and add
-  `blocked`. Inspect the worktree before using the destructive `--force`
-  cleanup, which is the one thing the run will not do for you when it
-  cannot prove the work landed:
+  story. It says why, and on a failure it lists everything the run created
+  and whether each slice worktree is clean or dirty. Failed agent work is
+  preserved in place for audit, and so are its worktree and its branch on
+  origin. Blocks 2-3 failures keep `in-progress` and add `blocked`. Then
+  choose:
 
   ```sh
-  gh issue edit <n> -R Gabes-Tint/Fit_ --remove-label in-progress
-  bun run worktree:done story-<n>-<layer> --force
-  git push origin --delete story-<n>-<layer>
+  uv run go.py <n> --resume   # the stop was the driver's or a passing blip: continue
+  uv run go.py <n> --reset    # the plan or the tests were wrong: undo, then run afresh
   ```
+
+  `--resume` takes the story back (`blocked` comes off), re-derives the
+  last turn's verdict from the reply and worktree it left when the turn
+  ended, relaunches a turn that never replied, and refuses honestly when it
+  cannot continue: bytes changed under it (exit 30), a turn is still running
+  on this machine (exit 29), or a human hold (`needs-gabriel`, `paused`) is
+  on the story (exit 20). It never replays a turn that ended and never
+  resets an attempt counter. `--reset` is the destructive one: it narrates
+  each worktree's state before removing it, archives the record beside the
+  logs, and leaves a merged PR and any human hold alone.
 
 ## How to run the tests
 
@@ -371,6 +390,8 @@ repository root: `bun run lint:docs` and `bun run spellcheck`.
 | `fitflow/assignment.py`   | the assignment envelope's strict validation                 |
 | `fitflow/runstate.py`     | the story lock and the persisted per-slice state machines   |
 | `fitflow/steps/`          | one module per box of the diagram                           |
+| `fitflow/steps/resume.py` | `--resume`: reconcile the record with the worktrees it left |
+| `fitflow/steps/reset.py`  | `--reset`: undo what a run created, archive its record      |
 | `fitflow/github.py`       | the only code that runs `gh`                                |
 | `fitflow/agents.py`       | the only code that runs `aarmy`                             |
 | `fitflow/worktrees.py`    | the only code that runs `git` and `bun run worktree:new`    |
@@ -394,15 +415,21 @@ The validated entries in `agents.yaml` are passed explicitly as flags on every
 
 ### Settings
 
-| variable                           | default                                                                                     |
-| ---------------------------------- | ------------------------------------------------------------------------------------------- |
-| `FIT_REPO`                         | the git top level above this folder                                                         |
-| `FIT_GITHUB_REPO`                  | `Gabes-Tint/Fit_`                                                                           |
-| `FIT_FLOW_HOME`                    | `~/.agents-army/fit_/workflow` (`teams/`, `logs/`, `runs/`)                                 |
-| `FIT_FLOW_TALK_TIMEOUT`            | `1800` seconds per agent turn                                                               |
-| `FIT_FLOW_CI_TIMEOUT`              | `1800` seconds waiting on a PR's checks (block 4)                                           |
-| `FIT_FLOW_CI_POLL_SECONDS`         | `30` seconds between polls                                                                  |
-| `FIT_FLOW_TRANSIENT_RETRY_SECONDS` | `15` seconds before the one retry of a `gh` call or an `aarmy talk` that failed transiently |
+Every variable the driver reads. All are optional except block 5's deploy
+targets, which are required only under the `FIT_FLOW_SHIP_TO` value that
+uses them (next table).
+
+| variable                           | default                             | what                                                                                                                         |
+| ---------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `FIT_REPO`                         | the git top level above this folder | the repository the worktrees are created under                                                                               |
+| `FIT_GITHUB_REPO`                  | `Gabes-Tint/Fit_`                   | the `-R` every `gh` call carries                                                                                             |
+| `FIT_FLOW_AGENT_CONFIG`            | `agents.yaml` beside `go.py`        | the roster: backend, model and effort per role                                                                               |
+| `FIT_FLOW_HOME`                    | `~/.agents-army/fit_/workflow`      | `teams/` (AI Army teams), `logs/issue-<n>/`, `runs/story-<n>.json` (and `.reset.json` archives), `locks/`, `releases/<tag>/` |
+| `FIT_FLOW_TALK_TIMEOUT`            | `1800`                              | seconds per agent turn (`aarmy talk --timeout`)                                                                              |
+| `FIT_FLOW_CI_TIMEOUT`              | `1800`                              | seconds waiting on a PR's checks and on the merge to land (block 4)                                                          |
+| `FIT_FLOW_CI_POLL_SECONDS`         | `30`                                | seconds between `gh pr checks` and `gh pr view` polls                                                                        |
+| `FIT_FLOW_TRANSIENT_RETRY_SECONDS` | `15`                                | seconds before the one retry of a `gh` call or an `aarmy talk` that failed transiently                                       |
+| `FIT_FLOW_MAIN_CI_TIMEOUT`         | `3600`                              | seconds waiting for the merge commit's tag and for main's own CI run (block 5)                                               |
 
 ### Ship settings (block 5)
 
@@ -419,8 +446,7 @@ startup, before any side effect - a missing one is `configuration error:
 | `FIT_FLOW_QA_PUBLIC_ORIGIN`   | required when `FIT_FLOW_SHIP_TO=qa\|prod` | the `https://` origin QA answers under (`FIT_PUBLIC_ORIGIN`)                                   |
 | `FIT_FLOW_PROD_DEPLOY_HOST`   | required when `FIT_FLOW_SHIP_TO=prod`     | `user@host` for production                                                                     |
 | `FIT_FLOW_PROD_PUBLIC_ORIGIN` | required when `FIT_FLOW_SHIP_TO=prod`     | production's `https://` origin                                                                 |
-| `FIT_FLOW_ANDROID`            | `yes`                                     | build the APK after a successful production deploy                                             |
-| `FIT_FLOW_MAIN_CI_TIMEOUT`    | `3600`                                    | seconds waiting for the tag and for main's own CI run                                          |
+| `FIT_FLOW_ANDROID`            | `yes`                                     | build the APK after a successful production deploy (`no` skips it)                             |
 
 ### Exit codes
 
@@ -428,22 +454,22 @@ Defined in `fitflow/outcome.py`. Every stop and failure is also a comment on
 the story; blocks 2-3 terminal failures additionally label the story
 `blocked`.
 
-| code | name                 | meaning                                                                                                  |
-| ---- | -------------------- | -------------------------------------------------------------------------------------------------------- |
-| 0    | PLANNED              | the whole flow ran (aliases IMPLEMENTED, DELIVERED, SHIPPED)                                             |
-| 2    | (usage)              | bad arguments                                                                                            |
-| 10   | NOTHING_TO_PICK      | no open story is free to pick                                                                            |
-| 11   | NEEDS_GABRIEL        | the call is Gabriel's, a slice needs clarification, or the PR changes the driver and waits for his merge |
-| 20   | CANNOT_PICK          | the named issue does not exist, is closed, is not a story, or is held                                    |
-| 21   | AGENT_FAILED         | an agent turn failed or never gave a reply that fits its schema                                          |
-| 22   | AGENT_BROKE_CONTRACT | slices break the rules, an agent escaped its scope, or an identity mismatch                              |
-| 23   | TESTS_NOT_PUSHED     | the mechanic's work is not committed, pushed, or tests only                                              |
-| 24   | TESTS_DO_NOT_FAIL    | a test file passed, or never ran                                                                         |
-| 25   | WORKTREE_EXISTS      | the slice's worktree or branch already exists                                                            |
-| 26   | TOOL_FAILED          | `gh`, `git` or `bun` failed unexpectedly, or a reply could not be parsed                                 |
-| 27   | PLAN_REJECTED        | the delegation contract was rejected (bad signals, no evidence, dependent slices); replan                |
-| 28   | CAPACITY_EXHAUSTED   | a slice's solver exhausted its 3 attempts; everything preserved                                          |
-| 29   | EXECUTION_HELD       | another `go.py` run already owns this story's lock                                                       |
-| 30   | RUN_STATE_CONFLICT   | an earlier run left its retained state behind; audit it, then remove the file manually                   |
-| 31   | TESTS_INVALID        | the acceptance tests fail their own gate: lint, types, a suppression, or a test that throws              |
-| 32   | DEPLOY_FAILED        | a deploy or its smoke check failed after the merge: labelled `needs-gabriel`, never rolled back          |
+| code | name                 | meaning                                                                                                                                                                                                               |
+| ---- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | PLANNED              | the whole flow ran (aliases IMPLEMENTED, DELIVERED, SHIPPED); also `--reset` done (RESET)                                                                                                                             |
+| 2    | (usage)              | bad arguments, a bad `agents.yaml`, or a missing deploy target for `FIT_FLOW_SHIP_TO`                                                                                                                                 |
+| 10   | NOTHING_TO_PICK      | no open story is free to pick                                                                                                                                                                                         |
+| 11   | NEEDS_GABRIEL        | the call is Gabriel's, or a slice needs clarification: labelled, assigned, question posted; also a PR that changes the driver, left open for his merge                                                                |
+| 20   | CANNOT_PICK          | the named issue does not exist, is closed, is not a story, or is held; with `--resume`, also no retained run, a human hold, or a run already shipped                                                                  |
+| 21   | AGENT_FAILED         | an agent turn failed or never gave a reply that fits its schema                                                                                                                                                       |
+| 22   | AGENT_BROKE_CONTRACT | slices break the rules, an agent escaped its scope, or an identity mismatch                                                                                                                                           |
+| 23   | TESTS_NOT_PUSHED     | the mechanic's work is not committed, pushed, or tests only                                                                                                                                                           |
+| 24   | TESTS_DO_NOT_FAIL    | a test file passed, or never ran                                                                                                                                                                                      |
+| 25   | WORKTREE_EXISTS      | the slice's worktree or branch already exists                                                                                                                                                                         |
+| 26   | TOOL_FAILED          | `gh`, `git` or `bun` failed unexpectedly, or a reply could not be parsed                                                                                                                                              |
+| 27   | PLAN_REJECTED        | the delegation contract was rejected (bad signals, no evidence, dependent slices); replan                                                                                                                             |
+| 28   | CAPACITY_EXHAUSTED   | a slice's solver exhausted its 3 attempts; everything preserved                                                                                                                                                       |
+| 29   | EXECUTION_HELD       | another `go.py` run already owns this story's lock; with `--resume`, a turn is still running here                                                                                                                     |
+| 30   | RUN_STATE_CONFLICT   | an earlier run left its retained state behind: `--resume` continues it, `--reset` archives it; with `--resume`, the record and the worktrees disagree (bytes changed, a review fix was interrupted, the PR is closed) |
+| 31   | TESTS_INVALID        | the acceptance tests fail their own gate: lint, types, a suppression, or a test that throws                                                                                                                           |
+| 32   | DEPLOY_FAILED        | a deploy or its smoke check failed after the merge: labelled `needs-gabriel`, never rolled back                                                                                                                       |

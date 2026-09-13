@@ -4,13 +4,12 @@ Status: implemented for blocks 1-5's boundaries - selection, assignment,
 pre-launch barrier, bounded repair loops, one-rung escalation, the final
 join and the ordinary stop/preserve rules, the delivery gates (push, PR,
 review, merge) and the ship gates (tag, main CI, deploy, smoke, the flaky
-decision, android, cleanup) - as of the driver behind `go.py`.
-The recovery/resume
-and coordinated-cancellation clauses remain future: `go.py` stops and
-preserves instead of resuming, while an external process interruption may
-leave a deliberately uncertain retained record. This page distinguishes
-implemented behavior from those target invariants; behavioral changes belong
-in the driver and its tests.
+decision, android, cleanup) and the resume and reset rules (below) - as of
+the driver behind `go.py`. Coordinated cancellation remains future: an
+external process interruption leaves a deliberately uncertain retained
+record, which `go.py <n> --resume` reconciles afterwards rather than
+replaying. This page distinguishes implemented behavior from those target
+invariants; behavioral changes belong in the driver and its tests.
 
 ## Inputs and ownership
 
@@ -343,16 +342,18 @@ only capacity escalation trigger. A request for a stronger model still needs
 the normal independent diagnostic and correction budget.
 
 Persist a turn identity before launching and its completion before choosing
-the next transition. Duplicate completion for the same identity is a no-op;
-conflicting completion is a contract failure. An interrupted process may
-resume only after proving exclusive ownership and reconciling the exact
-worker/session and retained input. A known completed turn resumes validation
-without another agent call; a known running turn is observed, never relaunched.
-An assignment or correction with no reserved turn may proceed normally.
-An uncertain launch/completion, changed bytes, missing session, or interrupted
-gate without a trustworthy completed report stops and preserves the worktree.
-It does not reset counters. Recovery mechanisms are future implementation;
-current `go.py` provides no such resume contract.
+the next transition - with the reply the turn ended with and a digest of
+the working tree at that moment. Duplicate completion for the same identity
+is a no-op; conflicting completion is a contract failure. An interrupted
+process resumes only after proving exclusive ownership (the story lock) and
+reconciling each slice with the worktree it left; see
+[Resume and reset](#resume-and-reset). A completed turn with a reply resumes
+validation without another agent call, on the same bytes; a turn still
+running on the machine is never relaunched beside; a turn that died or never
+produced a reply is voided and relaunched under the same attempt number. An
+assignment or correction with no reserved turn proceeds normally. Changed
+bytes, an interrupted review fix or an unreadable record stop and preserve
+the worktree. Nothing resets counters.
 
 ## Failure decisions and issue record
 
@@ -382,9 +383,9 @@ Coordinated cancellation is a future invariant: it should become a terminal
 stop with reason `cancelled`, stop new turns, terminate and reap owned workers
 and gate processes, and then record their actual state. The current driver has
 no cancellation protocol or `cancelled` outcome. If it is interrupted
-externally, its retained record may remain non-terminal; a new run refuses that
-record and requires manual audit. Do not delete, reset or force-clean
-worktrees.
+externally, its retained record may remain non-terminal; a fresh run refuses
+that record, `--resume` reconciles it, and `--reset` archives it. Nothing else
+deletes, resets or force-cleans a worktree.
 
 For all slice failures, including external or ownership failures, the affected
 loop ends immediately with no retry when its category requires that stop; an
@@ -696,12 +697,64 @@ crash off the beaten path persists `TOOL_FAILED`. Success is exit 0.
 An external Codex/Claude operator may select the story, start the driver and
 observe its reported progress/result. It cannot change prompts, configuration,
 the workflow or slice worktrees while the run is active. Until coordinated
-cancellation exists, interrupting the process is an external stop that may
-leave retained state requiring audit, not a clean driver transition. A
-workflow bug requires stopping and preserving this run, fixing the workflow
-separately with tests, then starting a new clean execution. This
+cancellation exists, interrupting the process is an external stop that leaves
+retained state, not a clean driver transition; `--resume` is how that state
+is taken up again. A workflow bug requires stopping and preserving this run,
+fixing the workflow separately with tests, then `--resume`: the fixed driver
+re-derives the stopped turn's verdict from the bytes it left. This
 non-interference rule is a launch/turn invariant, not a second state machine
 or a requirement for a continuous supervisor.
+
+## Resume and reset
+
+`go.py <n> --resume` continues a story's retained run. It picks the story
+only if it is open, a `story`, and under no human hold (`needs-gabriel`,
+`paused`); the run's own marks, `in-progress` and `blocked`, do not stop it,
+and `blocked` comes off as the run takes the story back. It takes the story
+lock, loads `runs/story-<n>.json`, and decides where the flow continues:
+
+| record says                                     | continue at                                                                                                   |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| terminal `SHIPPED`                              | nowhere: `CANNOT_PICK`                                                                                        |
+| a PR number, and GitHub says it is merged       | block 5, on that merge commit; a deploy recorded live is not repeated                                         |
+| a PR number, and it is neither open nor merged  | nowhere: `RUN_STATE_CONFLICT`, reset                                                                          |
+| a slice with no accepted assignment             | block 2, on the failing tests block 1 pushed; every slice must be unlaunched                                  |
+| any slice not `succeeded`                       | block 3, after each such slice is reconciled (next table)                                                     |
+| every slice `succeeded`, terminal `IMPLEMENTED` | block 4; a retained integration branch and PR are reused at their recorded head, and a `merge` verdict stands |
+| every slice `succeeded`, any other terminal     | block 3's report, then block 4                                                                                |
+
+Each slice not yet frozen is put back where its last turn actually reached.
+These are the only transitions out of `failed`, and they exist because
+`failed` records the driver's own judgement, which a fixed driver may
+re-derive:
+
+| the slice's last turn                                          | reconciliation                                                                                                                                                                                           |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| no turn at all (the launch barrier failed)                     | `assigned`; the loop launches attempt 1                                                                                                                                                                  |
+| status `running` (the driver died mid-turn)                    | refused (`EXECUTION_HELD`) while an `aarmy talk` for that team and role still runs on this machine; otherwise voided                                                                                     |
+| completed with a valid reply (validation stopped or never ran) | the working tree's digest must equal the one recorded when the turn ended, else `RUN_STATE_CONFLICT`; then `running` with its verdict pending, and block 3 re-validates that reply without an agent call |
+| completed without a reply (launch failed, reply malformed)     | voided                                                                                                                                                                                                   |
+| already voided by an earlier resume                            | back to the launch                                                                                                                                                                                       |
+| a review fix, or state `fixing`/`escalating`                   | refused (`RUN_STATE_CONFLICT`): reset                                                                                                                                                                    |
+
+Voiding keeps the ledger entry (status `completed`, result `void`, the reason
+in `why`), decrements `attempts` by one, and returns the slice to `assigned`
+(no attempt at this revision yet) or `correcting`; the relaunch reserves the
+same attempt number under the same role, revision and session, so the
+bounded budget and the session rules hold exactly as for a first run. A
+voided first attempt relaunches on whatever the dead turn left in the
+worktree: accumulated work, like an escalation's.
+
+`go.py <n> --reset` undoes what a run created so a fresh run can begin, and
+is the one deliberately destructive command. Under the story lock it closes
+an open PR (a merged one is left: its work landed), removes each slice,
+integration and release worktree after narrating its status, deletes their
+local and remote branches, deletes the AI Army teams, closes the child issues
+(from the record, or by the `Part of #<n>` line when there is no record),
+removes `in-progress` and `blocked` (never `needs-gabriel` or `paused`), and
+archives the record as `runs/story-<n>.<stamp>.reset.json`. It comments on
+the story with everything it undid. It refuses (`EXECUTION_HELD`) while a run
+owns the story.
 
 ## Configuration boundary
 

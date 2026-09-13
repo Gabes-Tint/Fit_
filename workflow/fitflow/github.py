@@ -243,6 +243,23 @@ def create_pr(title: str, body: str, head: str) -> int:
     raise RuntimeError(f"gh {' '.join(args)} failed: {_failure_text(result)}")
 
 
+def close_pr(number: int, comment: str) -> None:
+    _run("pr", "close", str(number), "--comment", comment)
+
+
+def children_of(story_number: int) -> list[int]:
+    """The open child issues block 1 created for a story, found by the
+    `Part of #<n>` line their bodies carry: `--reset` closes them even when
+    the run died before a record could name them."""
+    out = _run("issue", "list", "--state", "open", "--limit", "1000", "--json", "number,body")
+    marker = f"Part of #{story_number}"
+    return sorted(
+        row["number"]
+        for row in json.loads(out or "[]")
+        if (row.get("body") or "").rstrip().endswith(marker)
+    )
+
+
 def view_pr(number: int) -> PullRequest:
     out = _run("pr", "view", str(number), "--json", "number,state,headRefName")
     payload = json.loads(out)

@@ -205,6 +205,9 @@
 		"hexdigest",
 		"timespec",
 		"lockfiles",
-		"unreviewed"
+		"unreviewed",
+		"pgrep",
+		"redelegate",
+		"unlaunched"
 	]
 }
