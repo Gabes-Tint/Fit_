@@ -46,7 +46,18 @@ at all (those bytes are immutable) and the run stops at once as
 corrections and an escalation on it; a failure naming any other file, or
 one whose files the driver cannot extract, stays an ordinary repairable
 diagnostic. A crash, missing, stale or
-inconsistent gate report stops at once. The scope check puts the gates the
+inconsistent gate report stops at once. A turn may also reject the
+acceptance tests instead of implementing against them: the driver verifies
+the objection itself - the files it names are this slice's own retained
+tests, they still fail on that working tree, and the tree carries no commit
+and nothing outside the slice - and a verified one sends the tests back to
+block 1's writer in a repair worktree of the driver's own, under block 1's
+usual validation, then merges the repaired commit into the slice branch
+beside the implementer's accumulated work, pushes it and re-freezes it. The
+slice then runs again with a fresh attempt counter against the repaired
+tests. An objection the driver cannot verify is an ordinary failed attempt;
+at most two repairs per slice, and a verified objection after those stops as
+`TESTS_INVALID` with every objection in the comment. The scope check puts the gates the
 agent is judged by out of reach - anything under `quality/`, `.github/`,
 `scripts/ci/`, `scripts/deploy/`, `scripts/github/`, `scripts/quality/` or
 `scripts/security/`, plus the snapshots, the lockfiles, the tool
@@ -327,6 +338,20 @@ instead of parallel and the driver's own merge sits between them:
 🔧 Mechanic #1001 (ui) attempt 1/3
 ```
 
+When an implementer shows that the acceptance tests themselves cannot all
+pass, the driver verifies that and sends them back to block 1's writer:
+
+```text
+📦 Validating #1001 (ui) objection to the tests
+🧪 src/routes/rows.e2e.ts → still failing here, as the objection says ✔
+🙅 #1001 (ui) solver rejects the tests: tests_contradict — test 1 wants the apple first…
+🩹 Repairing #1001 (ui) tests in block 1 (repair 1/2)
+🔧 Mechanic #1001 (ui) test repair turn 1/2
+🔒 #1001 (ui) tests re-frozen at 3f1a90c…
+⇪ Pushed story-1001-ui at c70b114…
+🔧 Solver #1001 (ui) attempt 1/3
+```
+
 `🛑` marks a planned stop (for example, the call is Gabriel's or the slice
 needs clarification) and `❌` a failure. The exit code says which one; see
 [Exit codes](#exit-codes).
@@ -521,5 +546,5 @@ the story; blocks 2-3 terminal failures additionally label the story
 | 28   | CAPACITY_EXHAUSTED   | a slice's solver exhausted its 3 attempts; everything preserved                                                                                                                                                       |
 | 29   | EXECUTION_HELD       | another `go.py` run already owns this story's lock; with `--resume`, a turn is still running here                                                                                                                     |
 | 30   | RUN_STATE_CONFLICT   | an earlier run left its retained state behind: `--resume` continues it, `--reset` archives it; with `--resume`, the record and the worktrees disagree (bytes changed, a review fix was interrupted, the PR is closed) |
-| 31   | TESTS_INVALID        | the acceptance tests fail their own gate: lint, types, a suppression, or a test that throws                                                                                                                           |
+| 31   | TESTS_INVALID        | the acceptance tests fail their own gate (lint, types, a suppression, a test that throws), or an implementer's verified objection showed they cannot all pass and block 1 could not repair them                       |
 | 32   | DEPLOY_FAILED        | a deploy or its smoke check failed after the merge: labelled `needs-gabriel`, never rolled back                                                                                                                       |
