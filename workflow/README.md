@@ -46,13 +46,22 @@ at all (those bytes are immutable) and the run stops at once as
 corrections and an escalation on it; a failure naming any other file, or
 one whose files the driver cannot extract, stays an ordinary repairable
 diagnostic. A crash, missing, stale or
-inconsistent gate report stops at once. The scope check forbids the gates
-the agent is judged by - anything under `quality/`, `.github/` or
-`scripts/`, plus the lockfiles, the tool configuration and `agents.yaml` -
-but not the driver's own code: an agent may implement a change under
-`workflow/`, because it edits a worktree copy while the running driver is
-the main checkout's code, and the driver's suite is CI's own "Workflow
-driver" job. Block 4 never merges such a change (below). The driver
+inconsistent gate report stops at once. The scope check puts the gates the
+agent is judged by out of reach - anything under `quality/`, `.github/`,
+`scripts/ci/`, `scripts/deploy/`, `scripts/github/`, `scripts/quality/` or
+`scripts/security/`, plus the snapshots, the lockfiles, the tool
+configuration and `agents.yaml` - and the implementer's brief renders that
+list from the same constant the check reads, so the two cannot drift. Only
+those script folders: the rest of `scripts/` is the application's own
+tooling, which a story may be about (#337). Neither is the driver's own
+code out of reach: an agent may implement a change under `workflow/`,
+because it edits a worktree copy while the running driver is the main
+checkout's code, and the driver's suite is CI's own "Workflow driver" job.
+Block 4 never merges such a change (below). Reaching into a path that is
+out of reach, or into the other layer, costs a correction rather than the
+run: the driver names the offending paths and asks the same agent to put
+them back, and only a budget that ends with the change still there stops as
+`AGENT_BROKE_CONTRACT`. The driver
 commits, freezes and joins at the final barrier; agents never commit or
 push. Every agent turn carries the session id the AI Army CLI printed, and the driver persists it
 with the turn: corrections must come from the same session, an escalated
@@ -517,7 +526,7 @@ the story; blocks 2-3 terminal failures additionally label the story
 | 11   | NEEDS_GABRIEL        | the call is Gabriel's, or a slice needs clarification: labelled, assigned, question posted; also a PR that changes the driver, left open for his merge                                                                |
 | 20   | CANNOT_PICK          | the named issue does not exist, is closed, is not a story, or is held; with `--resume`, also no retained run, a human hold, or a run already shipped                                                                  |
 | 21   | AGENT_FAILED         | an agent turn failed or never gave a reply that fits its schema                                                                                                                                                       |
-| 22   | AGENT_BROKE_CONTRACT | slices break the rules, an agent escaped its scope, or an identity mismatch                                                                                                                                           |
+| 22   | AGENT_BROKE_CONTRACT | slices break the rules, an agent weakened an acceptance test or committed, an identity mismatch, or an out-of-reach path left there through the whole correction budget                                               |
 | 23   | TESTS_NOT_PUSHED     | the mechanic's work is not committed, pushed, or tests only                                                                                                                                                           |
 | 24   | TESTS_DO_NOT_FAIL    | a test file passed, or never ran                                                                                                                                                                                      |
 | 25   | WORKTREE_EXISTS      | the slice's worktree or branch already exists                                                                                                                                                                         |

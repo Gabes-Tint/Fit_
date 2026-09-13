@@ -36,17 +36,26 @@ Rules:
   skip their assertions: their bytes must stay identical. Any other test
   inside this slice's own layer may change, and you may add new regression
   tests.
-- Never change workflow code or configuration, quality/gate policy files,
-  CI configuration, snapshots, suppression baselines, or lock files. The one
-  exception is a slice whose test kind is `pytest`: that slice _is_ a change
-  to this flow's own driver, so it changes `workflow/**` and `docs/**` (and
-  `cspell.json` when new prose needs a word), and nothing else - never
-  `src/`, `scripts/`, `quality/` or `.github/`. Its gates are
-  `ruff check workflow`, `ruff format --check workflow` and, over changed
-  markdown, prettier and cspell.
-- Keep every change inside this slice's scope.
+- Keep every change inside this slice's scope, and never change what judges
+  this work: the paths listed under "Out of reach" below.
 - Check your own work by running only the acceptance test files above;
   never run the full test suite. When they all pass, reply.
+
+Out of reach for this turn. The driver rejects a diff that touches any of
+these, and asks you to put them back:
+
+$forbidden
+
+Everything else in the repository is in reach, including the driver's own
+code under `workflow/` and the application tooling under `scripts/` that is
+not listed above.
+
+A slice whose test kind is `pytest` is itself a change to this flow's own
+driver, and its scope is narrower, not wider: it may touch `workflow/**`,
+`docs/**` and `cspell.json`, and nothing else - never `src/`, `scripts/`,
+`quality/` or `.github/`. Its gates are `ruff check workflow`,
+`ruff format --check workflow` and, over the markdown it changed, prettier
+and cspell.
 
 Reply with the schema fields: changed_files (every path the working tree
 diff touches relative to this branch's starting commit - added, modified,

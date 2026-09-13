@@ -21,6 +21,7 @@ freezes, the UI slice is never launched at all.
 """
 
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 from fitflow import (
@@ -40,14 +41,26 @@ from fitflow.outcome import FlowFailure, Outcome
 from fitflow.runstate import RunRecord, SliceRecord, retained_inputs
 
 _SUCCESSOR = {"mechanic": "builder", "builder": "solver"}
-# The gates the agent is judged by: the quality scripts, the CI workflows
-# and the repository's own scripts stay out of reach of an implementation
-# turn. `workflow/` is deliberately absent - an agent may implement changes
+# The gates the agent is judged by: the quality policy, the CI workflows and
+# the script folders that implement them stay out of reach of an
+# implementation turn - and only those folders. `scripts/` also holds
+# ordinary application tooling (the ETL pipeline, the search evaluation
+# harness, the dev and build helpers) that a story may perfectly well be
+# about, and forbidding the whole tree cost #337 a turn on `scripts/eval/`.
+# `workflow/` is deliberately absent too - an agent may implement changes
 # to the driver itself (it edits a worktree copy; the running driver is the
 # main checkout's code, and the driver's own suite runs in CI's "Workflow
 # driver" job, not in this block's validation). What the driver never does
 # is merge such a change: block 4 hands that pull request to Gabriel.
-_FORBIDDEN_PREFIXES = ("quality/", ".github/", "scripts/")
+_FORBIDDEN_PREFIXES = (
+    ".github/",
+    "quality/",
+    "scripts/ci/",
+    "scripts/deploy/",
+    "scripts/github/",
+    "scripts/quality/",
+    "scripts/security/",
+)
 _FORBIDDEN_FILES = {
     "agents.yaml",
     "bun.lock",
@@ -69,6 +82,43 @@ _FORBIDDEN_FILES = {
     ".tool-versions",
 }
 _UI_ONLY_PREFIXES = ("src/routes/", "src/lib/components/", "src/lib/ui/")
+
+
+@dataclass(frozen=True)
+class _Rejection:
+    """One rejected implementation turn: the diagnostic the same agent is
+    corrected with, and - when the turn broke the contract rather than
+    merely failed - the message the run stops with once the correction
+    budget is spent. A breach is not escalated to a stronger role: no
+    model is the answer to "you changed a file you may not change"."""
+
+    diagnostic: str
+    breach: str | None = None
+
+
+def forbidden_brief(layer: str = "") -> str:
+    """The prohibition the scope check enforces, rendered for the
+    implementer's brief from the same constants it validates against, so
+    the rule the agent is told and the rule it is judged by cannot drift.
+    #337 stopped on `scripts/eval/` precisely because the brief said
+    "quality/gate policy files" and named no path at all.
+
+    A layer that owns one of these repository-wide files - the workflow
+    layer owns `cspell.json`, whose new word travels with the prose that
+    needs it - must not be told it is out of reach, for the same reason."""
+    files = sorted(name for name in _FORBIDDEN_FILES if not layers.permits_gate_file(layer, name))
+    return "\n".join(
+        [
+            f"- anything under {_listed(_FORBIDDEN_PREFIXES)}",
+            f"- any file named {_listed(files)}, wherever it sits",
+            "- any snapshot (`*.snap`) or lock file (`*.lock`)",
+            "- the acceptance test files listed above",
+        ]
+    )
+
+
+def _listed(names) -> str:
+    return ", ".join(f"`{name}`" for name in names)
 
 
 def run(story, record: RunRecord) -> Outcome:
@@ -324,35 +374,47 @@ def _settle(record: RunRecord, piece: SliceRecord, reply: dict, attempt: int) ->
     the loop must launch again (a correction, or the escalated role's first
     attempt); raises when the run stops."""
     try:
-        diagnostic = _validate_turn(record, piece, reply)
+        rejection = _validate_turn(record, piece, reply)
     except FlowFailure as failure:
-        # a contract violation or external tool failure during
-        # validation still settles the stop: the slice lands in
-        # "failed" instead of being left in an active state, and the
-        # settled turn's verdict becomes the diagnostic, not a green
-        with record.transition():
-            piece.move("failed")
-            piece.turns[-1]["result"] = "failed"
-            piece.turns[-1]["why"] = failure.why
-            record.save()
+        _settle_as_failed(record, piece, failure.why)
         raise
-    if diagnostic is None:
+    if rejection is None:
         _freeze(record, piece)
         return True
     with record.transition():
-        piece.diagnostics.append(diagnostic)
-    narrate.headed(f"🩺 #{piece.number} ({piece.layer}) diagnostic: ", diagnostic)
+        piece.diagnostics.append(rejection.diagnostic)
+    narrate.headed(f"🩺 #{piece.number} ({piece.layer}) diagnostic: ", rejection.diagnostic)
     if attempt < turns.BUDGET:
-        with record.transition():
-            piece.move("correcting")
-            record.save()
-        narrate.line(
-            f"🔁 {piece.role.capitalize()} #{piece.number} ({piece.layer}) "
-            f"correcting after attempt {attempt}"
-        )
+        _to_correcting(record, piece, attempt)
         return False
-    _escalate_or_stop(record, piece, diagnostic)
+    if rejection.breach is not None:
+        failure = _contract(record, piece, rejection.breach)
+        _settle_as_failed(record, piece, failure.why)
+        raise failure
+    _escalate_or_stop(record, piece, rejection.diagnostic)
     return False
+
+
+def _settle_as_failed(record: RunRecord, piece: SliceRecord, why: str) -> None:
+    """A contract violation or external tool failure during validation
+    still settles the turn: the slice lands in "failed" instead of being
+    left in an active state, and the settled turn's verdict becomes the
+    diagnostic, not a green."""
+    with record.transition():
+        piece.move("failed")
+        piece.turns[-1]["result"] = "failed"
+        piece.turns[-1]["why"] = why
+        record.save()
+
+
+def _to_correcting(record: RunRecord, piece: SliceRecord, attempt: int) -> None:
+    with record.transition():
+        piece.move("correcting")
+        record.save()
+    narrate.line(
+        f"🔁 {piece.role.capitalize()} #{piece.number} ({piece.layer}) "
+        f"correcting after attempt {attempt}"
+    )
 
 
 def narrate_turn_start(piece: SliceRecord, attempt: int) -> None:
@@ -478,6 +540,7 @@ def _talk(piece: SliceRecord, prompt_name: str, attempt: int) -> tuple[dict, str
         brief=piece.brief,
         acceptance="\n".join(f"- {item}" for item in piece.acceptance),
         test_files="\n".join(piece.test_files),
+        forbidden=forbidden_brief(piece.layer),
         attempt=str(attempt),
         diagnostic=piece.diagnostics[-1] if piece.diagnostics else "",
         prior_diagnostics="\n".join(f"- {item}" for item in piece.diagnostics) or "(none)",
@@ -503,23 +566,15 @@ def review_fix_turn(record: RunRecord, piece: SliceRecord, diagnostic: str) -> N
     with record.transition():
         record.end_turn(piece, identity, "ok", reply["summary"], session)
     try:
-        failure = _validate_turn(record, piece, reply, frozen_ok=True)
+        rejection = _validate_turn(record, piece, reply, frozen_ok=True)
     except FlowFailure as failure:
-        with record.transition():
-            piece.move("failed")
-            piece.turns[-1]["result"] = "failed"
-            piece.turns[-1]["why"] = failure.why
-            record.save()
+        _settle_as_failed(record, piece, failure.why)
         raise
-    if failure is not None:
-        with record.transition():
-            piece.move("failed")
-            piece.turns[-1]["result"] = "failed"
-            piece.turns[-1]["why"] = failure
-            record.save()
+    if rejection is not None:
+        _settle_as_failed(record, piece, rejection.diagnostic)
         raise FlowFailure(
             Outcome.CAPACITY_EXHAUSTED,
-            f"{piece.slug}: the review fix turn failed validation: {failure}",
+            f"{piece.slug}: the review fix turn failed validation: {rejection.diagnostic}",
             record.story_number,
             add_blocked=True,
         )
@@ -599,12 +654,13 @@ def _escalate_or_stop(record: RunRecord, piece: SliceRecord, diagnostic: str) ->
 
 def _validate_turn(
     record: RunRecord, piece: SliceRecord, reply: dict, frozen_ok: bool = False
-) -> str | None:
+) -> _Rejection | None:
     """The driver's own independent check of one implementation turn:
-    scope, acceptance bytes, the acceptance run and the gates, all on the
-    actual diff, and only then the reply's own account of it. Returns a
-    repairable diagnostic; contract violations and tooling failures raise
-    at once and never consume a correction."""
+    acceptance bytes, scope, the acceptance run and the gates, all on the
+    actual diff, and only then the reply's own account of it. Returns the
+    rejection to correct from; tooling failures and the one contract
+    violation no correction may undo - a changed acceptance test - raise at
+    once and never consume a correction."""
     with record.transition():
         piece.move("validating")
         record.save()
@@ -616,9 +672,23 @@ def _validate_turn(
     changed = _check_worktree_state(record, piece, path, frozen_ok=frozen_ok)
     if not changed:
         phantom = ", ".join(sorted(set(reply["changed_files"])))
-        return f"no changes were made in the worktree; phantom {phantom}"
-    _check_scope(record, piece, changed)
+        return _Rejection(f"no changes were made in the worktree; phantom {phantom}")
+    # the acceptance bytes are judged first and terminally: that
+    # immutability is the contract itself, so a scope violation in the same
+    # diff must never soften it into a correction
     _check_acceptance_unchanged(record, piece, path, changed)
+    out_of_reach = _check_scope(piece, changed)
+    if out_of_reach is not None:
+        return out_of_reach
+    return _validate_behavior(record, piece, path, reply, changed)
+
+
+def _validate_behavior(
+    record: RunRecord, piece: SliceRecord, path, reply: dict, changed: list[str]
+) -> _Rejection | None:
+    """The acceptance run, the turn gates and the reply's account of the
+    diff, in that order: every verdict taken on the real tree outranks what
+    the reply says about it."""
     verdict = acceptance.run_and_check_passing(path, piece.test_files)
     if not verdict.ok:
         if not verdict.repairable:
@@ -626,14 +696,14 @@ def _validate_turn(
                 Outcome.TOOL_FAILED, verdict.why, record.story_number, add_blocked=True
             )
         _check_acceptance_is_sound(record, piece, verdict)
-        return verdict.why
+        return _Rejection(verdict.why)
     gate_failure = _run_turn_gates(record, piece, path, changed)
     if gate_failure is not None:
         _check_gate_blames_the_implementation(record, piece, gate_failure)
-        return gate_failure.diagnostic
+        return _Rejection(gate_failure.diagnostic)
     mismatch = _report_mismatch(reply["changed_files"], changed)
     if mismatch is not None:
-        return mismatch
+        return _Rejection(mismatch)
     narrate.line(
         f"🔍 Verify #{piece.number}: scope ✔ · acceptance pass ✔ · branch identity ✔ · "
         "no gate files ✔"
@@ -779,18 +849,41 @@ def _report_mismatch(reported: list[str], changed: list[str]) -> str | None:
     )
 
 
-def _check_scope(record: RunRecord, piece: SliceRecord, changed: list[str]) -> None:
-    for changed_file in changed:
+def _check_scope(piece: SliceRecord, changed: list[str]) -> _Rejection | None:
+    """The paths this slice may not touch: the files that judge the work,
+    and the other layer's. A breach, but a recoverable one - the agent is
+    told exactly which paths to put back and gets its ordinary corrections
+    to do it, because a turn that is right about the story and wrong about
+    one file is worth one more turn, not a dead run (#337)."""
+    reasons = [reason for reason in map(_out_of_reach(piece), changed) if reason is not None]
+    if not reasons:
+        return None
+    breach = "; ".join(reasons)
+    return _Rejection(
+        f"{breach} — those paths are outside this slice's reach. Put every one of "
+        "them back exactly as it was (`git checkout -- <path>` for a file you "
+        "modified, delete a file you added) and leave the rest of your "
+        "implementation in place. If the story genuinely needs one of those "
+        "changes, revert it anyway and say so in your summary: this turn may "
+        "never carry it.",
+        breach,
+    )
+
+
+def _out_of_reach(piece: SliceRecord):
+    """Why one changed path is outside this slice, or None when it belongs."""
+
+    def reason(changed_file: str) -> str | None:
         basename = PurePosixPath(changed_file).name
         if not layers.permits_gate_file(piece.layer, changed_file) and (
             changed_file.startswith(_FORBIDDEN_PREFIXES)
             or basename in _FORBIDDEN_FILES
             or basename.endswith((".snap", ".lock"))
         ):
-            raise _contract(record, piece, f"forbidden file changed: {changed_file}")
-        boundary = layers.rejects_for_layer(piece.layer, changed_file)
-        if boundary is not None:
-            raise _contract(record, piece, boundary)
+            return f"forbidden file changed: {changed_file}"
+        return layers.rejects_for_layer(piece.layer, changed_file)
+
+    return reason
 
 
 def _check_acceptance_unchanged(

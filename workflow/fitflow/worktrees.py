@@ -109,13 +109,16 @@ def is_clean(worktree: Path) -> bool:
     return status.stdout.strip() == ""
 
 
-def status_summary(worktree: Path) -> str:
+def status_summary(worktree: Path, dirty: str = "preserved for audit") -> str:
+    """`dirty` says what happens to the uncommitted work, because the same
+    file list means two different things: ship and audit leave the worktree
+    standing, reset force-removes it a line later."""
     status = _git("status", "--porcelain", "--untracked-files=all", cwd=worktree)
     if status.returncode != 0:
         return f"status could not be read: {_failure(status)}"
     if not status.stdout.strip():
         return "clean"
-    return f"dirty (preserved for audit): {status.stdout.strip().replace(chr(10), '; ')}"
+    return f"dirty ({dirty}): {status.stdout.strip().replace(chr(10), '; ')}"
 
 
 def _failure(result: subprocess.CompletedProcess) -> str:

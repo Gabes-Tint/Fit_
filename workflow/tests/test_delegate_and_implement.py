@@ -111,6 +111,14 @@ def _implement(world, slug: str, role: str, files: dict[str, str], **kwargs) -> 
     world.agent_implements(slug, role, files=files, changed_files=sorted(files), **kwargs)
 
 
+def _implement_every_attempt(world, slug: str, role: str, files: dict[str, str]) -> None:
+    """The same rejected diff at every attempt of the role's budget. An
+    out-of-reach path is corrected, not stopped on, so a run only reaches
+    the contract stop when the agent leaves the path there to the end."""
+    for _ in range(3):
+        _implement(world, slug, role, files=files)
+
+
 def delegate_turns(world, story_number: int) -> list[dict]:
     """The planner's delegation-signals turns so far (whose-call and the
     slicing turns share its team but a different schema)."""
@@ -598,11 +606,11 @@ def test_modifying_an_acceptance_test_is_a_contract_stop(world):
     assert "src/lib/delegate.spec.ts was modified" in result.stdout
 
 
-def test_touching_the_gate_files_is_a_contract_stop(world):
-    """`quality/`, `.github/` and `scripts/` are the gates the agent is
-    judged by, so they stay out of reach of an implementation turn.
-    `workflow/` deliberately is not one of them: see
-    test_a_driver_change_is_implemented_but_handed_to_gabriel_to_merge."""
+def test_a_forbidden_file_gets_one_corrective_turn_and_the_reverted_tree_passes(world):
+    """`quality/` is a gate the agent is judged by, so it stays out of reach
+    of an implementation turn - but reaching into it is a mistake the same
+    agent can undo. It is told which path to put back, does, and the slice
+    freezes on the work it got right (#337)."""
     _given_planned_story(world, 441)
     _delegate_mechanic(world, 441)
     _implement(
@@ -614,19 +622,61 @@ def test_touching_the_gate_files_is_a_contract_stop(world):
             "quality/mutation-equivalents.json": "{}\n",
         },
     )
+    world.agent_implements(
+        "story-441-domain",
+        "mechanic",
+        files={},
+        delete=["quality/mutation-equivalents.json"],
+        changed_files=["src/lib/delegate.ts"],
+        summary="put the equivalents file back; the slice does not need it",
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "forbidden file changed: quality/mutation-equivalents.json" in result.stdout
+    assert "those paths are outside this slice's reach" in result.stdout
+    assert "correcting after attempt 1" in result.stdout
+    assert "🔒 #441 (domain) frozen at" in result.stdout
+    # the correction the same agent gets names the path it must revert
+    correction = _talks(world, "mechanic", "story-441-domain")[2]["prompt"]
+    assert "forbidden file changed: quality/mutation-equivalents.json" in correction
+
+
+def test_a_forbidden_file_still_there_after_the_budget_stops_the_run(world):
+    """The correction is a chance, not a pardon: an agent that keeps the
+    out-of-reach change through its whole budget breaks the contract."""
+    _given_planned_story(world, 442)
+    _delegate_mechanic(world, 442)
+    _implement_every_attempt(
+        world,
+        "story-442-domain",
+        "mechanic",
+        files={
+            "src/lib/delegate.ts": "export const delegate = true;\n",
+            "quality/mutation-equivalents.json": "{}\n",
+        },
+    )
 
     result = run_flow(world)
 
     assert result.returncode == 22, result.stdout + result.stderr
-    assert "forbidden file changed: quality/" in result.stdout
+    assert "AGENT_BROKE_CONTRACT (exit 22)" in result.stdout
+    assert "forbidden file changed: quality/mutation-equivalents.json" in result.stdout
+    state = json.loads((world.home / "runs" / "story-442.json").read_text())
+    assert state["terminal"] == "AGENT_BROKE_CONTRACT"
+    assert state["slices"]["domain"]["attempts"] == 3
+    # the breach is never escalated to a stronger role: no model is the
+    # answer to "you changed a file you may not change"
+    assert "escalating mechanic → builder" not in result.stdout
 
 
-def test_touching_the_repository_scripts_is_a_contract_stop(world):
-    _given_planned_story(world, 441)
-    _delegate_mechanic(world, 441)
-    _implement(
+def test_the_scripts_that_run_the_gates_stay_out_of_reach(world):
+    _given_planned_story(world, 443)
+    _delegate_mechanic(world, 443)
+    _implement_every_attempt(
         world,
-        "story-441-domain",
+        "story-443-domain",
         "mechanic",
         files={
             "src/lib/delegate.ts": "export const delegate = true;\n",
@@ -637,7 +687,67 @@ def test_touching_the_repository_scripts_is_a_contract_stop(world):
     result = run_flow(world)
 
     assert result.returncode == 22, result.stdout + result.stderr
-    assert "forbidden file changed: scripts/" in result.stdout
+    assert "forbidden file changed: scripts/quality/gate.ts" in result.stdout
+
+
+def test_an_application_script_is_in_reach_of_a_domain_slice(world):
+    """`scripts/` holds the application's own tooling as well as the gates'
+    - the ETL pipeline, the search evaluation harness, the dev and build
+    helpers - and a story may perfectly well be about one. Only the gate
+    folders are out of reach; #337 lost a run to the whole tree being
+    forbidden."""
+    _given_planned_story(world, 444)
+    _delegate_mechanic(world, 444)
+    _implement(
+        world,
+        "story-444-domain",
+        "mechanic",
+        files={
+            "src/lib/server/catalog/plain-food.ts": "export const plain = true;\n",
+            "scripts/eval/search-eval.ts": "// the search evaluation harness\n",
+        },
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "forbidden file changed" not in result.stdout
+    assert "🔒 #444 (domain) frozen at" in result.stdout
+
+
+def test_the_implementation_brief_names_the_forbidden_prefixes(world):
+    """The rule the agent is told is rendered from the constant it is judged
+    by, so the two cannot drift - and it names paths, not a category the
+    agent has to guess at."""
+    _given_planned_story(world, 445)
+    _delegate_mechanic(world, 445)
+    _implement(
+        world,
+        "story-445-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = true;\n"},
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    brief = _talks(world, "mechanic", "story-445-domain")[1]["prompt"]
+    prohibited = brief.split("Out of reach")[-1].split("Everything else")[0]
+    for prefix in (
+        "`.github/`",
+        "`quality/`",
+        "`scripts/ci/`",
+        "`scripts/deploy/`",
+        "`scripts/github/`",
+        "`scripts/quality/`",
+        "`scripts/security/`",
+    ):
+        assert prefix in prohibited, prohibited
+    assert "`bun.lock`" in prohibited
+    assert "`playwright.config.ts`" in prohibited
+    assert "`*.snap`" in prohibited
+    # and never the whole scripts tree, which is what #337 read as forbidden
+    assert "`scripts/`" not in prohibited
 
 
 def test_a_domain_slice_may_implement_driver_files(world):
@@ -726,22 +836,24 @@ def test_a_misreported_list_consumes_one_attempt_and_escalates(world):
     assert "🔒 #496 (domain) frozen at" in result.stdout
 
 
-def test_a_forbidden_file_still_stops_even_when_the_list_is_also_wrong(world):
+def test_a_forbidden_file_outranks_a_wrong_list_in_the_diagnostic(world):
     """Every verdict on the real diff outranks the reply's account of it:
-    the forbidden change stops the run immediately instead of being softened
-    into a report correction."""
+    the agent is corrected about the forbidden change it hid, never about
+    the list it got wrong while hiding it - and a budget spent on the same
+    concealment still ends the run."""
     _given_planned_story(world, 497)
     _delegate_mechanic(world, 497)
-    world.agent_implements(
-        "story-497-domain",
-        "mechanic",
-        files={
-            "src/lib/delegate.ts": "export const delegate = true;\n",
-            "quality/mutation-equivalents.json": "{}\n",
-        },
-        changed_files=["src/lib/never-touched.ts"],
-        summary="edited the equivalents file and said nothing",
-    )
+    for _ in range(3):
+        world.agent_implements(
+            "story-497-domain",
+            "mechanic",
+            files={
+                "src/lib/delegate.ts": "export const delegate = true;\n",
+                "quality/mutation-equivalents.json": "{}\n",
+            },
+            changed_files=["src/lib/never-touched.ts"],
+            summary="edited the equivalents file and said nothing",
+        )
 
     result = run_flow(world)
 
@@ -944,7 +1056,7 @@ def test_a_stale_gate_report_is_an_external_stop(world):
 def test_changing_gate_or_runner_configuration_is_a_contract_stop(world):
     _given_planned_story(world, 464)
     _delegate_mechanic(world, 464)
-    _implement(
+    _implement_every_attempt(
         world,
         "story-464-domain",
         "mechanic",
@@ -960,12 +1072,44 @@ def test_changing_gate_or_runner_configuration_is_a_contract_stop(world):
     assert "forbidden file changed: playwright.config.ts" in result.stdout
 
 
-def test_a_ui_slice_cannot_implement_domain_files(world):
+def test_a_ui_slice_reaching_into_the_domain_gets_a_corrective_turn(world):
+    """The layer boundary is corrected the same way an out-of-reach gate
+    file is: the agent is told which path belongs to the other slice, puts
+    it back, and the run continues on the half it got right."""
     _given_planned_story(world, 465, layer="ui", test_kind="playwright")
     world.planner_answers_delegate(465, [delegate_slice(465, "ui", mechanic_signals())])
     _implement(
         world,
         "story-465-ui",
+        "mechanic",
+        files={
+            "src/routes/banner/+page.svelte": "<p>banner</p>\n",
+            "src/lib/domain/banner.ts": "export const banner = true;\n",
+        },
+    )
+    world.agent_implements(
+        "story-465-ui",
+        "mechanic",
+        files={},
+        delete=["src/lib/domain/banner.ts"],
+        changed_files=["src/routes/banner/+page.svelte"],
+        summary="put the domain module back; it belongs to the domain slice",
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "ui slice changed a domain file outside its scope" in result.stdout
+    assert "correcting after attempt 1" in result.stdout
+    assert "🔒 #465 (ui) frozen at" in result.stdout
+
+
+def test_a_ui_slice_that_keeps_the_domain_file_stops_the_run(world):
+    _given_planned_story(world, 474, layer="ui", test_kind="playwright")
+    world.planner_answers_delegate(474, [delegate_slice(474, "ui", mechanic_signals())])
+    _implement_every_attempt(
+        world,
+        "story-474-ui",
         "mechanic",
         files={"src/lib/domain/banner.ts": "export const banner = true;\n"},
     )
@@ -979,7 +1123,7 @@ def test_a_ui_slice_cannot_implement_domain_files(world):
 def test_a_domain_slice_cannot_implement_svelte_files(world):
     _given_planned_story(world, 466)
     _delegate_mechanic(world, 466)
-    _implement(
+    _implement_every_attempt(
         world,
         "story-466-domain",
         "mechanic",
@@ -995,7 +1139,7 @@ def test_a_domain_slice_cannot_implement_svelte_files(world):
 def test_a_domain_slice_cannot_implement_route_loaders(world):
     _given_planned_story(world, 469)
     _delegate_mechanic(world, 469)
-    _implement(
+    _implement_every_attempt(
         world,
         "story-469-domain",
         "mechanic",
@@ -1011,7 +1155,7 @@ def test_a_domain_slice_cannot_implement_route_loaders(world):
 def test_a_domain_slice_cannot_implement_component_helpers(world):
     _given_planned_story(world, 470)
     _delegate_mechanic(world, 470)
-    _implement(
+    _implement_every_attempt(
         world,
         "story-470-domain",
         "mechanic",
@@ -1027,7 +1171,7 @@ def test_a_domain_slice_cannot_implement_component_helpers(world):
 def test_a_ui_slice_cannot_implement_the_shared_store(world):
     _given_planned_story(world, 471, layer="ui", test_kind="playwright")
     world.planner_answers_delegate(471, [delegate_slice(471, "ui", mechanic_signals())])
-    _implement(
+    _implement_every_attempt(
         world,
         "story-471-ui",
         "mechanic",
@@ -1082,7 +1226,7 @@ def test_a_ui_slice_changing_a_domain_test_is_a_layer_boundary_stop(world):
     stopped, but by the layer boundary rather than a wrong-kind rule."""
     _given_planned_story(world, 473, layer="ui", test_kind="playwright")
     world.planner_answers_delegate(473, [delegate_slice(473, "ui", mechanic_signals())])
-    _implement(
+    _implement_every_attempt(
         world,
         "story-473-ui",
         "mechanic",
@@ -1630,16 +1774,19 @@ def test_a_prohibited_file_in_a_later_correction_is_rejected_from_the_branch_bas
     )
     # the second attempt slips a policy change into the dirty worktree next to
     # the correction; the driver validates the whole delta from the retained
-    # failing-test commit at every turn, so hiding it in a retry cannot work
-    world.agent_implements(
-        "story-490-domain",
-        "mechanic",
-        files={
-            "src/lib/delegate.ts": "export const delegate = 2;\n",
-            "quality/suppression-baseline.json": '{"maxUnjustified": 8}\n',
-        },
-        changed_files=["src/lib/delegate.ts", "quality/suppression-baseline.json"],
-    )
+    # failing-test commit at every turn, so hiding it in a retry cannot work.
+    # It is told to put the file back and keeps it instead, so the last
+    # attempt of the budget is where the run ends.
+    for _ in range(2):
+        world.agent_implements(
+            "story-490-domain",
+            "mechanic",
+            files={
+                "src/lib/delegate.ts": "export const delegate = 2;\n",
+                "quality/suppression-baseline.json": '{"maxUnjustified": 8}\n',
+            },
+            changed_files=["src/lib/delegate.ts", "quality/suppression-baseline.json"],
+        )
 
     result = run_flow(world)
 
@@ -1655,8 +1802,9 @@ def test_a_prohibited_file_in_a_later_correction_is_rejected_from_the_branch_bas
 
 
 def test_prohibited_policy_and_lockfile_changes_stop_the_slice(world):
-    """The thresholds, the lockfiles, the CI workflows and the repository's
-    own scripts are the gates the agent is judged by. The driver's own
+    """The thresholds, the lockfiles, the CI workflows and the script
+    folders that run them are the gates the agent is judged by, and an
+    agent that will not put one back ends its run. The driver's own
     `workflow/` code is deliberately not on this list - an agent may
     implement a change to it, and block 4 withholds only the merge."""
     for index, forbidden in enumerate(
@@ -1670,15 +1818,16 @@ def test_prohibited_policy_and_lockfile_changes_stop_the_slice(world):
         story_number = 491 + index
         _given_planned_story(world, story_number)
         _delegate_mechanic(world, story_number)
-        world.agent_implements(
-            f"story-{story_number}-domain",
-            "mechanic",
-            files={
-                "src/lib/delegate.ts": "export const delegate = true;\n",
-                forbidden: "{}\n",
-            },
-            changed_files=["src/lib/delegate.ts", forbidden],
-        )
+        for _ in range(3):  # corrected twice, unrepentant, then stopped
+            world.agent_implements(
+                f"story-{story_number}-domain",
+                "mechanic",
+                files={
+                    "src/lib/delegate.ts": "export const delegate = true;\n",
+                    forbidden: "{}\n",
+                },
+                changed_files=["src/lib/delegate.ts", forbidden],
+            )
 
         result = run_flow(world, story_number)
 
