@@ -46,10 +46,19 @@ Rules:
 - Write test files only. No implementation code.
 - Import and exercise the product boundary. Never define a local stand-in for
   the missing product function or class inside the test.
-- Every test must be type-correct against the helpers it imports. Read the
-  helper's signature in its source before you call it; the driver runs the
-  repository's type lane over this branch and a type error in a test file is
-  rejected.
+- Every test must be type-correct against the helpers that already exist.
+  Read the helper's signature in its source before you call it; the driver
+  runs the repository's type lane over this branch, and a type error against
+  an existing signature is rejected.
+- When the story introduces a new function, method, prop or export, write the
+  tests against it as the brief describes it. The type lane will report errors
+  inside your test file - a property that does not exist, an argument count
+  that does not match, a module or export that cannot be found - and eslint
+  will report `@typescript-eslint/no-unsafe-*` errors wherever that unresolved
+  value flows. The driver accepts both, as long as every one of them is inside
+  the acceptance test files you wrote: the implementation is what makes them
+  go away. Do not add `@ts-expect-error`, casts to `any`, or stubs to hide
+  them, and do not weaken the assertion to avoid naming the new API.
 - Every test must fail on an expectation - an `expect` that the missing
   behavior would satisfy - never on a thrown error. A test that throws a
   TypeError, ReferenceError or SyntaxError is rejected: it can never pass,
@@ -77,6 +86,11 @@ Rules:
   `git push -u origin $branch`.
 - Never run a command with run_in_background; do not run the full test suite,
   only the files you wrote.
+- Never reply with no test files. If you believe no acceptance test can be
+  written for this slice, say why in `why_they_fail` and name the file you
+  would have written: the driver stops the run with your reason rather than
+  asking you again. A missing API is not such a reason - the rule above
+  covers it.
 
 Reply with the schema fields: test_files (the paths you wrote or changed,
 relative to the repo root) and why_they_fail (a short explanation).

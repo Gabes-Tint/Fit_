@@ -37,6 +37,17 @@ class Verdict:
         return failure_reason.defects(self.failures)
 
 
+def owning_test(name: str, test_files: list[str]) -> str | None:
+    """Which retained acceptance test a tool blamed, or None when it blamed
+    something else. Tools report their own relative paths - jscpd's are
+    relative to its scan roots, eslint's to the worktree - so a name matches
+    a test by path suffix, never by equality alone."""
+    for test in test_files:
+        if test == name or test.endswith(f"/{name}") or name.endswith(f"/{test}"):
+            return test
+    return None
+
+
 def _is_e2e(path: str) -> bool:
     return path.endswith(".e2e.ts") or path.endswith(".e2e.js")
 

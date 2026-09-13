@@ -17,6 +17,7 @@ from fitflow import (
     failure_reason,
     gates,
     github,
+    lanes,
     narrate,
     turns,
     worktrees,
@@ -30,6 +31,17 @@ _REPAIRABLE_OUTCOMES = {
     Outcome.TESTS_DO_NOT_FAIL,
     Outcome.TESTS_INVALID,
 }
+
+
+class ReasonedRefusal(FlowFailure):
+    """The mechanic wrote no acceptance test and said why it could not.
+
+    Every other block 1 rejection describes something on the branch that a
+    second turn could change. This one describes the mechanic's reading of
+    the brief, and a retry puts the same brief to the same agent in the
+    same session: it stops the run at once, carrying the reason to the
+    story, instead of spending two more turns reproducing it - which is
+    what #423 did, three identical refusals deep."""
 
 
 @dataclass(frozen=True)
@@ -110,7 +122,9 @@ def _run_mechanic(prepared: PreparedSlice) -> None:
     turns.repair_loop(
         f"Mechanic #{piece.number}",
         attempt_turn,
-        lambda failure: failure.outcome in _REPAIRABLE_OUTCOMES,
+        lambda failure: (
+            failure.outcome in _REPAIRABLE_OUTCOMES and not isinstance(failure, ReasonedRefusal)
+        ),
     )
 
 
@@ -141,16 +155,40 @@ def _run_attempt(prepared: PreparedSlice, attempt: int, diagnostic: str) -> None
                 ("Why they fail", reply["why_they_fail"]),
             ]
         )
-    _verify_pushed(slug, path, test_files, piece.test_kind, piece.number)
+    _check_not_a_reasoned_refusal(test_files, reply["why_they_fail"], piece.number)
+    debt = _verify_pushed(slug, path, test_files, piece.test_kind, piece.number)
     _verify_tests_fail(path, test_files, piece.number)
     piece.test_files = list(test_files)
+    piece.tests_type_debt = debt
     piece.commit = worktrees.local_head(path)
     _comment(piece.number, slug, path, test_files, reply["why_they_fail"])
 
 
+def _check_not_a_reasoned_refusal(test_files: list[str], why: str, story_number: int) -> None:
+    """A reply with no test files and a stated reason is a refusal, not a
+    slip: the mechanic is telling the driver that this brief cannot be
+    turned into a failing acceptance test. The prompt asks for exactly that
+    shape when the mechanic believes it, and the run stops on it with the
+    reason. An empty reply with no reason is the ordinary repairable
+    "reported no test files"."""
+    if test_files or not why.strip():
+        return
+    raise ReasonedRefusal(
+        Outcome.TESTS_NOT_PUSHED,
+        "the mechanic wrote no acceptance tests and gave a reason a retry cannot change: "
+        + why.strip(),
+        story_number,
+    )
+
+
 def _verify_pushed(
     slug: str, path, test_files: list[str], test_kind: str, story_number: int
-) -> None:
+) -> dict[str, int]:
+    """Every check the branch must pass before its bytes become immutable.
+    Returns the type debt the acceptance tests carry: how many type and
+    type-aware lint errors each one has because the API it calls does not
+    exist yet. Block 3 reads it to tell "the implementation has not provided
+    the signature yet" from "block 1 accepted a broken test"."""
     if not worktrees.is_clean(path):
         raise FlowFailure(Outcome.TESTS_NOT_PUSHED, f"tree not clean on {slug}", story_number)
     if worktrees.remote_head(slug) != worktrees.local_head(path):
@@ -165,8 +203,8 @@ def _verify_pushed(
     _check_files_match_test_kind(slug, changed, test_kind, story_number)
     _check_test_files_are_where_they_belong(slug, changed, story_number)
     _check_test_quality(slug, path, test_files, story_number)
-    _check_failing_branch_lint(path, story_number)
-    _check_failing_branch_types(path, story_number)
+    debt = _check_failing_branch_lint(path, test_files, story_number)
+    debt = _merged(debt, _check_failing_branch_types(path, test_files, story_number))
     _check_failing_branch_gate_steps(path, story_number)
     narrate.line(
         f"🔍 Verify #{story_number}: tree clean ✔ · pushed ✔ · files on branch ✔ · "
@@ -174,6 +212,11 @@ def _verify_pushed(
         + ", ".join(gates.FAILING_BRANCH_STEPS)
         + " ✔"
     )
+    return debt
+
+
+def _merged(first: dict[str, int], second: dict[str, int]) -> dict[str, int]:
+    return {name: first.get(name, 0) + second.get(name, 0) for name in first | second}
 
 
 def _check_test_quality(slug: str, path, test_files: list[str], story_number: int) -> None:
@@ -195,20 +238,106 @@ def _check_test_quality(slug: str, path, test_files: list[str], story_number: in
                 )
 
 
-def _check_failing_branch_lint(path, story_number: int) -> None:
-    diagnostic = gates.run_changed_lint(path, story_number)
-    if diagnostic is not None:
-        raise FlowFailure(Outcome.TESTS_INVALID, diagnostic, story_number)
+def _check_failing_branch_lint(path, test_files: list[str], story_number: int) -> dict[str, int]:
+    """The acceptance tests' own change-scoped lint. A story that adds an
+    export makes the type-aware rules see `any` flowing out of an import
+    that does not resolve yet: #424's spec produced 186 `no-unsafe-*`
+    errors and could not be written any other way. Those are accepted while
+    they stay inside the acceptance files; every other rule is still the
+    mechanic's to fix now."""
+    failure = gates.run_changed_lint(path, story_number)
+    if failure is None:
+        return {}
+    return _accept_or_reject(
+        failure, test_files, lanes.tolerated_lint_error, "lint:changed", "lint errors", story_number
+    )
 
 
-def _check_failing_branch_types(path, story_number: int) -> None:
+def _check_failing_branch_types(path, test_files: list[str], story_number: int) -> dict[str, int]:
     """A test that calls a helper with an argument of the wrong type throws
     instead of asserting, so it can never pass however the behavior is
     implemented (#399). The repository's own type lane sees that before the
-    tests become immutable inputs."""
-    diagnostic = gates.run_type_check(path, story_number)
-    if diagnostic is not None:
-        raise FlowFailure(Outcome.TESTS_INVALID, diagnostic, story_number)
+    tests become immutable inputs.
+
+    It also sees the story's new signature, which by construction does not
+    exist yet: #423's tests called `toggleSet(exerciseIndex, setIndex)`
+    against a one-argument method and the lane said so, three times, with
+    no correction available that was not a suppression. A type error the
+    implementation will answer, inside an acceptance file, is part of
+    failing as intended; the runtime verdict below still has to hold."""
+    failure = gates.run_type_check(path, story_number)
+    if failure is None:
+        return {}
+    return _accept_or_reject(
+        failure, test_files, lanes.tolerated_type_error, "check", "type errors", story_number
+    )
+
+
+def _accept_or_reject(
+    failure: gates.LaneFailure,
+    test_files: list[str],
+    tolerated,
+    lane: str,
+    noun: str,
+    story_number: int,
+) -> dict[str, int]:
+    """Accept a lane failure that is entirely the story's missing API
+    showing through the acceptance tests, and reject every other one."""
+    debt = _missing_api_debt(failure.reading, test_files, tolerated)
+    if debt is None:
+        raise FlowFailure(
+            Outcome.TESTS_INVALID,
+            _why_not_the_missing_api(failure, test_files, tolerated),
+            story_number,
+        )
+    narrate.line(
+        f"🧪 Gates: {lane} — {sum(debt.values())} {noun} inside the acceptance tests, "
+        "expected before the implementation exists ✔"
+    )
+    return debt
+
+
+def _missing_api_debt(reading, test_files: list[str], tolerated) -> dict[str, int] | None:
+    """How many tolerated errors each acceptance file carries, or None the
+    moment the lane reported anything else: an error outside the acceptance
+    files, a rule the implementation will not answer, or output the driver
+    could not read in full."""
+    if not reading.complete:
+        return None
+    debt: dict[str, int] = {}
+    for error in reading.errors:
+        owner = acceptance.owning_test(error.file, test_files)
+        if owner is None or not tolerated(error):
+            return None
+        debt[owner] = debt.get(owner, 0) + 1
+    return debt or None
+
+
+def _why_not_the_missing_api(failure: gates.LaneFailure, test_files: list[str], tolerated) -> str:
+    """The lane's own diagnostic, and - when the driver read the output in
+    full - which part of it is the mechanic's to fix: the errors outside
+    the acceptance tests, or the rules no implementation will answer."""
+    if not failure.reading.complete:
+        return failure.diagnostic
+    outside = sorted(
+        {
+            error.file
+            for error in failure.reading.errors
+            if acceptance.owning_test(error.file, test_files) is None
+        }
+    )
+    if outside:
+        return (
+            f"{failure.diagnostic}\nthese errors are outside the acceptance tests, "
+            f"where this branch may not change anything: {', '.join(outside)}"
+        )
+    rejected = sorted(
+        {error.described() for error in failure.reading.errors if not tolerated(error)}
+    )
+    return (
+        f"{failure.diagnostic}\nthe implementation will not make these go away, "
+        f"so fix them here: {'; '.join(rejected[:3])}"
+    )
 
 
 def _check_failing_branch_gate_steps(path, story_number: int) -> None:

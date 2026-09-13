@@ -695,7 +695,7 @@ def _validate_behavior(
     gate_failure = gates.run_turn_gates(path, record.story_number)
     if gate_failure is not None:
         _check_gate_blames_the_implementation(record, piece, gate_failure)
-        return _Rejection(gate_failure.diagnostic)
+        return _Rejection(_gate_rejection(piece, gate_failure))
     mismatch = _report_mismatch(reply["changed_files"], changed)
     if mismatch is not None:
         return _Rejection(mismatch)
@@ -718,11 +718,12 @@ def _check_gate_blames_the_implementation(
 
     Conservative by construction: a failure the driver could not locate, or
     one that names any other file, stays an ordinary repairable
-    diagnostic."""
+    diagnostic. So does the one failure inside the acceptance tests that an
+    implementation turn can answer - see `_owed_signatures`."""
     if not failure.located:
         return
     blamed = _acceptance_culprits(failure.culprits, piece.test_files)
-    if blamed is None:
+    if blamed is None or _owed_signatures(piece, failure, blamed):
         return
     raise FlowFailure(
         Outcome.TESTS_INVALID,
@@ -735,25 +736,55 @@ def _check_gate_blames_the_implementation(
     )
 
 
+#: The `verify:changed` steps an implementation turn answers by writing
+#: product code rather than by changing the file they name. Every other step
+#: (`duplicates`, `format:check`, `check:suppressions`, a spec) is answered
+#: only inside the file itself.
+_SIGNATURE_STEPS = frozenset({"check", "lint", "lint:changed"})
+
+
+def _owed_signatures(piece: SliceRecord, failure: gates.GateFailure, blamed: list[str]) -> bool:
+    """Whether this gate failure says the implementation is unfinished
+    rather than that the acceptance tests are broken.
+
+    Block 1 accepted type and type-aware lint errors inside these files
+    because the API they call did not exist yet, and recorded them as
+    `tests_type_debt`. The same lanes still failing on the same files after
+    an implementation turn is that debt unpaid: the signatures the product
+    now offers are not the ones the tests call. That is the implementer's
+    own diagnostic and an ordinary correction - the fix is in the product
+    code, and the test bytes never have to move. Any other step, or a file
+    block 1 recorded no debt for, stays block 1's defect."""
+    if not failure.steps & _SIGNATURE_STEPS:
+        return False
+    return all(name in piece.tests_type_debt for name in blamed)
+
+
+def _gate_rejection(piece: SliceRecord, failure: gates.GateFailure) -> str:
+    """The diagnostic a repairable gate failure corrects from. An unpaid
+    signature debt gets the tsc/eslint lines with the one thing the
+    implementer has to understand about them said first."""
+    blamed = _acceptance_culprits(failure.culprits, piece.test_files) if failure.located else None
+    if blamed is None or not _owed_signatures(piece, failure, blamed):
+        return failure.diagnostic
+    return (
+        f"the type and lint lanes still fail inside {', '.join(blamed)}: the acceptance tests "
+        "call signatures the implementation does not provide yet. Add or widen them in the "
+        "product code - the test bytes are immutable and correct. "
+        f"{failure.diagnostic}"
+    )
+
+
 def _acceptance_culprits(culprits, test_files: list[str]) -> list[str] | None:
     """The acceptance tests a gate failure blames, or None the moment it
-    blames anything else. Steps report their own relative paths - jscpd's
-    are relative to its scan roots - so a culprit matches a test by path
-    suffix, never by equality alone."""
+    blames anything else."""
     blamed = []
     for name in sorted(culprits):
-        test = _matching_test(name, test_files)
+        test = acceptance.owning_test(name, test_files)
         if test is None:
             return None
         blamed.append(test)
     return sorted(set(blamed)) or None
-
-
-def _matching_test(name: str, test_files: list[str]) -> str | None:
-    for test in test_files:
-        if test == name or test.endswith(f"/{name}") or name.endswith(f"/{test}"):
-            return test
-    return None
 
 
 def _check_acceptance_is_sound(record: RunRecord, piece: SliceRecord, verdict) -> None:
