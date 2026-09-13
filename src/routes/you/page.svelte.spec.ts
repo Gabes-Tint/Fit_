@@ -276,43 +276,12 @@ describe('redoing setup', () => {
 		await expect.element(page.getByText('A few quiet facts.')).toBeInTheDocument();
 	});
 
-	it('pre-fills the form fields from the active profile when redo setup is opened', async () => {
+	it('starts the fields empty rather than pre-filled with the current profile', async () => {
 		tend.patchActive((p) => ({ ...p, name: 'Jordan', age: 51, heightCm: 190 }));
 		await render(YouPage);
 		await page.getByRole('button', { name: 'Redo setup' }).click();
-		await expect.element(page.getByLabelText('Name')).toHaveValue('Jordan');
-		await expect.element(page.getByLabelText('Age')).toHaveValue('51');
-		await expect.element(page.getByLabelText('Height cm')).toHaveValue('190');
-	});
-
-	it('pre-fills the aim button matching the active profile goal', async () => {
-		tend.patchActive((p) => ({ ...p, goal: 'maintain' }));
-		await render(YouPage);
-		await page.getByRole('button', { name: 'Redo setup' }).click();
-		const maintainButton = page.getByRole('button', { name: /^Maintain/ });
-		await expect.element(maintainButton).toHaveAttribute('aria-pressed', 'true');
-	});
-
-	it('pre-fills the GLP-1 mode switch from the active profile', async () => {
-		tend.patchActive((p) => ({ ...p, glp1: true }));
-		await render(YouPage);
-		await page.getByRole('button', { name: 'Redo setup' }).click();
-		const glp1Switch = page.getByRole('switch', { name: 'GLP-1 mode' });
-		await expect.element(glp1Switch).toBeChecked();
-	});
-
-	it('pre-fills the sex selection from the active profile', async () => {
-		tend.patchActive((p) => ({ ...p, sex: 'male' }));
-		await render(YouPage);
-		await page.getByRole('button', { name: 'Redo setup' }).click();
-		const maleButton = page.getByRole('button', { name: 'male' });
-		await expect.element(maleButton).toHaveAttribute('aria-pressed', 'true');
-	});
-
-	it('uses emptyProfile defaults including age 32 for first-time onboarding', async () => {
-		const { emptyProfile: getEmptyProfile } = await import('$lib/domain/profile');
-		const defaults = getEmptyProfile({ name: 'You' });
-		expect(defaults.age).toBe(32);
+		await expect.element(page.getByLabelText('Name')).not.toHaveValue('Jordan');
+		await expect.element(page.getByLabelText('Age')).not.toHaveValue('51');
 	});
 
 	it('saving preserves the log, weight history and injections', async () => {
