@@ -327,6 +327,19 @@ instead of parallel and the driver's own merge sits between them:
 🔧 Mechanic #1001 (ui) attempt 1/3
 ```
 
+Block 4 narrates what CI said before it decides what to do about it. A red
+check whose log names a file one of the slices owns buys a fix turn; one
+that names nothing the driver can act on gets the one counted rerun:
+
+```text
+🩺 CI is red: Unit and component coverage
+   │ ERROR: Coverage for lines (0%) does not meet global threshold (80%) for src/lib/LogRow.ts
+🛠 CI fix round 1/2 on PR #418: src/lib/LogRow.ts
+🛠 Findings routed to slices: ui
+⇪ Pushed fixes; integration head 9c4d1b0…
+🟢 CI green on PR #418 (7 checks)
+```
+
 `🛑` marks a planned stop (for example, the call is Gabriel's or the slice
 needs clarification) and `❌` a failure. The exit code says which one; see
 [Exit codes](#exit-codes).
@@ -518,8 +531,8 @@ the story; blocks 2-3 terminal failures additionally label the story
 | 25   | WORKTREE_EXISTS      | the slice's worktree or branch already exists                                                                                                                                                                         |
 | 26   | TOOL_FAILED          | `gh`, `git` or `bun` failed unexpectedly, or a reply could not be parsed                                                                                                                                              |
 | 27   | PLAN_REJECTED        | the delegation contract was rejected (bad signals, no evidence, dependent slices); replan                                                                                                                             |
-| 28   | CAPACITY_EXHAUSTED   | a slice's solver exhausted its 3 attempts; everything preserved                                                                                                                                                       |
+| 28   | CAPACITY_EXHAUSTED   | a slice's solver exhausted its 3 attempts, review did not converge, or CI stayed red after 2 CI fix rounds (or after the one rerun, when its log named nothing the driver could act on); everything preserved         |
 | 29   | EXECUTION_HELD       | another `go.py` run already owns this story's lock; with `--resume`, a turn is still running here                                                                                                                     |
 | 30   | RUN_STATE_CONFLICT   | an earlier run left its retained state behind: `--resume` continues it, `--reset` archives it; with `--resume`, the record and the worktrees disagree (bytes changed, a review fix was interrupted, the PR is closed) |
-| 31   | TESTS_INVALID        | the acceptance tests fail their own gate: lint, types, a suppression, or a test that throws                                                                                                                           |
+| 31   | TESTS_INVALID        | the acceptance tests fail their own gate: lint, types, a suppression, a test that throws, a test in the wrong folder, or a red CI that blames nothing but a retained test                                             |
 | 32   | DEPLOY_FAILED        | a deploy or its smoke check failed after the merge: labelled `needs-gabriel`, never rolled back                                                                                                                       |

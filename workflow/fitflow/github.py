@@ -326,6 +326,23 @@ def failed_run(branch: str) -> int | None:
     return rows[0]["databaseId"] if rows else None
 
 
+def failed_run_log(run_id: int) -> str:
+    """The failed steps' log of one workflow run, as `gh run view --log-failed`
+    prints it: one line per log line, prefixed with the job name, the step
+    name and a timestamp.
+
+    The run-level form, not `--job <id>`: it already returns every failed
+    job's failed steps, so the per-job form would only add a call listing
+    the jobs first. A log that cannot be read - expired, or the run still
+    settling - is not a failure here: the caller draws no conclusion from an
+    empty log, which is exactly what an unreadable one means."""
+    result = _gh("run", "view", str(run_id), "--log-failed")
+    if result.returncode != 0:
+        narrate.line(f"🩺 could not read run {run_id}'s failed log: {_failure_text(result)}")
+        return ""
+    return result.stdout
+
+
 def rerun_failed_runs(run_id: int) -> None:
     _run("run", "rerun", "--failed", str(run_id))
 

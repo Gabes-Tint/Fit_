@@ -17,11 +17,16 @@ $acceptance
 
 Fit_ test conventions:
 
-- A vitest spec lives next to the module it covers: `foo.ts` -> `foo.spec.ts`
-  (or `foo.svelte.spec.ts` for a component). Domain logic under `src/lib`.
-- A playwright end-to-end spec is named `*.e2e.ts`. A screen or layout change
-  asserts `expectFitsViewport` from `tests/e2e-support.ts` at a 360px-wide
-  viewport.
+- A vitest spec lives next to the module it covers, under `src/`: `foo.ts` ->
+  `foo.spec.ts` (or `foo.svelte.spec.ts` for a component). Domain logic under
+  `src/lib`.
+- A playwright end-to-end spec is named `*.e2e.ts` and lives under
+  `src/routes/` - every `*.e2e.ts` in this repository does. Anywhere else
+  under `src/` the coverage lane counts it as an uncovered source file
+  (`test:coverage:client` includes `src/lib/**/*.{ts,svelte}` and excludes
+  only `*.spec.ts`/`*.test.ts`), and CI fails on the pull request where the
+  file can no longer be changed. A screen or layout change asserts
+  `expectFitsViewport` from `tests/e2e-support.ts` at a 360px-wide viewport.
 - A component your e2e spec must exercise but which no page renders yet is
   exercised through the repository's harness route, never through a new
   route of your own: load
@@ -32,7 +37,7 @@ Fit_ test conventions:
   distinctive `harness: component not found` line your failing assertions
   use). Do not write route fixtures or production files; the only files on
   this branch are the test files listed below.
-- Test files only under `src/**` or `tests/**`; nothing else on this branch.
+- Test files only under `src/**`; nothing else on this branch.
 - Write only the requested test kind: a playwright slice changes only `*.e2e.ts`;
   a vitest slice changes no `*.e2e.ts` files.
 

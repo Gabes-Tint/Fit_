@@ -410,6 +410,22 @@ def _main_ci_runs(argv, world):
     return 0
 
 
+def cmd_run_view(argv, world):
+    """`gh run view <id> --log-failed`: the failed steps' log of one run, in
+    gh's own shape - job name, step name, timestamped line, tab separated.
+    The default names no repository file, which is what an infrastructure
+    failure looks like and what the rerun path is for."""
+    if "--log-failed" not in argv:
+        print(f"fake gh: unsupported run view {argv}", file=sys.stderr)
+        return 1
+    scripted = world.get("failed_log")
+    if scripted is None:
+        scripted = "##[error]Process completed with exit code 1."
+    for row in scripted.splitlines():
+        print(f"Quality and security\tRun the gate\t2026-09-13T14:10:00.1234567Z {row}")
+    return 0
+
+
 def cmd_run_rerun(argv, world):
     print(f"reran failed jobs of run {argv[-1]}")
     return 0
@@ -429,6 +445,7 @@ COMMANDS = {
     ("pr", "merge"): cmd_pr_merge,
     ("pr", "close"): cmd_pr_close,
     ("run", "list"): cmd_run_list,
+    ("run", "view"): cmd_run_view,
     ("run", "rerun"): cmd_run_rerun,
 }
 
