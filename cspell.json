@@ -203,6 +203,8 @@
 		"unnarrated",
 		"hashlib",
 		"hexdigest",
-		"timespec"
+		"timespec",
+		"lockfiles",
+		"unreviewed"
 	]
 }
