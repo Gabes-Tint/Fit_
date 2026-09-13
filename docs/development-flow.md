@@ -268,6 +268,23 @@ flowchart TD
   Python driver joins the turns, validates every result, and reports planned
   only when all slices succeed; otherwise it identifies each failed slice in
   deterministic domain/UI order and does not advance.
+- Block 1 validates the failing-test branch as the immutable input it
+  becomes: the repository's change-scoped lint, its type lane and the
+  repository gate's content steps (`duplicates`, `format:check`,
+  `check:suppressions`) all run while the mechanic still owns the file. The
+  type lane and the lint lane make one exception for a story that
+  introduces a new function, method, prop or export, because its failing
+  tests must name that API before it exists: the type diagnostics that say
+  so, and the `@typescript-eslint/no-unsafe-*` errors an unresolved import
+  propagates, are accepted while every one of them is inside an acceptance
+  file, recorded on the slice, and answered by the implementation rather
+  than by the test. Every other rule, and any error naming any other file,
+  is still a repairable rejection, and the runtime verdict is untouched -
+  the tests must still fail on an expectation the implementation would
+  satisfy. Block 3 grants no tolerance: `verify:changed`'s `lint` and
+  `check` must be clean, and when they still fail inside a recorded
+  acceptance file the diagnostic says the implementation has not provided
+  what the tests call (#422).
 - Block 1's test-writing loop permits three turns total: the initial turn and
   at most two corrections in the same mechanic identity, AI Army team/session,
   branch and worktree, with only the failing-acceptance-test outcomes retryable.

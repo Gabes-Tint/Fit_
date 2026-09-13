@@ -137,6 +137,26 @@ is a test-only surface: the web server 404s `/dev/` without the
 `FIT_COMPONENT_HARNESS=yes` runtime flag and the Capacitor build refuses it
 outright, so it never mounts a component in the shipped app.
 
+The type lane and the lint lane have one exception, without which a story
+that introduces a new function, method, prop or export could never pass
+block 1: its failing tests have to name the API before it exists. Errors
+that say exactly that - `@typescript-eslint/no-unsafe-*` from an import
+that does not resolve yet, and the TypeScript codes for a missing property,
+a changed argument count, a missing export or a missing local module - are
+accepted while every one of them is inside an acceptance file the mechanic
+reported. Anything else, and any error naming any other file, is still a
+rejection with the file or the rule named. The accepted ones are narrated
+and recorded on the slice, and block 3 grants no tolerance of its own: its
+`verify:changed` runs `lint` and `check` over the implementation, which a
+correct implementation leaves clean by providing the signatures the tests
+call. #422 is the run that found this: both of its slices exhausted three
+mechanic attempts, one refusing to write a test at all and the other on 186
+`no-unsafe-*` errors.
+
+A mechanic that replies with no test files and a reason is refusing the
+brief rather than slipping, and a retry only reproduces it: the run stops
+at once with that reason on the story.
+
 Failing is not enough either. The driver reads every failed test's error
 message out of the runner's JSON report and requires a failed expectation: a
 test that throws - a helper called with an argument of the wrong type
@@ -297,6 +317,7 @@ The run narrates itself as it goes, and saves the same text to
    │ Reason:         ordinary work
 🔀 Whose call? → 🧑‍💻 orchestrator's
 🔀 Spans domain and UI? → ✂️ yes, split into 2
+🧪 Gates: check — 4 type errors inside the acceptance tests, expected before the implementation exists ✔
 🔍 Verify #1000: tree clean ✔ · pushed ✔ · files on branch ✔ · only tests ✔ · lint ✔
 🧪 src/lib/merge.spec.ts → failed, as it should ✔
 🏁 Planned #140 → #1000 domain, #1001 ui · next: block 2, delegate
