@@ -78,6 +78,17 @@ def block(lines: list[str]) -> None:
             line(f"   │ {text}")
 
 
+def headed(head: str, message: str) -> None:
+    """One headline followed, for a multi-line message, by the rest as a
+    `   │` block. A gate diagnostic now carries the failed steps' own
+    output, and a log a human reads must not be one 1200-character line."""
+    with _lock:
+        first, _, rest = message.partition("\n")
+        line(f"{head}{first}")
+        if rest:
+            block(rest.splitlines())
+
+
 def fields(pairs: list[tuple[str, str]]) -> None:
     """A `   │ Label: value` block, labels aligned to the widest one."""
     with _lock:

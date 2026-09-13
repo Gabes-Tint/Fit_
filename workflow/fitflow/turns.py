@@ -34,9 +34,9 @@ def repair_loop[T](
                 raise
             diagnostic = f"{failure.outcome.name}: {failure.why}"
             if attempt == BUDGET:
-                narrate.line(f"🛑 {label} exhausted {BUDGET} attempts — {diagnostic}")
+                narrate.headed(f"🛑 {label} exhausted {BUDGET} attempts — ", diagnostic)
                 raise
-            narrate.line(f"🔁 {label} retrying after attempt {attempt} — {diagnostic}")
+            narrate.headed(f"🔁 {label} retrying after attempt {attempt} — ", diagnostic)
             continue
         if attempt > 1:
             narrate.line(f"✅ {label} passed validation on attempt {attempt}")

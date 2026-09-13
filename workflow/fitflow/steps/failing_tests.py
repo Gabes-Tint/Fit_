@@ -166,9 +166,10 @@ def _verify_pushed(
     _check_test_quality(slug, path, test_files, story_number)
     _check_failing_branch_lint(path, story_number)
     _check_failing_branch_types(path, story_number)
+    _check_failing_branch_gate_steps(path, story_number)
     narrate.line(
         f"🔍 Verify #{story_number}: tree clean ✔ · pushed ✔ · files on branch ✔ · "
-        "only tests ✔ · lint ✔ · types ✔"
+        "only tests ✔ · lint ✔ · types ✔ · " + ", ".join(gates.FAILING_BRANCH_STEPS) + " ✔"
     )
 
 
@@ -205,6 +206,19 @@ def _check_failing_branch_types(path, story_number: int) -> None:
     diagnostic = gates.run_type_check(path, story_number)
     if diagnostic is not None:
         raise FlowFailure(Outcome.TESTS_INVALID, diagnostic, story_number)
+
+
+def _check_failing_branch_gate_steps(path, story_number: int) -> None:
+    """Block 3 judges the implementation with the repository gate, and the
+    acceptance tests are part of the diff it sizes: a clone, a formatting
+    miss or a suppression inside a test file fails that gate on every
+    implementation attempt, and by then the test's bytes are immutable and
+    nobody can repair them (#397). The same steps run here, where the
+    mechanic still owns the file and the failure is an ordinary
+    correction."""
+    failure = gates.run_failing_branch_steps(path, story_number)
+    if failure is not None:
+        raise FlowFailure(Outcome.TESTS_INVALID, failure.diagnostic, story_number)
 
 
 def _check_failures_are_expectations(verdict, story_number: int) -> None:
