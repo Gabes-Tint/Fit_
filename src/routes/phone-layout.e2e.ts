@@ -512,9 +512,9 @@ test.describe('at 360px', () => {
 		page,
 		baseURL
 	}) => {
-		// The name is the full first line; brand shares the second with ⓘ and
-		// +. A long branded name over a long brand is what spills at 360px if
-		// either stops shrinking.
+		// #337 put the brand on its own line under the name, with the serving
+		// under that. A long branded name over a long brand is what spills at
+		// 360px if either stops shrinking.
 		await signInThroughApi(page, baseURL ?? '');
 		await stubFoodSearch(page, [
 			{
