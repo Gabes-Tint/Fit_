@@ -41,7 +41,7 @@ acceptance tests, not the implementer, are what this run cannot get past.
 from collections.abc import Callable
 from pathlib import Path
 
-from fitflow import acceptance, agents, github, narrate, worktrees
+from fitflow import acceptance, agents, audit, github, narrate, worktrees
 from fitflow.outcome import FlowFailure, Outcome
 from fitflow.runstate import RunRecord, SliceRecord
 from fitflow.steps import failing_tests
@@ -280,6 +280,8 @@ def repair(record: RunRecord, piece: SliceRecord) -> None:
     )
     slug = f"{piece.slug}-tests-{number}"
     path = worktrees.create_repair_worktree(slug, piece.failing_sha)
+    audit.worktree_created(slug)
+    narrate.line(f"🌿 Worktree {slug} · branch {slug} at {piece.failing_sha[:12]}")
     agents.ensure_fresh_team(slug, path, piece.number)
     test_files, why = _repair_loop(record, piece, slug, path)
     _refreeze(record, piece, path, test_files, why)
@@ -293,7 +295,13 @@ def _repair_loop(
 ) -> tuple[list[str], str]:
     """The repair's own bounded budget, independent of the implementer's: a
     block 1 verdict the mechanic can repair becomes the next turn's
-    diagnostic, and anything else - or the last turn - stops the run."""
+    diagnostic, and the last turn's stops the run. An agent or tool failure
+    is not a verdict on the tests and keeps its own name.
+
+    Either stop leaves the slice in `tests_rejected`, which is what it
+    honestly is: the tests are still rejected and still unrepaired, so a
+    `--resume` relaunches the repair rather than sending the implementer
+    back at tests nobody fixed."""
     diagnostic = _rendered(piece.objections[-1])
     for turn in range(1, REPAIR_TURNS + 1):
         narrate.line(
@@ -302,8 +310,16 @@ def _repair_loop(
         try:
             return _repair_turn(record, piece, slug, path, turn, diagnostic)
         except FlowFailure as failure:
-            if turn == REPAIR_TURNS or failure.outcome not in failing_tests.REPAIRABLE_OUTCOMES:
-                raise _unrepairable(record, piece, failure) from failure
+            if failure.outcome not in failing_tests.REPAIRABLE_OUTCOMES:
+                raise _repair_stopped(record, piece, failure.outcome, failure.why) from failure
+            if turn == REPAIR_TURNS:
+                raise _repair_stopped(
+                    record,
+                    piece,
+                    Outcome.TESTS_INVALID,
+                    f"block 1 could not repair the acceptance tests the {piece.role} rejected "
+                    f"in {REPAIR_TURNS} turns ({failure.outcome.name}: {failure.why})",
+                ) from failure
             diagnostic = f"{failure.outcome.name}: {failure.why}"
             narrate.headed(
                 f"🔁 #{piece.number} ({piece.layer}) test repair retrying — ", diagnostic
@@ -401,14 +417,12 @@ def _end_repair_turn(
         record.save()
 
 
-def _unrepairable(record: RunRecord, piece: SliceRecord, failure: FlowFailure) -> FlowFailure:
-    with record.transition():
-        piece.move("failed")
-        record.save()
+def _repair_stopped(
+    record: RunRecord, piece: SliceRecord, outcome: Outcome, why: str
+) -> FlowFailure:
     return FlowFailure(
-        Outcome.TESTS_INVALID,
-        f"{piece.slug}: block 1 could not repair the acceptance tests the {piece.role} "
-        f"rejected ({failure.outcome.name}: {failure.why})\n\n{_rendered(piece.objections[-1])}",
+        outcome,
+        f"{piece.slug}: {why}\n\n{_rendered(piece.objections[-1])}",
         record.story_number,
         add_blocked=True,
     )
