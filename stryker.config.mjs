@@ -74,6 +74,9 @@ export default {
 		'node_modules/.vite-*/**',
 		// Multi-GB Python env + data; sandbox copy exhausts disk quota.
 		'data/**',
+		// The workflow/ Python subproject's local uv venv is gitignored local
+		// state; its lib64 symlink makes the sandbox copy fail with EISDIR.
+		'/workflow/.venv/**',
 		'.security-cache/**',
 		'.svelte-kit/**',
 		'build/**',

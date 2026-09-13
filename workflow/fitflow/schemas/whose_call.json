@@ -1,0 +1,16 @@
+{
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["owner", "category", "reason", "question", "options", "recommendation"],
+	"properties": {
+		"owner": { "type": "string", "enum": ["orchestrator", "gabriel"] },
+		"category": {
+			"type": "string",
+			"enum": ["none", "product", "spend", "infra", "secrets", "gate-lowering", "data-deletion"]
+		},
+		"reason": { "type": "string" },
+		"question": { "type": "string" },
+		"options": { "type": "array", "items": { "type": "string" } },
+		"recommendation": { "type": "string" }
+	}
+}

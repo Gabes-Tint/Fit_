@@ -41,27 +41,57 @@ A question for Gabriel is an issue (`needs-gabriel`): blocked, options including
 
 ## Cycle
 
+`workflow/go.py` is the driver for this complete cycle, from issue to
+production. It implements blocks 1-5: **Pick and plan, Delegate,
+Implement/validate, Review/CI/merge, and Ship** - after the merge it waits
+for the version tag and main's CI, deploys QA, decides flakiness, deploys
+production, builds the APK and cleans up. `FIT_FLOW_SHIP_TO=qa` stops the
+ship at QA; hosts and origins come only from the environment.
+
+The [delegation and implementation gates](workflow/delegation-contract.md)
+define role selection, validation, corrections, escalation, the all-slice
+barrier, the delivery gates and the ship gates; blocks 1-5 implement them.
+An external operator
+may start and observe a run; it must not mutate the active workflow,
+configuration or slice worktrees. Coordinated cancellation is not implemented:
+an external interruption leaves retained state for audit rather than a clean
+resume point.
+
 1. **Sync** — fetch; issues; `needs-gabriel`; log. Answers → `decision`.
-2. **Pick** — highest unblocked `story`. Empty → write stories from priorities.
-3. **Plan** — failing tests first. Split multi-layer slices. Screens: `expectFitsViewport` at 360px.
+2. **Pick** — explicit issue, or lowest-numbered open `story` not held. Empty → stop; queue replenishment is outside this run.
+3. **Plan** — `workflow/go.py` checks whose call (including spend), then creates one slice or exactly two, domain then UI. Domain includes all non-UI work; UI means Svelte interface/routes. Mechanics write failing tests in existing isolated worktrees. Screens: `expectFitsViewport` at 360px.
 4. **Delegate** — rung + why; issue, files, tests, gate; one worktree. Never the shared checkout.
-5. **Review** — diff + `gate-*.json`. Past mechanical → `reviewer`.
-6. **Merge** — `Closes #N`; `gh pr merge <n>`.
-7. **Deploy** — user-facing only; smoke; comment what to try.
-8. **Report** — one log comment.
+5. **Implement/validate** — bounded corrections and escalation in each retained worktree; the driver runs the foreground gates, commits and freezes each successful slice, then joins all slices.
+6. **Review** — integration branch, PR; past mechanical → `reviewer`, findings must cite the diff; fix rounds re-freeze and re-review.
+7. **Merge** — `Closes #N`; the driver reads `gh pr checks` itself, one counted rerun; `gh pr merge <n>`.
+8. **Ship** — tag, main CI, QA deploy with smoke, flaky → QA only, else prod, APK; `DEPLOY_FAILED` → `needs-gabriel`, never a rollback.
+9. **Report delivery** — worktrees and branches cleaned once proven landed; one "Shipped" comment on the story.
 
 ## Ladder
 
-`.claude/agents/`. Smallest rung. Escalate; never retry the same size. `mechanic`/`builder` prefer free models.
+Driver role configuration comes from `workflow/agents.yaml`; all four roles
+(planner, mechanic, builder, solver) are required and configured. Choose the
+smallest capable rung by uncertainty and judgment,
+never by diff size. Policy: one initial attempt
+plus at most two repairs with the same agent/session/worktree; then escalate
+exactly one rung. An exhausted solver stops and preserves its worktree.
+Infrastructure, authentication, network and tool failures stop immediately
+without retry or capability escalation. Configuration fixes backend, model and
+effort at startup; there is no runtime model fallback.
 
-|            |                                               |
-| ---------- | --------------------------------------------- |
-| `mechanic` | rename, fixture, migration, run a gate        |
-| `builder`  | specified slice, tests exist, pattern to copy |
-| `solver`   | unclear failure, sync, auth, store            |
-| `reviewer` | builder/solver before `main`                  |
+|            |                                                           |
+| ---------- | --------------------------------------------------------- |
+| `mechanic` | determined procedure, nothing relevant to decide          |
+| `builder`  | clear objective, known area/pattern, construction remains |
+| `solver`   | uncertain solution/cause, auth, shared state/store        |
+| `reviewer` | builder/solver before `main`                              |
 
-Brief names the worktree. Orchestrator stays free; waiting is an agent’s job. Read `gate-<tier>.json`; do not re-run to be sure. Explore with `mechanic`/`builder`. `aarmy` optional, one-turn only.
+Brief names the worktree. The driver waits for foreground checks and reads
+`gate-<tier>.json`; do not re-run to be sure. `workflow/go.py` uses `aarmy`
+for Pick and plan and for the delegate/implement loops. Implementation slices
+run independently; a
+successful slice stays frozen while its sibling repairs or escalates, and
+delivery waits for all slices to succeed.
 
 **Cost.** Paid service → `needs-gabriel` (name, why, cost). Bundle raise: old/new/measured/what grew in the PR, or trim.
 

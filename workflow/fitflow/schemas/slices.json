@@ -1,0 +1,32 @@
+{
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["spans_domain_and_ui", "slices"],
+	"properties": {
+		"spans_domain_and_ui": {
+			"type": "boolean",
+			"description": "True only when work spans both UI and non-UI domain categories."
+		},
+		"slices": {
+			"type": "array",
+			"minItems": 1,
+			"maxItems": 2,
+			"items": {
+				"type": "object",
+				"additionalProperties": false,
+				"required": ["layer", "title", "brief", "acceptance", "test_kind"],
+				"properties": {
+					"layer": {
+						"type": "string",
+						"enum": ["domain", "ui"],
+						"description": "ui is Svelte interface work; domain is every non-UI change, including backend and database work."
+					},
+					"title": { "type": "string" },
+					"brief": { "type": "string" },
+					"acceptance": { "type": "array", "items": { "type": "string" } },
+					"test_kind": { "type": "string", "enum": ["vitest", "playwright"] }
+				}
+			}
+		}
+	}
+}

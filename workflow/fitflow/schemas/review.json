@@ -1,0 +1,32 @@
+{
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["verdict", "findings"],
+	"properties": {
+		"verdict": { "enum": ["merge", "fix"] },
+		"findings": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"additionalProperties": false,
+				"required": ["file", "line", "category", "required_fix"],
+				"properties": {
+					"file": { "type": "string" },
+					"line": { "type": "integer", "minimum": 1 },
+					"category": {
+						"enum": [
+							"correctness",
+							"security",
+							"data-loss",
+							"concurrency",
+							"contract",
+							"regression-coverage",
+							"threshold-policy"
+						]
+					},
+					"required_fix": { "type": "string" }
+				}
+			}
+		}
+	}
+}
