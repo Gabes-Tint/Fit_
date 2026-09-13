@@ -625,3 +625,42 @@ def test_reset_refuses_while_a_run_owns_the_story(world):
     assert result.returncode == 29, result.stdout + result.stderr
     assert world.slice_worktree_path("story-634-domain").exists()
     assert (world.home / "runs" / "story-634.json").exists()
+
+
+def test_resume_after_a_red_ci_the_driver_can_read_takes_a_ci_fix_round(world):
+    """#397's own stop, resumed: the record says the one rerun is spent and
+    the checks are still red. The fix-round budget is not the rerun's, so the
+    resumed run reads the log and fixes what it names instead of stopping at
+    CAPACITY_EXHAUSTED again."""
+    _given_planned_story(world, 613)
+    _delegate_mechanic(world, 613)
+    world.agent_implements(
+        "story-613-domain", "mechanic", files=IMPLEMENTATION, changed_files=CHANGED
+    )
+    world.given_checks(500, ["fail", "pending", "fail"])
+    first = run_flow(world, 613)
+    assert first.returncode == 28, first.stdout + first.stderr
+    assert world.run_record(613)["delivery"]["rerun_used"] is True
+
+    world.given_failed_log(
+        "ERROR: Coverage for lines (0%) does not meet global threshold (80%) "
+        "for src/lib/delegate.ts"
+    )
+    world.given_checks(500, ["fail", "pending", "pass"])
+    world.agent_implements(
+        "story-613-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = 2;\n"},
+        changed_files=CHANGED,
+    )
+
+    result = run_flow(world, 613, "--resume")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "CI is red" in result.stdout
+    assert "CI fix round 1/2 on PR #500: src/lib/delegate.ts" in result.stdout
+    assert "Merged PR #500" in result.stdout
+    record = world.run_record(613)
+    assert record["delivery"]["ci_fix_rounds"] == 1
+    # the spent rerun stays spent; the fix rounds are their own budget
+    assert record["delivery"]["rerun_used"] is True

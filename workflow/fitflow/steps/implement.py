@@ -103,16 +103,21 @@ class _Rejection:
     breach: str | None = None
 
 
-def forbidden_brief() -> str:
+def forbidden_brief(layer: str = "") -> str:
     """The prohibition the scope check enforces, rendered for the
     implementer's brief from the same constants it validates against, so
     the rule the agent is told and the rule it is judged by cannot drift.
     #337 stopped on `scripts/eval/` precisely because the brief said
-    "quality/gate policy files" and named no path at all."""
+    "quality/gate policy files" and named no path at all.
+
+    A layer that owns one of these repository-wide files - the workflow
+    layer owns `cspell.json`, whose new word travels with the prose that
+    needs it - must not be told it is out of reach, for the same reason."""
+    files = sorted(name for name in _FORBIDDEN_FILES if not layers.permits_gate_file(layer, name))
     return "\n".join(
         [
             f"- anything under {_listed(_FORBIDDEN_PREFIXES)}",
-            f"- any file named {_listed(sorted(_FORBIDDEN_FILES))}, wherever it sits",
+            f"- any file named {_listed(files)}, wherever it sits",
             "- any snapshot (`*.snap`) or lock file (`*.lock`)",
             "- the acceptance test files listed above",
         ]
@@ -610,7 +615,7 @@ def _talk(piece: SliceRecord, prompt_name: str, attempt: int) -> tuple[dict, str
         brief=piece.brief,
         acceptance="\n".join(f"- {item}" for item in piece.acceptance),
         test_files="\n".join(piece.test_files),
-        forbidden=forbidden_brief(),
+        forbidden=forbidden_brief(piece.layer),
         attempt=str(attempt),
         diagnostic=piece.diagnostics[-1] if piece.diagnostics else "",
         prior_diagnostics="\n".join(f"- {item}" for item in piece.diagnostics) or "(none)",
@@ -769,7 +774,7 @@ def _validate_behavior(
             )
         _check_acceptance_is_sound(record, piece, verdict)
         return _Rejection(verdict.why)
-    gate_failure = gates.run_turn_gates(path, record.story_number)
+    gate_failure = _run_turn_gates(record, piece, path, changed)
     if gate_failure is not None:
         _check_gate_blames_the_implementation(record, piece, gate_failure)
         return _Rejection(gate_failure.diagnostic)
@@ -781,6 +786,17 @@ def _validate_behavior(
         "no gate files ✔"
     )
     return None
+
+
+def _run_turn_gates(
+    record: RunRecord, piece: SliceRecord, path, changed: list[str]
+) -> "gates.GateFailure | None":
+    """The gates this turn is judged by. A workflow slice changes Python and
+    prose, which `verify:changed` neither sizes nor runs, so the driver's own
+    gates stand in its place - the same four block 1 ran over the tests."""
+    if piece.layer == "workflow":
+        return gates.run_workflow_gates(path, record.story_number, changed)
+    return gates.run_turn_gates(path, record.story_number)
 
 
 def _check_gate_blames_the_implementation(
@@ -936,7 +952,7 @@ def _out_of_reach(piece: SliceRecord):
 
     def reason(changed_file: str) -> str | None:
         basename = PurePosixPath(changed_file).name
-        if (
+        if not layers.permits_gate_file(piece.layer, changed_file) and (
             changed_file.startswith(_FORBIDDEN_PREFIXES)
             or basename in _FORBIDDEN_FILES
             or basename.endswith((".snap", ".lock"))

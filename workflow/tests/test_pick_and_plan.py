@@ -189,7 +189,9 @@ def test_picks_lowest_story_not_held_with_one_slice(world):
     assert '"domain" means every non-UI change' in slicing_prompt
     assert "server/backend code, persistence, migrations, and database changes" in slicing_prompt
     assert "Two is the maximum; never return a third slice." in normalized_slicing_prompt
-    assert "wholly UI or wholly non-UI" in slicing_prompt
+    assert "wholly UI, wholly non-UI, or wholly the driver" in slicing_prompt
+    assert '"workflow" means a change to this development flow\'s own driver' in slicing_prompt
+    assert "A workflow story is always exactly one slice" in slicing_prompt
     for prompt in planner_prompts[:2]:
         first = prompt.index("2026-09-01T12:00:00Z | comment | author-one")
         label = prompt.index("2026-09-02T12:00:00Z | labeled | maintainer")
@@ -1649,3 +1651,56 @@ def test_unformatted_acceptance_tests_are_rejected_in_block_1(world):
     assert "failed steps: format:check" in result.stdout
     assert f"[warn] {test_file}" in result.stdout
     assert "Implemented #222" in result.stdout
+
+
+def test_a_misplaced_e2e_file_is_sent_back_to_the_mechanic_with_the_expected_folder(world):
+    """#397: block 1 accepted `src/lib/components/LogRow.e2e.ts`, the
+    coverage lane counted it as source that no unit test loads, and CI was
+    deterministically red on the pull request where the file's bytes were
+    already immutable."""
+    world.given_story(97, title="Misplaced e2e", labels=["story"])
+    world.planner_answers_whose_call(
+        97,
+        owner="orchestrator",
+        category="none",
+        reason="ordinary work",
+        question="",
+        options=[],
+        recommendation="",
+    )
+    world.planner_answers_slices(
+        97,
+        spans_domain_and_ui=False,
+        slices=[
+            {
+                "layer": "ui",
+                "title": "Misplaced e2e",
+                "brief": "Write the missing acceptance test.",
+                "acceptance": ["The row renders three lines."],
+                "test_kind": "playwright",
+            }
+        ],
+    )
+    slug = "story-97-ui"
+    misplaced = "src/lib/components/LogRow.e2e.ts"
+    placed = "src/routes/log-row.e2e.ts"
+    world.mechanic_writes(slug, files={misplaced: "// failing\n"}, test_files=[misplaced])
+    world.mechanic_writes(
+        slug, files={placed: "// failing\n"}, test_files=[placed], delete=[misplaced]
+    )
+    world.scripted_test_outcome(placed, ["fail", "pass"])
+    world.planner_answers_delegate(97, [delegate_slice(97, "ui", mechanic_signals())])
+    world.agent_implements(
+        slug,
+        "mechanic",
+        files={"src/lib/components/LogRow.svelte": "<p>row</p>\n"},
+        changed_files=["src/lib/components/LogRow.svelte"],
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert f"{misplaced} is in the wrong folder on {slug}" in result.stdout
+    assert "must live under src/routes/" in result.stdout
+    assert "move it to src/routes/LogRow.e2e.ts" in result.stdout
+    assert "Mechanic #97 (ui) attempt 2/3" in result.stdout

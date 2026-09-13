@@ -17,11 +17,16 @@ $acceptance
 
 Fit_ test conventions:
 
-- A vitest spec lives next to the module it covers: `foo.ts` -> `foo.spec.ts`
-  (or `foo.svelte.spec.ts` for a component). Domain logic under `src/lib`.
-- A playwright end-to-end spec is named `*.e2e.ts`. A screen or layout change
-  asserts `expectFitsViewport` from `tests/e2e-support.ts` at a 360px-wide
-  viewport.
+- A vitest spec lives next to the module it covers, under `src/`: `foo.ts` ->
+  `foo.spec.ts` (or `foo.svelte.spec.ts` for a component). Domain logic under
+  `src/lib`.
+- A playwright end-to-end spec is named `*.e2e.ts` and lives under
+  `src/routes/` - every `*.e2e.ts` in this repository does. Anywhere else
+  under `src/` the coverage lane counts it as an uncovered source file
+  (`test:coverage:client` includes `src/lib/**/*.{ts,svelte}` and excludes
+  only `*.spec.ts`/`*.test.ts`), and CI fails on the pull request where the
+  file can no longer be changed. A screen or layout change asserts
+  `expectFitsViewport` from `tests/e2e-support.ts` at a 360px-wide viewport.
 - A component your e2e spec must exercise but which no page renders yet is
   exercised through the repository's harness route, never through a new
   route of your own: load
@@ -32,9 +37,35 @@ Fit_ test conventions:
   distinctive `harness: component not found` line your failing assertions
   use). Do not write route fixtures or production files; the only files on
   this branch are the test files listed below.
-- Test files only under `src/**` or `tests/**`; nothing else on this branch.
+- Test files only under `src/**`; nothing else on this branch.
 - Write only the requested test kind: a playwright slice changes only `*.e2e.ts`;
   a vitest slice changes no `*.e2e.ts` files.
+
+When the test kind is `pytest`, the slice is a change to this flow's own
+driver and every convention above is replaced by these:
+
+- The acceptance tests are `workflow/tests/test_*.py`, run with
+  `uv run --project workflow pytest -q <files>` from the repository root.
+  Write them in the suite's own style: a flow test builds the fake world
+  (`world` fixture and its `given_*` helpers in `workflow/tests/conftest.py`),
+  runs `run_flow(world, "<number>")` and asserts on the exit code, the
+  narrated log and the fake world afterwards; a unit test exercises one
+  `fitflow` module directly. Test names read as sentences.
+- The whole of `workflow/tests/` is test-side, so this branch may also add a
+  `given_*` helper to `workflow/tests/conftest.py` and a scripted answer to a
+  fake under `workflow/tests/fakes/`. Nothing outside `workflow/tests/` may
+  change - not a `fitflow` module, not a prompt, not a schema.
+- Only a `workflow/tests/test_*.py` file counts as an acceptance test: pytest
+  collects nothing from `conftest.py` or a fake, so neither may appear in
+  `test_files`.
+- The gates over this branch are the driver's own: `ruff check workflow` and
+  `ruff format --check workflow` (run `uv run --project workflow ruff format
+workflow` over what you wrote), plus `bun x prettier --check` and
+  `bun x cspell --no-progress` over any markdown you changed. The repository's
+  `lint:changed`, `check` and content steps do not run.
+- A test must fail on an `assert`, never on an import pytest cannot resolve:
+  a collection or import error is rejected the same way a thrown TypeError is
+  in a vitest slice.
 
 Rules:
 

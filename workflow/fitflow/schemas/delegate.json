@@ -14,7 +14,7 @@
 				"properties": {
 					"layer": {
 						"type": "string",
-						"enum": ["domain", "ui"]
+						"enum": ["domain", "ui", "workflow"]
 					},
 					"signals": {
 						"type": "object",
@@ -75,7 +75,7 @@
 								},
 								"source_ref": {
 									"type": "string",
-									"pattern": "^run-[1-9][0-9]*/(?:(?:domain|ui)/(?:brief|issue_context|failing_tests|branch|worktree|team|acceptance/(?:0|[1-9][0-9]*))|ownership)$"
+									"pattern": "^run-[1-9][0-9]*/(?:(?:domain|ui|workflow)/(?:brief|issue_context|failing_tests|branch|worktree|team|acceptance/(?:0|[1-9][0-9]*))|ownership)$"
 								},
 								"detail": { "type": "string" }
 							}

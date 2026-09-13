@@ -73,12 +73,26 @@ stops the run. Before every turn the driver also re-verifies that the AI
 Army team's worktree link still resolves to exactly the retained slice
 worktree before launching anything.
 
-Slicing is strictly binary. `ui` means frontend/interface work in Svelte
-components and routes, normally browser-tested. `domain` means every non-UI
-change, including framework-free logic, server/backend code, persistence,
-migrations and database work. A story gets one slice when it is wholly in
-either category, or exactly two ordered slices—domain then UI—when it spans
-both. There is never a third layer.
+Slicing the product is strictly binary. `ui` means frontend/interface work in
+Svelte components and routes, normally browser-tested. `domain` means every
+non-UI change to the product, including framework-free logic, server/backend
+code, persistence, migrations and database work. A story gets one slice when
+it is wholly in either category, or exactly two ordered slices—domain then
+UI—when it spans both. There is never a third product layer.
+
+A story about the driver itself is the third layer, `workflow`, and it is
+always a single slice. It may change `workflow/**`, `docs/**` and the
+repository's `cspell.json`, and nothing else; its acceptance tests are
+`workflow/tests/test_*.py` run under
+`uv run --project workflow pytest -q <files>`, written in this suite's own
+style — a flow test (a fake world plus a `go.py` run) or a unit test of one
+`fitflow` module. Block 1 may also change `workflow/tests/conftest.py` and
+the fakes under `workflow/tests/fakes/`, which are test-side too, but only a
+`test_*.py` file counts as an acceptance test. Its gates are the driver's
+own — `ruff check`, `ruff format --check`, and prettier and cspell over
+changed markdown — in place of the bun lanes, which only know the
+repository's TypeScript. Block 4 still withholds the merge: a driver story
+ends `NEEDS_GABRIEL` (exit 11) with its pull request open and green.
 
 The driver creates child issues, worktrees and teams sequentially. A one-slice
 story then runs one mechanic. A two-slice story runs its domain and UI mechanics
@@ -348,6 +362,19 @@ instead of parallel and the driver's own merge sits between them:
 🔧 Mechanic #1001 (ui) attempt 1/3
 ```
 
+Block 4 narrates what CI said before it decides what to do about it. A red
+check whose log names a file one of the slices owns buys a fix turn; one
+that names nothing the driver can act on gets the one counted rerun:
+
+```text
+🩺 CI is red: Unit and component coverage
+   │ ERROR: Coverage for lines (0%) does not meet global threshold (80%) for src/lib/LogRow.ts
+🛠 CI fix round 1/2 on PR #418: src/lib/LogRow.ts
+🛠 Findings routed to slices: ui
+⇪ Pushed fixes; integration head 9c4d1b0…
+🟢 CI green on PR #418 (7 checks)
+```
+
 `🛑` marks a planned stop (for example, the call is Gabriel's, the slice
 needs clarification, or a rejection came back verbatim and the remaining
 attempts were left unspent) and `❌` a failure. The exit code says which
@@ -540,8 +567,8 @@ the story; blocks 2-3 terminal failures additionally label the story
 | 25   | WORKTREE_EXISTS      | the slice's worktree or branch already exists                                                                                                                                                                         |
 | 26   | TOOL_FAILED          | `gh`, `git` or `bun` failed unexpectedly, or a reply could not be parsed                                                                                                                                              |
 | 27   | PLAN_REJECTED        | the delegation contract was rejected (bad signals, no evidence, dependent slices); replan                                                                                                                             |
-| 28   | CAPACITY_EXHAUSTED   | a slice's solver spent its budget - three attempts, or two that failed identically; everything preserved                                                                                                              |
+| 28   | CAPACITY_EXHAUSTED   | a slice's solver spent its budget - three attempts, or two that failed identically - review did not converge, or CI stayed red after 2 CI fix rounds (or after the one rerun, when its log named nothing the driver could act on); everything preserved |
 | 29   | EXECUTION_HELD       | another `go.py` run already owns this story's lock; with `--resume`, a turn is still running here                                                                                                                     |
 | 30   | RUN_STATE_CONFLICT   | an earlier run left its retained state behind: `--resume` continues it, `--reset` archives it; with `--resume`, the record and the worktrees disagree (bytes changed, a review fix was interrupted, the PR is closed) |
-| 31   | TESTS_INVALID        | the acceptance tests fail their own gate: lint, types, a suppression, or a test that throws                                                                                                                           |
+| 31   | TESTS_INVALID        | the acceptance tests fail their own gate: lint, types, a suppression, a test that throws, a test in the wrong folder, or a red CI that blames nothing but a retained test                                             |
 | 32   | DEPLOY_FAILED        | a deploy or its smoke check failed after the merge: labelled `needs-gabriel`, never rolled back                                                                                                                       |

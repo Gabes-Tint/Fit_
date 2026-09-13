@@ -37,7 +37,7 @@ flowchart TD
         owner{"Whose call?"}
         gabriel["Label needs-gabriel<br/>product, spend, infra, secrets,<br/>gate lowering, data deletion"]
         slice{"Spans domain and UI?"}
-        split["Binary split only<br/>UI = Svelte interface/routes<br/>domain = every non-UI change,<br/>including backend/database<br/>maximum two: domain then UI"]
+        split["Binary split of the product<br/>UI = Svelte interface/routes<br/>domain = every non-UI change,<br/>including backend/database<br/>maximum two: domain then UI<br/>workflow = the driver itself, always one slice"]
         worktree["Driver creates child issues and slice worktrees<br/>sequentially and deterministically"]
         mechanic_count{"One slice or two?"}
         slice_loop["For each slice: mechanic works in its<br/>isolated worktree/team<br/>same session across retries"]
@@ -120,6 +120,9 @@ flowchart TD
         claims["Driver verifies claims<br/>gh pr checks parsed by the driver"]
         ci["ci.yml: gate.ts ci --job ...<br/>static, unit, build, mutation-security,<br/>e2e x4 browsers, security, self-test<br/>required check: all-green"]
         green{"all-green?"}
+        read_log["gh run view --log-failed<br/>error lines and the repository files they name"]
+        located{"Does the log name a file<br/>a slice of this run owns?"}
+        ci_fix["CI fix turn in the owning slice<br/>the log lines as the diagnostic<br/>re-validate, re-freeze, push<br/>at most 2 rounds, counted in the run record"]
         rerun["gh run rerun --failed once,<br/>counted in the run record"]
         self_change{"Does the diff touch workflow/?<br/>the PR changes the driver itself"}
         hand_over["NEEDS_GABRIEL<br/>needs-gabriel, assigned, PR left open,<br/>worktrees kept, never blocked"]
@@ -131,7 +134,9 @@ flowchart TD
         fix --> claims
         verdict -- merge --> claims
         claims --> ci --> green
-        green -- no --> rerun --> ci
+        green -- no --> read_log --> located
+        located -- yes --> ci_fix --> ci
+        located -- no --> rerun --> ci
         green -- yes --> self_change
         self_change -- yes --> hand_over
         self_change -- no --> merge
@@ -232,6 +237,12 @@ flowchart TD
   5xx, a network blip, an empty-message backend error) already got one
   transparent retry before reaching this policy. This is separate from
   block 1's loop for producing failing acceptance tests.
+- A story about the driver itself takes the third layer, `workflow`: always a
+  single slice, confined to `workflow/**`, `docs/**` and `cspell.json`, with
+  pytest acceptance tests under `workflow/tests/` and the driver's own gates
+  (`ruff check`, `ruff format --check`, and prettier and cspell over changed
+  markdown) in place of the bun lanes. Block 4 opens its pull request and
+  withholds the merge: the driver never merges its own code.
 - Each slice selects its role independently. Two independent slices run their
   domain and UI implementation and gates in parallel in their existing
   worktrees. A UI slice normally renders what its domain sibling supplies, so
@@ -278,6 +289,18 @@ flowchart TD
   turn; repairable failures retry, external and contract failures stop
   immediately, and exhaustion retains the last diagnostic for the terminal
   stop. Worktrees are preserved for audit; cleanup is an explicit later action.
+- A red check is judged from its own log before it is retried. The driver
+  reads the failed jobs' log (`gh run view --log-failed`), keeps the error
+  lines and the repository paths they name, and takes the two cases apart:
+  a failure it located in a file one of this run's slices owns buys a CI
+  fix turn in that slice - the log lines as the diagnostic, then the same
+  re-validation, re-freeze and push a review fix gets, at most two rounds,
+  counted in the run record as `delivery.ci_fix_rounds`. A failure it could
+  not locate - no repository path in the log at all, an artifact upload 403
+  or a lost runner - is the flake's case and gets the one counted rerun it
+  always got. Only when the log blames nothing but a retained acceptance
+  test does the run stop without trying: those bytes are immutable to every
+  implementation turn, so the answer is block 1, not a fix round (#397).
 - An implementation turn may change the driver's own code under
   `workflow/` - the agent edits a worktree copy, the running driver is the
   main checkout's code, and the driver's suite is CI's own "Workflow

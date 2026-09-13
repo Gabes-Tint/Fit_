@@ -407,6 +407,14 @@ reviewer:
         self.world.setdefault("check_outcomes", {})[f"pr-{pr_number}"] = outcomes
         self._save()
 
+    def given_failed_log(self, text: str) -> None:
+        """What `gh run view <id> --log-failed` prints for this run's failed
+        jobs. The default names no repository file, so a scenario that wants
+        the driver to locate a culprit says the line itself."""
+        self._load()
+        self.world["failed_log"] = text
+        self._save()
+
     # --- block 5 ---------------------------------------------------------
 
     def given_tag(self, name: str, pr_number: int | None = None) -> None:
@@ -503,6 +511,38 @@ reviewer:
             scripted["location"] = location
         if scripted:
             self.world.setdefault("test_messages", {})[file] = scripted
+        self._save()
+
+    def given_pytest_results(
+        self, file: str, outcome: str | list[str], message: str | None = None
+    ) -> None:
+        """The driver's own suite, as the fake `uv` reports it for a workflow
+        slice: fail, fail_defect, pass, collect_error (the module will not
+        import, which interrupts pytest's whole run), not_found or
+        tool_error. A list is consumed one value per invocation, and its
+        last value stays sticky. `message` is the reason the summary line
+        carries."""
+        self.scripted_test_outcome(file, outcome, message=message)
+
+    def given_ruff_failure(
+        self, file: str, gate: str = "ruff check", outcome: str | list[str] = "fail"
+    ) -> None:
+        """The driver's own lint gate rejects `file`: `gate` is "ruff check"
+        or "ruff format", and the diagnostic names the file and a line the
+        way ruff's arrow line does. A list of outcomes is consumed one value
+        per invocation, so a scenario can script a repaired second turn."""
+        self._load()
+        self.world.setdefault("gate_outcomes", {})[gate] = outcome
+        self.world["ruff_failure_file"] = file
+        self._save()
+
+    def given_markdown_failure(
+        self, file: str, gate: str = "prettier", outcome: str | list[str] = "fail"
+    ) -> None:
+        """`prettier` or `cspell` rejects this changed markdown file."""
+        self._load()
+        self.world.setdefault("gate_outcomes", {})[gate] = outcome
+        self.world["markdown_failure_file"] = file
         self._save()
 
     def given_check_fails_on(self, file: str) -> None:
