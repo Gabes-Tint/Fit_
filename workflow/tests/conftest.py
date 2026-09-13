@@ -404,6 +404,14 @@ reviewer:
         self.world.setdefault("check_outcomes", {})[f"pr-{pr_number}"] = outcomes
         self._save()
 
+    def given_failed_log(self, text: str) -> None:
+        """What `gh run view <id> --log-failed` prints for this run's failed
+        jobs. The default names no repository file, so a scenario that wants
+        the driver to locate a culprit says the line itself."""
+        self._load()
+        self.world["failed_log"] = text
+        self._save()
+
     # --- block 5 ---------------------------------------------------------
 
     def given_tag(self, name: str, pr_number: int | None = None) -> None:
