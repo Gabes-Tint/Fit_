@@ -189,7 +189,9 @@ def test_picks_lowest_story_not_held_with_one_slice(world):
     assert '"domain" means every non-UI change' in slicing_prompt
     assert "server/backend code, persistence, migrations, and database changes" in slicing_prompt
     assert "Two is the maximum; never return a third slice." in normalized_slicing_prompt
-    assert "wholly UI or wholly non-UI" in slicing_prompt
+    assert "wholly UI, wholly non-UI, or wholly the driver" in slicing_prompt
+    assert '"workflow" means a change to this development flow\'s own driver' in slicing_prompt
+    assert "A workflow story is always exactly one slice" in slicing_prompt
     for prompt in planner_prompts[:2]:
         first = prompt.index("2026-09-01T12:00:00Z | comment | author-one")
         label = prompt.index("2026-09-02T12:00:00Z | labeled | maintainer")

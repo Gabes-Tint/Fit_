@@ -61,12 +61,26 @@ stops the run. Before every turn the driver also re-verifies that the AI
 Army team's worktree link still resolves to exactly the retained slice
 worktree before launching anything.
 
-Slicing is strictly binary. `ui` means frontend/interface work in Svelte
-components and routes, normally browser-tested. `domain` means every non-UI
-change, including framework-free logic, server/backend code, persistence,
-migrations and database work. A story gets one slice when it is wholly in
-either category, or exactly two ordered slices—domain then UI—when it spans
-both. There is never a third layer.
+Slicing the product is strictly binary. `ui` means frontend/interface work in
+Svelte components and routes, normally browser-tested. `domain` means every
+non-UI change to the product, including framework-free logic, server/backend
+code, persistence, migrations and database work. A story gets one slice when
+it is wholly in either category, or exactly two ordered slices—domain then
+UI—when it spans both. There is never a third product layer.
+
+A story about the driver itself is the third layer, `workflow`, and it is
+always a single slice. It may change `workflow/**`, `docs/**` and the
+repository's `cspell.json`, and nothing else; its acceptance tests are
+`workflow/tests/test_*.py` run under
+`uv run --project workflow pytest -q <files>`, written in this suite's own
+style — a flow test (a fake world plus a `go.py` run) or a unit test of one
+`fitflow` module. Block 1 may also change `workflow/tests/conftest.py` and
+the fakes under `workflow/tests/fakes/`, which are test-side too, but only a
+`test_*.py` file counts as an acceptance test. Its gates are the driver's
+own — `ruff check`, `ruff format --check`, and prettier and cspell over
+changed markdown — in place of the bun lanes, which only know the
+repository's TypeScript. Block 4 still withholds the merge: a driver story
+ends `NEEDS_GABRIEL` (exit 11) with its pull request open and green.
 
 The driver creates child issues, worktrees and teams sequentially. A one-slice
 story then runs one mechanic. A two-slice story runs its domain and UI mechanics

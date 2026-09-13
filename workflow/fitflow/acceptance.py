@@ -3,6 +3,11 @@ the test runner's own JSON report, never from the process exit code (a
 runner also exits non-zero for "no tests found" or a bad --project, which is
 not the same failure as an acceptance test with no implementation yet).
 
+The runner is chosen per file: `.e2e.ts` is playwright, `.py` is the
+driver's own pytest suite, everything else is vitest. pytest has no JSON
+reporter, so its short summary stands in for one (see the bottom of this
+module); the two verdicts it produces are the same two.
+
 The report also carries every failed test's title and error message, so a
 verdict names which test failed and why, and `failure_reason` can tell an
 expectation that is waiting for the implementation from a test that throws

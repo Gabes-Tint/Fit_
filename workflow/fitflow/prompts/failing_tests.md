@@ -36,6 +36,32 @@ Fit_ test conventions:
 - Write only the requested test kind: a playwright slice changes only `*.e2e.ts`;
   a vitest slice changes no `*.e2e.ts` files.
 
+When the test kind is `pytest`, the slice is a change to this flow's own
+driver and every convention above is replaced by these:
+
+- The acceptance tests are `workflow/tests/test_*.py`, run with
+  `uv run --project workflow pytest -q <files>` from the repository root.
+  Write them in the suite's own style: a flow test builds the fake world
+  (`world` fixture and its `given_*` helpers in `workflow/tests/conftest.py`),
+  runs `run_flow(world, "<number>")` and asserts on the exit code, the
+  narrated log and the fake world afterwards; a unit test exercises one
+  `fitflow` module directly. Test names read as sentences.
+- The whole of `workflow/tests/` is test-side, so this branch may also add a
+  `given_*` helper to `workflow/tests/conftest.py` and a scripted answer to a
+  fake under `workflow/tests/fakes/`. Nothing outside `workflow/tests/` may
+  change - not a `fitflow` module, not a prompt, not a schema.
+- Only a `workflow/tests/test_*.py` file counts as an acceptance test: pytest
+  collects nothing from `conftest.py` or a fake, so neither may appear in
+  `test_files`.
+- The gates over this branch are the driver's own: `ruff check workflow` and
+  `ruff format --check workflow` (run `uv run --project workflow ruff format
+workflow` over what you wrote), plus `bun x prettier --check` and
+  `bun x cspell --no-progress` over any markdown you changed. The repository's
+  `lint:changed`, `check` and content steps do not run.
+- A test must fail on an `assert`, never on an import pytest cannot resolve:
+  a collection or import error is rejected the same way a thrown TypeError is
+  in a vitest slice.
+
 Rules:
 
 - Write test files only. No implementation code.

@@ -27,6 +27,11 @@ report, or a report contradicting the exit code is an external tool
 failure that stops the run — never an implementation verdict, never a
 success. No full local CI tier is implied.
 
+`run_workflow_gates` covers the third layer. A slice whose code is the
+driver itself changes Python and prose, which none of the bun lanes size or
+run, so ruff, ruff format and - over changed markdown - prettier and cspell
+take their place, in block 1 and in every block 3 turn alike.
+
 A judged failure carries the detail, not just the step names: the gate
 report points at each failed step's captured log, and `duplicates` also
 leaves a jscpd report naming both halves of every clone. Block 3 spent six
