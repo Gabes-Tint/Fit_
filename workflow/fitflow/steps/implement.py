@@ -388,7 +388,10 @@ def _settle(record: RunRecord, piece: SliceRecord, reply: dict, attempt: int) ->
     if rejection is None:
         _freeze(record, piece)
         return True
-    repeated = same_diagnostic(_previous_diagnostic(piece, attempt), rejection.diagnostic)
+    # the last attempt has no successor to save: it is exhaustion either way
+    repeated = attempt < turns.BUDGET and same_diagnostic(
+        _previous_diagnostic(piece, attempt), rejection.diagnostic
+    )
     _record_diagnostic(record, piece, rejection.diagnostic, repeated)
     narrate.headed(f"🩺 #{piece.number} ({piece.layer}) diagnostic: ", rejection.diagnostic)
     if attempt < turns.BUDGET and not repeated:
@@ -445,7 +448,10 @@ def _end_of_budget(
             rejection.diagnostic,
         )
     if rejection.breach is not None:
-        failure = _contract(record, piece, rejection.breach)
+        breach = rejection.breach
+        if repeated:
+            breach = f"{breach} ({turns.unspent_attempts(attempt)})"
+        failure = _contract(record, piece, breach)
         _settle_as_failed(record, piece, failure.why)
         raise failure
     _escalate_or_stop(record, piece, rejection.diagnostic, _budget_note(attempt, repeated))
