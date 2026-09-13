@@ -58,7 +58,11 @@ def line(text: str) -> None:
     """Print one line and append it to the run's log file, or buffer it if
     the story is not known yet."""
     with _lock:
-        print(text)
+        # flushed immediately: stdout is block-buffered once redirected to
+        # a file, and die() needs its stdout line to land before the
+        # stderr line it prints right after, so a captured log reads in
+        # the order things actually happened
+        print(text, flush=True)
         if _log_file is not None:
             _log_file.write(text + "\n")
             _log_file.flush()
