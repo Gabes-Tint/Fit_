@@ -17,10 +17,7 @@ Use only the evidence given here. Do not browse GitHub yourself.
 - procedure_complete (boolean): ordered instructions determine the edits
   without a relevant implementation choice.
 - solution_uncertain (boolean): choosing the solution requires
-  investigation beyond applying a known pattern. It contradicts
-  technical_choice="bounded": a bounded choice is ordinary construction
-  within a known pattern, so when you report that the choice is limited,
-  solution_uncertain is false.
+  investigation beyond applying a known pattern.
 - cause_uncertain (boolean): a defect's cause remains unresolved.
 - technical_choice: "none", "bounded" (ordinary construction within a known
   pattern), or "open" (unresolved architectural/behavioral choice).
@@ -35,6 +32,14 @@ Every boolean needs explicit evidence for its value; omission is not
 name it in `unresolved` instead. The driver rejects unresolved slices and
 stops the run; it never silently picks a rung.
 
+## Contradiction rules the driver enforces
+
+- procedure_complete=true requires technical_choice="none": a complete
+  procedure leaves no relevant implementation choice.
+- solution_uncertain=true is incompatible with technical_choice="bounded":
+  a bounded choice is ordinary construction within a known pattern, so
+  choosing the solution requires no investigation beyond applying it.
+
 ## Reply fields
 
 `slices`: one entry per slice, each with
@@ -42,21 +47,25 @@ stops the run; it never silently picks a rung.
 - layer: "domain" or "ui"
 - signals: exactly the nine signals above
 - evidence: at least one entry per signal, each {signal, source_ref,
-  detail}; signal names one of the nine signals; source_ref must be one of
-  this run's retained inputs, written exactly as:
+  detail}; signal names one of the nine signals; source_ref names exactly
+  one ref per entry, never a comma-joined list, and must be one of this
+  run's retained inputs, written exactly as one of these shapes (<layer> is
+  the slice's own layer, "domain" or "ui"; example uses story #$story_number):
 
-  - run-$story_number/<layer>/brief
-  - run-$story_number/<layer>/acceptance/<n> (0-based index into that
-    slice's acceptance criteria)
-  - run-$story_number/<layer>/issue_context
-  - run-$story_number/<layer>/failing_tests
-  - run-$story_number/<layer>/branch
-  - run-$story_number/<layer>/worktree
-  - run-$story_number/<layer>/team
+  - run-$story_number/<layer>/brief - e.g. run-$story_number/domain/brief
+  - run-$story_number/<layer>/acceptance/<n> - 0-based index into that
+    slice's own acceptance criteria, e.g. run-$story_number/ui/acceptance/0
+    (one index per entry; never run-$story_number/ui/acceptance/0,1,2)
+  - run-$story_number/<layer>/issue_context - e.g.
+    run-$story_number/domain/issue_context
+  - run-$story_number/<layer>/failing_tests - e.g.
+    run-$story_number/ui/failing_tests
+  - run-$story_number/<layer>/branch - e.g. run-$story_number/domain/branch
+  - run-$story_number/<layer>/worktree - e.g. run-$story_number/ui/worktree
+  - run-$story_number/<layer>/team - e.g. run-$story_number/domain/team
   - run-$story_number/ownership
 
-  where <layer> is the slice's own layer. detail explains why the signal
-  has that value.
+  detail explains why the signal has that value.
 
 - unresolved: array of signal names you could not resolve (may be empty)
 - needs_sibling (boolean): true when this slice's acceptance tests cannot
