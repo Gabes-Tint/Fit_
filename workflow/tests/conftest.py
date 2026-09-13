@@ -514,9 +514,41 @@ reviewer:
         self._save()
 
     def given_check_fails_on(self, file: str) -> None:
-        """The repository's type lane rejects this acceptance test file."""
+        """The repository's type lane rejects this file, with its default
+        "argument of the wrong type" error and no TS code - svelte-check's
+        own shape."""
         self._load()
         self.world["check_failure_file"] = file
+        self._save()
+
+    def given_type_errors_in(
+        self, files: list[str], codes: list[str] | None = None, message: str | None = None
+    ) -> None:
+        """Exactly which errors a scripted `check` failure reports: one per
+        file, with the TS code at the same index when `codes` is given.
+        A code makes the fake print tsc's shape, which carries it; no code
+        makes it print svelte-check's, which does not."""
+        self._load()
+        self.world["type_errors"] = [
+            {
+                "file": file,
+                "code": (codes or [])[index] if index < len(codes or []) else "",
+                "message": message or "",
+            }
+            for index, file in enumerate(files)
+        ]
+        self._save()
+
+    def given_lint_errors_in(
+        self, files: list[str], rules: list[str], message: str | None = None
+    ) -> None:
+        """Exactly which problems a scripted `lint:changed` failure reports:
+        one per file, breaking the rule at the same index."""
+        self._load()
+        self.world["lint_errors"] = [
+            {"file": file, "rule": rules[index], "message": message or ""}
+            for index, file in enumerate(files)
+        ]
         self._save()
 
     def given_gate_outcomes(self, **outcomes) -> None:
