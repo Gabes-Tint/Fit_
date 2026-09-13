@@ -63,9 +63,10 @@ def _deliver(story, record: RunRecord) -> None:
         else:
             _review_loop(story, record, path)
         _claims(story, record)
+        _withhold_driver_merge(story, record, path)
         _merge(story, record)
     except FlowFailure as failure:
-        raise FlowFailure(failure.outcome, failure.why, record.story_number, True) from failure
+        raise _rethrown(failure, record) from failure
     except Exception as error:
         raise FlowFailure(
             Outcome.TOOL_FAILED,
@@ -95,6 +96,19 @@ def _persist_terminal(record: RunRecord, terminal: str) -> None:
     with record.transition():
         record.terminal = terminal
         record.save()
+
+
+def _rethrown(failure: FlowFailure, record: RunRecord) -> FlowFailure:
+    """Re-raise a delivery failure against the story. Every stop in block 4
+    labels the story `blocked` - its worktrees and branches are live and a
+    fresh picker must not reuse them - except the one stop that is not a
+    failure at all: a driver change waiting for Gabriel to merge it."""
+    return FlowFailure(
+        failure.outcome,
+        failure.why,
+        record.story_number,
+        failure.outcome is not Outcome.NEEDS_GABRIEL,
+    )
 
 
 def _describe(error: Exception) -> str:
@@ -506,6 +520,62 @@ def _rerun(story, record: RunRecord, branch: str, failed: list[str]) -> None:
         record.delivery["rerun_failed"] = list(failed)
         record.save()
     narrate.line(f"🔁 Reran failed checks for {branch} (run {run_id}): {', '.join(failed)}")
+
+
+# --- the driver's own code ------------------------------------------------------
+
+# An implementation turn may change the driver: `workflow/` is not in block
+# 3's forbidden prefixes, because an agent edits a worktree copy while the
+# running driver is the main checkout's code, and the driver's own suite is
+# CI's "Workflow driver" job. Merging that change is a different act. A
+# driver that merges its own code decides unreviewed what it is allowed to
+# do next, so the merge is Gabriel's, always.
+_DRIVER_PREFIX = "workflow/"
+
+
+def _driver_files(record: RunRecord, path: Path) -> list[str]:
+    """The `workflow/` paths this PR changes against main, read from the
+    actual diff rather than from anything an agent reported."""
+    changed = worktrees.diff_files_against_main(path, record.delivery["integration_branch"])
+    return sorted(name for name in changed if name.startswith(_DRIVER_PREFIX))
+
+
+def _withhold_driver_merge(story, record: RunRecord, path: Path) -> None:
+    """Between green CI and the merge: a pull request that changes the
+    driver is handed to Gabriel instead of merged."""
+    files = _driver_files(record, path)
+    if files:
+        _hand_merge_to_gabriel(story, record, files)
+
+
+def _hand_merge_to_gabriel(story, record: RunRecord, files: list[str]) -> None:
+    """Stop with NEEDS_GABRIEL, leaving the PR open and every worktree in
+    place: the work is finished and green, and only the merge is withheld.
+    Not `blocked` - there is nothing here for a fresh run to retry."""
+    pr_number = int(record.delivery["pr_number"])
+    named = ", ".join(files)
+    _stop_for_gabriel(story, f"PR #{pr_number} changes the driver")
+    body = (
+        f"PR #{pr_number} changes the driver ({named}); CI is green. "
+        "The driver never merges its own code: merge it yourself, then close "
+        f"this run's worktrees with `go.py {story.number} --reset`"
+    )
+    narrate.comment_posted(story.number, body)
+    github.comment(story.number, body)
+    narrate.line(
+        f"🛑 PR #{pr_number} changes the driver ({named}) — Gabriel merges it, not the run"
+    )
+    with record.transition():
+        record.delivery["held_for_gabriel"] = files
+        record.terminal = Outcome.NEEDS_GABRIEL.name
+        record.save()
+    raise FlowFailure(
+        Outcome.NEEDS_GABRIEL,
+        f"PR #{pr_number} changes the driver ({named}); it is green and open, "
+        "and the merge is Gabriel's",
+        story.number,
+        add_blocked=False,
+    )
 
 
 def _merge(story, record: RunRecord) -> None:

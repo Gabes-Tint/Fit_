@@ -316,9 +316,16 @@ nothing at all is the same repairable diagnostic. Any real-diff verdict -
 scope, layer boundary, acceptance bytes, gates - takes precedence over it.
 That diff is the complete delta of the branch and worktree against the
 retained failing-test commit, recomputed at every validation: a prohibited
-gate, threshold, suppression-baseline, lockfile or workflow change (#379)
-cannot be hidden by the timing of a retry commit or an uncommitted edit.
-Any local commit happens under driver control before final validation; a
+gate, threshold, suppression-baseline, lockfile or CI-workflow change
+(#379) cannot be hidden by the timing of a retry commit or an uncommitted
+edit. What is prohibited is what judges the work: everything under
+`quality/`, `.github/` and `scripts/`, the lockfiles, the tool
+configuration files and `workflow/agents.yaml`. The driver's own code under
+`workflow/` is not prohibited - the agent edits a worktree copy while the
+running driver is the main checkout's code, and the driver's suite is CI's
+own "Workflow driver" job, not a block 3 gate - so a slice may implement a
+change to the driver. Merging it is what the driver will not do: see the
+delivery gates. Any local commit happens under driver control before final validation; a
 successful slice has a clean, recorded implementation commit and evidence for
 those exact bytes. Implementation agents do not push or open PRs. Block 1's
 already-pushed failing-test branch is an existing input, not delivery approval.
@@ -539,12 +546,24 @@ never green. On red, the driver reruns the failed checks exactly once
 record) and polls again; a second red stops the run with
 `CAPACITY_EXHAUSTED` and `blocked` - "then investigate" is a human act.
 
-The merge is a fixed command shape - `gh pr merge <n>`, merge queue, no
-strategy flag, never update-branch - executed only behind the pre-merge
-barrier: the PR exists for this story, its head is the integration branch's
-current push, all-green is green after at most one rerun, and the reviewer
-verdict (or the mechanical path) is recorded. Merge unreachability is
-enforced by code order, not convention. After the merge the driver comments
+The merge is withheld for one diff: after CI is green and before the merge
+command, the driver reads the PR's own diff against main, and a path under
+`workflow/` means this pull request changes the driver. A driver that
+merges its own code decides unreviewed what it is allowed to do next, so
+that merge is Gabriel's: the run labels the story `needs-gabriel`, assigns
+him, comments naming the driver files, records
+`delivery.held_for_gabriel`, and stops with `NEEDS_GABRIEL` (exit 11). The
+PR stays open, every worktree and branch stays in place, and the story is
+not `blocked` - nothing here is for a fresh run to retry. The story is
+closed by the PR's `Closes #N` when Gabriel merges it; the run's worktrees
+are cleaned up with `go.py <n> --reset`.
+
+Otherwise the merge is a fixed command shape - `gh pr merge <n>`, merge
+queue, no strategy flag, never update-branch - executed only behind the
+pre-merge barrier: the PR exists for this story, its head is the
+integration branch's current push, all-green is green after at most one
+rerun, and the reviewer verdict (or the mechanical path) is recorded. Merge
+unreachability is enforced by code order, not convention. After the merge the driver comments
 on the story with the PR and the delivered commits, records the terminal
 `DELIVERED`, and continues into block 5 in the same invocation; the story
 keeps `in-progress` until block 5's cleanup removes it.

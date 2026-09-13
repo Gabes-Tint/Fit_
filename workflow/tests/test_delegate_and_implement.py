@@ -598,7 +598,11 @@ def test_modifying_an_acceptance_test_is_a_contract_stop(world):
     assert "src/lib/delegate.spec.ts was modified" in result.stdout
 
 
-def test_touching_workflow_or_gate_files_is_a_contract_stop(world):
+def test_touching_the_gate_files_is_a_contract_stop(world):
+    """`quality/`, `.github/` and `scripts/` are the gates the agent is
+    judged by, so they stay out of reach of an implementation turn.
+    `workflow/` deliberately is not one of them: see
+    test_a_driver_change_is_implemented_but_handed_to_gabriel_to_merge."""
     _given_planned_story(world, 441)
     _delegate_mechanic(world, 441)
     _implement(
@@ -615,6 +619,48 @@ def test_touching_workflow_or_gate_files_is_a_contract_stop(world):
 
     assert result.returncode == 22, result.stdout + result.stderr
     assert "forbidden file changed: quality/" in result.stdout
+
+
+def test_touching_the_repository_scripts_is_a_contract_stop(world):
+    _given_planned_story(world, 441)
+    _delegate_mechanic(world, 441)
+    _implement(
+        world,
+        "story-441-domain",
+        "mechanic",
+        files={
+            "src/lib/delegate.ts": "export const delegate = true;\n",
+            "scripts/quality/gate.ts": "// loosened\n",
+        },
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 22, result.stdout + result.stderr
+    assert "forbidden file changed: scripts/" in result.stdout
+
+
+def test_a_domain_slice_may_implement_driver_files(world):
+    """The driver's own code is not a forbidden prefix: an agent may
+    implement a change to `workflow/` in a domain slice, and block 3
+    validates it like any other domain file. Block 4 is where such a change
+    is held back from the merge."""
+    _given_planned_story(world, 441)
+    _delegate_mechanic(world, 441)
+    _implement(
+        world,
+        "story-441-domain",
+        "mechanic",
+        files={"workflow/fitflow/retry.py": "RETRIES = 1\n"},
+    )
+
+    result = run_flow(world)
+
+    assert "forbidden file changed" not in result.stdout
+    assert "🏁 Implemented #441" in result.stdout
+    # block 4 then holds the merge itself: the driver never merges its own
+    # code (test_a_driver_change_is_implemented_but_handed_to_gabriel_to_merge)
+    assert result.returncode == 11, result.stdout + result.stderr
 
 
 def test_a_phantom_reported_file_is_corrected_not_a_breach(world):
@@ -1608,12 +1654,16 @@ def test_a_prohibited_file_in_a_later_correction_is_rejected_from_the_branch_bas
     assert "forbidden file changed: quality/suppression-baseline.json" in rejected["why"]
 
 
-def test_prohibited_policy_workflow_and_lockfile_changes_stop_the_slice(world):
+def test_prohibited_policy_and_lockfile_changes_stop_the_slice(world):
+    """The thresholds, the lockfiles, the CI workflows and the repository's
+    own scripts are the gates the agent is judged by. The driver's own
+    `workflow/` code is deliberately not on this list - an agent may
+    implement a change to it, and block 4 withholds only the merge."""
     for index, forbidden in enumerate(
         (
             "quality/thresholds.json",
             "bun.lock",
-            "workflow/go.py",
+            ".github/workflows/ci.yml",
             "scripts/quality/eslint.ts",
         )
     ):

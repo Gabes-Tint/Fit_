@@ -9,6 +9,7 @@ import json
 import subprocess
 
 from conftest import (
+    GABRIEL_LOGIN,
     builder_signals,
     delegate_slice,
     mechanic_signals,
@@ -246,6 +247,61 @@ def test_reviewer_exhaustion_stops_and_needs_gabriel(world):
     assert len(fix_attempts) == 2
     assert fix_attempts[0] != fix_attempts[1]
     assert fix_attempts[1] == fix_attempts[0] + 1
+
+
+def test_a_driver_change_is_implemented_but_handed_to_gabriel_to_merge(world):
+    """An agent may implement changes to the driver itself - it edits a
+    worktree copy, and the driver's own suite is CI's job, not block 3's -
+    but the driver never merges its own code. The PR is opened, CI runs,
+    and then the run stops for Gabriel with everything left in place."""
+    _given_planned_story(world, 1000)
+    _delegate(world, 1000, "domain", mechanic_signals())
+    _implement(
+        world,
+        "story-1000-domain",
+        "mechanic",
+        {
+            "workflow/fitflow/retry.py": "RETRIES = 1\n",
+            "src/lib/delivered.ts": "export const ok = 1;\n",
+        },
+    )
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 11, result.stdout + result.stderr
+    assert "changes the driver" in result.stdout
+    assert "needs-gabriel" in world.issue(1000)["labels"]
+    assert "blocked" not in world.issue(1000)["labels"]
+    assert GABRIEL_LOGIN in world.issue(1000)["assignees"]
+    assert _pr(world, 500)["state"] == "OPEN"
+    assert world.slice_worktree_path("story-1000-domain").exists()
+    assert world.slice_worktree_path("story-1000").exists()
+    held = [
+        comment
+        for comment in world.issue(1000)["comments"]
+        if "workflow/fitflow/retry.py" in comment
+    ]
+    assert held, world.issue(1000)["comments"]
+    assert "merge it yourself" in held[0]
+    state = json.loads((world.home / "runs" / "story-1000.json").read_text())
+    assert state["delivery"]["held_for_gabriel"] == ["workflow/fitflow/retry.py"]
+    assert state["terminal"] == "NEEDS_GABRIEL"
+
+
+def test_a_change_that_leaves_the_driver_alone_still_merges(world):
+    """The withheld merge is only for `workflow/` paths: an ordinary change
+    goes through the merge queue exactly as before."""
+    _given_planned_story(world, 1000)
+    _delegate(world, 1000, "domain", mechanic_signals())
+    _implement(
+        world, "story-1000-domain", "mechanic", {"src/lib/delivered.ts": "export const ok = 1;\n"}
+    )
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "changes the driver" not in result.stdout
+    assert _pr(world, 500)["state"] == "MERGED"
 
 
 def test_ci_red_is_rerun_once_then_green_merges(world):
