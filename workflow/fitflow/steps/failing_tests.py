@@ -10,7 +10,17 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from fitflow import acceptance, agents, audit, gates, github, narrate, turns, worktrees
+from fitflow import (
+    acceptance,
+    agents,
+    audit,
+    failure_reason,
+    gates,
+    github,
+    narrate,
+    turns,
+    worktrees,
+)
 from fitflow.acceptance import TEST_FILE
 from fitflow.outcome import FlowFailure, Outcome
 from fitflow.slice import Slice
@@ -155,9 +165,10 @@ def _verify_pushed(
     _check_files_match_test_kind(slug, changed, test_kind, story_number)
     _check_test_quality(slug, path, test_files, story_number)
     _check_failing_branch_lint(path, story_number)
+    _check_failing_branch_types(path, story_number)
     narrate.line(
         f"🔍 Verify #{story_number}: tree clean ✔ · pushed ✔ · files on branch ✔ · "
-        "only tests ✔ · lint ✔"
+        "only tests ✔ · lint ✔ · types ✔"
     )
 
 
@@ -184,6 +195,31 @@ def _check_failing_branch_lint(path, story_number: int) -> None:
     diagnostic = gates.run_changed_lint(path, story_number)
     if diagnostic is not None:
         raise FlowFailure(Outcome.TESTS_INVALID, diagnostic, story_number)
+
+
+def _check_failing_branch_types(path, story_number: int) -> None:
+    """A test that calls a helper with an argument of the wrong type throws
+    instead of asserting, so it can never pass however the behavior is
+    implemented (#399). The repository's own type lane sees that before the
+    tests become immutable inputs."""
+    diagnostic = gates.run_type_check(path, story_number)
+    if diagnostic is not None:
+        raise FlowFailure(Outcome.TESTS_INVALID, diagnostic, story_number)
+
+
+def _check_failures_are_expectations(verdict, story_number: int) -> None:
+    """Failing is not enough: each test must fail on an expectation waiting
+    for the behavior. One that throws is broken, and no implementation can
+    make it pass."""
+    broken = verdict.defects
+    if not broken:
+        return
+    raise FlowFailure(
+        Outcome.TESTS_INVALID,
+        "this test fails because it is broken, not because the feature is missing - "
+        + failure_reason.describe(broken),
+        story_number,
+    )
 
 
 def _check_reported_files_are_on_branch(
@@ -226,12 +262,13 @@ def _verify_tests_fail(path, test_files: list[str], story_number: int) -> None:
             diagnostic = acceptance.rejects_local_stand_in(path / test_file)
             if diagnostic:
                 raise FlowFailure(Outcome.TESTS_DO_NOT_FAIL, diagnostic, story_number)
-    ok, why, repairable = acceptance.run_and_check_failing(path, test_files)
-    if not ok:
-        if not repairable:
-            raise RuntimeError(why)
-        raise FlowFailure(Outcome.TESTS_DO_NOT_FAIL, why, story_number)
+    verdict = acceptance.run_and_check_failing(path, test_files)
+    if not verdict.ok:
+        if not verdict.repairable:
+            raise RuntimeError(verdict.why)
+        raise FlowFailure(Outcome.TESTS_DO_NOT_FAIL, verdict.why, story_number)
     narrate.line(f"🧪 {', '.join(test_files)} → failed, as it should ✔")
+    _check_failures_are_expectations(verdict, story_number)
 
 
 def _comment(story_number: int, slug: str, path, test_files: list[str], why: str) -> None:

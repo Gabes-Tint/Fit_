@@ -1,52 +1,72 @@
 """Runs the mechanic's test files in the slice worktree and judges them from
 the test runner's own JSON report, never from the process exit code (a
 runner also exits non-zero for "no tests found" or a bad --project, which is
-not the same failure as an acceptance test with no implementation yet)."""
+not the same failure as an acceptance test with no implementation yet).
+
+The report also carries every failed test's title and error message, so a
+verdict names which test failed and why, and `failure_reason` can tell an
+expectation that is waiting for the implementation from a test that throws
+and can never pass."""
 
 import json
 import re
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
+from fitflow import failure_reason
+from fitflow.failure_reason import Failure
+
 TEST_FILE = re.compile(r"(\.spec\.ts|\.test\.ts|\.svelte\.spec\.ts|\.e2e\.ts)$")
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """One runner check: whether it passed, the diagnostic when it did not,
+    whether that diagnostic is agent-repairable, and every failed test the
+    report named - carried on a passing verdict too, because block 1 accepts
+    tests only after judging why they failed."""
+
+    ok: bool
+    why: str = ""
+    repairable: bool = False
+    failures: tuple[Failure, ...] = ()
+
+    @property
+    def defects(self) -> list[Failure]:
+        return failure_reason.defects(self.failures)
 
 
 def _is_e2e(path: str) -> bool:
     return path.endswith(".e2e.ts") or path.endswith(".e2e.js")
 
 
-def run_and_check_failing(worktree: Path, test_files: list[str]) -> tuple[bool, str, bool]:
-    """Return (ok, diagnostic, repairable). An unparsable runner report is
-    tooling failure; a missing or passing requested test is mechanic-repairable."""
-    vitest_files = [f for f in test_files if not _is_e2e(f)]
-    e2e_files = [f for f in test_files if _is_e2e(f)]
-    if vitest_files:
-        ok, why, repairable = _check_vitest(worktree, vitest_files)
-        if not ok:
-            return False, why, repairable
-    if e2e_files:
-        ok, why, repairable = _check_playwright(worktree, e2e_files)
-        if not ok:
-            return False, why, repairable
-    return True, "", False
+def run_and_check_failing(worktree: Path, test_files: list[str]) -> Verdict:
+    """An unparsable runner report is tooling failure; a missing or passing
+    requested test is mechanic-repairable."""
+    return _run_both(worktree, test_files, _check_vitest, _check_playwright)
 
 
-def run_and_check_passing(worktree: Path, test_files: list[str]) -> tuple[bool, str, bool]:
+def run_and_check_passing(worktree: Path, test_files: list[str]) -> Verdict:
     """The block 2 gate: every acceptance test must now run and pass.
     A real failed assertion (or a broken import) is implementation-
     repairable; an unparsable report or a file the runner never saw is a
     tooling failure, never an implementation verdict."""
+    return _run_both(worktree, test_files, _check_vitest_passing, _check_playwright_passing)
+
+
+def _run_both(worktree: Path, test_files: list[str], vitest_check, playwright_check) -> Verdict:
     vitest_files = [f for f in test_files if not _is_e2e(f)]
     e2e_files = [f for f in test_files if _is_e2e(f)]
-    if vitest_files:
-        ok, why, repairable = _check_vitest_passing(worktree, vitest_files)
-        if not ok:
-            return False, why, repairable
-    if e2e_files:
-        ok, why, repairable = _check_playwright_passing(worktree, e2e_files)
-        if not ok:
-            return False, why, repairable
-    return True, "", False
+    failures: list[Failure] = []
+    for files, check in ((vitest_files, vitest_check), (e2e_files, playwright_check)):
+        if not files:
+            continue
+        verdict = check(worktree, files)
+        failures.extend(verdict.failures)
+        if not verdict.ok:
+            return Verdict(False, verdict.why, verdict.repairable, tuple(failures))
+    return Verdict(True, failures=tuple(failures))
 
 
 def _parse_json(stdout: str) -> dict | None:
@@ -125,23 +145,19 @@ def rejects_browser_module_import(path: Path) -> str | None:
     return None
 
 
-def _check_vitest(worktree: Path, files: list[str]) -> tuple[bool, str, bool]:
-    result = subprocess.run(
-        ["bun", "x", "vitest", "run", "--reporter=json", *files],
-        cwd=worktree,
-        capture_output=True,
-        text=True,
-    )
-    report = _parse_json(result.stdout)
+def _check_vitest(worktree: Path, files: list[str]) -> Verdict:
+    report = _vitest_report(worktree, files)
     if report is None:
-        return False, f"vitest produced no parsable JSON report for {', '.join(files)}", False
+        return Verdict(False, f"vitest produced no parsable JSON report for {', '.join(files)}")
     entries = report.get("testResults", [])
+    failures: list[Failure] = []
     for f in files:
         entry = next((e for e in entries if str(e.get("name", "")).endswith(f)), None)
+        failures.extend(_vitest_failures(entry, f))
         diagnostic = _check_vitest_entry(entry, f)
         if diagnostic:
-            return False, diagnostic, True
-    return True, "", False
+            return Verdict(False, diagnostic, True, tuple(failures))
+    return Verdict(True, failures=tuple(failures))
 
 
 def _check_vitest_entry(entry: dict | None, filename: str) -> str | None:
@@ -157,51 +173,140 @@ def _check_vitest_entry(entry: dict | None, filename: str) -> str | None:
     return None
 
 
-def _check_vitest_passing(worktree: Path, files: list[str]) -> tuple[bool, str, bool]:
-    result = subprocess.run(
-        ["bun", "x", "vitest", "run", "--reporter=json", *files],
-        cwd=worktree,
-        capture_output=True,
-        text=True,
-    )
-    report = _parse_json(result.stdout)
+def _check_vitest_passing(worktree: Path, files: list[str]) -> Verdict:
+    report = _vitest_report(worktree, files)
     if report is None:
-        return False, f"vitest produced no parsable JSON report for {', '.join(files)}", False
+        return Verdict(False, f"vitest produced no parsable JSON report for {', '.join(files)}")
     entries = report.get("testResults", [])
     for f in files:
         entry = next((e for e in entries if str(e.get("name", "")).endswith(f)), None)
         if entry is None:
-            return False, f"vitest never ran {f} - no matching test file", False
+            return Verdict(False, f"vitest never ran {f} - no matching test file")
         assertions = entry.get("assertionResults", [])
         if not assertions:
-            return False, f"vitest {f} failed before running any assertion", True
+            return Verdict(False, f"vitest {f} failed before running any assertion", True)
         if entry.get("status") != "passed":
-            return False, f"vitest {f} still fails: the implementation is not done yet", True
-    return True, "", False
+            failures = _vitest_failures(entry, f)
+            return Verdict(False, _still_failing("vitest", f, failures), True, tuple(failures))
+    return Verdict(True)
 
 
-def _check_playwright_passing(worktree: Path, files: list[str]) -> tuple[bool, str, bool]:
-    result = subprocess.run(
-        ["bun", "x", "playwright", "test", *files, "--project=mobile-chrome", "--reporter=json"],
-        cwd=worktree,
-        capture_output=True,
-        text=True,
-    )
-    report = _parse_json(result.stdout)
+def _check_playwright(worktree: Path, files: list[str]) -> Verdict:
+    report = _playwright_report(worktree, files)
     if report is None:
-        return (
-            False,
-            f"playwright produced no parsable JSON report for {', '.join(files)}",
-            False,
-        )
+        return Verdict(False, f"playwright produced no parsable JSON report for {', '.join(files)}")
+    specs = list(_flatten_specs(report.get("suites", [])))
+    failures: list[Failure] = []
+    for f in files:
+        matching = [spec for spec in specs if str(spec.get("file", "")).endswith(f)]
+        failures.extend(_playwright_failures(matching, report, f))
+        if not matching:
+            return Verdict(False, f"playwright never ran {f} - no matching spec", True)
+        if not _any_failed(matching):
+            return Verdict(False, f"playwright {f} passed with no implementation", True)
+    return Verdict(True, failures=tuple(failures))
+
+
+def _check_playwright_passing(worktree: Path, files: list[str]) -> Verdict:
+    report = _playwright_report(worktree, files)
+    if report is None:
+        return Verdict(False, f"playwright produced no parsable JSON report for {', '.join(files)}")
     specs = list(_flatten_specs(report.get("suites", [])))
     for f in files:
         matching = [spec for spec in specs if str(spec.get("file", "")).endswith(f)]
         if not matching:
-            return False, f"playwright never ran {f} - no matching spec", False
+            return Verdict(False, f"playwright never ran {f} - no matching spec")
         if not _all_passed(matching):
-            return False, f"playwright {f} still fails: the implementation is not done yet", True
-    return True, "", False
+            failures = _playwright_failures(matching, report, f)
+            return Verdict(False, _still_failing("playwright", f, failures), True, tuple(failures))
+    return Verdict(True)
+
+
+def _still_failing(runner: str, filename: str, failures: list[Failure]) -> str:
+    """The implementer only learns what to fix when the diagnostic carries
+    the runner's own words: which test, and the message it failed with."""
+    detail = failure_reason.describe(failures)
+    tail = f": {detail}" if detail else ""
+    return f"{runner} {filename} still fails, the implementation is not done yet{tail}"
+
+
+def _vitest_report(worktree: Path, files: list[str]) -> dict | None:
+    return _run_report(worktree, ["bun", "x", "vitest", "run", "--reporter=json", *files])
+
+
+def _playwright_report(worktree: Path, files: list[str]) -> dict | None:
+    return _run_report(
+        worktree,
+        ["bun", "x", "playwright", "test", *files, "--project=mobile-chrome", "--reporter=json"],
+    )
+
+
+def _run_report(worktree: Path, command: list[str]) -> dict | None:
+    result = subprocess.run(command, cwd=worktree, capture_output=True, text=True)
+    return _parse_json(result.stdout)
+
+
+def _vitest_failures(entry: dict | None, filename: str) -> list[Failure]:
+    """vitest reports a failed test's messages in `failureMessages`, and a
+    file that died before any assertion only in the entry's own `message`."""
+    if entry is None:
+        return []
+    assertions = entry.get("assertionResults") or []
+    if not assertions:
+        return [Failure(filename, "", str(entry.get("message") or ""))]
+    failures = []
+    for assertion in assertions:
+        if assertion.get("status") != "failed":
+            continue
+        title = str(assertion.get("title") or assertion.get("fullName") or "")
+        messages = assertion.get("failureMessages") or [""]
+        failures.extend(Failure(filename, title, str(message)) for message in messages)
+    return failures
+
+
+def _playwright_failures(specs: list[dict], report: dict, filename: str) -> list[Failure]:
+    """Playwright reports a failed attempt's error under the spec's result,
+    and a file that never loaded only in the report's top-level `errors`."""
+    failures = [
+        failure
+        for spec in specs
+        for test in spec.get("tests", [])
+        for result in test.get("results", [])
+        if result.get("status") not in (None, "passed", "skipped")
+        for failure in [_playwright_failure(spec, result, filename)]
+    ]
+    failures.extend(_load_failures(report, filename))
+    return failures
+
+
+def _playwright_failure(spec: dict, result: dict, filename: str) -> Failure:
+    error = result.get("error") or next(iter(result.get("errors") or []), {})
+    return Failure(
+        filename,
+        str(spec.get("title") or ""),
+        str(error.get("message") or ""),
+        _error_location(result, error),
+    )
+
+
+def _error_location(result: dict, error: dict) -> str:
+    for location in (error.get("location"), result.get("errorLocation")):
+        if isinstance(location, dict) and location.get("file"):
+            return str(location["file"])
+    return ""
+
+
+def _load_failures(report: dict, filename: str) -> list[Failure]:
+    """A spec that never loaded produces no result at all; its error sits at
+    the top of the report, attributed by the location it names."""
+    failures = []
+    for error in report.get("errors") or []:
+        location = error.get("location") if isinstance(error, dict) else None
+        where = str(location.get("file", "")) if isinstance(location, dict) else ""
+        message = str(error.get("message") or "") if isinstance(error, dict) else ""
+        if where.endswith(filename) or (not where and filename in message):
+            failures.append(Failure(filename, "", message, where))
+    return failures
 
 
 def _all_passed(specs: list[dict]) -> bool:
@@ -211,30 +316,6 @@ def _all_passed(specs: list[dict]) -> bool:
                 if result.get("status") != "passed":
                     return False
     return True
-
-
-def _check_playwright(worktree: Path, files: list[str]) -> tuple[bool, str, bool]:
-    result = subprocess.run(
-        ["bun", "x", "playwright", "test", *files, "--project=mobile-chrome", "--reporter=json"],
-        cwd=worktree,
-        capture_output=True,
-        text=True,
-    )
-    report = _parse_json(result.stdout)
-    if report is None:
-        return (
-            False,
-            f"playwright produced no parsable JSON report for {', '.join(files)}",
-            False,
-        )
-    specs = list(_flatten_specs(report.get("suites", [])))
-    for f in files:
-        matching = [spec for spec in specs if str(spec.get("file", "")).endswith(f)]
-        if not matching:
-            return False, f"playwright never ran {f} - no matching spec", True
-        if not _any_failed(matching):
-            return False, f"playwright {f} passed with no implementation", True
-    return True, "", False
 
 
 def _flatten_specs(suites: list[dict]):

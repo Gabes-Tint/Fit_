@@ -21,6 +21,7 @@ from fitflow import (
     acceptance,
     agents,
     assignment,
+    failure_reason,
     gates,
     github,
     layers,
@@ -451,11 +452,14 @@ def _validate_turn(
     _check_reported_files(record, piece, reply["changed_files"], changed)
     _check_scope(record, piece, changed)
     _check_acceptance_unchanged(record, piece, path, changed)
-    ok, why, repairable = acceptance.run_and_check_passing(path, piece.test_files)
-    if not ok:
-        if not repairable:
-            raise FlowFailure(Outcome.TOOL_FAILED, why, record.story_number, add_blocked=True)
-        return why
+    verdict = acceptance.run_and_check_passing(path, piece.test_files)
+    if not verdict.ok:
+        if not verdict.repairable:
+            raise FlowFailure(
+                Outcome.TOOL_FAILED, verdict.why, record.story_number, add_blocked=True
+            )
+        _check_acceptance_is_sound(record, piece, verdict)
+        return verdict.why
     gate_diagnostic = gates.run_turn_gates(path, record.story_number)
     if gate_diagnostic is not None:
         return gate_diagnostic
@@ -464,6 +468,28 @@ def _validate_turn(
         "no gate or workflow files ✔"
     )
     return None
+
+
+def _check_acceptance_is_sound(record: RunRecord, piece: SliceRecord, verdict) -> None:
+    """An acceptance test that throws inside itself or a test helper is
+    defective and no implementation can make it pass, so the run stops and
+    names block 1 rather than spending the implementer's corrections on it.
+    A throw from product code is an ordinary implementation bug and stays
+    with the correction loop."""
+    broken = [
+        failure
+        for failure in verdict.defects
+        if failure_reason.blames_the_test(failure, piece.test_files)
+    ]
+    if not broken:
+        return
+    raise FlowFailure(
+        Outcome.TESTS_INVALID,
+        f"{piece.slug}: block 1 accepted a defective acceptance test - "
+        f"{failure_reason.describe(broken)}; repair the test and run the story again",
+        record.story_number,
+        add_blocked=True,
+    )
 
 
 def _check_worktree_state(

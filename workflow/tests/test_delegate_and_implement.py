@@ -1526,3 +1526,99 @@ def test_prohibited_policy_workflow_and_lockfile_changes_stop_the_slice(world):
         assert f"forbidden file changed: {forbidden}" in result.stdout
         state = json.loads((world.home / "runs" / f"story-{story_number}.json").read_text())
         assert state["terminal"] == "AGENT_BROKE_CONTRACT"
+
+
+# --- block 3 tells a missing implementation from a defective test (issue #399) ---
+
+
+def test_the_correction_diagnostic_carries_the_failing_test_and_its_message(world):
+    _given_planned_story(world, 493)
+    test_file = "src/lib/delegate.spec.ts"
+    _delegate_mechanic(world, 493)
+    world.scripted_test_outcome(test_file, ["fail", "fail", "pass"])
+    _implement(
+        world,
+        "story-493-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const wrong = true;\n"},
+    )
+    _implement(
+        world,
+        "story-493-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = true;\n"},
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "vitest src/lib/delegate.spec.ts still fails" in result.stdout
+    # the title and the runner's own message, not just the file name
+    assert "the behavior this slice asks for" in result.stdout
+    assert "expected undefined to be 42" in result.stdout
+    correction_prompt = _talks(world, "mechanic", "story-493-domain")[2]["prompt"]
+    assert "the behavior this slice asks for" in correction_prompt
+    assert "expected undefined to be 42" in correction_prompt
+
+
+def test_an_acceptance_test_that_throws_during_implementation_stops_the_run(world):
+    _given_planned_story(world, 494)
+    test_file = "src/lib/delegate.spec.ts"
+    _delegate_mechanic(world, 494)
+    # block 1 saw an honest expectation; the test throws only once the
+    # implementation exists, so no implementation can ever make it pass
+    world.scripted_test_outcome(test_file, ["fail", "fail_defect"])
+    _implement(
+        world,
+        "story-494-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = true;\n"},
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 31, result.stdout + result.stderr
+    assert "TESTS_INVALID (exit 31)" in result.stdout
+    assert "block 1 accepted a defective acceptance test" in result.stdout
+    assert "run the story again" in result.stdout
+    assert "AGENT_BROKE_CONTRACT" not in result.stdout
+    assert "blocked" in world.issue(494)["labels"]
+    state = json.loads((world.home / "runs" / "story-494.json").read_text())
+    assert state["terminal"] == "TESTS_INVALID"
+    # the stop consumed no correction: the one attempt that ran is all there is
+    assert state["slices"]["domain"]["attempts"] == 1
+    assert state["slices"]["domain"]["diagnostics"] == []
+    assert len(_talks(world, "mechanic", "story-494-domain")) == 2
+
+
+def test_product_code_that_throws_stays_an_ordinary_correction(world):
+    _given_planned_story(world, 495)
+    test_file = "src/lib/delegate.spec.ts"
+    _delegate_mechanic(world, 495)
+    # the same thrown TypeError, but raised inside the product module: that
+    # is the implementation's bug and its own correction loop owns it
+    world.scripted_test_outcome(
+        test_file,
+        ["fail", "fail_defect", "pass"],
+        message="TypeError: Cannot read properties of undefined (reading 'units')",
+        location="src/lib/delegate.ts",
+    )
+    _implement(
+        world,
+        "story-495-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const wrong = true;\n"},
+    )
+    _implement(
+        world,
+        "story-495-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = true;\n"},
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "block 1 accepted a defective acceptance test" not in result.stdout
+    assert "Cannot read properties of undefined (reading 'units')" in result.stdout
+    assert "correcting after attempt 1" in result.stdout

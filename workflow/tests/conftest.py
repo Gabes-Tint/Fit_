@@ -453,11 +453,33 @@ reviewer:
         self.world.setdefault("gh_fail_on_body", []).extend(substrings)
         self._save()
 
-    def scripted_test_outcome(self, file: str, outcome: str | list[str]) -> None:
-        """Outcome: fail, pass, import_error, not_found, or tool_error.
-        A list is consumed one value per runner invocation."""
+    def scripted_test_outcome(
+        self,
+        file: str,
+        outcome: str | list[str],
+        message: str | None = None,
+        location: str | None = None,
+    ) -> None:
+        """Outcome: fail, fail_defect, pass, import_error, not_found, or
+        tool_error. A list is consumed one value per runner invocation.
+        `message` and `location` are the error a `fail_defect` invocation
+        reports and the file it says threw it; a plain `fail` always reports
+        an ordinary failed expectation."""
         self._load()
         self.world.setdefault("test_outcomes", {})[file] = outcome
+        scripted = {}
+        if message is not None:
+            scripted["message"] = message
+        if location is not None:
+            scripted["location"] = location
+        if scripted:
+            self.world.setdefault("test_messages", {})[file] = scripted
+        self._save()
+
+    def given_check_fails_on(self, file: str) -> None:
+        """The repository's type lane rejects this acceptance test file."""
+        self._load()
+        self.world["check_failure_file"] = file
         self._save()
 
     def given_gate_outcomes(self, **outcomes) -> None:

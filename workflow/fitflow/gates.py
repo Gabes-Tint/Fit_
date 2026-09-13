@@ -1,6 +1,6 @@
 """The turn gates: `bun run verify:changed` and, for block 1's
-acceptance-test branch, `bun run lint:changed` - the repository's own
-diff-sized gates.
+acceptance-test branch, `bun run lint:changed` and `bun run check` - the
+repository's own gates.
 
 `run_turn_gates` runs one command in the slice worktree that sizes and runs
 everything the turn's actual diff needs — the static checks, the specs that
@@ -10,9 +10,10 @@ dependency and route mapping from `scripts/quality/verify-changed-plan.ts`.
 The driver adds no derivation of its own, so its view can never drift from
 the repo's.
 
-`run_changed_lint` covers block 1: acceptance tests become immutable
-implementation inputs, so they must pass their own change-scoped lint before
-the branch is accepted, and the mechanic gets the diagnostic.
+`run_changed_lint` and `run_type_check` cover block 1: acceptance tests
+become immutable implementation inputs, so they must pass their own
+change-scoped lint and the repository's type lane before the branch is
+accepted, and the mechanic gets the diagnostic.
 
 Verdicts come from the gate's own report
 (`reports/quality/gate-verify-changed.json`), never from a missing one:
@@ -66,6 +67,42 @@ def run_changed_lint(worktree: Path, story_number: int) -> str | None:
     raise FlowFailure(
         Outcome.TOOL_FAILED,
         f"lint:changed crashed (exit {result.returncode}): {output[-800:]}",
+        story_number,
+        add_blocked=True,
+    )
+
+
+def run_type_check(worktree: Path, story_number: int) -> str | None:
+    """Run the repository's own type lane (`bun run check`: `svelte-kit sync`
+    then `svelte-check` against `tsconfig.json`) over the failing-test branch
+    and return a repairable diagnostic, or None when it passes.
+
+    `check` is a static step of both CI and `verify:changed`, so main is green
+    on it by construction and this branch adds only test files: a type error
+    here is the acceptance tests'. Exit 1 with the checker's output is a
+    repairable diagnostic; any other exit is an external tool failure."""
+    try:
+        result = subprocess.run(
+            ["bun", "run", "check"],
+            cwd=worktree,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as error:
+        raise FlowFailure(
+            Outcome.TOOL_FAILED, f"check could not run: {error}", story_number
+        ) from error
+    output = "\n".join(
+        stream.strip() for stream in (result.stderr, result.stdout) if stream.strip()
+    )
+    if result.returncode == 0:
+        narrate_gates(0, "check")
+        return None
+    if result.returncode == 1:
+        return f"check found type errors in the acceptance tests: {output[-800:]}"
+    raise FlowFailure(
+        Outcome.TOOL_FAILED,
+        f"check crashed (exit {result.returncode}): {output[-800:]}",
         story_number,
         add_blocked=True,
     )
