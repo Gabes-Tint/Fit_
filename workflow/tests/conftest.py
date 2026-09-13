@@ -347,6 +347,32 @@ reviewer:
         self.world.setdefault("gh_failures", []).extend(substrings)
         self._save()
 
+    def gh_fails_transiently(
+        self,
+        substring: str,
+        *,
+        message: str | None = None,
+        times: int = 1,
+        after_write: bool = False,
+    ) -> None:
+        """A `gh` call matching `substring` exits 1 with a transient-looking
+        message, `times` times, then behaves normally again - github.py's
+        one retry should see it through. `after_write` scripts the write
+        (currently only `pr create`) to actually happen before the scripted
+        failure - simulating a 5xx that arrives after GitHub's own write."""
+        self._load()
+        self.world.setdefault("gh_transient_failures", []).append(
+            {
+                "substring": substring,
+                "message": message
+                or "fake gh: Something went wrong while executing your query on "
+                "2026-09-13T09:00:12Z. Please include `AE71:test` when reporting this issue.",
+                "times": times,
+                "after_write": after_write,
+            }
+        )
+        self._save()
+
     # --- block 4 ---------------------------------------------------------
 
     def reviewer_answers(
@@ -599,7 +625,12 @@ def run_flow(
     use_default_config: bool = False,
     ship_to: str | None = None,
     env_extra: dict[str, str] | None = None,
+    combined_log: Path | None = None,
 ) -> subprocess.CompletedProcess:
+    """Run go.py. `combined_log`, when given, interleaves stdout and stderr
+    into one real file exactly as a shell redirect (`> file.log 2>&1`)
+    would - the only way to reproduce narrate.py's buffering-order bug,
+    since captured pipes never interleave."""
     env = dict(os.environ)
     env["PATH"] = f"{FAKES_DIR}:{env['PATH']}"
     env["FAKE_WORLD"] = str(world.dir)
@@ -609,6 +640,8 @@ def run_flow(
     # the fake gh answers checks instantly; polling sleeps would only slow
     # the suite down
     env.setdefault("FIT_FLOW_CI_POLL_SECONDS", "0")
+    # a scripted transient failure should not slow the suite down either
+    env.setdefault("FIT_FLOW_TRANSIENT_RETRY_SECONDS", "0")
     env.update(_ship_to_env(ship_to))
     if env_extra:
         env.update(env_extra)
@@ -616,6 +649,16 @@ def run_flow(
         env["FIT_FLOW_AGENT_CONFIG"] = str(config_path or world.agent_config)
     else:
         env.pop("FIT_FLOW_AGENT_CONFIG", None)
+    if combined_log is not None:
+        with combined_log.open("w", encoding="utf-8") as log_file:
+            return subprocess.run(
+                [sys.executable, str(GO_PY), *(str(arg) for arg in args)],
+                cwd=cwd or WORKFLOW_DIR,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=env,
+            )
     return subprocess.run(
         [sys.executable, str(GO_PY), *(str(arg) for arg in args)],
         cwd=cwd or WORKFLOW_DIR,
