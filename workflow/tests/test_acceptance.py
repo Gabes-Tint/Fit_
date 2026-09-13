@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from fitflow import acceptance
 
 
@@ -30,3 +32,38 @@ def test_test_helper_is_allowed_when_product_boundary_is_imported(tmp_path: Path
     )
 
     assert acceptance.rejects_local_stand_in(spec) is None
+
+
+@pytest.mark.parametrize(
+    ("status", "is_failure"),
+    [
+        ("passed", False),
+        ("skipped", False),
+        ("failed", True),
+        ("timedOut", True),
+        ("interrupted", True),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_every_playwright_status_but_passed_and_skipped_counts_as_a_failure(status, is_failure):
+    """A `toBeVisible` waiting for UI that does not exist yet times out
+    instead of failing an assertion; reading only `failed` called that
+    "passed with no implementation" and rejected a correct test."""
+    assert acceptance._is_playwright_failure(status) is is_failure
+
+
+@pytest.mark.parametrize(
+    ("status", "is_failure"),
+    [
+        ("passed", False),
+        ("pending", False),
+        ("skipped", False),
+        ("todo", False),
+        ("failed", True),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_every_vitest_status_but_passed_and_skipped_counts_as_a_failure(status, is_failure):
+    assert acceptance._is_vitest_failure(status) is is_failure

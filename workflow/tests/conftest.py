@@ -496,12 +496,17 @@ reviewer:
         outcome: str | list[str],
         message: str | None = None,
         location: str | None = None,
+        titles: list[str] | None = None,
     ) -> None:
-        """Outcome: fail, fail_defect, pass, import_error, not_found, or
-        tool_error. A list is consumed one value per runner invocation.
-        `message` and `location` are the error a `fail_defect` invocation
-        reports and the file it says threw it; a plain `fail` always reports
-        an ordinary failed expectation."""
+        """Outcome: fail, timed_out, fail_defect, pass, skipped,
+        import_error, not_found, or tool_error. A list is consumed one value
+        per runner invocation. `message` and `location` are the error a
+        `fail_defect` invocation reports and the file it says threw it; a
+        plain `fail` always reports an ordinary failed expectation and a
+        `timed_out` one the message playwright writes when an expectation
+        waits for UI that never appears. `titles` names the tests the file
+        reports, all with that outcome - for scenarios about what the
+        driver says of each test rather than of the file."""
         self._load()
         self.world.setdefault("test_outcomes", {})[file] = outcome
         scripted = {}
@@ -511,6 +516,8 @@ reviewer:
             scripted["location"] = location
         if scripted:
             self.world.setdefault("test_messages", {})[file] = scripted
+        if titles is not None:
+            self.world.setdefault("test_titles", {})[file] = titles
         self._save()
 
     def given_check_fails_on(self, file: str) -> None:
