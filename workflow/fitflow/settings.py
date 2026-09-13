@@ -66,15 +66,21 @@ class ShipConfig:
     reason `scripts/deploy/config.ts` gives: they are infrastructure
     Gabriel owns. They arrive in the environment, and a run that cannot
     name its target refuses to start rather than merging a pull request it
-    then cannot ship."""
+    then cannot ship. FIT_FLOW_SHIP_TO=none, the default, ships nothing:
+    the driver never deploys unless told to."""
 
-    qa: Target
-    prod: Target | None  # None when FIT_FLOW_SHIP_TO=qa
+    ship_to: str  # "none", "qa" or "prod"
+    qa: Target | None  # None when FIT_FLOW_SHIP_TO=none
+    prod: Target | None  # None unless FIT_FLOW_SHIP_TO=prod
     android: bool
 
     @property
+    def to_qa(self) -> bool:
+        return self.ship_to in ("qa", "prod")
+
+    @property
     def to_prod(self) -> bool:
-        return self.prod is not None
+        return self.ship_to == "prod"
 
 
 def _required(variable: str) -> str:
@@ -99,14 +105,16 @@ def _choice(variable: str, default: str, allowed: set[str]) -> str:
 def ship_config() -> ShipConfig:
     """Read and validate block 5's configuration. Called at startup, before
     any side effect, so a missing host stops the run instead of the deploy."""
-    ship_to = _choice("FIT_FLOW_SHIP_TO", "prod", {"qa", "prod"})
-    qa = Target(_required("FIT_FLOW_QA_DEPLOY_HOST"), _required("FIT_FLOW_QA_PUBLIC_ORIGIN"))
+    ship_to = _choice("FIT_FLOW_SHIP_TO", "none", {"none", "qa", "prod"})
+    qa = None
     prod = None
+    if ship_to in ("qa", "prod"):
+        qa = Target(_required("FIT_FLOW_QA_DEPLOY_HOST"), _required("FIT_FLOW_QA_PUBLIC_ORIGIN"))
     if ship_to == "prod":
         prod = Target(
             _required("FIT_FLOW_PROD_DEPLOY_HOST"), _required("FIT_FLOW_PROD_PUBLIC_ORIGIN")
         )
-    return ShipConfig(qa, prod, _choice("FIT_FLOW_ANDROID", "yes", {"yes", "no"}) == "yes")
+    return ShipConfig(ship_to, qa, prod, _choice("FIT_FLOW_ANDROID", "yes", {"yes", "no"}) == "yes")
 
 
 # The variables `scripts/deploy/config.ts` reads. The driver passes the

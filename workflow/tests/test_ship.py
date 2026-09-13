@@ -72,6 +72,12 @@ def _shipped_comment(world, number: int = 1000) -> str:
     return shipped[-1]
 
 
+def _merged_comment(world, number: int = 1000) -> str:
+    merged = [body for body in _comments(world, number) if body.startswith("Merged:")]
+    assert merged, _comments(world, number)
+    return merged[-1]
+
+
 def _ship_record(world, number: int = 1000) -> dict:
     state = json.loads((world.home / "runs" / f"story-{number}.json").read_text())
     return state["delivery"]["ship"], state["terminal"]
@@ -81,7 +87,7 @@ def test_a_full_ship_deploys_qa_then_production_and_builds_the_apk(world):
     _shippable(world)
     world.given_tag("v0.4.0")
 
-    result = run_flow(world, "1000")
+    result = run_flow(world, "1000", ship_to="prod")
 
     assert result.returncode == 0, result.stdout + result.stderr
     merge_sha = _merge_sha(world)
@@ -123,7 +129,7 @@ def test_the_apk_is_kept_under_the_flow_home_release_for_its_tag(world):
     _shippable(world)
     world.given_tag("v0.4.2")
 
-    result = run_flow(world, "1000")
+    result = run_flow(world, "1000", ship_to="prod")
 
     assert result.returncode == 0, result.stdout + result.stderr
     ship, _ = _ship_record(world)
@@ -136,7 +142,7 @@ def test_an_apk_that_does_not_hash_to_what_was_built_is_not_a_release(world):
     _shippable(world)
     world.given_android("wrong_sha")
 
-    result = run_flow(world, "1000")
+    result = run_flow(world, "1000", ship_to="prod")
 
     assert result.returncode == 26, result.stdout + result.stderr
     ship, _ = _ship_record(world)
@@ -149,7 +155,7 @@ def test_the_record_carries_every_ship_result(world):
     _shippable(world)
     world.given_tag("v0.4.1")
 
-    result = run_flow(world, "1000")
+    result = run_flow(world, "1000", ship_to="prod")
 
     assert result.returncode == 0, result.stdout + result.stderr
     ship, terminal = _ship_record(world)
@@ -207,7 +213,7 @@ def test_a_preserved_worktree_keeps_its_branch_on_origin(world):
     _shippable(world)
     world.given_status_unreadable("story-1000-domain")
 
-    result = run_flow(world, "1000")
+    result = run_flow(world, "1000", ship_to="qa")
 
     assert result.returncode == 26, result.stdout + result.stderr
     assert world.branch_exists_on_origin("story-1000-domain")
@@ -215,10 +221,38 @@ def test_a_preserved_worktree_keeps_its_branch_on_origin(world):
     assert "story-1000-domain" not in ship["cleanup"]["remote_deleted"]
 
 
+def test_ship_to_none_is_the_default_and_deploys_nothing(world):
+    """No FIT_FLOW_* ship variable is set at all: FIT_FLOW_SHIP_TO=none is
+    the default, and a run under it still merges and cleans up but deploys
+    nothing - the driver never ships unless told to."""
+    _shippable(world)
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _bun_calls(world, "deploy") == []
+    assert _bun_calls(world, "android:release") == []
+    assert [
+        call for call in _bun_calls(world, "worktree:new") if "release-" in call["argv"][2]
+    ] == []
+    for slug in ("story-1000-domain", "story-1000"):
+        assert not world.slice_worktree_path(slug).exists(), slug
+    assert not world.branch_exists_on_origin("story-1000-domain")
+    assert not world.branch_exists_on_origin("story-1000")
+    comment = _merged_comment(world)
+    assert "Not deployed: FIT_FLOW_SHIP_TO=none" in comment
+    ship, terminal = _ship_record(world)
+    assert terminal == "SHIPPED"
+    assert ship["qa"] == {"skipped": "FIT_FLOW_SHIP_TO=none"}
+    assert ship["prod"] == {"skipped": "FIT_FLOW_SHIP_TO=none"}
+    assert ship["android"] == {"skipped": "FIT_FLOW_SHIP_TO=none"}
+    assert ship["flaky"]["decided"] == "not awaited: SHIP_TO=none"
+
+
 def test_ship_to_qa_withholds_production_and_android(world):
     _shippable(world)
 
-    result = run_flow(world, "1000", env_extra={"FIT_FLOW_SHIP_TO": "qa"})
+    result = run_flow(world, "1000", ship_to="qa")
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert [call["argv"] for call in _bun_calls(world, "deploy")] == [["run", "deploy", "--tunnel"]]
@@ -238,7 +272,8 @@ def test_ship_to_qa_does_not_wait_for_an_answer_nothing_will_read(world):
     result = run_flow(
         world,
         "1000",
-        env_extra={"FIT_FLOW_SHIP_TO": "qa", "FIT_FLOW_MAIN_CI_TIMEOUT": "30"},
+        ship_to="qa",
+        env_extra={"FIT_FLOW_MAIN_CI_TIMEOUT": "30"},
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
@@ -254,7 +289,7 @@ def test_ship_to_qa_does_not_wait_for_an_answer_nothing_will_read(world):
 def test_android_no_skips_the_apk_after_a_production_deploy(world):
     _shippable(world)
 
-    result = run_flow(world, "1000", env_extra={"FIT_FLOW_ANDROID": "no"})
+    result = run_flow(world, "1000", ship_to="prod", env_extra={"FIT_FLOW_ANDROID": "no"})
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert len(_bun_calls(world, "deploy")) == 2
@@ -268,7 +303,7 @@ def test_a_red_push_run_beside_a_green_merge_group_run_withholds_production(worl
     _shippable(world)
     world.given_main_ci(500, push="failure", merge_group="success")
 
-    result = run_flow(world, "1000")
+    result = run_flow(world, "1000", ship_to="prod")
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert [call["argv"] for call in _bun_calls(world, "deploy")] == [["run", "deploy", "--tunnel"]]
@@ -283,7 +318,7 @@ def test_an_end_to_end_job_in_the_counted_rerun_withholds_production(world):
     _shippable(world)
     world.given_checks(500, ["fail_e2e", "pass"])
 
-    result = run_flow(world, "1000")
+    result = run_flow(world, "1000", ship_to="prod")
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert [call["argv"] for call in _bun_calls(world, "deploy")] == [["run", "deploy", "--tunnel"]]
@@ -296,7 +331,7 @@ def test_a_push_run_still_going_at_the_deadline_withholds_production(world):
     _shippable(world)
     world.given_main_ci(500, push="running", merge_group="success")
 
-    result = run_flow(world, "1000", env_extra={"FIT_FLOW_MAIN_CI_TIMEOUT": "0"})
+    result = run_flow(world, "1000", ship_to="prod", env_extra={"FIT_FLOW_MAIN_CI_TIMEOUT": "0"})
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert len(_bun_calls(world, "deploy")) == 1
@@ -330,7 +365,7 @@ def test_a_qa_deploy_that_never_came_up_stops_with_needs_gabriel(world):
     _shippable(world)
     world.given_deploy("qa", "health_failed")
 
-    result = run_flow(world, "1000")
+    result = run_flow(world, "1000", ship_to="qa")
 
     assert result.returncode == 32, result.stdout + result.stderr
     assert "needs-gabriel" in world.issue(1000)["labels"]
@@ -343,7 +378,7 @@ def test_a_failed_qa_smoke_check_carries_its_failure_into_the_comment(world):
     _shippable(world)
     world.given_deploy("qa", "smoke_failed")
 
-    result = run_flow(world, "1000")
+    result = run_flow(world, "1000", ship_to="qa")
 
     assert result.returncode == 32, result.stdout + result.stderr
     assert any("POST /api/sessions -> 500" in body for body in _comments(world))
@@ -355,7 +390,7 @@ def test_a_green_smoke_report_about_another_commit_is_not_a_deploy(world):
     _shippable(world)
     world.given_deploy("qa", "wrong_release")
 
-    result = run_flow(world, "1000")
+    result = run_flow(world, "1000", ship_to="qa")
 
     assert result.returncode == 32, result.stdout + result.stderr
     assert len(_bun_calls(world, "deploy")) == 1
@@ -369,7 +404,7 @@ def test_a_deploy_is_recorded_as_started_before_it_is_invoked(world):
     _shippable(world)
     world.given_deploy("prod", "crash")
 
-    result = run_flow(world, "1000")
+    result = run_flow(world, "1000", ship_to="prod")
 
     assert result.returncode == 32, result.stdout + result.stderr
     seen = _bun_calls(world, "deploy")[1]["ship"]["prod"]
@@ -389,7 +424,7 @@ def test_qas_smoke_report_cannot_pass_for_production(world):
     _shippable(world)
     world.given_deploy("prod", "no_report")
 
-    result = run_flow(world, "1000")
+    result = run_flow(world, "1000", ship_to="prod")
 
     assert result.returncode == 32, result.stdout + result.stderr
     assert len(_bun_calls(world, "deploy")) == 2
@@ -404,7 +439,7 @@ def test_a_qa_deploy_that_writes_no_report_after_a_clean_exit_is_not_a_deploy(wo
     _shippable(world)
     world.given_deploy("qa", "no_report")
 
-    result = run_flow(world, "1000")
+    result = run_flow(world, "1000", ship_to="qa")
 
     assert result.returncode == 32, result.stdout + result.stderr
     assert len(_bun_calls(world, "deploy")) == 1
@@ -417,7 +452,7 @@ def test_a_failed_production_deploy_says_qa_is_live(world):
     _shippable(world)
     world.given_deploy("prod", "smoke_failed")
 
-    result = run_flow(world, "1000")
+    result = run_flow(world, "1000", ship_to="prod")
 
     assert result.returncode == 32, result.stdout + result.stderr
     assert "needs-gabriel" in world.issue(1000)["labels"]
@@ -430,7 +465,7 @@ def test_a_failed_android_build_is_reported_after_a_deploy_that_stands(world):
     _shippable(world)
     world.given_android("fail")
 
-    result = run_flow(world, "1000")
+    result = run_flow(world, "1000", ship_to="prod")
 
     assert result.returncode == 26, result.stdout + result.stderr
     assert len(_bun_calls(world, "deploy")) == 2
@@ -444,7 +479,7 @@ def test_a_worktree_that_cannot_be_cleaned_up_is_reported_after_the_comment(worl
     _shippable(world)
     world.given_worktree_done_fails("story-1000-domain")
 
-    result = run_flow(world, "1000")
+    result = run_flow(world, "1000", ship_to="qa")
 
     assert result.returncode == 26, result.stdout + result.stderr
     assert _shipped_comment(world)
@@ -480,7 +515,7 @@ def test_a_worktree_whose_status_cannot_be_read_is_never_forced(world):
     _shippable(world)
     world.given_status_unreadable("story-1000-domain")
 
-    result = run_flow(world, "1000")
+    result = run_flow(world, "1000", ship_to="qa")
 
     assert result.returncode == 26, result.stdout + result.stderr
     assert world.slice_worktree_path("story-1000-domain").exists()
@@ -496,7 +531,7 @@ def test_a_worktree_whose_status_cannot_be_read_is_never_forced(world):
 def test_a_missing_deploy_target_stops_before_any_side_effect(world):
     _shippable(world)
 
-    result = run_flow(world, "1000", env_extra={"FIT_FLOW_QA_DEPLOY_HOST": ""})
+    result = run_flow(world, "1000", ship_to="qa", env_extra={"FIT_FLOW_QA_DEPLOY_HOST": ""})
 
     assert result.returncode == 2, result.stdout + result.stderr
     assert "FIT_FLOW_QA_DEPLOY_HOST" in result.stderr
@@ -506,13 +541,9 @@ def test_a_missing_deploy_target_stops_before_any_side_effect(world):
 def test_a_missing_production_target_is_only_required_when_shipping_there(world):
     _shippable(world)
 
-    held = run_flow(world, "1000", env_extra={"FIT_FLOW_PROD_PUBLIC_ORIGIN": ""})
+    held = run_flow(world, "1000", ship_to="prod", env_extra={"FIT_FLOW_PROD_PUBLIC_ORIGIN": ""})
     assert held.returncode == 2, held.stdout + held.stderr
     assert "FIT_FLOW_PROD_PUBLIC_ORIGIN" in held.stderr
 
-    result = run_flow(
-        world,
-        "1000",
-        env_extra={"FIT_FLOW_PROD_PUBLIC_ORIGIN": "", "FIT_FLOW_SHIP_TO": "qa"},
-    )
+    result = run_flow(world, "1000", ship_to="qa", env_extra={"FIT_FLOW_PROD_PUBLIC_ORIGIN": ""})
     assert result.returncode == 0, result.stdout + result.stderr
