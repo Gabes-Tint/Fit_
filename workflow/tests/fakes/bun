@@ -2,9 +2,12 @@
 """Fake `bun`: `run worktree:new <slug>` does a real `git worktree add`;
 `x vitest run ...` / `x playwright test ...` emit a JSON report (the same
 shape the real reporters use) built from a scripted outcome per file:
-"fail" (good - no implementation yet), "fail_defect" (the test itself
-throws, so it can never pass), "pass" (bad), "not_found" (the runner never
-ran that file), or "tool_error" (no JSON report).
+"fail" (good - no implementation yet), "timed_out" (also good - an
+expectation waiting for UI that does not exist yet, which playwright
+reports as `timedOut` rather than `failed`), "fail_defect" (the test itself
+throws, so it can never pass), "pass" (bad), "skipped" (the tests never
+ran, so they prove nothing either way), "not_found" (the runner never ran
+that file), or "tool_error" (no JSON report).
 
 A failing file's report carries the test title and the error message the
 driver classifies, taken from `test_messages[file]` when a scenario scripts
@@ -118,21 +121,56 @@ def _files(argv):
     return [arg for arg in argv[1:] if arg not in FLAGS and not arg.startswith("--")]
 
 
-_FAILING = {"fail", "fail_defect", "import_error"}
+_FAILING = {"fail", "fail_defect", "import_error", "timed_out"}
 _TITLE = "the behavior this slice asks for"
 _EXPECTATION_MESSAGE = "AssertionError: expected undefined to be 42 // Object.is equality"
 _DEFECT_MESSAGE = "TypeError: locator.boundingBox is not a function"
+_TIMEOUT_MESSAGE = (
+    "Test timeout of 30000ms exceeded.\n\n"
+    "Error: expect(locator).toBeVisible() failed\n\n"
+    "Locator: getByText('Today, ')\nExpected: visible\nTimeout: 30000ms"
+)
 
 
 def _failure(world, file, outcome):
     """The title, message and error location a failing file reports. An
-    ordinary "fail" reports a plain failed expectation; "fail_defect" reports
-    a thrown error, by default a TypeError located in the test file itself,
-    and a scenario scripts both to choose what the driver has to classify."""
+    ordinary "fail" reports a plain failed expectation; "timed_out" reports
+    the message playwright writes when an expectation waits for UI that
+    never appears; "fail_defect" reports a thrown error, by default a
+    TypeError located in the test file itself, and a scenario scripts both
+    to choose what the driver has to classify."""
+    if outcome == "timed_out":
+        return _TITLE, _TIMEOUT_MESSAGE, ""
     if outcome != "fail_defect":
         return _TITLE, _EXPECTATION_MESSAGE, ""
     scripted = world.get("test_messages", {}).get(file, {})
     return _TITLE, scripted.get("message", _DEFECT_MESSAGE), scripted.get("location", file)
+
+
+def _titles(world, file):
+    """The test titles this file reports. A scenario scripts more than one
+    when what the driver says about each of them is the point."""
+    return world.get("test_titles", {}).get(file) or [_TITLE]
+
+
+def _vitest_status(outcome):
+    """vitest's own JSON reporter has no timed-out status: it records a
+    test that ran out of time as an ordinary failed assertion, and a
+    skipped one as `pending`."""
+    if outcome == "skipped":
+        return "pending"
+    return "failed" if outcome in _FAILING else "passed"
+
+
+def _playwright_status(outcome):
+    """playwright records an expectation that never resolved as `timedOut`,
+    not `failed` - the ordinary shape of a UI acceptance test with no
+    implementation behind it yet."""
+    if outcome == "timed_out":
+        return "timedOut"
+    if outcome == "skipped":
+        return "skipped"
+    return "failed" if outcome in _FAILING else "passed"
 
 
 def _vitest_report(files, outcomes, world):
@@ -141,8 +179,8 @@ def _vitest_report(files, outcomes, world):
         outcome = outcomes.get(f, "fail")
         if outcome == "not_found":
             continue
-        status = "failed" if outcome in _FAILING else "passed"
-        title, message, location = _failure(world, f, outcome)
+        status = _vitest_status(outcome)
+        _, message, location = _failure(world, f, outcome)
         stack = f"{message}\n    at {location}:12:30" if location else message
         assertions = (
             []
@@ -154,9 +192,15 @@ def _vitest_report(files, outcomes, world):
                     "status": status,
                     "failureMessages": [stack] if status == "failed" else [],
                 }
+                for title in _titles(world, f)
             ]
         )
-        entries.append({"name": f"/worktree/{f}", "status": status, "assertionResults": assertions})
+        # a file whose every test was skipped is still a passing file to
+        # vitest: only the assertions say nothing ran
+        entry_status = "failed" if status == "failed" else "passed"
+        entries.append(
+            {"name": f"/worktree/{f}", "status": entry_status, "assertionResults": assertions}
+        )
     return {"testResults": entries}
 
 
@@ -166,14 +210,21 @@ def _playwright_report(files, outcomes, world):
         outcome = outcomes.get(f, "fail")
         if outcome == "not_found":
             continue
-        status = "failed" if outcome in _FAILING else "passed"
-        title, message, location = _failure(world, f, outcome)
+        status = _playwright_status(outcome)
+        _, message, location = _failure(world, f, outcome)
         result = {"status": status}
-        if status == "failed":
+        if status not in {"passed", "skipped"}:
             result["error"] = {"message": message}
             if location:
                 result["error"]["location"] = {"file": location, "line": 12, "column": 30}
-        suites.append({"specs": [{"title": title, "file": f, "tests": [{"results": [result]}]}]})
+        suites.append(
+            {
+                "specs": [
+                    {"title": title, "file": f, "tests": [{"results": [dict(result)]}]}
+                    for title in _titles(world, f)
+                ]
+            }
+        )
     return {"suites": suites, "errors": []}
 
 

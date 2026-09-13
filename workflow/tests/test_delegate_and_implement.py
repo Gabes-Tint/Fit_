@@ -2129,3 +2129,21 @@ def test_a_failing_step_the_driver_cannot_locate_stays_repairable(world):
     assert "verify:changed failed steps: test:unit:server" in result.stdout
     assert "rejects an expired token" in result.stdout
     assert "correcting after attempt 1" in result.stdout
+
+
+def test_a_timed_out_acceptance_test_means_the_implementation_is_not_done_yet(world):
+    """Block 3 reads the same statuses as block 1: a `toBeVisible` that
+    times out is the implementation still missing, not a pass."""
+    _given_planned_story(world, 495, layer="ui", test_kind="playwright")
+    test_file = "src/routes/delegate.e2e.ts"
+    _delegate_mechanic(world, 495, "ui")
+    world.scripted_test_outcome(test_file, ["timed_out", "timed_out", "pass"])
+    _implement(world, "story-495-ui", "mechanic", files={"src/routes/x/+page.svelte": "<p>a</p>\n"})
+    _implement(world, "story-495-ui", "mechanic", files={"src/routes/x/+page.svelte": "<p>b</p>\n"})
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    still_failing = f"playwright {test_file} still fails, the implementation is not done yet"
+    assert still_failing in result.stdout
+    assert "correcting after attempt 1" in result.stdout
