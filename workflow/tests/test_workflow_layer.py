@@ -226,17 +226,55 @@ def test_a_pytest_collection_error_is_not_a_test_failing_as_intended(world):
     assert "🏁 Implemented #1000" in result.stdout
 
 
-def test_a_workflow_slice_that_touches_the_product_is_rejected_at_the_boundary(world):
+def test_a_workflow_slice_that_touches_the_product_is_corrected_then_stops_the_run(world):
+    """The product is outside a driver slice's reach. The implementer gets
+    the file back for a correction, and keeping it through the whole budget
+    breaks the contract."""
     slug = _given_planned_driver_story(world)
     _mechanic_pushes_tests(world, slug)
     _delegate(world, 1000)
-    _implement(world, slug, {"src/lib/retries.ts": "export const ladder = [1, 2, 4];\n"})
+    for _ in range(3):
+        _implement(
+            world,
+            slug,
+            {LADDER: "LADDER = (1, 2, 4)\n", "src/lib/retries.ts": "export const n = 1;\n"},
+        )
 
     result = run_flow(world, "1000")
 
     assert result.returncode == 22, result.stdout + result.stderr
     assert "workflow slice changed a file outside the driver: src/lib/retries.ts" in result.stdout
     assert "may change only workflow/**, docs/** and cspell.json" in result.stdout
+    assert "those paths are outside this slice's reach" in result.stdout
+    state = json.loads((world.home / "runs" / "story-1000.json").read_text())
+    assert state["terminal"] == "AGENT_BROKE_CONTRACT"
+    assert state["slices"]["workflow"]["attempts"] == 3
+
+
+def test_a_workflow_slice_that_puts_the_product_file_back_carries_on(world):
+    slug = _given_planned_driver_story(world)
+    _mechanic_pushes_tests(world, slug)
+    _delegate(world, 1000)
+    _implement(
+        world,
+        slug,
+        {LADDER: "LADDER = (1, 2, 4)\n", "src/lib/retries.ts": "export const n = 1;\n"},
+    )
+    world.agent_implements(
+        slug,
+        "mechanic",
+        files={},
+        delete=["src/lib/retries.ts"],
+        changed_files=[LADDER],
+        summary="put the product file back; the driver slice does not need it",
+    )
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 11, result.stdout + result.stderr
+    assert "workflow slice changed a file outside the driver: src/lib/retries.ts" in result.stdout
+    assert "correcting after attempt 1" in result.stdout
+    assert "🏁 Implemented #1000" in result.stdout
 
 
 def test_changed_markdown_faces_prettier_and_cspell_and_a_miss_is_repaired(world):
