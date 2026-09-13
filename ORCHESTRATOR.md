@@ -44,9 +44,11 @@ A question for Gabriel is an issue (`needs-gabriel`): blocked, options including
 `workflow/go.py` is the driver for this complete cycle, from issue to
 production. It implements blocks 1-5: **Pick and plan, Delegate,
 Implement/validate, Review/CI/merge, and Ship** - after the merge it waits
-for the version tag and main's CI, deploys QA, decides flakiness, deploys
-production, builds the APK and cleans up. `FIT_FLOW_SHIP_TO=qa` stops the
-ship at QA; hosts and origins come only from the environment.
+for the version tag and main's CI, then, if told to, deploys QA, decides
+flakiness, deploys production, builds the APK and cleans up.
+`FIT_FLOW_SHIP_TO=none`, the default, never deploys - the run still
+verifies the merge and cleans up; `qa` or `prod` opt in explicitly, and
+hosts and origins come only from the environment.
 
 The [delegation and implementation gates](workflow/delegation-contract.md)
 define role selection, validation, corrections, escalation, the all-slice

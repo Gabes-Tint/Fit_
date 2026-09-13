@@ -201,14 +201,18 @@ To watch it work with nothing real touched, run the tests instead (below).
 cd workflow
 uv run go.py 351                  # plan, delegate and implement issue #351
 uv run go.py                      # pick the lowest-numbered open story not held
+FIT_FLOW_SHIP_TO=qa uv run go.py 351    # ...and also deploy to QA
+FIT_FLOW_SHIP_TO=prod uv run go.py 351  # ...and also deploy to QA, then prod
 ```
 
 From the repository root: `uv run --project workflow workflow/go.py 351`.
 
 "Held" means labelled `in-progress`, `blocked`, `needs-gabriel` or `paused`.
-Exit 0 means the whole flow ran: every slice implemented and validated, the
-PR merged, the merge commit tagged and deployed, and the worktrees cleaned
-up. Set `FIT_FLOW_SHIP_TO=qa` to stop the ship at QA.
+Exit 0 means the whole flow ran: every slice implemented and validated, and
+the PR merged. `FIT_FLOW_SHIP_TO=none`, the default, never deploys - block 5
+still verifies the merge commit's tag and main's CI, then cleans up. Set
+`FIT_FLOW_SHIP_TO=qa` or `FIT_FLOW_SHIP_TO=prod` to have it deploy what it
+merged.
 
 ### What you will see
 
@@ -380,15 +384,15 @@ without the ones it will need. All of these are read and validated at
 startup, before any side effect - a missing one is `configuration error:
 …`, exit 2.
 
-| variable                      | default                               | what                                                                |
-| ----------------------------- | ------------------------------------- | ------------------------------------------------------------------- |
-| `FIT_FLOW_SHIP_TO`            | `prod`                                | `qa` stops after the QA deploy; production and Android are withheld |
-| `FIT_FLOW_QA_DEPLOY_HOST`     | required                              | `user@host` for the QA deploy (`FIT_DEPLOY_HOST`)                   |
-| `FIT_FLOW_QA_PUBLIC_ORIGIN`   | required                              | the `https://` origin QA answers under (`FIT_PUBLIC_ORIGIN`)        |
-| `FIT_FLOW_PROD_DEPLOY_HOST`   | required when `FIT_FLOW_SHIP_TO=prod` | `user@host` for production                                          |
-| `FIT_FLOW_PROD_PUBLIC_ORIGIN` | required when `FIT_FLOW_SHIP_TO=prod` | production's `https://` origin                                      |
-| `FIT_FLOW_ANDROID`            | `yes`                                 | build the APK after a successful production deploy                  |
-| `FIT_FLOW_MAIN_CI_TIMEOUT`    | `3600`                                | seconds waiting for the tag and for main's own CI run               |
+| variable                      | default                                   | what                                                                                           |
+| ----------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `FIT_FLOW_SHIP_TO`            | `none`                                    | `none` never deploys; `qa` stops after the QA deploy; `prod` also ships production and Android |
+| `FIT_FLOW_QA_DEPLOY_HOST`     | required when `FIT_FLOW_SHIP_TO=qa\|prod` | `user@host` for the QA deploy (`FIT_DEPLOY_HOST`)                                              |
+| `FIT_FLOW_QA_PUBLIC_ORIGIN`   | required when `FIT_FLOW_SHIP_TO=qa\|prod` | the `https://` origin QA answers under (`FIT_PUBLIC_ORIGIN`)                                   |
+| `FIT_FLOW_PROD_DEPLOY_HOST`   | required when `FIT_FLOW_SHIP_TO=prod`     | `user@host` for production                                                                     |
+| `FIT_FLOW_PROD_PUBLIC_ORIGIN` | required when `FIT_FLOW_SHIP_TO=prod`     | production's `https://` origin                                                                 |
+| `FIT_FLOW_ANDROID`            | `yes`                                     | build the APK after a successful production deploy                                             |
+| `FIT_FLOW_MAIN_CI_TIMEOUT`    | `3600`                                    | seconds waiting for the tag and for main's own CI run                                          |
 
 ### Exit codes
 

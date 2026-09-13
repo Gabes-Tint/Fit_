@@ -494,6 +494,19 @@ way out would say the target was never touched. Nothing here is a retry of block
 1-4: the merge has landed, so a block 5 failure is reported and the run
 stops, never labelled `blocked` for a fresh picker.
 
+`FIT_FLOW_SHIP_TO` is `none`, `qa` or `prod`, and `none` is the default:
+the driver never deploys unless told to. Under `none`, block 5 still reads
+the merge commit, waits for its tag and for main's own CI to accept it -
+the same verification a real deploy would need, and free either way - then
+skips straight to cleanup. The release worktree, both deploys, the flaky
+wait and the Android build never run; `qa`, `prod` and `android` are each
+persisted as `{"skipped": "FIT_FLOW_SHIP_TO=none"}`, and `flaky` is
+persisted as decided rather than awaited, the same way `qa` already
+decides it without waiting (below). The terminal is still `SHIPPED` and
+exit is still 0 - the run completed everything it was configured to do -
+and the final comment says plainly that nothing was deployed and how to
+opt in.
+
 ### The merge commit and its tag
 
 The commit to ship is `gh pr view <n> --json mergeCommit`, not the
@@ -648,11 +661,14 @@ configuration, not code.
 Block 5's deploy targets follow the same rule, and `scripts/deploy/config.ts`
 already states why: the machines are infrastructure Gabriel owns, so they
 arrive in the environment and nothing in this repository names them.
-`FIT_FLOW_QA_DEPLOY_HOST` and `FIT_FLOW_QA_PUBLIC_ORIGIN` are required
-whenever block 5 can run; `FIT_FLOW_PROD_DEPLOY_HOST` and
-`FIT_FLOW_PROD_PUBLIC_ORIGIN` are required when `FIT_FLOW_SHIP_TO=prod`
-(the default). `FIT_FLOW_SHIP_TO=qa` stops after QA, and `FIT_FLOW_ANDROID`
-(`yes` by default) decides whether the APK is built. All of them are
+`FIT_FLOW_SHIP_TO` is `none` (the default), `qa` or `prod`. Under `none`
+none of `FIT_FLOW_QA_DEPLOY_HOST`, `FIT_FLOW_QA_PUBLIC_ORIGIN`,
+`FIT_FLOW_PROD_DEPLOY_HOST` or `FIT_FLOW_PROD_PUBLIC_ORIGIN` are required -
+there is nothing to deploy to. `FIT_FLOW_QA_DEPLOY_HOST` and
+`FIT_FLOW_QA_PUBLIC_ORIGIN` are required under `qa` and `prod` alike;
+`FIT_FLOW_PROD_DEPLOY_HOST` and `FIT_FLOW_PROD_PUBLIC_ORIGIN` are required
+only under `prod`. `FIT_FLOW_ANDROID` (`yes` by default) decides whether
+the APK is built, and is irrelevant under `none`. All of them are
 validated where the agent roster is - at startup, before any side effect -
 and a missing one is a configuration error naming the variable, exit 2.
 There is no default host: guessing a deployment target is worse than
