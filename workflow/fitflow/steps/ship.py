@@ -61,10 +61,12 @@ def _ship(story, record: RunRecord) -> list[str]:
     a deploy that already succeeded is not undone by a broken Android
     toolchain or a worktree that would not go away."""
     config = settings.ship_config()
-    narrate.line(f"🚢 Shipping #{record.story_number} to {'prod' if config.to_prod else 'QA only'}")
+    narrate.line(f"🚢 Shipping #{record.story_number}{_ship_target(config)}")
     merge_sha = _merge_sha(record)
     _await_tag(record, merge_sha)
     _await_main_ci(record, merge_sha)
+    if config.ship_to == "none":
+        return _skip_deploy(record, merge_sha)
     path = _release_worktree(record, merge_sha)
     _deploy(story, record, path, "qa", config.qa, merge_sha, tunnel=True)
     flaky = _flaky(record, merge_sha, awaited=config.to_prod)
@@ -72,6 +74,24 @@ def _ship(story, record: RunRecord) -> list[str]:
         _deploy(story, record, path, "prod", config.prod, merge_sha, tunnel=False)
     deferred = _android(record, path, config)
     return deferred + _cleanup(record, merge_sha)
+
+
+def _ship_target(config) -> str:
+    if config.ship_to == "none":
+        return " — not deploying (FIT_FLOW_SHIP_TO=none)"
+    return f" to {'prod' if config.to_prod else 'QA only'}"
+
+
+def _skip_deploy(record: RunRecord, merge_sha: str) -> list[str]:
+    """None of block 5's deploys, flake wait or Android build run under
+    FIT_FLOW_SHIP_TO=none; the merge and its tag are still verified, and
+    the record says exactly why nothing after that was attempted."""
+    skipped = {"skipped": "FIT_FLOW_SHIP_TO=none"}
+    _remember(record, "qa", skipped)
+    _remember(record, "prod", skipped)
+    _remember(record, "android", skipped)
+    _remember(record, "flaky", {"flaky": True, "decided": "not awaited: SHIP_TO=none"})
+    return _cleanup(record, merge_sha)
 
 
 # --- the record ---------------------------------------------------------------
@@ -675,18 +695,34 @@ def _android_line(record: RunRecord) -> str:
     return f"Android: failed: {android.get('why', 'unknown')}."
 
 
+def _not_deployed(record: RunRecord) -> bool:
+    qa = _ship_value(record, "qa") or {}
+    return qa.get("skipped") == "FIT_FLOW_SHIP_TO=none"
+
+
 def _report(story, record: RunRecord) -> None:
     cleanup = _ship_value(record, "cleanup") or {}
-    body = (
-        f"Shipped: PR #{record.delivery['pr_number']} merged "
-        f"({_ship_value(record, 'merge_sha', '')[:12]}), tag "
-        f"{_ship_value(record, 'tag', '(untagged)')}. "
-        f"{_deploy_line(record, 'qa', 'QA')} "
-        f"{_deploy_line(record, 'prod', 'Prod')} "
-        f"{_android_line(record)} "
-        f"Cleaned up: {', '.join(cleanup.get('removed') or ['nothing'])}. "
-        "Next: pick the next story."
-    )
+    cleaned_up = ", ".join(cleanup.get("removed") or ["nothing"])
+    if _not_deployed(record):
+        body = (
+            f"Merged: PR #{record.delivery['pr_number']} "
+            f"({_ship_value(record, 'merge_sha', '')[:12]}), tag "
+            f"{_ship_value(record, 'tag', '(untagged)')}. "
+            "Not deployed: FIT_FLOW_SHIP_TO=none. "
+            f"Cleaned up: {cleaned_up}. "
+            "Next: deploy by hand, or rerun with FIT_FLOW_SHIP_TO=qa|prod."
+        )
+    else:
+        body = (
+            f"Shipped: PR #{record.delivery['pr_number']} merged "
+            f"({_ship_value(record, 'merge_sha', '')[:12]}), tag "
+            f"{_ship_value(record, 'tag', '(untagged)')}. "
+            f"{_deploy_line(record, 'qa', 'QA')} "
+            f"{_deploy_line(record, 'prod', 'Prod')} "
+            f"{_android_line(record)} "
+            f"Cleaned up: {cleaned_up}. "
+            "Next: pick the next story."
+        )
     narrate.comment_posted(story.number, body)
     github.comment(story.number, body)
     narrate.line(f"🏁 Shipped #{story.number}")

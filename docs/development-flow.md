@@ -145,7 +145,9 @@ flowchart TD
         shipped["gh issue comment: PR, tag, QA, prod,<br/>android, cleanup, next<br/>terminal SHIPPED"]
         merge --> merge_sha --> tag --> main_ci
         main_ci -- no --> stop_ci
-        main_ci -- yes --> release_wt --> deploy_qa --> smoke_qa
+        main_ci -- yes --> ship_gate{"FIT_FLOW_SHIP_TO"}
+        ship_gate -- none --> cleanup
+        ship_gate -- "qa/prod" --> release_wt --> deploy_qa --> smoke_qa
         smoke_qa -- no --> stop_deploy
         smoke_qa -- yes --> flaky
         flaky -- yes --> cleanup
@@ -248,19 +250,27 @@ flowchart TD
   waits for `version-tag.yml`'s tag to point at that commit, and applies
   `main-ci-gate.ts`'s own acceptance itself - a successful `ci.yml` `push`
   run on `main` for the commit, or a successful `merge_group` run for it.
-  Each deploy runs in a throwaway `release-story-<n>` worktree reset to the
-  merge commit, and is judged by reading `reports/deploy/smoke.json`
-  afterwards: `ok`, and a passed release check naming that same commit. The
-  flaky decision is what withholds production - an `End-to-end` job in
-  block 4's one counted rerun, or main's `push` run red beside a green
-  `merge_group` run, is the `failOnFlakyTests` signature, and an unfinished
-  push run counts as flaky too. Withheld production is not a failure: the
-  run still cleans up, comments and ends `SHIPPED`. A deploy that fails is
-  `DEPLOY_FAILED` with `needs-gabriel`, never a rollback and never a
-  `blocked` retry of blocks 1-4 - the merge has already landed.
-- The deploy targets are configuration, never repository content:
-  `FIT_FLOW_QA_DEPLOY_HOST`, `FIT_FLOW_QA_PUBLIC_ORIGIN` and, when
-  `FIT_FLOW_SHIP_TO=prod`, `FIT_FLOW_PROD_DEPLOY_HOST` and
+  That much always runs, because it only verifies the merge landed
+  correctly and costs nothing. What happens after it is `FIT_FLOW_SHIP_TO`:
+  under `none`, the default, the run skips straight to cleanup - no release
+  worktree, no deploy, no flaky wait, no Android build - and the record
+  says exactly why (`{"skipped": "FIT_FLOW_SHIP_TO=none"}` for `qa`, `prod`
+  and `android`). Under `qa` or `prod`, each deploy runs in a throwaway
+  `release-story-<n>` worktree reset to the merge commit, and is judged by
+  reading `reports/deploy/smoke.json` afterwards: `ok`, and a passed
+  release check naming that same commit. The flaky decision is what
+  withholds production - an `End-to-end` job in block 4's one counted
+  rerun, or main's `push` run red beside a green `merge_group` run, is the
+  `failOnFlakyTests` signature, and an unfinished push run counts as flaky
+  too. Withheld production is not a failure: the run still cleans up,
+  comments and ends `SHIPPED`. A deploy that fails is `DEPLOY_FAILED` with
+  `needs-gabriel`, never a rollback and never a `blocked` retry of blocks
+  1-4 - the merge has already landed. `none` also ends `SHIPPED`, exit 0:
+  the run completed everything it was configured to do.
+- The deploy targets are configuration, never repository content, and none
+  of them is required under `FIT_FLOW_SHIP_TO=none`. Under `qa` and `prod`
+  alike: `FIT_FLOW_QA_DEPLOY_HOST`, `FIT_FLOW_QA_PUBLIC_ORIGIN`; under
+  `prod` only, additionally `FIT_FLOW_PROD_DEPLOY_HOST` and
   `FIT_FLOW_PROD_PUBLIC_ORIGIN`. They are validated beside the agent roster
   at startup, before any side effect, so a run never merges a pull request
   and only then discovers it cannot deploy what it merged.

@@ -554,12 +554,28 @@ def world(tmp_path: Path) -> FakeWorld:
     return FakeWorld(tmp_path)
 
 
+def _ship_to_env(ship_to: str | None) -> dict[str, str]:
+    """The variables block 5 needs for `ship_to`, and no others: the
+    default (`ship_to=None`, so nothing sets FIT_FLOW_SHIP_TO) leaves every
+    FIT_FLOW_QA_*/FIT_FLOW_PROD_* variable unset too, so a test exercising
+    that default truly runs with nothing set."""
+    if ship_to is None:
+        return {}
+    env = {"FIT_FLOW_SHIP_TO": ship_to, "FIT_FLOW_QA_DEPLOY_HOST": QA_HOST}
+    env["FIT_FLOW_QA_PUBLIC_ORIGIN"] = QA_ORIGIN
+    if ship_to == "prod":
+        env["FIT_FLOW_PROD_DEPLOY_HOST"] = PROD_HOST
+        env["FIT_FLOW_PROD_PUBLIC_ORIGIN"] = PROD_ORIGIN
+    return env
+
+
 def run_flow(
     world: FakeWorld,
     *args: str | int,
     cwd: Path | None = None,
     config_path: Path | None = None,
     use_default_config: bool = False,
+    ship_to: str | None = None,
     env_extra: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
     env = dict(os.environ)
@@ -571,10 +587,7 @@ def run_flow(
     # the fake gh answers checks instantly; polling sleeps would only slow
     # the suite down
     env.setdefault("FIT_FLOW_CI_POLL_SECONDS", "0")
-    env["FIT_FLOW_QA_DEPLOY_HOST"] = QA_HOST
-    env["FIT_FLOW_QA_PUBLIC_ORIGIN"] = QA_ORIGIN
-    env["FIT_FLOW_PROD_DEPLOY_HOST"] = PROD_HOST
-    env["FIT_FLOW_PROD_PUBLIC_ORIGIN"] = PROD_ORIGIN
+    env.update(_ship_to_env(ship_to))
     if env_extra:
         env.update(env_extra)
     if not use_default_config:
