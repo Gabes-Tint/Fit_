@@ -61,3 +61,96 @@ test.describe('height on the You screen', () => {
 		await expect(page.getByRole('heading', { name: 'Household' })).toHaveCount(0);
 	});
 });
+
+async function openRedoSetupForm(page: Page) {
+	await page.getByRole('button', { name: 'Redo setup' }).click();
+	await expect(page.getByText('A few quiet facts.')).toBeVisible();
+}
+
+async function fillAndSaveForm(page: Page, name: string, age: string, heightCm: string) {
+	await page.getByLabel('Name').fill(name);
+	await page.getByLabel('Age').fill(age);
+	await page.getByLabel('Height cm').fill(heightCm);
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
+	await expect(page.getByRole('heading', { name: 'You', level: 1 })).toBeVisible();
+}
+
+async function assertFormValues(page: Page, name: string, age: string, heightCm: string) {
+	await expect(page.getByLabel('Name')).toHaveValue(name);
+	await expect(page.getByLabel('Age')).toHaveValue(age);
+	await expect(page.getByLabel('Height cm')).toHaveValue(heightCm);
+}
+
+test.describe('Redo setup from the You page', () => {
+	test.beforeEach(async ({ page, baseURL }) => {
+		await signInThroughApi(page, baseURL ?? '');
+		await page.goto('/');
+		await openEmptyJournal(page);
+		// Navigate to the You page
+		await page.getByRole('button', { name: 'Open menu' }).click();
+		await page.getByRole('link', { name: 'You' }).click();
+		await expect(page.getByRole('heading', { name: 'You', level: 1 })).toBeVisible();
+	});
+
+	test('pre-fills form fields from the active profile when redo setup is clicked', async ({
+		page
+	}) => {
+		// Edit the profile to have specific values
+		await openRedoSetupForm(page);
+		await fillAndSaveForm(page, 'Jordan', '51', '190');
+
+		// Now click Redo setup again to verify pre-filling
+		await openRedoSetupForm(page);
+
+		// Assert that the fields are pre-filled from the active profile
+		await assertFormValues(page, 'Jordan', '51', '190');
+
+		// The Lose button matching the goal should be selected
+		const loseButton = page.getByRole('button', { name: /^Lose/ });
+		await expect(loseButton).toHaveAttribute('aria-pressed', 'true');
+	});
+
+	test('saves only changed fields while preserving other profile data', async ({ page }) => {
+		// First, edit the profile with some initial values
+		await openRedoSetupForm(page);
+		await fillAndSaveForm(page, 'Jordan', '51', '190');
+
+		// Now redo setup again and change only the age
+		await openRedoSetupForm(page);
+
+		// Verify current values are pre-filled
+		await assertFormValues(page, 'Jordan', '51', '190');
+
+		// Change only the age
+		await page.getByLabel('Age').fill('52');
+		await page.getByRole('button', { name: 'Save', exact: true }).click();
+		await expect(page.getByRole('heading', { name: 'You', level: 1 })).toBeVisible();
+
+		// Reopen the form to verify only age changed while name and height stayed the same
+		await openRedoSetupForm(page);
+		await assertFormValues(page, 'Jordan', '52', '190');
+	});
+
+	test('canceling the form leaves the profile unchanged', async ({ page }) => {
+		// First establish a profile with specific values
+		await openRedoSetupForm(page);
+		await fillAndSaveForm(page, 'Jordan', '51', '190');
+
+		// Open the form again and make changes, then cancel
+		await openRedoSetupForm(page);
+
+		await page.getByLabel('Name').fill('Alex');
+		await page.getByLabel('Age').fill('99');
+		await page.getByLabel('Height cm').fill('100');
+
+		// Click Cancel
+		await page.getByRole('button', { name: 'Cancel' }).click();
+
+		// Verify we're back on the You page
+		await expect(page.getByRole('heading', { name: 'You', level: 1 })).toBeVisible();
+
+		// Verify the profile was not changed
+		await openRedoSetupForm(page);
+		await assertFormValues(page, 'Jordan', '51', '190');
+	});
+});

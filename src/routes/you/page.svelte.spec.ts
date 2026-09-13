@@ -276,12 +276,13 @@ describe('redoing setup', () => {
 		await expect.element(page.getByText('A few quiet facts.')).toBeInTheDocument();
 	});
 
-	it('starts the fields empty rather than pre-filled with the current profile', async () => {
+	it('pre-fills the fields from the current profile', async () => {
 		tend.patchActive((p) => ({ ...p, name: 'Jordan', age: 51, heightCm: 190 }));
 		await render(YouPage);
 		await page.getByRole('button', { name: 'Redo setup' }).click();
-		await expect.element(page.getByLabelText('Name')).not.toHaveValue('Jordan');
-		await expect.element(page.getByLabelText('Age')).not.toHaveValue('51');
+		await expect.element(page.getByLabelText('Name')).toHaveValue('Jordan');
+		await expect.element(page.getByLabelText('Age')).toHaveValue(51);
+		await expect.element(page.getByLabelText('Height cm')).toHaveValue(190);
 	});
 
 	it('saving preserves the log, weight history and injections', async () => {
