@@ -19,6 +19,14 @@ criteria, test kind, failing test paths, branch, worktree and team. Block 2
 must reuse those identities. It does not split again, create replacement issues
 or worktrees, or ask a worker to rediscover the brief.
 
+That order is also the dependency order. A UI slice usually renders what its
+domain sibling supplies, so its acceptance tests cannot pass before the domain
+implementation exists; the planner says so with `needs_sibling` on the `ui`
+slice, and the driver accepts it and runs that slice after the domain one. The
+dependency never runs the other way: a `domain` slice must not depend on the UI
+slice, both slices must not depend on each other, and the only slice of a
+one-slice story has no sibling to depend on. Each of those is a rejected plan.
+
 Before delegation the driver must retain an immutable record of these inputs,
 the validated failing-test commit, the repository base commit, and the exact
 agent configuration loaded at startup. These are proposed retained records,
@@ -247,12 +255,28 @@ teams, paths or branch identities. Reserve exclusive ownership of the story
 and its slice resources before launch; a second execution must fail without
 starting workers. A held issue label alone is not an exclusive lock.
 
-Two slices must be independently testable against their recorded inputs.
-If UI requires its sibling's unpublished implementation to pass its acceptance
-tests, delegation stops with an unmet dependency; it must not wait forever,
-invent a mock that replaces the acceptance boundary, or copy sibling changes.
-That dependency needs a revised plan in a new run. This is the conservative
-boundary of the parallel policy, not permission to invent integration behavior.
+Two slices are independently testable against their recorded inputs, or the
+UI slice declares that it is not. A declared dependency (`needs_sibling` on the
+`ui` slice, persisted as `depends_on`) is accepted and ordered, never waited on
+inside a turn: the pre-launch barrier still verifies both slices' resources
+before anything launches, the domain loop runs first, and the UI loop launches
+only after the domain slice is frozen. Nothing else may substitute for that
+ordering - a worker must not wait for its sibling, invent a mock that replaces
+the acceptance boundary, or copy sibling changes. A dependency in the other
+direction, a circular pair, or one declared by the only slice of a one-slice
+story is rejected as `PLAN_REJECTED` with `blocked`, and needs a revised plan in
+a new run.
+
+Between the two loops the driver, not a worker, brings the sibling in: it
+merges the frozen domain commit into the UI branch as an explicit merge commit
+and pushes the branch. That merge becomes the slice's `failing_sha` - the base
+every later check compares HEAD, `origin` and the diff against - while
+`tests_sha` keeps naming block 1's failing-test commit, which is the immutable
+acceptance evidence. A merge conflict means the two slices were never the
+layered pair the plan claimed: `PLAN_REJECTED` with `blocked`. The UI
+acceptance tests are then re-run on the merged tree and must still fail; tests
+the domain slice alone satisfies leave nothing for the UI slice to implement
+and stop the run as `TESTS_DO_NOT_FAIL`.
 
 Before every turn, verify exclusive ownership, unchanged driver/configuration,
 current assignment, expected branch and worktree, absence of another active
@@ -408,7 +432,10 @@ retrying an uncertain write; do not replay an agent turn to repair reporting.
 ## Join and delivery boundary
 
 The per-slice success barrier freezes its commit, gate evidence and session.
-A successful slice is never rerun while its sibling corrects or escalates.
+A successful slice is never rerun while its sibling corrects or escalates, and
+a frozen domain slice is not rerun when the UI slice that depends on it merges
+it in. A UI slice whose domain sibling never froze is never launched: it keeps
+the state delegation left it in, and the report names it as waiting.
 The join waits for every slice to reach a terminal state; it releases only
 when every slice is `succeeded` and frozen inputs still match. Report outcomes
 in domain/UI order regardless of completion order. If failures differ, report
@@ -744,6 +771,12 @@ same attempt number under the same role, revision and session, so the
 bounded budget and the session rules hold exactly as for a first run. A
 voided first attempt relaunches on whatever the dead turn left in the
 worktree: accumulated work, like an escalation's.
+
+A dependent UI slice's sibling merge is reconciled by block 3 itself rather
+than by these tables, because the step is the same one a fresh run takes and
+it is idempotent: a UI slice whose branch already carries the recorded
+sibling commit skips it, and one whose domain sibling is frozen without that
+merge goes through it before its loop launches.
 
 `go.py <n> --reset` undoes what a run created so a fresh run can begin, and
 is the one deliberately destructive command. Under the story lock it closes

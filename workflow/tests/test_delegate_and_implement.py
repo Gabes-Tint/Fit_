@@ -511,19 +511,21 @@ def test_missing_evidence_for_a_signal_rejects_the_contract(world):
     assert "no evidence for signal(s) pattern_known" in result.stdout
 
 
-def test_dependent_slices_are_rejected_before_any_worker_starts(world):
+def test_a_domain_slice_depending_on_the_ui_slice_is_rejected_before_any_worker_starts(world):
+    """The accepted dependency runs one way only: a UI slice may wait for
+    its domain sibling (test_dependent_slices.py), never the reverse."""
     _given_planned_split(world, 435, ["fail", "pass"], ["fail", "pass"])
     proposals = [
         delegate_slice(435, "domain", mechanic_signals()),
         delegate_slice(435, "ui", mechanic_signals()),
     ]
-    proposals[1]["needs_sibling"] = True
+    proposals[0]["needs_sibling"] = True
     world.planner_keeps_rejecting(435, proposals)
 
     result = run_flow(world)
 
     assert result.returncode == 27, result.stdout + result.stderr
-    assert "cannot be implemented and validated independently" in result.stdout
+    assert "a domain slice must never depend on the UI slice" in result.stdout
     assert "revised plan" in result.stdout or "replan" in result.stdout.lower()
     # the pre-launch barrier launched no implementation worker
     implementation_talks = [
@@ -540,6 +542,18 @@ def test_dependent_slices_are_rejected_before_any_worker_starts(world):
         if call.get("tool") == "aarmy" and call["argv"][0:2] == ["talk", "mechanic"]
     ]
     assert len(mechanic_talks_after_block1) == 2  # the two block-1 test-writing turns
+
+
+def test_the_only_slice_of_a_story_cannot_depend_on_a_sibling_it_does_not_have(world):
+    _given_planned_story(world, 436)
+    proposal = delegate_slice(436, "domain", mechanic_signals())
+    proposal["needs_sibling"] = True
+    world.planner_keeps_rejecting(436, [proposal])
+
+    result = run_flow(world)
+
+    assert result.returncode == 27, result.stdout + result.stderr
+    assert "has no sibling to depend on" in result.stdout
 
 
 # --- contract stops during implementation -----------------------------------------
