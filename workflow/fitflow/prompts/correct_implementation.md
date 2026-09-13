@@ -9,10 +9,16 @@ $diagnostic
 
 Fix the smallest change needed so the driver's validation passes. Keep the
 rules from the original brief: work only in this worktree, never commit or
-push (the driver owns commits), never touch workflow or gate policy files,
-and never modify the acceptance test files listed below or weaken their
-assertions - their bytes must stay identical. Any other test inside this
-slice's own layer may change.
+push (the driver owns commits), and never modify the acceptance test files
+listed below or weaken their assertions - their bytes must stay identical.
+Any other test inside this slice's own layer may change. These paths remain
+out of reach, and a diff that touches any of them is rejected again:
+
+$forbidden
+
+Everything else in the repository is in reach, including the driver's own
+code under `workflow/` and the application tooling under `scripts/` that is
+not listed above.
 
 Original brief:
 $brief
