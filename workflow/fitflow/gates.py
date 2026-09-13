@@ -1,6 +1,6 @@
 """The turn gates: `bun run verify:changed` and, for block 1's
-acceptance-test branch, `bun run lint:changed` and `bun run check` - the
-repository's own gates.
+acceptance-test branch, `bun run lint:changed`, `bun run check` and the
+repository gate's own content steps - the repository's own gates.
 
 `run_turn_gates` runs one command in the slice worktree that sizes and runs
 everything the turn's actual diff needs — the static checks, the specs that
@@ -10,10 +10,14 @@ dependency and route mapping from `scripts/quality/verify-changed-plan.ts`.
 The driver adds no derivation of its own, so its view can never drift from
 the repo's.
 
-`run_changed_lint` and `run_type_check` cover block 1: acceptance tests
-become immutable implementation inputs, so they must pass their own
-change-scoped lint and the repository's type lane before the branch is
-accepted, and the mechanic gets the diagnostic.
+`run_changed_lint`, `run_type_check` and `run_failing_branch_steps` cover
+block 1: acceptance tests become immutable implementation inputs, so they
+must pass their own change-scoped lint, the repository's type lane and the
+repository gate's content steps (`duplicates`, `format:check`,
+`check:suppressions`) before the branch is accepted, and the mechanic gets
+the diagnostic. Those three steps judge bytes rather than behavior, so they
+give the same verdict in block 1 as they will in block 3 - where the test
+file is immutable and nobody is allowed to repair it (#397).
 
 Verdicts come from the gate's own report
 (`reports/quality/gate-verify-changed.json`), never from a missing one:
@@ -22,17 +26,76 @@ repairable diagnostic; a crash (exit 97), a missing, stale or unparsable
 report, or a report contradicting the exit code is an external tool
 failure that stops the run — never an implementation verdict, never a
 success. No full local CI tier is implied.
+
+A judged failure carries the detail, not just the step names: the gate
+report points at each failed step's captured log, and `duplicates` also
+leaves a jscpd report naming both halves of every clone. Block 3 spent six
+attempts on "verify:changed failed steps: duplicates" while the report on
+disk said which two line ranges of which file (#397), so the diagnostic now
+says it.
 """
 
 import json
+import re
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from fitflow.outcome import FlowFailure, Outcome
 
 _CRASH_EXIT_CODE = 97
 _REPORT = Path("reports") / "quality" / "gate-verify-changed.json"
+_FAILING_BRANCH_REPORT = Path("reports") / "quality" / "gate-verify-fast.json"
+_JSCPD_REPORT = Path("reports") / "quality" / "duplication" / "jscpd-report.json"
+
+#: The repository gate's non-test steps: they judge the bytes of a file, so
+#: their verdict on the failing-test branch is the verdict block 3 will get
+#: on the same, by then immutable, bytes. `verify:changed` runs the whole
+#: tier including the tests that must still fail here, so block 1 selects
+#: these three through the gate's own `--only`.
+FAILING_BRANCH_STEPS = ("duplicates", "format:check", "check:suppressions")
+_FAILING_BRANCH_ARGV = [
+    "bun",
+    "scripts/quality/gate.ts",
+    "verify:fast",
+    "--only",
+    ",".join(FAILING_BRANCH_STEPS),
+]
+
+_DETAIL_LINES = 12
+_DETAIL_CHARS = 1200
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+#: How each step names the files it blames. A step that is not here, or
+#: whose output names nothing, leaves the failure unlocated: the driver then
+#: draws no conclusion about who owns it.
+_CULPRIT_PATTERNS = {
+    "format:check": re.compile(r"^\[warn\]\s+(\S+)\s*$"),
+    "check:suppressions": re.compile(r"^\s+(\S+):\d+\s"),
+    "lint": re.compile(r"^([\w./@+-]+\.(?:ts|js|mjs|cjs|svelte|json|md|css|html))\s*$"),
+    "lint:changed": re.compile(r"^([\w./@+-]+\.(?:ts|js|mjs|cjs|svelte|json|md|css|html))\s*$"),
+}
+
+
+@dataclass(frozen=True)
+class GateFailure:
+    """One judged (exit 1) gate run.
+
+    `diagnostic` is what the agent is told, detail included. `culprits` are
+    the files the failed steps named, and `located` says whether every
+    failed step named some: when it is false nothing may be concluded from
+    `culprits`, because a step whose output the driver cannot read could be
+    blaming anything.
+    """
+
+    diagnostic: str
+    culprits: frozenset[str]
+    located: bool
+
+    @property
+    def headline(self) -> str:
+        return self.diagnostic.splitlines()[0] if self.diagnostic else ""
 
 
 def run_changed_lint(worktree: Path, story_number: int) -> str | None:
@@ -42,17 +105,7 @@ def run_changed_lint(worktree: Path, story_number: int) -> str | None:
     so tests whose own lint is broken are never accepted. Exit 1 with lint
     output is a repairable diagnostic; any other exit is an external tool
     failure, never a lint verdict."""
-    try:
-        result = subprocess.run(
-            ["bun", "run", "lint:changed"],
-            cwd=worktree,
-            capture_output=True,
-            text=True,
-        )
-    except OSError as error:
-        raise FlowFailure(
-            Outcome.TOOL_FAILED, f"lint:changed could not run: {error}", story_number
-        ) from error
+    result = _launch(["bun", "run", "lint:changed"], worktree, story_number, "lint:changed")
     # both streams can carry real diagnostics: eslint prints the error body
     # to stdout in some configurations and to stderr in others, so neither
     # stream alone may be the verdict (#382)
@@ -81,17 +134,7 @@ def run_type_check(worktree: Path, story_number: int) -> str | None:
     on it by construction and this branch adds only test files: a type error
     here is the acceptance tests'. Exit 1 with the checker's output is a
     repairable diagnostic; any other exit is an external tool failure."""
-    try:
-        result = subprocess.run(
-            ["bun", "run", "check"],
-            cwd=worktree,
-            capture_output=True,
-            text=True,
-        )
-    except OSError as error:
-        raise FlowFailure(
-            Outcome.TOOL_FAILED, f"check could not run: {error}", story_number
-        ) from error
+    result = _launch(["bun", "run", "check"], worktree, story_number, "check")
     output = "\n".join(
         stream.strip() for stream in (result.stderr, result.stdout) if stream.strip()
     )
@@ -108,9 +151,25 @@ def run_type_check(worktree: Path, story_number: int) -> str | None:
     )
 
 
-def run_turn_gates(worktree: Path, story_number: int) -> str | None:
+def run_failing_branch_steps(worktree: Path, story_number: int) -> "GateFailure | None":
+    """Run the repository gate's content steps over the failing-test branch
+    and return a repairable failure, or None when they pass.
+
+    These are the steps block 3 will run over the very same test bytes, by
+    which time they are immutable and no implementer may repair them: a
+    clone inside an acceptance test failed `duplicates` on six consecutive
+    implementation attempts before anyone could see where it was (#397).
+    The mechanic still owns the file here, so the same verdict is an
+    ordinary block 1 correction."""
+    started = time.time()
+    label = ", ".join(FAILING_BRANCH_STEPS)
+    result = _launch(_FAILING_BRANCH_ARGV, worktree, story_number, label)
+    return _verdict(worktree, story_number, started, result, label, _FAILING_BRANCH_REPORT)
+
+
+def run_turn_gates(worktree: Path, story_number: int) -> "GateFailure | None":
     """Run the pre-push gate for this turn's diff. Returns a repairable
-    diagnostic, or None when the gate passed.
+    failure, or None when the gate passed.
 
     A crashed run (any exit outside {0, 1}) is retried once before it is
     judged an external tool failure - the same single re-run QUALITY.md
@@ -119,78 +178,88 @@ def run_turn_gates(worktree: Path, story_number: int) -> str | None:
     race."""
     for attempt in (1, 2):
         started = time.time()
-        try:
-            result = subprocess.run(
-                ["bun", "run", "verify:changed"],
-                cwd=worktree,
-                capture_output=True,
-                text=True,
-            )
-        except OSError as error:
-            raise FlowFailure(
-                Outcome.TOOL_FAILED, f"verify:changed could not run: {error}", story_number
-            ) from error
+        result = _launch(["bun", "run", "verify:changed"], worktree, story_number, "verify:changed")
         if result.returncode not in (0, 1) and attempt == 1:
             from fitflow import narrate
 
             narrate.line(f"🔁 verify:changed crashed (exit {result.returncode}); retrying once")
             continue
-        return _verdict_from_report(worktree, story_number, started, result)
+        return _verdict(worktree, story_number, started, result, "verify:changed", _REPORT)
     raise AssertionError("unreachable: the loop returns on attempt 2")
 
 
-def _verdict_from_report(
-    worktree: Path, story_number: int, started: float, result: subprocess.CompletedProcess
-) -> str | None:
-    report_path = worktree / _REPORT
-    report = _fresh_report(report_path, started, story_number)
+def _launch(
+    argv: list[str], worktree: Path, story_number: int, label: str
+) -> subprocess.CompletedProcess:
+    try:
+        return subprocess.run(argv, cwd=worktree, capture_output=True, text=True)
+    except OSError as error:
+        raise FlowFailure(
+            Outcome.TOOL_FAILED, f"{label} could not run: {error}", story_number
+        ) from error
+
+
+def _verdict(
+    worktree: Path,
+    story_number: int,
+    started: float,
+    result: subprocess.CompletedProcess,
+    label: str,
+    report_name: Path,
+) -> "GateFailure | None":
+    report_path = worktree / report_name
+    report = _fresh_report(report_path, started, story_number, label)
     failed = report.get("failed") or []
     crashed = report.get("crashed") or []
     if result.returncode == 0:
         if report.get("ok") is not True or failed or crashed:
             raise FlowFailure(
                 Outcome.TOOL_FAILED,
-                f"verify:changed report contradicts its green exit: {report_path}",
+                f"{label} report contradicts its green exit: {report_path}",
                 story_number,
                 add_blocked=True,
             )
-        narrate_gates(int(report.get("stepsRun", 0) or 0))
+        narrate_gates(int(report.get("stepsRun", 0) or 0), label)
         return None
     if result.returncode == 1 and failed and not crashed:
-        return f"verify:changed failed steps: {', '.join(failed)}"
+        return _failure(worktree, report, failed, label)
     raise FlowFailure(
         Outcome.TOOL_FAILED,
-        f"verify:changed crashed (exit {result.returncode}); "
+        f"{label} crashed (exit {result.returncode}); "
         f"failed={failed}, crashed={crashed} — see {report_path}",
         story_number,
         add_blocked=True,
     )
 
 
-def _fresh_report(report_path: Path, started: float, story_number: int) -> dict:
+def _fresh_report(report_path: Path, started: float, story_number: int, label: str) -> dict:
     """The gate report must exist, be written by this turn, and parse. A
     missing, stale or unparsable report is never treated as a failed
     assertion and never as success."""
     if not report_path.exists():
         raise FlowFailure(
             Outcome.TOOL_FAILED,
-            f"verify:changed left no gate report at {report_path}",
+            f"{label} left no gate report at {report_path}",
             story_number,
             add_blocked=True,
         )
     if report_path.stat().st_mtime < started:
         raise FlowFailure(
             Outcome.TOOL_FAILED,
-            f"verify:changed gate report is stale (predates this turn): {report_path}",
+            f"{label} gate report is stale (predates this turn): {report_path}",
             story_number,
             add_blocked=True,
         )
+    return _parsed(report_path, story_number, label)
+
+
+def _parsed(report_path: Path, story_number: int, label: str) -> dict:
     try:
         report = json.loads(report_path.read_text())
     except (ValueError, OSError) as error:
         raise FlowFailure(
             Outcome.TOOL_FAILED,
-            f"verify:changed gate report is unparsable: {error}",
+            f"{label} gate report is unparsable: {error}",
             story_number,
             add_blocked=True,
         ) from error
@@ -201,11 +270,146 @@ def _fresh_report(report_path: Path, started: float, story_number: int) -> dict:
     ):
         raise FlowFailure(
             Outcome.TOOL_FAILED,
-            f"verify:changed gate report has an unexpected shape: {report_path}",
+            f"{label} gate report has an unexpected shape: {report_path}",
             story_number,
             add_blocked=True,
         )
     return report
+
+
+# --- the detail a failed step carries ------------------------------------
+
+
+def _failure(worktree: Path, report: dict, failed: list[str], label: str) -> GateFailure:
+    """Turn the report's failed steps into the diagnostic the agent reads:
+    the step names first, then each step's own account of what it found."""
+    entries = _step_entries(report)
+    lines = [f"{label} failed steps: {', '.join(failed)}"]
+    culprits: set[str] = set()
+    located = True
+    for name in failed:
+        detail, blamed = _step_failure(worktree, entries.get(name) or {"name": name})
+        lines.append(f"{name}:")
+        lines.extend(f"  {text}" for text in detail or ["(the step left no readable output)"])
+        if blamed is None:
+            located = False
+        else:
+            culprits |= blamed
+    return GateFailure("\n".join(lines), frozenset(culprits), located and bool(culprits))
+
+
+def _step_entries(report: dict) -> dict:
+    steps = report.get("steps")
+    return {
+        step.get("name"): step
+        for step in (steps if isinstance(steps, list) else [])
+        if isinstance(step, dict)
+    }
+
+
+def _step_failure(worktree: Path, step: dict) -> tuple[list[str], frozenset[str] | None]:
+    """One failed step's compact detail, and the files it blames - or None
+    for the files when the driver cannot read them out reliably. Culprits
+    come from the whole output, never from the truncated detail: a tail that
+    happens to stop before a product file must not read as a failure
+    confined to the tests."""
+    if step.get("name") == "duplicates":
+        clones = _clone_report(worktree)
+        if clones:
+            return [_clone_line(clone) for clone in clones], _clone_files(clones)
+    output = _step_output(worktree, step)
+    return _tail(output), _blamed_files(step.get("name"), output)
+
+
+def _step_output(worktree: Path, step: dict) -> str:
+    """A step's captured output. `gate.ts` and `verify-changed.ts` write it
+    to the log the report points at; inline `detail`/`stderr`/`stdout` are
+    read too, so a report shape that carries the text itself still works."""
+    inline = [
+        str(step[key]).strip()
+        for key in ("detail", "stderr", "stdout")
+        if str(step.get(key) or "").strip()
+    ]
+    if inline:
+        return "\n".join(inline)
+    log = step.get("log")
+    if not isinstance(log, str) or not log:
+        return ""
+    try:
+        return (worktree / log).read_text()
+    except OSError:
+        return ""
+
+
+def _tail(output: str) -> list[str]:
+    """The last few meaningful lines, ANSI stripped and length capped: a
+    gate log is thousands of lines of table and the verdict is at the end."""
+    lines = [
+        text
+        for text in (_ANSI.sub("", raw).rstrip() for raw in output.splitlines())
+        if text.strip()
+    ][-_DETAIL_LINES:]
+    while lines and sum(len(text) + 1 for text in lines) > _DETAIL_CHARS:
+        if len(lines) == 1:
+            return [lines[0][:_DETAIL_CHARS]]
+        lines.pop(0)
+    return lines
+
+
+def _blamed_files(name: object, output: str) -> frozenset[str] | None:
+    pattern = _CULPRIT_PATTERNS.get(name) if isinstance(name, str) else None
+    if pattern is None:
+        return None
+    found = {
+        match.group(1) for line in output.splitlines() if (match := pattern.match(line)) is not None
+    }
+    return frozenset(found) or None
+
+
+def _clone_report(worktree: Path) -> list[dict]:
+    """jscpd's own report, which names both halves of every clone. The
+    `duplicates` step prints a table around them; the report is exact."""
+    try:
+        report = json.loads((worktree / _JSCPD_REPORT).read_text())
+    except (ValueError, OSError):
+        return []
+    clones = report.get("duplicates") if isinstance(report, dict) else None
+    if not isinstance(clones, list):
+        return []
+    return [clone for clone in clones[:_DETAIL_LINES] if _clone_sides(clone) is not None]
+
+
+def _clone_sides(clone: object) -> tuple[dict, dict] | None:
+    if not isinstance(clone, dict):
+        return None
+    first, second = clone.get("firstFile"), clone.get("secondFile")
+    if not isinstance(first, dict) or not isinstance(second, dict):
+        return None
+    if not isinstance(first.get("name"), str) or not isinstance(second.get("name"), str):
+        return None
+    return first, second
+
+
+def _clone_line(clone: dict) -> str:
+    sides = _clone_sides(clone)
+    if sides is None:
+        return ""
+    lines = clone.get("lines")
+    count = f" ({lines} lines)" if isinstance(lines, int) else ""
+    return f"{_side(sides[0])} ↔ {_side(sides[1])}{count}"
+
+
+def _side(entry: dict) -> str:
+    return f"{entry['name']}:{entry.get('start')}-{entry.get('end')}"
+
+
+def _clone_files(clones: list[dict]) -> frozenset[str]:
+    names: set[str] = set()
+    for clone in clones:
+        sides = _clone_sides(clone)
+        if sides is not None:
+            names |= {sides[0]["name"], sides[1]["name"]}
+    return frozenset(names)
 
 
 def narrate_gates(steps_run: int, tool: str = "verify:changed") -> None:

@@ -341,7 +341,7 @@ def _settle(record: RunRecord, piece: SliceRecord, reply: dict, attempt: int) ->
         return True
     with record.transition():
         piece.diagnostics.append(diagnostic)
-    narrate.line(f"🩺 #{piece.number} ({piece.layer}) diagnostic: {diagnostic}")
+    narrate.headed(f"🩺 #{piece.number} ({piece.layer}) diagnostic: ", diagnostic)
     if attempt < turns.BUDGET:
         with record.transition():
             piece.move("correcting")
@@ -627,9 +627,10 @@ def _validate_turn(
             )
         _check_acceptance_is_sound(record, piece, verdict)
         return verdict.why
-    gate_diagnostic = gates.run_turn_gates(path, record.story_number)
-    if gate_diagnostic is not None:
-        return gate_diagnostic
+    gate_failure = gates.run_turn_gates(path, record.story_number)
+    if gate_failure is not None:
+        _check_gate_blames_the_implementation(record, piece, gate_failure)
+        return gate_failure.diagnostic
     mismatch = _report_mismatch(reply["changed_files"], changed)
     if mismatch is not None:
         return mismatch
@@ -637,6 +638,56 @@ def _validate_turn(
         f"🔍 Verify #{piece.number}: scope ✔ · acceptance pass ✔ · branch identity ✔ · "
         "no gate files ✔"
     )
+    return None
+
+
+def _check_gate_blames_the_implementation(
+    record: RunRecord, piece: SliceRecord, failure: gates.GateFailure
+) -> None:
+    """A gate failure every one of whose culprit files is a retained
+    acceptance test is not repairable here: the only bytes that would fix it
+    are the ones the implementer may never change. Block 1 accepted the
+    defect, so the run stops and names it, instead of spending three
+    attempts and an escalation on an impossible correction - which is
+    exactly what a ten-line clone inside an acceptance test cost on #397.
+
+    Conservative by construction: a failure the driver could not locate, or
+    one that names any other file, stays an ordinary repairable
+    diagnostic."""
+    if not failure.located:
+        return
+    blamed = _acceptance_culprits(failure.culprits, piece.test_files)
+    if blamed is None:
+        return
+    raise FlowFailure(
+        Outcome.TESTS_INVALID,
+        f"{piece.slug}: block 1 accepted an acceptance test the repository gate rejects - "
+        f"the failure is confined to {', '.join(blamed)}, whose bytes an implementation turn "
+        f"may not change: {failure.diagnostic}; repair the test in block 1 and run the story "
+        "again",
+        record.story_number,
+        add_blocked=True,
+    )
+
+
+def _acceptance_culprits(culprits, test_files: list[str]) -> list[str] | None:
+    """The acceptance tests a gate failure blames, or None the moment it
+    blames anything else. Steps report their own relative paths - jscpd's
+    are relative to its scan roots - so a culprit matches a test by path
+    suffix, never by equality alone."""
+    blamed = []
+    for name in sorted(culprits):
+        test = _matching_test(name, test_files)
+        if test is None:
+            return None
+        blamed.append(test)
+    return sorted(set(blamed)) or None
+
+
+def _matching_test(name: str, test_files: list[str]) -> str | None:
+    for test in test_files:
+        if test == name or test.endswith(f"/{name}") or name.endswith(f"/{test}"):
+            return test
     return None
 
 

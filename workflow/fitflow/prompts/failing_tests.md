@@ -56,6 +56,13 @@ Rules:
   tests are immutable inputs to implementation, so they must lint clean both
   before and after the behavior exists: if `lint:changed` flags the tests,
   restructure the assertion instead of suppressing the rule.
+- The test files must also pass the repository's own content gates, because
+  the implementation gate will run them over these same bytes when nobody
+  can change them any more: `duplicates` (copy-paste detection, ratchet 0 -
+  extract a repeated setup or assertion block into a helper instead of
+  pasting it into a second test), `format:check` (run
+  `bunx prettier --write` over the files you wrote) and `check:suppressions`
+  (the suppression ratchet the rule above already forbids).
 - If a new domain module does not exist yet, dynamically import it inside the
   assertion and call the expected export in the promise chain. This makes the
   assertion fail both while the module is absent and while its behavior is

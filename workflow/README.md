@@ -36,7 +36,16 @@ identity and acceptance behavior and then runs the repository's own
 diff-sized pre-push gate (`bun run verify:changed`) in the slice worktree,
 whose plan derives the affected specs, e2e files and mutation lanes from the
 actual diff under the repo's dependency and route mapping. A judged failing
-step (exit 1) retries in the same role; a crash, missing, stale or
+step (exit 1) retries in the same role, with the step's own account of what
+it found - a capped tail of its captured log, and for `duplicates` both
+halves of every clone as `file:startLine-endLine`, read out of jscpd's
+report - not merely the failed step's name. When every file a failed step
+blames is one of the retained acceptance tests, the turn cannot repair it
+at all (those bytes are immutable) and the run stops at once as
+`TESTS_INVALID`, naming block 1 and the file, instead of spending three
+corrections and an escalation on it; a failure naming any other file, or
+one whose files the driver cannot extract, stays an ordinary repairable
+diagnostic. A crash, missing, stale or
 inconsistent gate report stops at once. The scope check forbids the gates
 the agent is judged by - anything under `quality/`, `.github/` or
 `scripts/`, plus the lockfiles, the tool configuration and `agents.yaml` -
@@ -102,7 +111,13 @@ files that are not `*.e2e.ts`.
 Because the failing tests become immutable implementation inputs, the driver
 validates them in block 1 as what they will be: the branch must pass the
 repository's change-scoped lint (`bun run lint:changed`, repairable by the
-mechanic until the diagnostic is clean) and its type lane (`bun run check`),
+mechanic until the diagnostic is clean), its type lane (`bun run check`) and
+the repository gate's own content steps
+(`bun scripts/quality/gate.ts verify:fast --only duplicates,format:check,check:suppressions`) -
+the steps block 3 will run over these same bytes once nobody can change
+them, so a ten-line clone inside an acceptance test is caught while the
+mechanic still owns the file rather than failing six implementation
+attempts (#397),
 and acceptance tests carry no lint suppression at all (`eslint-disable`,
 `@ts-ignore`, `@ts-expect-error` are rejected). A playwright spec must exercise a component through the
 repository-owned harness route `/dev/component-harness` (see

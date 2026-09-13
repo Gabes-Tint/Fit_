@@ -511,9 +511,33 @@ reviewer:
     def given_gate_outcomes(self, **outcomes) -> None:
         """Scripted results for `npm run <script>` and `bun run
         test:mutation:<lane>`: pass, fail, or tool_error. A list is
-        consumed one value per invocation."""
+        consumed one value per invocation. `verify:fast` scripts block 1's
+        content steps over the failing-test branch."""
         self._load()
         self.world.setdefault("gate_outcomes", {}).update(outcomes)
+        self._save()
+
+    def given_failed_gate_steps(self, tier: str, *steps: str) -> None:
+        """Which steps a scripted `fail` of that gate reports. Defaults:
+        `test:unit:server` for verify:changed, `duplicates` for the
+        verify:fast content steps."""
+        self._load()
+        self.world.setdefault("gate_failed_steps", {})[tier] = list(steps)
+        self._save()
+
+    def given_duplicate_clone(self, first: str, second: str) -> None:
+        """The two halves jscpd reports when `duplicates` fails: lines
+        40-49 of `first` against lines 90-99 of `second`, in jscpd's own
+        scan-root-relative spelling."""
+        self._load()
+        self.world["clone_locations"] = [first, second]
+        self._save()
+
+    def given_gate_failure_file(self, file: str) -> None:
+        """The file a failing `format:check`, `check:suppressions` or
+        `lint` step names in its output."""
+        self._load()
+        self.world["gate_failure_file"] = file
         self._save()
 
     def _queue_turn(

@@ -1782,3 +1782,132 @@ def test_product_code_that_throws_stays_an_ordinary_correction(world):
     assert "block 1 accepted a defective acceptance test" not in result.stdout
     assert "Cannot read properties of undefined (reading 'units')" in result.stdout
     assert "correcting after attempt 1" in result.stdout
+
+
+# --- a gate failure says where it is, and whose it is (issue #397) --------------
+
+
+def test_a_failing_duplicates_step_names_both_halves_of_the_clone(world):
+    """`verify:changed failed steps: duplicates` cost six attempts on #397
+    while jscpd's report on disk named both line ranges. The diagnostic now
+    carries them, into the log and into the correction prompt."""
+    _given_planned_story(world, 470)
+    _delegate_mechanic(world, 470)
+    world.given_gate_outcomes(**{"verify:changed": ["fail", "pass"]})
+    world.given_failed_gate_steps("verify:changed", "duplicates")
+    # the clone spans a product file, so the implementer can still repair it
+    world.given_duplicate_clone("lib/delegate.ts", "lib/other.ts")
+    _implement(
+        world,
+        "story-470-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = true;\n"},
+    )
+    _implement(
+        world,
+        "story-470-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = 2;\n"},
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "verify:changed failed steps: duplicates" in result.stdout
+    assert "lib/delegate.ts:40-49 ↔ lib/other.ts:90-99 (10 lines)" in result.stdout
+    # the detail reads as a block under the headline, not as one long line
+    assert "🩺 #470 (domain) diagnostic: verify:changed failed steps: duplicates" in result.stdout
+    assert "   │ duplicates:" in result.stdout
+    assert "   │   lib/delegate.ts:40-49 ↔ lib/other.ts:90-99 (10 lines)" in result.stdout
+    assert "correcting after attempt 1" in result.stdout
+    correction = _talks(world, "mechanic", "story-470-domain")[2]["prompt"]
+    assert "lib/delegate.ts:40-49 ↔ lib/other.ts:90-99" in correction
+    assert "🔒 #470 (domain) frozen at" in result.stdout
+
+
+def test_a_gate_failure_confined_to_the_acceptance_test_stops_as_tests_invalid(world):
+    """The acceptance test's bytes are immutable for an implementation
+    turn, so a gate failure only that file could fix is block 1's defect,
+    not three corrections and an escalation (#397)."""
+    test_file = _given_planned_story(world, 471)
+    _delegate_mechanic(world, 471)
+    world.given_gate_outcomes(**{"verify:changed": "fail"})
+    world.given_failed_gate_steps("verify:changed", "duplicates")
+    world.given_duplicate_clone("lib/delegate.spec.ts", "lib/delegate.spec.ts")
+    for _ in range(3):
+        _implement(
+            world,
+            "story-471-domain",
+            "mechanic",
+            files={"src/lib/delegate.ts": "export const delegate = true;\n"},
+        )
+
+    result = run_flow(world)
+
+    assert result.returncode == 31, result.stdout + result.stderr
+    assert "TESTS_INVALID (exit 31)" in result.stdout
+    assert "block 1 accepted an acceptance test the repository gate rejects" in result.stdout
+    assert test_file in result.stdout
+    assert "lib/delegate.spec.ts:40-49 ↔ lib/delegate.spec.ts:90-99" in result.stdout
+    # exactly one implementation turn: no correction, no escalation
+    assert len(_talks(world, "mechanic", "story-471-domain")) == 2  # block 1 + block 3
+    assert "correcting after attempt 1" not in result.stdout
+    assert "blocked" in world.issue(471)["labels"]
+    assert any(test_file in comment for comment in world.issue(471)["comments"])
+
+
+def test_a_gate_failure_naming_a_product_file_stays_repairable(world):
+    """Only a failure confined to the immutable tests stops the run; one
+    the implementer's own file caused is an ordinary correction."""
+    _given_planned_story(world, 472)
+    _delegate_mechanic(world, 472)
+    world.given_gate_outcomes(**{"verify:changed": ["fail", "pass"]})
+    world.given_failed_gate_steps("verify:changed", "format:check")
+    world.given_gate_failure_file("src/lib/delegate.ts")
+    _implement(
+        world,
+        "story-472-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = true;\n"},
+    )
+    _implement(
+        world,
+        "story-472-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = 2;\n"},
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "block 1 accepted an acceptance test" not in result.stdout
+    assert "[warn] src/lib/delegate.ts" in result.stdout
+    assert "correcting after attempt 1" in result.stdout
+    assert "🔒 #472 (domain) frozen at" in result.stdout
+
+
+def test_a_failing_step_the_driver_cannot_locate_stays_repairable(world):
+    """Conservative by construction: a step whose output names no file at
+    all says nothing about who owns the failure."""
+    _given_planned_story(world, 473)
+    _delegate_mechanic(world, 473)
+    world.given_gate_outcomes(**{"verify:changed": ["fail", "pass"]})
+    _implement(
+        world,
+        "story-473-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = true;\n"},
+    )
+    _implement(
+        world,
+        "story-473-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = 2;\n"},
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "verify:changed failed steps: test:unit:server" in result.stdout
+    assert "rejects an expired token" in result.stdout
+    assert "correcting after attempt 1" in result.stdout
