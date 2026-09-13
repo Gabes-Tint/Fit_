@@ -131,6 +131,9 @@ PUBLIC_ORIGIN_VARIABLE = "FIT_PUBLIC_ORIGIN"
 # --- Labels that hold a story off the pick list ------------------------------
 
 HOLDING_LABELS = {"in-progress", "blocked", "needs-gabriel", "paused"}
+# The holds a person placed, which `--resume` respects; the other two are
+# the run's own marks on the story it is resuming.
+HUMAN_HOLD_LABELS = {"needs-gabriel", "paused"}
 STORY_LABEL = "story"
 IN_PROGRESS_LABEL = "in-progress"
 BLOCKED_LABEL = "blocked"

@@ -17,6 +17,7 @@ class Outcome(IntEnum):
     IMPLEMENTED = 0  # alias: exit 0 after blocks 2-3 also pass
     DELIVERED = 0  # alias: exit 0 after block 4's merge also passes
     SHIPPED = 0  # alias: exit 0 after block 5's deploy and cleanup also pass
+    RESET = 0  # alias: `go.py <n> --reset` undid what a run created
     NOTHING_TO_PICK = 10
     NEEDS_GABRIEL = 11
     CANNOT_PICK = 20

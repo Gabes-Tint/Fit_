@@ -20,8 +20,16 @@ def run(story, slices: list, issue_context: str, base_sha: str) -> RunRecord:
     """Block 2 for every slice of the story: signals turn, selection,
     envelope, pre-launch barrier. Returns the run record for block 3."""
     record = begin_run(story.number, base_sha, agents.roster(), slices)
+    return decide_and_launch(story, record, issue_context)
+
+
+def decide_and_launch(story, record: RunRecord, issue_context: str) -> RunRecord:
+    """Block 2 on an existing record - the fresh one `run` just created, or
+    a retained one a resume brings back to this block. The slice records
+    carry everything the signals turn needs; the planner's team is created
+    fresh either way."""
     try:
-        proposals = _signal_proposals(story, slices, issue_context)
+        proposals = _signal_proposals(story, record.ordered(), issue_context)
         _decide(record, story, proposals)
         _launch_barrier(record)
         return record

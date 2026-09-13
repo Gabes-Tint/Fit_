@@ -557,6 +557,25 @@ reviewer:
             if call.get("tool") == "gh" and call["argv"][:3] == ["issue", "edit", str(number)]
         ]
 
+    def pull(self, number: int) -> dict:
+        self._load()
+        return self.world["prs"][str(number)]
+
+    def run_record(self, story_number: int) -> dict:
+        """The run's retained state, as persisted."""
+        return json.loads((self.home / "runs" / f"story-{story_number}.json").read_text())
+
+    def rewrite_run_record(self, story_number: int, edit) -> None:
+        """Simulate a run that died at a point no scripted failure can
+        reach: `edit(state)` mutates the retained record in place."""
+        path = self.home / "runs" / f"story-{story_number}.json"
+        state = json.loads(path.read_text())
+        edit(state)
+        path.write_text(json.dumps(state, indent=2, sort_keys=True))
+
+    def archived_run_records(self, story_number: int) -> list[Path]:
+        return sorted((self.home / "runs").glob(f"story-{story_number}.*.reset.json"))
+
     def ship_record(self, story_number: int) -> dict:
         """`delivery.ship` from the run's retained state - block 5's own
         account of what it shipped and cleaned up."""

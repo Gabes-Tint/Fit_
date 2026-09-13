@@ -285,6 +285,19 @@ def _git(cwd, *args):
     return result.stdout.strip()
 
 
+def cmd_pr_close(argv, world):
+    number = int(argv[2])
+    pull = _pr(world, number)
+    if pull is None:
+        return 1
+    pull["state"] = "CLOSED"
+    body = opt(argv, "--comment")
+    if body:
+        pull.setdefault("comments", []).append(body)
+    save(world)
+    return 0
+
+
 def cmd_pr_merge(argv, world):
     """The merge queue's squash merge, for real, in a clone of the fake
     origin - so the merge commit the driver ships is a commit that exists
@@ -414,6 +427,7 @@ COMMANDS = {
     ("pr", "view"): cmd_pr_view,
     ("pr", "checks"): cmd_pr_checks,
     ("pr", "merge"): cmd_pr_merge,
+    ("pr", "close"): cmd_pr_close,
     ("run", "list"): cmd_run_list,
     ("run", "rerun"): cmd_run_rerun,
 }

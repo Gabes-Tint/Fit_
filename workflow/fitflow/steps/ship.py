@@ -276,6 +276,11 @@ def _release_worktree(record: RunRecord, merge_sha: str) -> Path:
     what `deploy.ts` names the release after and what the smoke check then
     asserts is live."""
     slug = f"release-story-{record.story_number}"
+    retained = _ship_value(record, "release_worktree") or {}
+    path = worktrees.slice_worktree_path(slug)
+    if _retained_release(retained, path, merge_sha):
+        narrate.line(f"🌿 Release worktree {slug} retained at {merge_sha[:12]}")
+        return path
     if worktrees.slice_worktree_exists(slug):
         raise _stop(
             record,
@@ -295,6 +300,15 @@ def _release_worktree(record: RunRecord, merge_sha: str) -> Path:
     _remember(record, "release_worktree", {"slug": slug, "path": str(path), "head": head})
     narrate.line(f"🌿 Release worktree {slug} at {merge_sha[:12]} · clean ✔")
     return path
+
+
+def _retained_release(retained: dict, path: Path, merge_sha: str) -> bool:
+    """A resumed run's release worktree, accepted only at the merge commit."""
+    return (
+        retained.get("head") == merge_sha
+        and path.exists()
+        and worktrees.local_head(path) == merge_sha
+    )
 
 
 # --- the deploys ---------------------------------------------------------------
@@ -359,6 +373,13 @@ def _mark_started(record: RunRecord, name: str, target) -> str:
 
 
 def _deploy(story, record, path: Path, name: str, target, merge_sha: str, tunnel: bool) -> None:
+    retained = _ship_value(record, name) or {}
+    if retained.get("ok") and retained.get("origin") == target.origin:
+        # a resumed run: this deploy already went live and was smoke-verified
+        narrate.line(
+            f"✅ {name} deploy retained: live at {merge_sha[:12]} since {retained['started']}"
+        )
+        return
     narrate.line(f"🚀 Deploying {merge_sha[:12]} to {name} ({target.origin})")
     started = _mark_started(record, name, target)
     _report_path(path).unlink(missing_ok=True)
@@ -548,6 +569,10 @@ def _cleanup(record: RunRecord, merge_sha: str) -> list[str]:
     establishes the same fact itself and only then forces."""
     removed, kept, deleted, failures = [], [], {}, []
     for slug, tip, landed in _cleanup_targets(record, merge_sha):
+        if not worktrees.slice_worktree_path(slug).exists() and not worktrees.branch_exists(slug):
+            # a resumed run may find it already gone: nothing to remove is
+            # not a failure to remove, and not a removal either
+            continue
         failure = _remove_target(slug, tip, landed)
         if failure:
             kept.append(slug)
@@ -577,7 +602,12 @@ def _remove_target(slug: str, tip: str, landed: bool) -> str:
     """The failure to report, or "" once the worktree and its local branch
     are gone."""
     path = worktrees.slice_worktree_path(slug)
-    if path.exists() and not worktrees.is_clean(path):
+    if not path.exists():
+        # the worktree went, its branch did not (a resumed run): the branch
+        # alone is what is left to remove
+        worktrees.delete_branch_at(slug, tip)
+        return ""
+    if not worktrees.is_clean(path):
         return f"{slug} was not removed: {worktrees.status_summary(path)}"
     code, output = worktrees.worktree_done(slug, force=landed)
     if code != 0:

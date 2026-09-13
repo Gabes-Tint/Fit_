@@ -174,6 +174,31 @@ def changed_between(worktree: Path, ref: str) -> list[str]:
     return committed + untracked
 
 
+def working_tree_digest(worktree: Path) -> str:
+    """One hash over HEAD and every tracked change and untracked file in the
+    working tree, by content. Recorded when a turn ends and compared when a
+    resume wants to re-derive that turn's verdict: the same digest means
+    the bytes the agent left are the bytes about to be judged."""
+    import hashlib
+
+    lines = [f"HEAD {local_head(worktree)}"]
+    status = _git("status", "--porcelain", "--untracked-files=all", cwd=worktree)
+    for line in status.stdout.splitlines():
+        if not line.strip():
+            continue
+        path = line[3:]
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1]
+        path = path.strip()
+        target = worktree / path
+        if target.is_file():
+            blob = _git("hash-object", "--", path, cwd=worktree).stdout.strip()
+        else:
+            blob = "deleted"
+        lines.append(f"{path} {blob}")
+    return hashlib.sha256("\n".join(sorted(lines)).encode()).hexdigest()
+
+
 def content_at(worktree: Path, ref: str, path: str) -> str | None:
     """A file's bytes at `ref` in this worktree, or None if it did not exist."""
     result = _git("show", f"{ref}:{path}", cwd=worktree)
@@ -350,6 +375,12 @@ def delete_branch_at(branch: str, expected_sha: str) -> bool:
     tip = _git("rev-parse", branch, cwd=settings.FIT_REPO).stdout.strip()
     if tip != expected_sha:
         return False
+    return _git("branch", "-D", branch, cwd=settings.FIT_REPO).returncode == 0
+
+
+def delete_local_branch(branch: str) -> bool:
+    """`git branch -D`, whatever the tip: `--reset` is the one caller, and
+    it has already said what it is throwing away."""
     return _git("branch", "-D", branch, cwd=settings.FIT_REPO).returncode == 0
 
 

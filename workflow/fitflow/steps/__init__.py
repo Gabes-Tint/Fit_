@@ -1,12 +1,15 @@
 """One module per box of the diagram. This is exactly what go.py calls."""
 
+from fitflow.steps.delegate import decide_and_launch as redelegate
 from fitflow.steps.delegate import run as run_delegate
 from fitflow.steps.deliver import run as run_deliver
 from fitflow.steps.failing_tests import write_failing_tests
 from fitflow.steps.hold import hold
 from fitflow.steps.implement import run as run_implement
-from fitflow.steps.pick import pick_story
+from fitflow.steps.pick import pick_for_resume, pick_story
 from fitflow.steps.report import report_planned
+from fitflow.steps.reset import run as run_reset
+from fitflow.steps.resume import DELEGATE, DELIVER, IMPLEMENT, SHIP, reconcile
 from fitflow.steps.ship import run as run_ship
 from fitflow.steps.slicing import slice_at_layer_boundary
 from fitflow.steps.sync import sync
@@ -16,15 +19,24 @@ delegate = run_delegate
 deliver = run_deliver
 implement = run_implement
 ship = run_ship
+reset = run_reset
 
 __all__ = [
+    "DELEGATE",
+    "DELIVER",
+    "IMPLEMENT",
+    "SHIP",
     "delegate",
     "deliver",
     "hand_to_gabriel",
     "hold",
     "implement",
+    "pick_for_resume",
     "pick_story",
+    "reconcile",
+    "redelegate",
     "report_planned",
+    "reset",
     "ship",
     "slice_at_layer_boundary",
     "sync",
