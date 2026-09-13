@@ -112,10 +112,12 @@ def _implement(world, slug: str, role: str, files: dict[str, str], **kwargs) -> 
 
 
 def _implement_every_attempt(world, slug: str, role: str, files: dict[str, str]) -> None:
-    """The same rejected diff at every attempt of the role's budget. An
+    """The same rejected diff at every attempt the role gets. An
     out-of-reach path is corrected, not stopped on, so a run only reaches
-    the contract stop when the agent leaves the path there to the end."""
-    for _ in range(3):
+    the contract stop when the agent leaves the path there to the end -
+    which an identical diff reaches on the second attempt, since a
+    diagnostic that repeats verbatim ends the budget where it stands."""
+    for _ in range(2):
         _implement(world, slug, role, files=files)
 
 
@@ -176,12 +178,12 @@ def test_two_corrections_at_the_same_level_then_success(world):
     _given_planned_story(world, 401)
     test_file = "src/lib/delegate.spec.ts"
     _delegate_mechanic(world, 401)
-    world.scripted_test_outcome(test_file, ["fail", "fail", "fail", "pass"])
-    _implement(
-        world,
-        "story-401-domain",
-        "mechanic",
-        files={"src/lib/delegate.ts": "export const wrong = true;\n"},
+    world.scripted_test_outcome(test_file, ["fail", "fail", "pass"])
+    # attempt one changes nothing at all and attempt two implements the
+    # wrong thing: two rejections that differ, so both corrections are
+    # worth taking and the budget is not cut short
+    world.agent_implements(
+        "story-401-domain", "mechanic", files={}, changed_files=["src/lib/delegate.ts"]
     )
     _implement(
         world,
@@ -203,18 +205,64 @@ def test_two_corrections_at_the_same_level_then_success(world):
     assert len(talks) == 4  # block 1 + one initial + two corrections
     assert "correcting after attempt 1" in result.stdout
     assert "correcting after attempt 2" in result.stdout
-    correction_prompt = talks[2]["prompt"]
-    assert "rejected attempt 2" in correction_prompt
+    assert "no changes were made in the worktree" in talks[2]["prompt"]
+    correction_prompt = talks[3]["prompt"]
+    assert "rejected attempt 3" in correction_prompt
     assert "vitest src/lib/delegate.spec.ts still fails" in correction_prompt
+    assert "stopped early" not in result.stdout
     assert "🔒 #401 (domain) frozen at" in result.stdout
+
+
+def test_a_slice_whose_diagnostic_repeats_escalates_without_its_last_attempt(world):
+    """An identical rejection ends the role's budget where it stands, and
+    ends it exactly the way exhaustion would: the stronger role still gets
+    its chance, because a stronger model is the thing that has not been
+    tried. The escalation's own reason says how many attempts were left
+    unspent."""
+    _given_planned_story(world, 411)
+    test_file = "src/lib/delegate.spec.ts"
+    _delegate_mechanic(world, 411)
+    world.scripted_test_outcome(test_file, ["fail", "fail", "fail", "pass"])
+    for _ in range(2):
+        _implement(
+            world,
+            "story-411-domain",
+            "mechanic",
+            files={"src/lib/delegate.ts": "export const wrong = true;\n"},
+        )
+    _implement(
+        world,
+        "story-411-domain",
+        "builder",
+        files={"src/lib/delegate.ts": "export const delegate = true;\n"},
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (
+        "🛑 Mechanic #411 (domain) stopped early: attempt 2 failed exactly as attempt 1"
+    ) in result.stdout
+    assert "correcting after attempt 2" not in result.stdout
+    assert "⏫ #411 (domain) escalating mechanic → builder (revision 1, attempts reset)" in (
+        result.stdout
+    )
+    # block 1's mechanic turn plus two of the three block 3 attempts
+    assert len(_talks(world, "mechanic", "story-411-domain")) == 3
+    state = json.loads((world.home / "runs" / "story-411.json").read_text())
+    recorded = state["slices"]["domain"]["turns"]
+    assert [turn.get("repeated", False) for turn in recorded] == [False, True, False]
+    assert recorded[1]["diagnostic"].startswith("vitest src/lib/delegate.spec.ts still fails")
+    reason = state["slices"]["domain"]["assignments"][-1]["reason"]
+    assert "1 of 3 attempts went unspent" in reason
 
 
 def test_escalation_uses_the_builder_config_from_yaml(world):
     _given_planned_story(world, 402)
     test_file = "src/lib/delegate.spec.ts"
     _delegate_mechanic(world, 402)
-    world.scripted_test_outcome(test_file, ["fail"] * 4 + ["pass"])
-    for _ in range(3):  # mechanic burns its three attempts
+    world.scripted_test_outcome(test_file, ["fail"] * 3 + ["pass"])
+    for _ in range(2):  # the same rejection twice ends the mechanic's budget
         _implement(
             world,
             "story-402-domain",
@@ -241,7 +289,7 @@ def test_escalation_uses_the_builder_config_from_yaml(world):
         _option(builder_talks[0]["argv"], "-m"),
         _option(builder_talks[0]["argv"], "-e"),
     ) == ("claude", "sonnet", "medium")
-    assert len(_talks(world, "mechanic", "story-402-domain")) == 4
+    assert len(_talks(world, "mechanic", "story-402-domain")) == 3
     assert "🔒 #402 (domain) frozen at" in result.stdout
 
 
@@ -276,36 +324,29 @@ def test_solver_signals_select_the_solver_role_and_config(world):
 
 
 def test_solver_exhaustion_stops_preserving_worktree_and_state(world):
+    """Every rung spends every attempt: each role's first turn satisfies
+    the acceptance tests but fails the turn gate, and its next two fail the
+    acceptance run, so no two consecutive rejections are identical until
+    the last attempt - where the budget has run out anyway."""
     _given_planned_story(world, 410)
     test_file = "src/lib/delegate.spec.ts"
     _delegate_mechanic(world, 410)
-    world.scripted_test_outcome(test_file, ["fail"] * 10)
-    for _ in range(3):
-        _implement(
-            world,
-            "story-410-domain",
-            "mechanic",
-            files={"src/lib/delegate.ts": "export const wrong = true;\n"},
-        )
-    for _ in range(3):
-        _implement(
-            world,
-            "story-410-domain",
-            "builder",
-            files={"src/lib/delegate.ts": "export const wrong2 = true;\n"},
-        )
-    for _ in range(3):
-        _implement(
-            world,
-            "story-410-domain",
-            "solver",
-            files={"src/lib/delegate.ts": "export const wrong3 = true;\n"},
-        )
+    world.scripted_test_outcome(test_file, ["fail"] + ["pass", "fail", "fail"] * 3)
+    world.given_gate_outcomes(**{"verify:changed": ["fail", "fail", "fail"]})
+    for role in ("mechanic", "builder", "solver"):
+        for index in (1, 2, 3):
+            _implement(
+                world,
+                "story-410-domain",
+                role,
+                files={"src/lib/delegate.ts": f"export const wrong_{role}_{index} = true;\n"},
+            )
 
     result = run_flow(world)
 
     assert result.returncode == 28, result.stdout + result.stderr
     assert "solver exhausted its 3 attempts" in result.stdout
+    assert "stopped early" not in result.stdout
     assert "exactly one level" not in result.stdout
     assert world.slice_worktree_path("story-410-domain").exists()
     assert "dirty (preserved for audit)" in "\n".join(world.issue(410)["comments"])
@@ -645,7 +686,8 @@ def test_a_forbidden_file_gets_one_corrective_turn_and_the_reverted_tree_passes(
 
 def test_a_forbidden_file_still_there_after_the_budget_stops_the_run(world):
     """The correction is a chance, not a pardon: an agent that keeps the
-    out-of-reach change through its whole budget breaks the contract."""
+    out-of-reach change through the corrective turn breaks the contract -
+    and repeating the rejection verbatim is what ends the budget there."""
     _given_planned_story(world, 442)
     _delegate_mechanic(world, 442)
     _implement_every_attempt(
@@ -665,7 +707,8 @@ def test_a_forbidden_file_still_there_after_the_budget_stops_the_run(world):
     assert "forbidden file changed: quality/mutation-equivalents.json" in result.stdout
     state = json.loads((world.home / "runs" / "story-442.json").read_text())
     assert state["terminal"] == "AGENT_BROKE_CONTRACT"
-    assert state["slices"]["domain"]["attempts"] == 3
+    assert state["slices"]["domain"]["attempts"] == 2
+    assert "1 of 3 attempts went unspent" in result.stdout
     # the breach is never escalated to a stronger role: no model is the
     # answer to "you changed a file you may not change"
     assert "escalating mechanic → builder" not in result.stdout
@@ -1322,13 +1365,18 @@ def test_a_previous_runs_state_file_blocks_a_new_run(world):
 def test_corrections_reuse_the_same_recorded_session(world):
     _given_planned_story(world, 480)
     _delegate_mechanic(world, 480)
-    world.scripted_test_outcome("src/lib/delegate.spec.ts", ["fail", "fail", "fail", "pass"])
-    for _ in range(3):
+    world.scripted_test_outcome("src/lib/delegate.spec.ts", ["fail", "fail", "pass"])
+    # a phantom turn, then a wrong implementation, then the right one: three
+    # turns in the same session, and no two rejections alike
+    world.agent_implements(
+        "story-480-domain", "mechanic", files={}, changed_files=["src/lib/delegate.ts"]
+    )
+    for index in (2, 3):
         _implement(
             world,
             "story-480-domain",
             "mechanic",
-            files={"src/lib/delegate.ts": "export const wrong = true;\n"},
+            files={"src/lib/delegate.ts": f"export const attempt{index} = true;\n"},
         )
 
     result = run_flow(world)
@@ -1400,8 +1448,8 @@ def test_escalation_establishes_a_distinct_session(world):
     _given_planned_story(world, 483)
     test_file = "src/lib/delegate.spec.ts"
     _delegate_mechanic(world, 483)
-    world.scripted_test_outcome(test_file, ["fail"] * 4 + ["pass"])
-    for _ in range(3):  # mechanic burns its three attempts
+    world.scripted_test_outcome(test_file, ["fail"] * 3 + ["pass"])
+    for _ in range(2):  # the same rejection twice ends the mechanic's budget
         _implement(
             world,
             "story-483-domain",
@@ -1429,8 +1477,8 @@ def test_an_escalated_role_reusing_the_previous_session_is_a_contract_stop(world
     _given_planned_story(world, 484)
     test_file = "src/lib/delegate.spec.ts"
     _delegate_mechanic(world, 484)
-    world.scripted_test_outcome(test_file, ["fail"] * 4 + ["pass"])
-    for _ in range(3):  # mechanic burns its three attempts
+    world.scripted_test_outcome(test_file, ["fail"] * 3 + ["pass"])
+    for _ in range(2):  # the same rejection twice ends the mechanic's budget
         _implement(
             world,
             "story-484-domain",

@@ -687,21 +687,20 @@ def test_mechanic_not_pushing_stops_the_flow(world):
         test_files=["src/lib/y.spec.ts"],
     )
     world.mechanic_replies("story-90-domain", ["src/lib/y.spec.ts"])
-    world.mechanic_replies("story-90-domain", ["src/lib/y.spec.ts"])
 
     result = run_flow(world)
 
     assert result.returncode == 23, result.stdout + result.stderr
     assert not world.branch_exists_on_origin("story-90-domain")
     assert any("stopped" in c.lower() for c in world.issue(90)["comments"])
-    assert "exhausted 3 attempts" in result.stdout
+    assert "stopped early: attempt 2 failed exactly as attempt 1" in result.stdout
     mechanic_calls = [
         call
         for call in world.calls()
         if call.get("tool") == "aarmy"
         and call.get("argv", [None, None])[0:2] == ["talk", "mechanic"]
     ]
-    assert len(mechanic_calls) == 3
+    assert len(mechanic_calls) == 2
 
 
 def test_mechanic_corrects_repairable_failure_on_first_retry(world):
@@ -742,7 +741,11 @@ def test_mechanic_corrects_repairable_failure_on_first_retry(world):
     assert "passed validation on attempt 2" in result.stdout
 
 
-def test_mechanic_can_succeed_only_on_second_retry(world):
+def test_a_second_different_diagnostic_keeps_the_mechanic_going_to_its_last_attempt(world):
+    """Only an identical rejection ends the budget early. Attempt one
+    forgets to push and attempt two leaves the tree dirty - two different
+    failures, so the third attempt is still the mechanic's to take, and it
+    is the one that gets it right."""
     _given_single_domain_slice(world, 92, "Correct on final attempt")
     slug = "story-92-domain"
     test_file = "src/lib/final-retry.spec.ts"
@@ -753,6 +756,7 @@ def test_mechanic_can_succeed_only_on_second_retry(world):
         slug,
         files={test_file: "// attempt two\n"},
         test_files=[test_file],
+        commit=False,
         push=False,
     )
     world.mechanic_writes(
@@ -777,7 +781,41 @@ def test_mechanic_can_succeed_only_on_second_retry(world):
         and call.get("argv", [None, None])[0:2] == ["talk", "mechanic"]
     ]
     assert len(mechanic_calls) == 4
+    assert "🔁 Mechanic #92 retrying after attempt 1 — TESTS_NOT_PUSHED: local HEAD" in (
+        result.stdout
+    )
+    assert "🔁 Mechanic #92 retrying after attempt 2 — TESTS_NOT_PUSHED: tree not clean" in (
+        result.stdout
+    )
+    assert "stopped early" not in result.stdout
     assert "passed validation on attempt 3" in result.stdout
+
+
+def test_the_same_mechanic_diagnostic_twice_stops_before_the_last_attempt(world):
+    """#406 spent three mechanic turns and ten minutes on one diagnostic
+    the driver's own test-file rule was wrong about: no reply could have
+    fixed it, and the attempts after the first repeat bought nothing. An
+    identical rejection now ends block 1's loop where it stands, and the
+    comment on the story says how many attempts were left unspent."""
+    _given_single_domain_slice(world, 97, "The same rejection twice")
+    slug = "story-97-domain"
+    test_file = "src/lib/same-again.spec.ts"
+    world.mechanic_changes_without_pushing(
+        slug, files={test_file: "// attempt one\n"}, test_files=[test_file]
+    )
+    world.mechanic_replies(slug, [test_file])
+
+    result = run_flow(world)
+
+    assert result.returncode == 23, result.stdout + result.stderr
+    assert (
+        "🛑 Mechanic #97 stopped early: attempt 2 failed exactly as attempt 1 — "
+        "TESTS_NOT_PUSHED: local HEAD not pushed on story-97-domain"
+    ) in result.stdout
+    assert "retrying after attempt 2" not in result.stdout
+    assert len(_mechanic_talks(world)) == 2
+    stopped = "\n".join(world.issue(97)["comments"])
+    assert "1 of 3 attempts went unspent" in stopped
 
 
 def test_test_runner_tool_failure_does_not_retry_mechanic(world):
@@ -845,13 +883,12 @@ def test_slice_rejects_changed_test_for_the_other_runner(world):
     test_file = "src/routes/wrong-runner.e2e.ts"
     world.mechanic_writes(slug, files={test_file: "// wrong kind\n"}, test_files=[test_file])
     world.mechanic_replies(slug, [test_file])
-    world.mechanic_replies(slug, [test_file])
 
     result = run_flow(world)
 
     assert result.returncode == 23, result.stdout + result.stderr
     assert "vitest slice changed wrong-kind test" in result.stdout
-    assert "exhausted 3 attempts" in result.stdout
+    assert "stopped early: attempt 2 failed exactly as attempt 1" in result.stdout
 
 
 def test_tests_that_already_pass_stop_the_flow(world):
@@ -905,13 +942,12 @@ def test_vitest_import_failure_does_not_count_as_failing_acceptance_test(world):
     world.mechanic_writes(slug, files={test_file: test_source}, test_files=[test_file])
     world.scripted_test_outcome(test_file, "import_error")
     world.mechanic_replies(slug, [test_file])
-    world.mechanic_replies(slug, [test_file])
 
     result = run_flow(world)
 
     assert result.returncode == 24, result.stdout + result.stderr
     assert "failed before running any assertion" in result.stdout
-    assert "exhausted 3 attempts" in result.stdout
+    assert "stopped early: attempt 2 failed exactly as attempt 1" in result.stdout
 
 
 def test_playwright_file_that_never_ran_stops_the_flow(world):
@@ -1126,26 +1162,26 @@ def test_lint_broken_acceptance_tests_are_rejected_in_block_1_and_repaired(world
     assert slug in world.ship_record(210)["cleanup"]["remote_deleted"]
 
 
-def test_acceptance_tests_that_always_fail_lint_exhaust_the_mechanic(world):
+def test_acceptance_tests_that_always_fail_lint_the_same_way_stop_the_mechanic_early(world):
     _given_single_domain_slice(world, 211, "Tests that never lint clean")
     slug = "story-211-domain"
     test_file = "src/lib/dirty.spec.ts"
-    for index in range(3):
+    for index in range(2):
         world.mechanic_writes(
             slug,
             files={test_file: f"const mod: any = {index};\nexpect(mod.missing()).toBe(true);\n"},
             test_files=[test_file],
         )
-    world.given_gate_outcomes(**{"lint:changed": ["fail", "fail", "fail"]})
+    world.given_gate_outcomes(**{"lint:changed": ["fail", "fail"]})
 
     result = run_flow(world)
 
     assert result.returncode == 31, result.stdout + result.stderr
     assert "TESTS_INVALID (exit 31)" in result.stdout
-    assert "exhausted 3 attempts" in result.stdout
+    assert "stopped early: attempt 2 failed exactly as attempt 1" in result.stdout
     assert "Stopped: TESTS_INVALID" in "\n".join(world.issue(211)["comments"])
-    # block 3 never started: the flow stopped in block 1, after exactly the
-    # mechanic's three attempts and before any signal planning turn
+    # block 3 never started: the flow stopped in block 1, after the two
+    # attempts the repeated diagnostic was worth and before any signal turn
     signal_turns = [
         call
         for call in world.calls()
@@ -1153,7 +1189,7 @@ def test_acceptance_tests_that_always_fail_lint_exhaust_the_mechanic(world):
         and call["argv"][call["argv"].index("--schema") + 1].endswith("delegate.json")
     ]
     assert signal_turns == []
-    assert len(_mechanic_talks(world)) == 3
+    assert len(_mechanic_talks(world)) == 2
 
 
 def _mechanic_talks(world) -> list[dict]:
@@ -1434,11 +1470,11 @@ def test_an_acceptance_test_that_throws_is_rejected_in_block_1_and_repaired(worl
     assert "Implemented #216" in result.stdout
 
 
-def test_acceptance_tests_that_always_throw_exhaust_the_mechanic(world):
+def test_acceptance_tests_that_always_throw_the_same_way_stop_the_mechanic_early(world):
     _given_single_domain_slice(world, 217, "Tests that never stop throwing")
     slug = "story-217-domain"
     test_file = "src/lib/always-throws.spec.ts"
-    for index in range(3):
+    for index in range(2):
         world.mechanic_writes(
             slug,
             files={test_file: "// attempt " + str(index) + ": still throwing\n"},
@@ -1450,7 +1486,7 @@ def test_acceptance_tests_that_always_throw_exhaust_the_mechanic(world):
 
     assert result.returncode == 31, result.stdout + result.stderr
     assert "TESTS_INVALID (exit 31)" in result.stdout
-    assert "exhausted 3 attempts" in result.stdout
+    assert "stopped early: attempt 2 failed exactly as attempt 1" in result.stdout
     assert "Stopped: TESTS_INVALID" in "\n".join(world.issue(217)["comments"])
 
 
@@ -1490,24 +1526,24 @@ def test_type_broken_acceptance_tests_are_rejected_in_block_1_and_repaired(world
     assert "Implemented #218" in result.stdout
 
 
-def test_acceptance_tests_that_never_type_check_exhaust_the_mechanic(world):
+def test_acceptance_tests_that_never_type_check_the_same_way_stop_the_mechanic_early(world):
     _given_single_domain_slice(world, 219, "Tests that never type check")
     slug = "story-219-domain"
     test_file = "src/lib/never-typed.spec.ts"
-    for index in range(3):
+    for index in range(2):
         world.mechanic_writes(
             slug,
             files={test_file: "// attempt " + str(index) + ": still mistyped\n"},
             test_files=[test_file],
         )
-    world.given_gate_outcomes(check=["fail", "fail", "fail"])
+    world.given_gate_outcomes(check=["fail", "fail"])
     world.given_check_fails_on(test_file)
 
     result = run_flow(world)
 
     assert result.returncode == 31, result.stdout + result.stderr
     assert "TESTS_INVALID (exit 31)" in result.stdout
-    assert "exhausted 3 attempts" in result.stdout
+    assert "stopped early: attempt 2 failed exactly as attempt 1" in result.stdout
     assert "Stopped: TESTS_INVALID" in "\n".join(world.issue(219)["comments"])
 
 
@@ -1558,27 +1594,27 @@ def test_acceptance_tests_that_clone_themselves_are_rejected_in_block_1(world):
     assert "lib/cloned.spec.ts:40-49 ↔ lib/cloned.spec.ts:90-99" in correction
 
 
-def test_acceptance_tests_that_never_pass_the_content_steps_exhaust_the_mechanic(world):
+def test_acceptance_tests_that_never_pass_the_content_steps_stop_the_mechanic_early(world):
     _given_single_domain_slice(world, 221, "Tests that never stop duplicating")
     slug = "story-221-domain"
     test_file = "src/lib/always-cloned.spec.ts"
-    for index in range(3):
+    for index in range(2):
         world.mechanic_writes(
             slug,
             files={test_file: f"// attempt {index}: still the same block twice\n"},
             test_files=[test_file],
         )
-    world.given_gate_outcomes(**{"verify:fast": ["fail", "fail", "fail"]})
+    world.given_gate_outcomes(**{"verify:fast": ["fail", "fail"]})
     world.given_duplicate_clone("lib/always-cloned.spec.ts", "lib/always-cloned.spec.ts")
 
     result = run_flow(world)
 
     assert result.returncode == 31, result.stdout + result.stderr
     assert "TESTS_INVALID (exit 31)" in result.stdout
-    assert "exhausted 3 attempts" in result.stdout
+    assert "stopped early: attempt 2 failed exactly as attempt 1" in result.stdout
     assert "lib/always-cloned.spec.ts:40-49" in result.stdout
     assert "Stopped: TESTS_INVALID" in "\n".join(world.issue(221)["comments"])
-    assert len(_mechanic_talks(world)) == 3
+    assert len(_mechanic_talks(world)) == 2
 
 
 def test_unformatted_acceptance_tests_are_rejected_in_block_1(world):
@@ -1740,7 +1776,9 @@ def test_a_playwright_file_whose_tests_all_pass_is_rejected_naming_each_test_sta
     assert "the runner reported:" in result.stdout
     for title in titles:
         assert f'"{title}" → passed' in result.stdout
-    assert "exhausted 3 attempts" in result.stdout
+    # the same verdict twice: the third attempt would only reproduce it
+    assert "stopped early: attempt 2 failed exactly as attempt 1" in result.stdout
+    assert "1 of 3 attempts went unspent" in result.stdout
 
 
 def test_a_playwright_file_whose_tests_are_all_skipped_is_rejected(world):

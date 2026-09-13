@@ -41,7 +41,7 @@ flowchart TD
         worktree["Driver creates child issues and slice worktrees<br/>sequentially and deterministically"]
         mechanic_count{"One slice or two?"}
         slice_loop["For each slice: mechanic works in its<br/>isolated worktree/team<br/>same session across retries"]
-        turn_validation["Validate the turn<br/>one initial + at most 2 corrective turns"]
+        turn_validation["Validate the turn<br/>one initial + at most 2 corrective turns<br/>a diagnostic repeating verbatim ends the loop early"]
         barrier["Driver join/barrier<br/>wait for every slice loop to settle"]
         all_succeeded{"All slices succeeded?"}
         slice_failed["Identify failed slice<br/>stop without advancing"]
@@ -85,7 +85,7 @@ flowchart TD
         before_turn["Before each turn<br/>verify ownership, identity and attempt budget"]
         turn_gate["After turn: driver validates scope, acceptance,<br/>foreground QUALITY.md pre-push reports"]
         result{"Per-slice implementation<br/>and gates result?"}
-        attempts{"Repairable and fewer than<br/>3 attempts at this level?"}
+        attempts{"Repairable, different from the previous<br/>diagnostic, and fewer than<br/>3 attempts at this level?"}
         correct["Correct with same role, agent,<br/>session and worktree"]
         can_escalate{"Role below solver?"}
         escalate["Escalate exactly one level<br/>mechanic → builder → solver"]
@@ -105,7 +105,7 @@ flowchart TD
         result -- repairable --> attempts
         result -- "external/contract/human failure" --> preserve --> delivery_barrier
         attempts -- yes --> correct --> before_turn
-        attempts -- exhausted --> can_escalate
+        attempts -- "exhausted, or the same diagnostic twice" --> can_escalate
         can_escalate -- yes --> escalate --> before_turn
         can_escalate -- "no: solver" --> preserve
         delivery_barrier -- yes --> implemented --> push
@@ -223,9 +223,14 @@ flowchart TD
   basic/low for mechanic, intermediate/medium for builder and
   advanced/high for solver.
 - The block 2/3 policy gives each role level one initial implementation
-  attempt and up to two repairs in the same agent, session and worktree. On
-  exhaustion it escalates exactly one level—mechanic to builder or builder to
-  solver. An exhausted solver stops and preserves the worktree. Infrastructure,
+  attempt and up to two repairs in the same agent, session and worktree. Two
+  is enough when they fail the same way: a diagnostic that comes back
+  identical after a corrective turn ends that role's budget on the spot,
+  because the diagnostic and not the agent is what would have to change,
+  and the unspent attempts are named in the log and the comment. On a spent
+  budget - exhausted or ended early - it escalates exactly one
+  level—mechanic to builder or builder to solver. A solver whose budget is
+  spent stops and preserves the worktree. Infrastructure,
   authentication, network and tool failures stop immediately without retry or
   capability escalation at this classification level - beneath it, a `gh`
   call or an `aarmy talk` that fails with a transient signature (a GitHub

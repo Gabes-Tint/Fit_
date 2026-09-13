@@ -192,7 +192,10 @@ def test_ruff_on_the_tests_branch_hands_its_own_diagnostic_to_the_mechanic(world
     assert "🏁 Implemented #1000" in result.stdout
 
 
-def test_tests_that_never_satisfy_ruff_exhaust_the_mechanic(world):
+def test_tests_that_never_satisfy_ruff_stop_the_mechanic_early(world):
+    """A gate that keeps failing the same way is not waiting for another
+    reply. The third attempt is prepared and deliberately not spent, and the
+    run still stops as TESTS_INVALID."""
     slug = _given_planned_driver_story(world)
     for attempt in (1, 2, 3):
         _mechanic_pushes_tests(world, slug, attempt=attempt)
@@ -202,7 +205,8 @@ def test_tests_that_never_satisfy_ruff_exhaust_the_mechanic(world):
 
     assert result.returncode == 31, result.stdout + result.stderr
     assert "TESTS_INVALID: ruff format failed" in result.stdout
-    assert "exhausted 3 attempts" in result.stdout
+    assert "🛑 Mechanic #1000 stopped early: attempt 2 failed exactly as attempt 1" in result.stdout
+    assert "1 of 3 attempts went unspent" in result.stdout
     assert "Stopped: TESTS_INVALID" in "\n".join(world.issue(1000)["comments"])
 
 
@@ -228,8 +232,9 @@ def test_a_pytest_collection_error_is_not_a_test_failing_as_intended(world):
 
 def test_a_workflow_slice_that_touches_the_product_is_corrected_then_stops_the_run(world):
     """The product is outside a driver slice's reach. The implementer gets
-    the file back for a correction, and keeping it through the whole budget
-    breaks the contract."""
+    the file back for a correction, and keeping it there through a second,
+    identical rejection breaks the contract - the third attempt would only
+    reproduce it, so it is never spent."""
     slug = _given_planned_driver_story(world)
     _mechanic_pushes_tests(world, slug)
     _delegate(world, 1000)
@@ -248,7 +253,8 @@ def test_a_workflow_slice_that_touches_the_product_is_corrected_then_stops_the_r
     assert "those paths are outside this slice's reach" in result.stdout
     state = json.loads((world.home / "runs" / "story-1000.json").read_text())
     assert state["terminal"] == "AGENT_BROKE_CONTRACT"
-    assert state["slices"]["workflow"]["attempts"] == 3
+    assert "1 of 3 attempts went unspent" in result.stdout
+    assert state["slices"]["workflow"]["attempts"] == 2
 
 
 def test_a_workflow_slice_that_puts_the_product_file_back_carries_on(world):
