@@ -1776,7 +1776,9 @@ def test_a_playwright_file_whose_tests_all_pass_is_rejected_naming_each_test_sta
     assert "the runner reported:" in result.stdout
     for title in titles:
         assert f'"{title}" → passed' in result.stdout
-    assert "exhausted 3 attempts" in result.stdout
+    # the same verdict twice: the third attempt would only reproduce it
+    assert "stopped early: attempt 2 failed exactly as attempt 1" in result.stdout
+    assert "1 of 3 attempts went unspent" in result.stdout
 
 
 def test_a_playwright_file_whose_tests_are_all_skipped_is_rejected(world):
