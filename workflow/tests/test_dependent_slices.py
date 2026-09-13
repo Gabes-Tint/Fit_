@@ -57,7 +57,9 @@ def _given_planned_split(
             },
         ],
     )
-    world.mechanic_writes(DOMAIN_SLUG, files={DOMAIN_TEST: "// failing\n"}, test_files=[DOMAIN_TEST])
+    world.mechanic_writes(
+        DOMAIN_SLUG, files={DOMAIN_TEST: "// failing\n"}, test_files=[DOMAIN_TEST]
+    )
     world.mechanic_writes(UI_SLUG, files={UI_TEST: "// failing\n"}, test_files=[UI_TEST])
     world.scripted_test_outcome(DOMAIN_TEST, domain_outcomes)
     world.scripted_test_outcome(UI_TEST, ui_outcomes)

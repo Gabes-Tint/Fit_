@@ -197,7 +197,7 @@ def _validate_dependencies(raw: list[dict], layers: list[str], story_number: int
         raise _reject(
             story_number,
             f"{dependent[0]} is the only slice of this story and has no sibling to "
-            "depend on; it must be implementable and validatable on its own",
+            "depend on; it must be implemented and validated on its own",
         )
     if len(dependent) > 1:
         raise _reject(
