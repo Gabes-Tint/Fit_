@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+"""Fake `uv`: the driver's own toolchain, as block 1 and block 3 invoke it
+for a workflow slice.
+
+`run --project workflow pytest ...` prints pytest's short summary (`-rA`)
+built from a scripted outcome per file: "fail" (good - the behavior is
+missing), "fail_defect" (the test throws, so it can never pass), "pass"
+(bad), "collect_error" (the module will not import, which interrupts the
+whole run), "not_found" (pytest was handed a path that is not there) or
+"tool_error" (a run that judged nothing at all).
+
+`run --project workflow ruff check|format --check workflow` prints ruff's
+own diagnostics, arrow line included, so the driver parses culprits out of
+the same shape the real tool prints.
+"""
+
+import fcntl
+import json
+import os
+import sys
+from pathlib import Path
+
+FAILING = {"fail", "fail_defect"}
+TITLE = "test_the_behavior_this_slice_asks_for"
+EXPECTATION_MESSAGE = "AssertionError: assert 'ladder' in {'attempts': 3}"
+DEFECT_MESSAGE = "TypeError: retry() got an unexpected keyword argument 'ladder'"
+COLLECT_MESSAGE = "ModuleNotFoundError: No module named 'fitflow.retries'"
+
+
+def world_dir():
+    return Path(os.environ["FAKE_WORLD"])
+
+
+def load():
+    return json.loads((world_dir() / "world.json").read_text())
+
+
+def save(world):
+    path = world_dir() / "world.json"
+    tmp = path.with_suffix(f".json.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(world, indent=2))
+    tmp.replace(path)
+
+
+def record(argv):
+    with (world_dir() / "calls.jsonl").open("a") as f:
+        f.write(json.dumps({"tool": "uv", "argv": argv}) + "\n")
+
+
+def consume(key, section, default):
+    """One consumption of a scripted outcome: a list value is popped in
+    order and its last value stays sticky, exactly as the fake bun does."""
+    lock_path = world_dir() / "world.lock"
+    with lock_path.open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        world = load()
+        outcome = world.get(section, {}).get(key, default)
+        if isinstance(outcome, list) and outcome:
+            head = outcome.pop(0)
+            if not outcome:
+                world.setdefault(section, {})[key] = head
+            save(world)
+            return head, world
+        return outcome, world
+
+
+def scripted_message(world, file, outcome):
+    scripted = world.get("test_messages", {}).get(file, {}).get("message")
+    if scripted:
+        return scripted
+    if outcome == "fail_defect":
+        return DEFECT_MESSAGE
+    if outcome == "collect_error":
+        return COLLECT_MESSAGE
+    return EXPECTATION_MESSAGE
+
+
+def pytest_lines(file, outcome, message):
+    """One file's share of pytest's own output: the `E ` traceback frame a
+    collection error leaves above the summary, then the summary line."""
+    if outcome == "pass":
+        return [], [f"PASSED {file}::{TITLE}"]
+    if outcome in FAILING:
+        return [], [f"FAILED {file}::{TITLE} - {message}"]
+    if outcome == "collect_error":
+        # pytest decorates the collection header, so the word ERROR never
+        # starts that line; only the short summary's line does
+        return [
+            f"_______ ERROR collecting {file} _______",
+            f"ImportError while importing test module '{file}'.",
+            f"{file}:1: in <module>",
+            f"E   {message}",
+        ], [f"ERROR {file}"]
+    return [], []
+
+
+def cmd_pytest(files):
+    outcomes, world = {}, None
+    for file in files:
+        outcomes[file], world = consume(file, "test_outcomes", "fail")
+    if any(outcome == "tool_error" for outcome in outcomes.values()):
+        print("error: the pytest environment could not be prepared", file=sys.stderr)
+        return 4
+    for file in files:
+        if outcomes[file] == "not_found":
+            print(f"ERROR: file or directory not found: {file}")
+    frames, summary, counts = _pytest_run(_reported(files, outcomes), outcomes, world)
+    print("\n".join([*frames, "=========== short test summary info ===========", *summary]))
+    print(_tally(counts))
+    if counts["error"]:
+        return 2
+    return 1 if counts["failed"] else 0
+
+
+def _reported(files, outcomes):
+    """A collection error interrupts the whole run, so nothing else reports."""
+    collecting = [file for file in files if outcomes[file] == "collect_error"]
+    return collecting or [file for file in files if outcomes[file] != "not_found"]
+
+
+def _pytest_run(reported, outcomes, world):
+    frames, summary, counts = [], [], {"passed": 0, "failed": 0, "error": 0}
+    for file in reported:
+        outcome = outcomes[file]
+        above, below = pytest_lines(file, outcome, scripted_message(world, file, outcome))
+        frames.extend(above)
+        summary.extend(below)
+        if below:
+            counts[_counted(outcome)] += 1
+    return frames, summary, counts
+
+
+def _counted(outcome):
+    if outcome == "pass":
+        return "passed"
+    return "error" if outcome == "collect_error" else "failed"
+
+
+def _tally(counts):
+    parts = [f"{count} {name}" for name, count in counts.items() if count]
+    return ", ".join(parts) + " in 0.01s" if parts else "no tests ran in 0.01s"
+
+
+RUFF_CHECK_FAILURE = [
+    "F401 [*] `os` imported but unused",
+    " --> {file}:7:8",
+    "  |",
+    "7 | import os",
+    "  |        ^^",
+    "  |",
+    "help: Remove unused import: `os`",
+    "",
+    "Found 1 error.",
+]
+RUFF_FORMAT_FAILURE = [
+    "unformatted: File would be reformatted",
+    " --> {file}:12:1",
+    "  |",
+    "12 | x  =  1",
+    "  |",
+    "",
+    "1 file would be reformatted, 68 files already formatted",
+]
+
+
+def cmd_ruff(argv):
+    gate = "ruff format" if "format" in argv else "ruff check"
+    outcome, world = consume(gate, "gate_outcomes", "pass")
+    if outcome == "tool_error":
+        print(f"ruff failed to read the configuration for {gate}", file=sys.stderr)
+        return 2
+    if outcome != "fail":
+        return 0
+    file = world.get("ruff_failure_file", "workflow/fitflow/probe.py")
+    body = RUFF_CHECK_FAILURE if gate == "ruff check" else RUFF_FORMAT_FAILURE
+    print("\n".join(line.format(file=file) for line in body))
+    return 1
+
+
+def main() -> int:
+    argv = sys.argv[1:]
+    record(argv)
+    if argv[:3] != ["run", "--project", "workflow"]:
+        print(f"fake uv: unsupported command {argv}", file=sys.stderr)
+        return 1
+    rest = argv[3:]
+    if rest[:1] == ["pytest"]:
+        return cmd_pytest([arg for arg in rest[1:] if not arg.startswith("-")])
+    if rest[:1] == ["ruff"]:
+        return cmd_ruff(rest)
+    print(f"fake uv: unsupported command {argv}", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

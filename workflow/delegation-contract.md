@@ -14,9 +14,9 @@ invariants; behavioral changes belong in the driver and its tests.
 ## Inputs and ownership
 
 The driver retains block 1's ordered list of one or two slices (`domain`, then
-`ui` when both exist). Each slice already has an issue number, brief, acceptance
-criteria, test kind, failing test paths, branch, worktree and team. Block 2
-must reuse those identities. It does not split again, create replacement issues
+`ui` when both exist, or a single `workflow` slice). Each slice already has an
+issue number, brief, acceptance criteria, test kind, failing test paths,
+branch, worktree and team. Block 2 must reuse those identities. It does not split again, create replacement issues
 or worktrees, or ask a worker to rediscover the brief.
 
 That order is also the dependency order. A UI slice usually renders what its
@@ -36,8 +36,11 @@ to repository content at the recorded commit; mutable issue text is not enough.
 The driver owns classification, validation and transitions. An agent may
 extract signals or propose evidence, but a role name or a claim that tests
 passed is never the verdict. Work is confined to the assigned worktree, with
-no writes to its sibling or the shared checkout. Workflow source, prompts,
-agent configuration and gate policy cannot be changed during this run.
+no writes to its sibling or the shared checkout. The driver's own source,
+prompts, agent configuration and gate policy cannot be changed _for_ this run:
+a `workflow` slice edits its worktree's copy like any other file, the running
+driver is the shared checkout's code, and nothing it produces takes effect
+until Gabriel merges it.
 
 Before the failing-test commit is accepted, the driver validates it as what
 it will become: an immutable input. It runs the repository's change-scoped
@@ -88,6 +91,64 @@ as source and excludes only `*.spec.ts`/`*.test.ts`. An `*.e2e.ts` under
 against a per-file threshold of 80%. Block 3's `verify:changed` does not run
 coverage, so nothing saw it until CI, on a pull request where nobody could
 change the file any more (#397).
+
+The rule reads the repository's TypeScript layout, so it is a product
+rule: a `workflow` slice's Python tests are placed by their own rule, below.
+
+## The workflow layer
+
+A story about this flow's own driver is a slice like any other, at the third
+layer: `workflow`. Its code, its tests and the prose describing it all live in
+two directories, so its boundary is an allowlist rather than a partition - a
+`workflow` slice may change `workflow/**`, `docs/**` and the repository's
+`cspell.json`, and a path outside those (`src/`, `scripts/`, `quality/`,
+`.github/`) is a boundary rejection naming the file. The product layers are
+untouched by this: `domain` and `ui` reject each other's areas exactly as
+before.
+
+It is always the only slice of its story. `spans_domain_and_ui` is false, it
+never appears beside `domain` or `ui`, and `needs_sibling` therefore never
+applies - a one-slice story has no sibling to wait for, which the driver
+already rejects. The rung is chosen from the same nine signals, by the same
+precedence table.
+
+Its test kind is `pytest`. The acceptance tests are `workflow/tests/test_*.py`
+and run under `uv run --project workflow pytest -q <files>` from the
+repository root. Block 1 proves they fail and block 3 proves they pass, from
+pytest's own short summary (`-rA`): a `FAILED` line carries the assertion that
+is waiting for the behavior, and an `ERROR` line is a module pytest could not
+collect - a broken test, not one failing because the behavior is missing, and
+it goes back to the mechanic as such, exactly as a thrown `TypeError` does in
+a vitest slice.
+
+The whole of `workflow/tests/` is test-side, so block 1 may also change
+`workflow/tests/conftest.py` and a fake under `workflow/tests/fakes/`: a new
+flow scenario needs its `given_*` helper and usually a scripted answer from a
+fake, and neither is driver code. Only a `workflow/tests/test_*.py` file may
+be reported as an acceptance test - pytest collects nothing from a
+`conftest.py` or a fake, so naming one is a `TESTS_NOT_PUSHED` correction.
+
+Its gates are the driver's own, in both block 1 and every block 3 turn, in
+place of `verify:changed` / `lint:changed` / `check` / `gate.ts verify:fast`,
+which size and run the repository's TypeScript and have nothing to say about
+Python:
+
+- `uv run --project workflow ruff check workflow`
+- `uv run --project workflow ruff format --check workflow`
+- `bun x prettier --check <changed markdown>`
+- `bun x cspell --no-progress <changed markdown>`
+
+The markdown pair runs only over the changed `.md` files under `workflow/` and
+`docs/`, so a turn that changed no prose does not run it. Each of the four
+names the files and lines it rejects, so the failure comes back located and
+block 3's `TESTS_INVALID` rule works unchanged: a gate failure confined to the
+retained acceptance tests stops the run instead of spending an implementer's
+corrections on bytes it may not change.
+
+Block 4 is unchanged and is the point of the layer's existence: the pull
+request is opened, CI runs, and then the merge is withheld. The driver never
+merges its own code, so the run ends `NEEDS_GABRIEL` (exit 11) with the PR
+open and every worktree in place.
 
 ## The component harness
 

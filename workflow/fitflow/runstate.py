@@ -23,7 +23,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from fitflow import settings
+from fitflow import layers, settings
 from fitflow.outcome import FlowFailure, Outcome
 
 
@@ -252,8 +252,9 @@ class RunRecord:
             yield
 
     def ordered(self) -> list[SliceRecord]:
-        """Slices in domain-then-ui order, the reporting order."""
-        return [self.slices[layer] for layer in ("domain", "ui") if layer in self.slices]
+        """Slices in domain-then-ui order, the reporting order. A workflow
+        story has exactly one slice, so it only ever appears alone."""
+        return [self.slices[layer] for layer in layers.LAYERS if layer in self.slices]
 
     # --- persistence ---------------------------------------------------------
 
