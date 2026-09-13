@@ -203,6 +203,9 @@
 		"unnarrated",
 		"hashlib",
 		"hexdigest",
-		"timespec"
+		"timespec",
+		"pgrep",
+		"redelegate",
+		"unlaunched"
 	]
 }
