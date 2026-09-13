@@ -59,18 +59,19 @@
 	const SEXES: Profile['sex'][] = ['female', 'male', 'other'];
 
 	// A redo has no welcome screen — it goes straight to the questions — and
-	// the state below still starts at these fixed defaults rather than the
-	// profile's current answers, so redoing setup never looks pre-filled.
+	// starts from the active profile's current answers. First-run starts from
+	// `emptyProfile`, the single source of the defaults.
+	const seed = untrack(() => (redo && tend.profile) || emptyProfile({ name: '' }));
 	let step = $state(untrack(() => (redo ? 1 : 0)));
-	let name = $state('Alex');
-	let goal = $state<Goal>('lose');
-	let glp1 = $state(false);
-	let sex = $state<Profile['sex']>('female');
-	let age = $state(34);
-	let heightCm = $state(168);
+	let name = $state(seed.name);
+	let goal = $state<Goal>(seed.goal);
+	let glp1 = $state(seed.glp1);
+	let sex = $state<Profile['sex']>(seed.sex);
+	let age = $state(seed.age);
+	let heightCm = $state(seed.heightCm);
 	let kg = $state(78);
-	let activity = $state<Activity>('light');
-	let restrictions = $state<Restriction[]>(['nut-free']);
+	let activity = $state<Activity>(seed.activity);
+	let restrictions = $state<Restriction[]>([...seed.restrictions]);
 
 	const units = $derived(tend.state.units);
 	// Only meaningful once `units` is imperial, but always computed so the
