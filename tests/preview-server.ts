@@ -85,7 +85,10 @@ async function startPreviewServer(slot: number): Promise<[PreviewServer, () => P
 			'--strictPort'
 		],
 		{
-			env: { ...env, FIT_DB_PATH: databasePath },
+			// The component-harness route stays closed in production
+			// (`hooks.server.ts`); the E2E servers are the only callers that
+			// open it, and only against their own preview instance.
+			env: { ...env, FIT_DB_PATH: databasePath, FIT_COMPONENT_HARNESS: 'yes' },
 			detached: true,
 			stdio: ['ignore', 'pipe', 'pipe']
 		}

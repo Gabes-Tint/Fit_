@@ -99,6 +99,7 @@
 		"route-components": [
 			"src/routes/+layout.svelte",
 			"src/routes/+page.svelte",
+			"src/routes/dev/component-harness/+page.svelte",
 			"src/routes/exercise/+page.svelte",
 			"src/routes/exercise/plan/+page.svelte",
 			"src/routes/exercise/plan/year/+page.svelte",
