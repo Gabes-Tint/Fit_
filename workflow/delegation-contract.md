@@ -677,9 +677,9 @@ effort validation. No default model or fallback to a different role is allowed.
 Capacity labels describe responsibility, not a hardcoded model family; changing
 the configured model requires a new execution.
 
-The seeded configuration (`haiku`/`low`, `haiku`/`low`, `sonnet`/`medium`,
-`opus`/`high`) follows the suggested capacity defaults; the values are
-configuration, not code.
+The seeded configuration (planner `opus`/`low`, mechanic `haiku`/`medium`,
+builder `opus`/`low`, solver `opus`/`high`, reviewer `opus`/`medium`) is what
+four real runs of #399 argued for; the values are configuration, not code.
 
 Block 5's deploy targets follow the same rule, and `scripts/deploy/config.ts`
 already states why: the machines are infrastructure Gabriel owns, so they

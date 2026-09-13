@@ -1,28 +1,28 @@
-# Basic capability selected for planning with tightly constrained judgments.
-# Example: haiku with low reasoning effort.
+# Advanced capability at low effort: the planner's turns are short, but the
+# delegation contract (nine evidenced signals under a precedence table) is
+# judgment a basic model could not hold on three real runs.
 # Interprets the story and defines its plan, slices and capability signals.
 planner:
   backend: claude
-  model: haiku
+  model: opus
   effort: low
 
-# Basic capability selected for focused, well-scoped work with nothing
-# relevant left to decide. Example: haiku with low reasoning effort.
-# Writes acceptance tests in block 1; implements a fully determined slice
-# in block 2, escalating to builder when its attempts run out.
+# Basic capability at medium effort for focused, well-scoped work with
+# nothing relevant left to decide. Writes acceptance tests in block 1;
+# implements a fully determined slice in block 3, escalating to builder
+# when its attempts run out.
 mechanic:
   backend: claude
   model: haiku
-  effort: low
+  effort: medium
 
-# Intermediate capability selected for ordinary implementation with a clear
+# Advanced capability at low effort for ordinary implementation with a clear
 # objective, known area and pattern, but real construction decisions left
-# to make. Example: sonnet with medium reasoning effort.
-# Escalates to solver when its attempts run out.
+# to make. Escalates to solver when its attempts run out.
 builder:
   backend: claude
-  model: sonnet
-  effort: medium
+  model: opus
+  effort: low
 
 # Advanced capability selected when the solution or cause is uncertain, or
 # the slice touches auth, shared state, the store or another sensitive area.
@@ -36,7 +36,8 @@ solver:
 # Advanced capability, read-only, at delivery (block 4). Reviews the PR's
 # actual diff against the repository's review guidelines and returns a
 # verdict; it never writes to the worktree, and the driver verifies that.
+# Medium effort: the review is bounded to the diff and the guidelines.
 reviewer:
   backend: claude
   model: opus
-  effort: high
+  effort: medium

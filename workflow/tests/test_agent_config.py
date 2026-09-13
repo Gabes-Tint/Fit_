@@ -113,12 +113,12 @@ def test_default_config_is_resolved_beside_go_not_from_cwd(world):
         _option(planner["argv"], "-b"),
         _option(planner["argv"], "-m"),
         _option(planner["argv"], "-e"),
-    ) == ("claude", "haiku", "low")
+    ) == ("claude", "opus", "low")
     assert (
         _option(mechanic["argv"], "-b"),
         _option(mechanic["argv"], "-m"),
         _option(mechanic["argv"], "-e"),
-    ) == ("claude", "haiku", "low")
+    ) == ("claude", "haiku", "medium")
 
 
 @pytest.mark.parametrize(
