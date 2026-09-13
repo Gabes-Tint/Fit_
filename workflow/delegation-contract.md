@@ -33,10 +33,15 @@ agent configuration and gate policy cannot be changed during this run.
 
 Before the failing-test commit is accepted, the driver validates it as what
 it will become: an immutable input. It runs the repository's change-scoped
-lint over the branch (`bun run lint:changed`) and the repository's type lane
-(`bun run check`); either failure returns a precise, repairable diagnostic
-(outcome `TESTS_INVALID`, exit 31) to the same mechanic retry loop and never
-reaches implementation.
+lint over the branch (`bun run lint:changed`), the repository's type lane
+(`bun run check`) and the repository gate's own content steps -
+`duplicates`, `format:check` and `check:suppressions`, selected through the
+gate's own `--only` because the full tier would run the tests that must
+still fail here. Those three judge bytes rather than behavior, so their
+verdict on this branch is exactly the verdict block 3 will get on the same
+bytes; any failure returns a precise, repairable diagnostic (outcome
+`TESTS_INVALID`, exit 31) to the same mechanic retry loop and never reaches
+implementation.
 
 Failing is also not enough on its own: the driver reads each failed test's
 error message out of the runner's JSON report and requires it to be a failed
@@ -378,6 +383,19 @@ classified and stopped the same way.
 | 3: `human`              | Unresolved product intent, prohibited policy change needed, unmet slice dependency                                               | Stop; preserve; record required decision; no capacity escalation. |
 | 4: `repairable`         | Actual assertion failure, type/lint diagnostic, valid failing gate verdict caused by implementation, misreported `changed_files` | Same-role correction until attempt 3.                             |
 | 5: `capacity_exhausted` | Three validated repairable failures at this role                                                                                 | Escalate one rung, or stop/preserve if solver.                    |
+
+A failing gate verdict is repairable only while the implementation could
+repair it. Each failed step's diagnostic carries its own account of what it
+found - a capped tail of the step's captured log, and for `duplicates` both
+halves of every clone read out of jscpd's report as
+`file:startLine-endLine` - and, when the step names files reliably, the
+files it blamed. If every one of those files is a retained acceptance test,
+the only bytes that would satisfy the gate are immutable for this turn: the
+failure is block 1's defect, not the implementer's, and the run stops at
+once as `TESTS_INVALID` (exit 31, `blocked`) naming block 1 and the file,
+rather than consuming three corrections and an escalation on it. The rule
+is deliberately conservative: a failure naming any non-test file, and any
+failure whose files the driver cannot extract, stays row 4.
 
 Coordinated cancellation is a future invariant: it should become a terminal
 stop with reason `cancelled`, stop new turns, terminate and reap owned workers

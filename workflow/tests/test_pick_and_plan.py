@@ -1507,3 +1507,109 @@ def test_acceptance_tests_that_never_type_check_exhaust_the_mechanic(world):
     assert "TESTS_INVALID (exit 31)" in result.stdout
     assert "exhausted 3 attempts" in result.stdout
     assert "Stopped: TESTS_INVALID" in "\n".join(world.issue(219)["comments"])
+
+
+# --- block 1 runs the repository gate's content steps too (issue #397) ---------
+
+
+def test_acceptance_tests_that_clone_themselves_are_rejected_in_block_1(world):
+    """Block 3 runs the repository gate over a diff that includes the
+    acceptance tests, and by then they are immutable. Block 1 runs the same
+    content steps while the mechanic still owns the file (#397)."""
+    _given_single_domain_slice(world, 220, "Acceptance tests without a clone")
+    slug = "story-220-domain"
+    test_file = "src/lib/cloned.spec.ts"
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// attempt 1: the same ten lines twice\n"},
+        test_files=[test_file],
+    )
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// corrective attempt: the setup extracted into one helper\n"},
+        test_files=[test_file],
+    )
+    world.given_gate_outcomes(**{"verify:fast": ["fail", "pass"]})
+    world.given_duplicate_clone("lib/cloned.spec.ts", "lib/cloned.spec.ts")
+    world.scripted_test_outcome(test_file, ["fail", "pass"])
+    world.planner_answers_delegate(220, [delegate_slice(220, "domain", mechanic_signals())])
+    world.agent_implements(
+        slug,
+        "mechanic",
+        files={"src/lib/cloned.ts": "export const cloned = true;\n"},
+        changed_files=["src/lib/cloned.ts"],
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "TESTS_INVALID: duplicates, format:check, check:suppressions failed steps" in (
+        result.stdout
+    )
+    # the diagnostic says where the clone is, not merely that there is one
+    assert "lib/cloned.spec.ts:40-49 ↔ lib/cloned.spec.ts:90-99 (10 lines)" in result.stdout
+    assert "🔁 Mechanic #220 retrying after attempt 1" in result.stdout
+    assert "🧪 Gates: duplicates, format:check, check:suppressions ✔" in result.stdout
+    assert "Implemented #220" in result.stdout
+    # the mechanic was told exactly where to look
+    correction = _mechanic_talks(world)[1]["prompt"]
+    assert "lib/cloned.spec.ts:40-49 ↔ lib/cloned.spec.ts:90-99" in correction
+
+
+def test_acceptance_tests_that_never_pass_the_content_steps_exhaust_the_mechanic(world):
+    _given_single_domain_slice(world, 221, "Tests that never stop duplicating")
+    slug = "story-221-domain"
+    test_file = "src/lib/always-cloned.spec.ts"
+    for index in range(3):
+        world.mechanic_writes(
+            slug,
+            files={test_file: f"// attempt {index}: still the same block twice\n"},
+            test_files=[test_file],
+        )
+    world.given_gate_outcomes(**{"verify:fast": ["fail", "fail", "fail"]})
+    world.given_duplicate_clone("lib/always-cloned.spec.ts", "lib/always-cloned.spec.ts")
+
+    result = run_flow(world)
+
+    assert result.returncode == 31, result.stdout + result.stderr
+    assert "TESTS_INVALID (exit 31)" in result.stdout
+    assert "exhausted 3 attempts" in result.stdout
+    assert "lib/always-cloned.spec.ts:40-49" in result.stdout
+    assert "Stopped: TESTS_INVALID" in "\n".join(world.issue(221)["comments"])
+    assert len(_mechanic_talks(world)) == 3
+
+
+def test_unformatted_acceptance_tests_are_rejected_in_block_1(world):
+    """`format:check` is a content step too, and the driver names the file
+    it blamed instead of only its own step name."""
+    _given_single_domain_slice(world, 222, "Acceptance tests prettier accepts")
+    slug = "story-222-domain"
+    test_file = "src/lib/unformatted.spec.ts"
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// attempt 1: hand-formatted\n"},
+        test_files=[test_file],
+    )
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// corrective attempt: prettier ran over it\n"},
+        test_files=[test_file],
+    )
+    world.given_gate_outcomes(**{"verify:fast": ["fail", "pass"]})
+    world.given_failed_gate_steps("verify:fast", "format:check")
+    world.given_gate_failure_file(test_file)
+    world.scripted_test_outcome(test_file, ["fail", "pass"])
+    world.planner_answers_delegate(222, [delegate_slice(222, "domain", mechanic_signals())])
+    world.agent_implements(
+        slug,
+        "mechanic",
+        files={"src/lib/unformatted.ts": "export const formatted = true;\n"},
+        changed_files=["src/lib/unformatted.ts"],
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "failed steps: format:check" in result.stdout
+    assert f"[warn] {test_file}" in result.stdout
+    assert "Implemented #222" in result.stdout

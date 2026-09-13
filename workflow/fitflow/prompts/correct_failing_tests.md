@@ -23,6 +23,15 @@ through `page.evaluate` imports or a route fixture of your own. The tests
 are immutable inputs to implementation, so they must lint clean both before
 and after the behavior exists.
 
+The test files must also pass the repository's own content gates, which the
+implementation gate will run over these same bytes when nobody can change
+them any more: `duplicates` (copy-paste detection, ratchet 0 - extract a
+repeated setup or assertion block into a helper rather than pasting it into
+a second test), `format:check` (run `bunx prettier --write` over the files
+you wrote) and `check:suppressions`. When the diagnostic above names a
+clone, it gives both halves as `file:startLine-endLine`: read those exact
+line ranges before you change anything.
+
 The tests must fail because the requested behavior is missing, not because of
 syntax, imports, or test-runner errors: each one fails on an expectation the
 implementation would satisfy, never on a thrown TypeError, ReferenceError or
