@@ -265,24 +265,22 @@ def cmd_test_run(argv):
 
 def cmd_lint_changed():
     """Scripted `lint:changed`: outcome from `gate_outcomes["lint:changed"]`,
-    defaulting to pass. "fail" prints eslint-style errors to stderr and exits
-    1; "tool_error" crashes with an exit code neither 0 nor 1."""
-    import fcntl
+    defaulting to pass. "fail" prints eslint's stylish report - the file on a
+    line of its own above the problems it owns - and exits 1; "tool_error"
+    crashes with an exit code neither 0 nor 1.
 
-    lock_path = world_dir() / "world.lock"
-    with lock_path.open("w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        world = load()
-        outcome = world.get("gate_outcomes", {}).get("lint:changed", "pass")
-        if isinstance(outcome, list) and outcome:
-            outcome = outcome.pop(0)
-            save(world)
+    `lint_errors` scripts which file breaks which rule, because block 1 no
+    longer asks only whether lint failed: the `@typescript-eslint/no-unsafe-*`
+    family inside an acceptance test is the story's missing API showing
+    through and is accepted, while every other rule is still a rejection."""
+    outcome, world = _scripted_outcome("lint:changed")
     if outcome == "fail":
         # eslint prints its compliance summary to stdout and the error body
         # to stderr, so real diagnostics can land in both streams at once
-        print("lint:changed: 1 problem found in 1 file")
+        problems = world.get("lint_errors") or _DEFAULT_LINT_ERRORS
+        print(f"lint:changed: {len(problems)} problem found in 1 file")
         print("lint errors:", file=sys.stderr)
-        print(_LINT_FAILURE_DETAIL, file=sys.stderr)
+        print(_stylish(problems), file=sys.stderr)
         return 1
     if outcome == "tool_error":
         print("eslint runner crashed", file=sys.stderr)
@@ -290,42 +288,60 @@ def cmd_lint_changed():
     return 0
 
 
-_LINT_FAILURE_DETAIL = (
-    "src/lib/workflow-probe.spec.ts: 5:10 error Unsafe call of an `any` typed "
-    "value @typescript-eslint/no-unsafe-call"
-)
+_DEFAULT_LINT_ERRORS = [
+    {
+        "file": "src/lib/workflow-probe.spec.ts",
+        "rule": "@typescript-eslint/no-unsafe-call",
+        "message": "Unsafe call of an `any` typed value.",
+    }
+]
 
 
-_CHECK_FAILURE_DETAIL = (
-    "Error: Argument of type 'number' is not assignable to parameter of type 'Locator'. (ts)"
-)
+def _stylish(problems):
+    """eslint's stylish report: one header per file, then its problems."""
+    lines = []
+    for index, problem in enumerate(problems):
+        if index == 0 or problem["file"] != problems[index - 1]["file"]:
+            lines.append(problem["file"])
+        message = problem.get("message") or "Unsafe call of an `any` typed value."
+        lines.append(f"  {5 + index}:10  error  {message}  {problem['rule']}")
+    return "\n".join(lines)
+
+
+_CHECK_FAILURE_MESSAGE = "Argument of type 'number' is not assignable to parameter of type 'Locator'"
 
 
 def cmd_check():
     """Scripted `check` (the repository's svelte-check type lane): outcome
-    from `gate_outcomes["check"]`, defaulting to pass. "fail" prints a
-    svelte-check error naming the offending file and exits 1; "tool_error"
-    crashes with an exit code neither 0 nor 1."""
-    import fcntl
+    from `gate_outcomes["check"]`, defaulting to pass. "fail" prints the
+    errors `type_errors` scripts - or one default error in
+    `check_failure_file` - and exits 1; "tool_error" crashes with an exit
+    code neither 0 nor 1.
 
-    lock_path = world_dir() / "world.lock"
-    with lock_path.open("w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        world = load()
-        outcome = world.get("gate_outcomes", {}).get("check", "pass")
-        if isinstance(outcome, list) and outcome:
-            outcome = outcome.pop(0)
-            save(world)
-        where = world.get("check_failure_file", "src/routes/typed.e2e.ts")
+    An error scripted with a TS code is printed in tsc's shape, which
+    carries the code; one without is printed in svelte-check's own
+    location-then-message shape, which does not. Both reach the repository
+    for real, and block 1 has to read either."""
+    outcome, world = _scripted_outcome("check")
     if outcome == "fail":
-        print(f"{where}:12:30")
-        print(_CHECK_FAILURE_DETAIL)
-        print("svelte-check found 1 error and 0 warnings")
+        errors = world.get("type_errors") or [
+            {"file": world.get("check_failure_file", "src/routes/typed.e2e.ts")}
+        ]
+        for error in errors:
+            print(_type_error_line(error))
+        print(f"svelte-check found {len(errors)} errors and 0 warnings")
         return 1
     if outcome == "tool_error":
         print("svelte-check could not load the project", file=sys.stderr)
         return 2
     return 0
+
+
+def _type_error_line(error):
+    message = error.get("message") or _CHECK_FAILURE_MESSAGE
+    if error.get("code"):
+        return f"{error['file']}(12,30): error {error['code']}: {message}."
+    return f"{error['file']}:12:30\nError: {message}. (ts)"
 
 
 def _scripted_outcome(key, default="pass"):
@@ -350,6 +366,7 @@ _STEP_DETAIL = {
     "format:check": "Checking formatting...\n[warn] {file}\n[warn] Code style issues found in the above file(s).",
     "check:suppressions": "Suppressions: 3 total, 1 unjustified, baseline 0.\n  {file}:7  eslint  eslint-disable-next-line\n\nUnjustified suppressions rose from 0 to 1.",
     "lint": "{file}\n  5:10  error  Unsafe call of an `any` typed value  @typescript-eslint/no-unsafe-call\nESLint: 1 errors, 0 warnings across 1 files.",
+    "check": '1789326030386 START "/worktree"\n1789326030396 ERROR "{file}" 14:22 "Property \'toggleSet\' does not exist on type \'WorkoutStore\'."\n1789326030396 COMPLETED 1423 FILES 1 ERRORS 0 WARNINGS 1 FILES_WITH_PROBLEMS',
 }
 
 

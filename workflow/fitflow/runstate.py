@@ -179,6 +179,12 @@ class SliceRecord:
     # a UI slice depends on its domain sibling, block 3 merges the frozen
     # domain commit into the UI branch and `failing_sha` becomes that merge.
     tests_sha: str = ""
+    # Acceptance file -> how many type and type-aware lint errors it carries
+    # because the API it calls does not exist yet. Block 1 accepted those as
+    # part of failing as intended; block 3 reads this to tell "the
+    # implementation has not provided the signature the tests call" from
+    # "block 1 accepted a test the repository gate rejects".
+    tests_type_debt: dict[str, int] = field(default_factory=dict)
     # "domain" on a UI slice the planner judged cannot be implemented and
     # validated before its domain sibling exists; "" for an independent one.
     depends_on: str = ""
@@ -442,6 +448,7 @@ def begin_run(story_number: int, base_sha: str, roster: dict, slices: list) -> R
                 test_files=list(piece.test_files),
                 failing_sha=piece.commit,
                 tests_sha=piece.commit,
+                tests_type_debt=dict(piece.tests_type_debt),
             )
             for piece in slices
         },

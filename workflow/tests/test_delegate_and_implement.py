@@ -2053,6 +2053,75 @@ def test_a_gate_failure_confined_to_the_acceptance_test_stops_as_tests_invalid(w
     assert any(test_file in comment for comment in world.issue(471)["comments"])
 
 
+def _given_tests_that_call_a_missing_api(world, number: int) -> str:
+    """Block 1 as it now ends for a story that introduces an API: the type
+    lane failed inside the acceptance file, the driver accepted it, and the
+    slice record carries that debt into block 3."""
+    test_file = _given_planned_story(world, number)
+    world.given_gate_outcomes(check=["fail", "pass"])
+    world.given_type_errors_in([test_file], ["TS2339"])
+    return test_file
+
+
+def test_a_type_error_left_inside_the_acceptance_test_becomes_a_correction(world):
+    """Block 1 accepted this file's type errors because the API it calls
+    did not exist yet. The same lane still failing on it after an
+    implementation turn says the implementation did not provide what the
+    tests call - the implementer's own diagnostic, not block 1's defect."""
+    test_file = _given_tests_that_call_a_missing_api(world, 474)
+    _delegate_mechanic(world, 474)
+    world.given_gate_outcomes(**{"verify:changed": ["fail", "pass"]})
+    world.given_failed_gate_steps("verify:changed", "check")
+    world.given_gate_failure_file(test_file)
+    _implement(
+        world,
+        "story-474-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = true;\n"},
+    )
+    _implement(
+        world,
+        "story-474-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const toggleSet = (e: number) => e;\n"},
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "block 1 accepted an acceptance test" not in result.stdout
+    assert "the acceptance tests call signatures the implementation does not provide yet" in (
+        result.stdout
+    )
+    assert "Property 'toggleSet' does not exist" in result.stdout
+    assert "correcting after attempt 1" in result.stdout
+    assert "🔒 #474 (domain) frozen at" in result.stdout
+
+
+def test_a_clone_inside_an_acceptance_test_still_stops_even_with_recorded_type_debt(world):
+    """The exception is exactly the two lanes an implementation answers by
+    writing product code. `duplicates` is answered only inside the file it
+    names, and that file is immutable here."""
+    test_file = _given_tests_that_call_a_missing_api(world, 475)
+    _delegate_mechanic(world, 475)
+    world.given_gate_outcomes(**{"verify:changed": "fail"})
+    world.given_failed_gate_steps("verify:changed", "duplicates")
+    world.given_duplicate_clone("lib/delegate.spec.ts", "lib/delegate.spec.ts")
+    for _ in range(3):
+        _implement(
+            world,
+            "story-475-domain",
+            "mechanic",
+            files={"src/lib/delegate.ts": "export const delegate = true;\n"},
+        )
+
+    result = run_flow(world)
+
+    assert result.returncode == 31, result.stdout + result.stderr
+    assert "block 1 accepted an acceptance test the repository gate rejects" in result.stdout
+    assert test_file in result.stdout
+
+
 def test_a_gate_failure_naming_a_product_file_stays_repairable(world):
     """Only a failure confined to the immutable tests stops the run; one
     the implementer's own file caused is an ordinary correction."""

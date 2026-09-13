@@ -54,6 +54,71 @@ bytes; any failure returns a precise, repairable diagnostic (outcome
 `TESTS_INVALID`, exit 31) to the same mechanic retry loop and never reaches
 implementation.
 
+### Fails as intended includes the API that does not exist yet
+
+Two of those lanes have one sanctioned exception, because without it a
+story that introduces a new function, method, prop or export cannot pass
+block 1 at all. The failing tests have to name the API before it exists, so
+the type lane reports errors inside the test file - a property that is not
+on the type, an argument count the current signature does not take, an
+export or module that cannot be found - and eslint's type-aware rules then
+see `any` flowing out of that unresolved import. The mechanic cannot
+legally remove either: `@ts-expect-error`, a cast to `any` and a stub are
+rejected elsewhere in block 1, and the acceptance bytes are immutable by
+the time the implementation lands. #422 proved it end to end - #423's
+mechanic refused to write a test at all ("cannot be written as type-correct
+tests on a test-only branch"), and #424's produced 186
+`@typescript-eslint/no-unsafe-*` errors - and both exhausted their three
+attempts.
+
+So the driver parses each lane's output error by error and asks two
+questions of every one of them. **Which file?** Every error must be inside
+a test file the mechanic reported; one naming a helper under `tests/`, a
+fixture or a product file is a rejection, and the diagnostic names those
+files. **Which rule?** Tolerated are exactly the
+`@typescript-eslint/no-unsafe-*` family (`-call`, `-member-access`,
+`-assignment`, `-argument`, `-return`), and the TypeScript diagnostics
+`TS2339`/`TS2551` (property does not exist), `TS2554`/`TS2555` (argument
+count), `TS2345` (argument type), `TS2305`/`TS2724` (no exported member)
+and `TS2307` (cannot find module) - the last only when the module path is
+inside this repository, because a missing `vitest` is a broken checkout,
+not a missing API. Every other rule and code is a rejection: a formatting
+rule, an unused import, `no-console` or a parsing error does not become
+true when the implementation lands. Output the driver could not read in
+full is also a rejection, so an unreadable lane is never softer than a
+readable one.
+
+An accepted failure is narrated (`🧪 Gates: check — 4 type errors inside
+the acceptance tests, expected before the implementation exists ✔`) and
+recorded on the slice as `tests_type_debt`, acceptance file to error count,
+which is what block 3 reads below.
+
+Nothing else about block 1 changes. The runtime verdict still has to hold
+in full: the tests must run, fail, and fail on an expectation the
+implementation would satisfy. A file that throws - a `TypeError`, a
+`ReferenceError`, a syntax error - is rejected exactly as before, and so is
+a vitest file that dies before its first assertion; the sanctioned pattern
+for a module that does not exist yet is still the dynamic import inside the
+assertion, which produces a real failed expectation. The type lane's
+opinion about a file and the runner's verdict on it are independent, and
+both must pass. This does weaken one thing: #399's case - a helper called
+with an argument of the wrong type - now passes the type lane when it is
+inside an acceptance file, because it is indistinguishable from the new
+parameter a story adds. It is still caught, by the runtime verdict that
+sees it throw, and by block 3's gates below.
+
+### A mechanic that refuses
+
+A block 1 reply with an empty `test_files` and a stated `why_they_fail` is
+a refusal: the mechanic is saying this brief cannot be turned into a
+failing acceptance test. That is a statement about the brief, not about the
+branch, and a retry puts the same brief to the same agent in the same
+session - #423 produced the identical refusal three times. The run stops at
+once as `TESTS_NOT_PUSHED` (exit 23) with the mechanic's own reason in the
+diagnostic and in the story comment, consuming no further turn. An empty
+reply with no reason at all remains the ordinary repairable "reported no
+test files".
+
 Failing is also not enough on its own: the driver reads each failed test's
 error message out of the runner's JSON report and requires it to be a failed
 expectation. A test that throws - a helper called with an argument of the
@@ -554,6 +619,21 @@ once as `TESTS_INVALID` (exit 31, `blocked`) naming block 1 and the file,
 rather than consuming three corrections and an escalation on it. The rule
 is deliberately conservative: a failure naming any non-test file, and any
 failure whose files the driver cannot extract, stays row 4.
+
+Block 3 itself grants no tolerance. `verify:changed`'s `lint` and `check`
+steps must be clean over the implementation, which a correct implementation
+achieves by providing the signatures the tests call. There is exactly one
+exception to the paragraph above, and `tests_type_debt` is what tells it
+apart: when the failed steps are `check`, `lint` or `lint:changed` and
+every acceptance file they blame is one block 1 recorded type debt for,
+the failure says the implementation is unfinished, not that the test is
+broken. The tests named an API, block 1 accepted that they did, and the
+product still does not offer it in the shape they call - a diagnostic for
+the implementer, carrying the tsc and eslint lines and the sentence that
+the fix belongs in the product code. It is an ordinary row 4 correction.
+Any other failed step (`duplicates`, `format:check`, `check:suppressions`,
+a spec), or a blamed acceptance file with no recorded debt, is block 1's
+defect and stops the run as before.
 
 Coordinated cancellation is a future invariant: it should become a terminal
 stop with reason `cancelled`, stop new turns, terminate and reap owned workers

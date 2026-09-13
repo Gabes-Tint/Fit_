@@ -19,6 +19,13 @@ the diagnostic. Those three steps judge bytes rather than behavior, so they
 give the same verdict in block 1 as they will in block 3 - where the test
 file is immutable and nobody is allowed to repair it (#397).
 
+The two lanes return a `LaneFailure`, which carries the same output parsed
+error by error (`fitflow.lanes`) beside the diagnostic. Block 1 needs that
+finer reading because a story introducing a new API produces type and
+type-aware lint errors inside the acceptance file by construction, and
+those are part of failing as intended; everything else is still a
+rejection.
+
 Verdicts come from the gate's own report
 (`reports/quality/gate-verify-changed.json`), never from a missing one:
 exit 0 with a fresh `ok` report passes; exit 1 with named failed steps is a
@@ -47,6 +54,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from fitflow import lanes
 from fitflow.outcome import FlowFailure, Outcome
 
 _CRASH_EXIT_CODE = 97
@@ -82,6 +90,12 @@ _CULPRIT_PATTERNS = {
     "lint:changed": re.compile(r"^([\w./@+-]+\.(?:ts|js|mjs|cjs|svelte|json|md|css|html))\s*$"),
 }
 
+#: The type lane names its files inside its diagnostics rather than on a
+#: line of their own, so `lanes.type_errors` reads them out instead of a
+#: pattern. Block 3 needs them located for the same reason every other step
+#: does: to know whether a failure is confined to the acceptance tests.
+_TYPE_STEPS = ("check",)
+
 
 @dataclass(frozen=True)
 class GateFailure:
@@ -91,21 +105,34 @@ class GateFailure:
     the files the failed steps named, and `located` says whether every
     failed step named some: when it is false nothing may be concluded from
     `culprits`, because a step whose output the driver cannot read could be
-    blaming anything.
+    blaming anything. `steps` are the failed step names, which say what kind
+    of verdict this was.
     """
 
     diagnostic: str
     culprits: frozenset[str]
     located: bool
+    steps: frozenset[str] = frozenset()
 
     @property
     def headline(self) -> str:
         return self.diagnostic.splitlines()[0] if self.diagnostic else ""
 
 
-def run_changed_lint(worktree: Path, story_number: int) -> str | None:
+@dataclass(frozen=True)
+class LaneFailure:
+    """One judged (exit 1) run of a single-command lane - `lint:changed` or
+    `check`. `diagnostic` is what the mechanic is told; `reading` is the
+    same output parsed error by error, for the block 1 checks that must ask
+    which errors those were rather than only that there were some."""
+
+    diagnostic: str
+    reading: lanes.LaneReading
+
+
+def run_changed_lint(worktree: Path, story_number: int) -> "LaneFailure | None":
     """Run the repository's change-scoped lint in the slice worktree and
-    return a repairable diagnostic, or None when it passes. Block 1 runs it
+    return a repairable failure, or None when it passes. Block 1 runs it
     over the failing-test branch: acceptance tests become immutable inputs,
     so tests whose own lint is broken are never accepted. Exit 1 with lint
     output is a repairable diagnostic; any other exit is an external tool
@@ -114,14 +141,15 @@ def run_changed_lint(worktree: Path, story_number: int) -> str | None:
     # both streams can carry real diagnostics: eslint prints the error body
     # to stdout in some configurations and to stderr in others, so neither
     # stream alone may be the verdict (#382)
-    output = "\n".join(
-        stream.strip() for stream in (result.stderr, result.stdout) if stream.strip()
-    )
+    output = _both_streams(result)
     if result.returncode == 0:
         narrate_gates(0, "lint:changed")
         return None
     if result.returncode == 1:
-        return f"lint:changed failed on the acceptance tests: {output[-800:]}"
+        return LaneFailure(
+            f"lint:changed failed on the acceptance tests: {output[-800:]}",
+            lanes.lint_errors(output),
+        )
     raise FlowFailure(
         Outcome.TOOL_FAILED,
         f"lint:changed crashed (exit {result.returncode}): {output[-800:]}",
@@ -130,30 +158,35 @@ def run_changed_lint(worktree: Path, story_number: int) -> str | None:
     )
 
 
-def run_type_check(worktree: Path, story_number: int) -> str | None:
+def run_type_check(worktree: Path, story_number: int) -> "LaneFailure | None":
     """Run the repository's own type lane (`bun run check`: `svelte-kit sync`
     then `svelte-check` against `tsconfig.json`) over the failing-test branch
-    and return a repairable diagnostic, or None when it passes.
+    and return a repairable failure, or None when it passes.
 
     `check` is a static step of both CI and `verify:changed`, so main is green
     on it by construction and this branch adds only test files: a type error
     here is the acceptance tests'. Exit 1 with the checker's output is a
     repairable diagnostic; any other exit is an external tool failure."""
     result = _launch(["bun", "run", "check"], worktree, story_number, "check")
-    output = "\n".join(
-        stream.strip() for stream in (result.stderr, result.stdout) if stream.strip()
-    )
+    output = _both_streams(result)
     if result.returncode == 0:
         narrate_gates(0, "check")
         return None
     if result.returncode == 1:
-        return f"check found type errors in the acceptance tests: {output[-800:]}"
+        return LaneFailure(
+            f"check found type errors in the acceptance tests: {output[-800:]}",
+            lanes.type_errors(output),
+        )
     raise FlowFailure(
         Outcome.TOOL_FAILED,
         f"check crashed (exit {result.returncode}): {output[-800:]}",
         story_number,
         add_blocked=True,
     )
+
+
+def _both_streams(result: subprocess.CompletedProcess) -> str:
+    return "\n".join(stream.strip() for stream in (result.stderr, result.stdout) if stream.strip())
 
 
 def run_failing_branch_steps(worktree: Path, story_number: int) -> "GateFailure | None":
@@ -300,7 +333,9 @@ def _failure(worktree: Path, report: dict, failed: list[str], label: str) -> Gat
             located = False
         else:
             culprits |= blamed
-    return GateFailure("\n".join(lines), frozenset(culprits), located and bool(culprits))
+    return GateFailure(
+        "\n".join(lines), frozenset(culprits), located and bool(culprits), frozenset(failed)
+    )
 
 
 def _step_entries(report: dict) -> dict:
@@ -376,6 +411,9 @@ def _clip(lines: list[str], drop_first: bool) -> list[str]:
 
 
 def _blamed_files(name: object, output: str) -> frozenset[str] | None:
+    if name in _TYPE_STEPS:
+        reading = lanes.type_errors(output)
+        return frozenset(error.file for error in reading.errors) if reading.complete else None
     pattern = _CULPRIT_PATTERNS.get(name) if isinstance(name, str) else None
     if pattern is None:
         return None

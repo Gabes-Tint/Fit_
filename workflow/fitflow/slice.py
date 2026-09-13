@@ -18,3 +18,7 @@ class Slice:
     test_kind: str
     test_files: list[str] = field(default_factory=list)
     commit: str = ""
+    # How many type and type-aware lint errors each acceptance file carries
+    # because the API it calls does not exist yet - block 1 accepted those,
+    # and block 3 reads this to know it did.
+    tests_type_debt: dict[str, int] = field(default_factory=dict)
