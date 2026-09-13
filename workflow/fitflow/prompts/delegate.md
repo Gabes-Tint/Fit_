@@ -44,13 +44,14 @@ stops the run; it never silently picks a rung.
 
 `slices`: one entry per slice, each with
 
-- layer: "domain" or "ui"
+- layer: "domain", "ui" or "workflow"
 - signals: exactly the nine signals above
 - evidence: at least one entry per signal, each {signal, source_ref,
   detail}; signal names one of the nine signals; source_ref names exactly
   one ref per entry, never a comma-joined list, and must be one of this
   run's retained inputs, written exactly as one of these shapes (<layer> is
-  the slice's own layer, "domain" or "ui"; example uses story #$story_number):
+  the slice's own layer, "domain", "ui" or "workflow"; example uses story
+  #$story_number):
 
   - run-$story_number/<layer>/brief - e.g. run-$story_number/domain/brief
   - run-$story_number/<layer>/acceptance/<n> - 0-based index into that
@@ -91,6 +92,11 @@ slice, because the domain slice is implemented and validated first. Nor may
 both slices depend on each other - neither could run first - and the only
 slice of a one-slice story has no sibling to depend on. The driver rejects
 all three and the run stops.
+
+A `workflow` slice is always the only slice of its story, so `needs_sibling`
+never applies to it: answer false. Everything else about the rung is
+unchanged - a driver story is judged on the same nine signals, from the same
+evidence, and the driver still picks the rung.
 
 ## The slices
 

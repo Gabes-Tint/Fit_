@@ -22,7 +22,6 @@ from fitflow import (
     turns,
     worktrees,
 )
-from fitflow.acceptance import TEST_FILE
 from fitflow.outcome import FlowFailure, Outcome
 from fitflow.slice import Slice
 
@@ -156,7 +155,7 @@ def _run_attempt(prepared: PreparedSlice, attempt: int, diagnostic: str) -> None
             ]
         )
     _check_not_a_reasoned_refusal(test_files, reply["why_they_fail"], piece.number)
-    debt = _verify_pushed(slug, path, test_files, piece.test_kind, piece.number)
+    debt = _verify_pushed(prepared, test_files)
     _verify_tests_fail(path, test_files, piece.number)
     piece.test_files = list(test_files)
     piece.tests_type_debt = debt
@@ -181,14 +180,14 @@ def _check_not_a_reasoned_refusal(test_files: list[str], why: str, story_number:
     )
 
 
-def _verify_pushed(
-    slug: str, path, test_files: list[str], test_kind: str, story_number: int
-) -> dict[str, int]:
+def _verify_pushed(prepared: PreparedSlice, test_files: list[str]) -> dict[str, int]:
     """Every check the branch must pass before its bytes become immutable.
     Returns the type debt the acceptance tests carry: how many type and
     type-aware lint errors each one has because the API it calls does not
     exist yet. Block 3 reads it to tell "the implementation has not provided
     the signature yet" from "block 1 accepted a broken test"."""
+    piece, slug, path = prepared.piece, prepared.slug, prepared.path
+    story_number = piece.number
     if not worktrees.is_clean(path):
         raise FlowFailure(Outcome.TESTS_NOT_PUSHED, f"tree not clean on {slug}", story_number)
     if worktrees.remote_head(slug) != worktrees.local_head(path):
@@ -199,18 +198,14 @@ def _verify_pushed(
         raise FlowFailure(Outcome.TESTS_NOT_PUSHED, "mechanic reported no test files", story_number)
     changed = worktrees.changed_files(path, slug)
     _check_reported_files_are_on_branch(slug, test_files, changed, story_number)
-    _check_every_changed_file_is_a_test(slug, changed, story_number)
-    _check_files_match_test_kind(slug, changed, test_kind, story_number)
-    _check_test_files_are_where_they_belong(slug, changed, story_number)
+    _check_every_changed_file_is_a_test(slug, piece.layer, changed, story_number)
+    _check_files_match_test_kind(slug, changed, test_files, piece.test_kind, story_number)
+    _check_test_files_are_where_they_belong(slug, piece.layer, changed, story_number)
     _check_test_quality(slug, path, test_files, story_number)
-    debt = _check_failing_branch_lint(path, test_files, story_number)
-    debt = _merged(debt, _check_failing_branch_types(path, test_files, story_number))
-    _check_failing_branch_gate_steps(path, story_number)
+    debt = _check_failing_branch_gates(piece, path, test_files, changed)
     narrate.line(
         f"🔍 Verify #{story_number}: tree clean ✔ · pushed ✔ · files on branch ✔ · "
-        "only tests ✔ · placed right ✔ · lint ✔ · types ✔ · "
-        + ", ".join(gates.FAILING_BRANCH_STEPS)
-        + " ✔"
+        "only tests ✔ · " + _branch_gate_summary(piece.layer, changed)
     )
     return debt
 
@@ -219,14 +214,43 @@ def _merged(first: dict[str, int], second: dict[str, int]) -> dict[str, int]:
     return {name: first.get(name, 0) + second.get(name, 0) for name in first | second}
 
 
+def _branch_gate_summary(layer: str, changed: list[str]) -> str:
+    if layer == "workflow":
+        return " · ".join(f"{name} ✔" for name in gates.workflow_gate_names(changed))
+    return "placed right ✔ · lint ✔ · types ✔ · " + ", ".join(gates.FAILING_BRANCH_STEPS) + " ✔"
+
+
+def _check_failing_branch_gates(
+    piece: Slice, path, test_files: list[str], changed: list[str]
+) -> dict[str, int]:
+    """The gates the acceptance tests must already pass, and the type debt
+    the two type-aware lanes accepted. A workflow slice changes Python and
+    prose, so the repository's TypeScript lanes have nothing to say about
+    it and the driver's own four run instead - and a Python test names no
+    TypeScript API, so such a slice never carries debt."""
+    if piece.layer == "workflow":
+        failure = gates.run_workflow_gates(path, piece.number, changed)
+        if failure is not None:
+            raise FlowFailure(Outcome.TESTS_INVALID, failure.diagnostic, piece.number)
+        return {}
+    debt = _check_failing_branch_lint(path, test_files, piece.number)
+    debt = _merged(debt, _check_failing_branch_types(path, test_files, piece.number))
+    _check_failing_branch_gate_steps(path, piece.number)
+    return debt
+
+
 def _check_test_quality(slug: str, path, test_files: list[str], story_number: int) -> None:
     """The acceptance tests become immutable implementation inputs, so their
     content must satisfy their own gates now: no lint suppressions, and a
     playwright spec must exercise the component through the harness route
-    instead of importing product code in the browser context."""
+    instead of importing product code in the browser context.
+
+    Both rules read TypeScript, so a workflow slice's Python tests skip
+    them: their equivalent is `ruff check workflow`, which the workflow
+    gates run over the whole package, tests included."""
     for test_file in test_files:
         target = path / test_file
-        if not target.exists():
+        if not target.exists() or test_file.endswith(".py"):
             continue
         for diagnostic in (
             acceptance.rejects_suppression(target),
@@ -378,9 +402,15 @@ def _check_reported_files_are_on_branch(
             )
 
 
-def _check_every_changed_file_is_a_test(slug: str, changed: list[str], story_number: int) -> None:
+def _check_every_changed_file_is_a_test(
+    slug: str, layer: str, changed: list[str], story_number: int
+) -> None:
+    """Only test-side files may change here. For a workflow slice the whole
+    of `workflow/tests/` is test-side - a new flow scenario needs its
+    `given_*` helper in `conftest.py` and often a scripted answer in a fake,
+    and none of that is driver code."""
     for changed_file in changed:
-        if not TEST_FILE.search(changed_file):
+        if not acceptance.is_test_file(layer, changed_file):
             raise FlowFailure(
                 Outcome.TESTS_NOT_PUSHED,
                 f"non-test file changed on {slug}: {changed_file}",
@@ -389,15 +419,23 @@ def _check_every_changed_file_is_a_test(slug: str, changed: list[str], story_num
 
 
 def _check_files_match_test_kind(
-    slug: str, changed: list[str], test_kind: str, story_number: int
+    slug: str, changed: list[str], test_files: list[str], test_kind: str, story_number: int
 ) -> None:
-    mismatched = [
-        path for path in changed if path.endswith(".e2e.ts") != (test_kind == "playwright")
-    ]
+    mismatched = [path for path in changed if not acceptance.matches_test_kind(test_kind, path)]
     if mismatched:
         raise FlowFailure(
             Outcome.TESTS_NOT_PUSHED,
             f"{test_kind} slice changed wrong-kind test on {slug}: {mismatched[0]}",
+            story_number,
+        )
+    uncollected = [
+        path for path in test_files if not acceptance.names_an_acceptance_test(test_kind, path)
+    ]
+    if uncollected:
+        raise FlowFailure(
+            Outcome.TESTS_NOT_PUSHED,
+            f"{test_kind} slice reported {uncollected[0]} as an acceptance test on {slug}, "
+            "and the runner collects no test from it",
             story_number,
         )
 
@@ -424,10 +462,17 @@ _SPEC_DIR = "src/"
 
 
 def _check_test_files_are_where_they_belong(
-    slug: str, changed: list[str], story_number: int
+    slug: str, layer: str, changed: list[str], story_number: int
 ) -> None:
     """Placement, not naming: a test in the wrong folder can pass every gate
-    block 1 runs and still fail CI on the pull request."""
+    block 1 runs and still fail CI on the pull request.
+
+    Both rules read the repository's TypeScript layout - the coverage lane's
+    view of `src/` - so a workflow slice is exempt: its own placement rule is
+    enforced above, where `workflow/tests/**` is the only tree it may change
+    and only a `test_*.py` inside it may be reported as an acceptance test."""
+    if layer == "workflow":
+        return
     for changed_file in changed:
         expected = _misplaced(changed_file)
         if expected is not None:
@@ -458,7 +503,7 @@ def _misplaced(changed_file: str) -> str | None:
 
 def _verify_tests_fail(path, test_files: list[str], story_number: int) -> None:
     for test_file in test_files:
-        if not test_file.endswith(".e2e.ts"):
+        if not test_file.endswith((".e2e.ts", ".py")):
             diagnostic = acceptance.rejects_local_stand_in(path / test_file)
             if diagnostic:
                 raise FlowFailure(Outcome.TESTS_DO_NOT_FAIL, diagnostic, story_number)

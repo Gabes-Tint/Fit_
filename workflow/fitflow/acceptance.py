@@ -3,12 +3,18 @@ the test runner's own JSON report, never from the process exit code (a
 runner also exits non-zero for "no tests found" or a bad --project, which is
 not the same failure as an acceptance test with no implementation yet).
 
+The runner is chosen per file: `.e2e.ts` is playwright, `.py` is the
+driver's own pytest suite, everything else is vitest. pytest has no JSON
+reporter, so its short summary stands in for one (see the bottom of this
+module); the two verdicts it produces are the same two.
+
 The report also carries every failed test's title and error message, so a
 verdict names which test failed and why, and `failure_reason` can tell an
 expectation that is waiting for the implementation from a test that throws
 and can never pass."""
 
 import json
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -18,6 +24,47 @@ from fitflow import failure_reason
 from fitflow.failure_reason import Failure
 
 TEST_FILE = re.compile(r"(\.spec\.ts|\.test\.ts|\.svelte\.spec\.ts|\.e2e\.ts)$")
+
+#: The workflow layer's test side. Everything under it is test-side by
+#: construction - the driver's flow tests are a fake world plus a `go.py`
+#: run, so a new scenario needs its `given_*` helper in `conftest.py` and
+#: often a scripted answer in a fake under `fakes/`, and none of that is
+#: product code. The equivalent of "only test files may change" for a
+#: workflow slice is therefore "only `workflow/tests/**` may change".
+WORKFLOW_TESTS = "workflow/tests/"
+
+
+#: A runnable acceptance test of the workflow layer. `conftest.py` and the
+#: fakes are test-side too, but pytest collects neither, so neither can be
+#: the file block 1 reports as an acceptance test.
+WORKFLOW_ACCEPTANCE = re.compile(r"^workflow/tests/(?:[\w.-]+/)*test_[\w.-]+\.py$")
+
+
+def is_test_file(layer: str, path: str) -> bool:
+    """Whether block 1 may change `path` on a slice of this layer."""
+    if layer == "workflow":
+        return path.startswith(WORKFLOW_TESTS)
+    return TEST_FILE.search(path) is not None
+
+
+def matches_test_kind(test_kind: str, path: str) -> bool:
+    """Whether a file block 1 changed is of the kind this slice writes: a
+    playwright slice writes only `*.e2e.ts`, a vitest slice writes no
+    `*.e2e.ts`, and a pytest slice writes only inside `workflow/tests/`."""
+    if test_kind == "pytest":
+        return path.startswith(WORKFLOW_TESTS)
+    if test_kind == "playwright":
+        return path.endswith(".e2e.ts")
+    return not path.endswith(".e2e.ts")
+
+
+def names_an_acceptance_test(test_kind: str, path: str) -> bool:
+    """Whether a path block 1 *reported* as an acceptance test can be one.
+    Only pytest distinguishes this from `matches_test_kind`: a fake or a
+    `conftest.py` is a legitimate change and never a test pytest collects."""
+    if test_kind == "pytest":
+        return WORKFLOW_ACCEPTANCE.match(path) is not None
+    return matches_test_kind(test_kind, path)
 
 
 @dataclass(frozen=True)
@@ -52,10 +99,23 @@ def _is_e2e(path: str) -> bool:
     return path.endswith(".e2e.ts") or path.endswith(".e2e.js")
 
 
+def _runner(path: str) -> str:
+    """Which runner owns a test file, from its extension alone: the driver's
+    own tests are Python and run under pytest, everything else is the
+    repository's TypeScript."""
+    if path.endswith(".py"):
+        return "pytest"
+    return "playwright" if _is_e2e(path) else "vitest"
+
+
 def run_and_check_failing(worktree: Path, test_files: list[str]) -> Verdict:
     """An unparsable runner report is tooling failure; a missing or passing
     requested test is mechanic-repairable."""
-    return _run_both(worktree, test_files, _check_vitest, _check_playwright)
+    return _run_each(
+        worktree,
+        test_files,
+        {"vitest": _check_vitest, "playwright": _check_playwright, "pytest": _check_pytest},
+    )
 
 
 def run_and_check_passing(worktree: Path, test_files: list[str]) -> Verdict:
@@ -63,17 +123,26 @@ def run_and_check_passing(worktree: Path, test_files: list[str]) -> Verdict:
     A real failed assertion (or a broken import) is implementation-
     repairable; an unparsable report or a file the runner never saw is a
     tooling failure, never an implementation verdict."""
-    return _run_both(worktree, test_files, _check_vitest_passing, _check_playwright_passing)
+    return _run_each(
+        worktree,
+        test_files,
+        {
+            "vitest": _check_vitest_passing,
+            "playwright": _check_playwright_passing,
+            "pytest": _check_pytest_passing,
+        },
+    )
 
 
-def _run_both(worktree: Path, test_files: list[str], vitest_check, playwright_check) -> Verdict:
-    vitest_files = [f for f in test_files if not _is_e2e(f)]
-    e2e_files = [f for f in test_files if _is_e2e(f)]
+def _run_each(worktree: Path, test_files: list[str], checks: dict) -> Verdict:
+    """One invocation per runner the slice's test files need, in a fixed
+    order so the same set of files always produces the same first verdict."""
     failures: list[Failure] = []
-    for files, check in ((vitest_files, vitest_check), (e2e_files, playwright_check)):
+    for runner in ("vitest", "playwright", "pytest"):
+        files = [f for f in test_files if _runner(f) == runner]
         if not files:
             continue
-        verdict = check(worktree, files)
+        verdict = checks[runner](worktree, files)
         failures.extend(verdict.failures)
         if not verdict.ok:
             return Verdict(False, verdict.why, verdict.repairable, tuple(failures))
@@ -342,3 +411,154 @@ def _any_failed(specs: list[dict]) -> bool:
                 if result.get("status") == "failed":
                     return True
     return False
+
+
+# --- the driver's own tests ------------------------------------------------
+#
+# pytest has no JSON reporter, so the report is its own short summary:
+# `-rA` prints one `PASSED`/`FAILED`/`ERROR` line per test, `--tb=short`
+# puts the reason on the `FAILED` line, and a collection or import error
+# appears as an `ERROR` line naming the file, with the exception in the
+# `E ` frames of the traceback above it. That summary is as much of a
+# report as the JSON ones: a run that produced none of it never judged
+# anything, and that is a tooling failure, exactly like a vitest report
+# that will not parse.
+
+_PYTEST_ARGV = ["uv", "run", "--project", "workflow", "pytest", "-q", "-rA", "--tb=short"]
+#: pytest truncates its short-summary lines to the terminal width, and a
+#: captured pipe is 80 columns, which cuts every message off mid-word. The
+#: driver reads those lines, so it asks for a width that fits them.
+_PYTEST_COLUMNS = "200"
+_PYTEST_STATUS = {"PASSED": "passed", "FAILED": "failed", "ERROR": "error"}
+_PYTEST_RAN = re.compile(
+    r"(no tests ran|\d+ (?:passed|failed|error|errors|skipped|deselected)"
+    r"|file or directory not found)"
+)
+_ERROR_FRAME = re.compile(r"^E\s+(\S.*)$")
+_ERROR_FRAMES = 3
+
+
+def _check_pytest(worktree: Path, files: list[str]) -> Verdict:
+    entries = _pytest_report(worktree, files)
+    if entries is None:
+        return Verdict(False, f"pytest produced no readable summary for {', '.join(files)}")
+    collection = _collection_error(entries)
+    if collection:
+        return Verdict(False, collection, True)
+    failures: list[Failure] = []
+    for f in files:
+        matching = [entry for entry in entries if _same_file(entry["file"], f)]
+        failures.extend(_pytest_failures(matching, f))
+        diagnostic = _check_pytest_entries(matching, f)
+        if diagnostic:
+            return Verdict(False, diagnostic, True, tuple(failures))
+    return Verdict(True, failures=tuple(failures))
+
+
+def _check_pytest_passing(worktree: Path, files: list[str]) -> Verdict:
+    entries = _pytest_report(worktree, files)
+    if entries is None:
+        return Verdict(False, f"pytest produced no readable summary for {', '.join(files)}")
+    collection = _collection_error(entries)
+    if collection:
+        return Verdict(False, collection, True)
+    for f in files:
+        matching = [entry for entry in entries if _same_file(entry["file"], f)]
+        if not matching:
+            return Verdict(False, f"pytest never ran {f} - no matching test file")
+        if any(entry["status"] != "passed" for entry in matching):
+            failures = _pytest_failures(matching, f)
+            return Verdict(False, _still_failing("pytest", f, failures), True, tuple(failures))
+    return Verdict(True)
+
+
+def _check_pytest_entries(matching: list[dict], filename: str) -> str | None:
+    if not matching:
+        return f"pytest never ran {filename} - no matching test file"
+    if not any(entry["status"] == "failed" for entry in matching):
+        return f"pytest {filename} passed with no implementation"
+    return None
+
+
+def _collection_error(entries: list[dict]) -> str | None:
+    """A module pytest could not even import never ran an assertion, so it
+    is not a test failing for want of the implementation - it is a broken
+    test, and it comes back to the mechanic as one. A collection error also
+    interrupts the whole run, so it is judged before any per-file verdict:
+    the other requested files did not "go missing", they never got a turn."""
+    error = next((entry for entry in entries if entry["status"] == "error"), None)
+    if error is None:
+        return None
+    return (
+        f"pytest could not collect {error['file']}: {error['message'] or '(no error message)'}"
+        " - a collection or import error is not a test failing because the behavior is missing"
+    )
+
+
+def _pytest_failures(matching: list[dict], filename: str) -> list[Failure]:
+    """No error location: pytest's short summary carries the message but not
+    the frame that raised it, and `blames_the_test` must never conclude that
+    a thrown error is the acceptance test's fault without one."""
+    return [
+        Failure(filename, entry["title"], entry["message"])
+        for entry in matching
+        if entry["status"] != "passed"
+    ]
+
+
+def _same_file(reported: str, requested: str) -> bool:
+    """pytest spells a path relative to its own rootdir, which is not always
+    the repository root, so a reported path matches by suffix."""
+    if reported == requested:
+        return True
+    return reported.endswith(f"/{requested}") or requested.endswith(f"/{reported}")
+
+
+def _pytest_report(worktree: Path, files: list[str]) -> list[dict] | None:
+    result = subprocess.run(
+        [*_PYTEST_ARGV, *files],
+        cwd=worktree,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "COLUMNS": _PYTEST_COLUMNS},
+    )
+    output = f"{result.stdout}\n{result.stderr}"
+    entries = _pytest_entries(output)
+    if entries:
+        return entries
+    return [] if _PYTEST_RAN.search(output) else None
+
+
+def _pytest_entries(output: str) -> list[dict]:
+    detail = _pytest_error_detail(output)
+    entries = []
+    for line in output.splitlines():
+        head, _, rest = line.partition(" ")
+        status = _PYTEST_STATUS.get(head)
+        if status is None or not rest.strip():
+            continue
+        entries.append(_pytest_entry(status, rest.strip(), detail))
+    return entries
+
+
+def _pytest_entry(status: str, rest: str, detail: str) -> dict:
+    nodeid, _, message = rest.partition(" - ")
+    name, _, title = nodeid.partition("::")
+    return {
+        "file": name,
+        "title": title,
+        "status": status,
+        "message": message.strip() or (detail if status == "error" else ""),
+    }
+
+
+def _pytest_error_detail(output: str) -> str:
+    """The exception behind a collection error. pytest's short summary
+    prints the failing file with no reason at all, and the only place the
+    reason appears is the `E ` frames of the traceback above it."""
+    frames = [
+        match.group(1)
+        for line in output.splitlines()
+        if (match := _ERROR_FRAME.match(line)) is not None
+    ]
+    return "; ".join(frames[-_ERROR_FRAMES:])

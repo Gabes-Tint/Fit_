@@ -37,7 +37,7 @@ flowchart TD
         owner{"Whose call?"}
         gabriel["Label needs-gabriel<br/>product, spend, infra, secrets,<br/>gate lowering, data deletion"]
         slice{"Spans domain and UI?"}
-        split["Binary split only<br/>UI = Svelte interface/routes<br/>domain = every non-UI change,<br/>including backend/database<br/>maximum two: domain then UI"]
+        split["Binary split of the product<br/>UI = Svelte interface/routes<br/>domain = every non-UI change,<br/>including backend/database<br/>maximum two: domain then UI<br/>workflow = the driver itself, always one slice"]
         worktree["Driver creates child issues and slice worktrees<br/>sequentially and deterministically"]
         mechanic_count{"One slice or two?"}
         slice_loop["For each slice: mechanic works in its<br/>isolated worktree/team<br/>same session across retries"]
@@ -232,6 +232,12 @@ flowchart TD
   5xx, a network blip, an empty-message backend error) already got one
   transparent retry before reaching this policy. This is separate from
   block 1's loop for producing failing acceptance tests.
+- A story about the driver itself takes the third layer, `workflow`: always a
+  single slice, confined to `workflow/**`, `docs/**` and `cspell.json`, with
+  pytest acceptance tests under `workflow/tests/` and the driver's own gates
+  (`ruff check`, `ruff format --check`, and prettier and cspell over changed
+  markdown) in place of the bun lanes. Block 4 opens its pull request and
+  withholds the merge: the driver never merges its own code.
 - Each slice selects its role independently. Two independent slices run their
   domain and UI implementation and gates in parallel in their existing
   worktrees. A UI slice normally renders what its domain sibling supplies, so

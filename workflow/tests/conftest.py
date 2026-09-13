@@ -513,6 +513,38 @@ reviewer:
             self.world.setdefault("test_messages", {})[file] = scripted
         self._save()
 
+    def given_pytest_results(
+        self, file: str, outcome: str | list[str], message: str | None = None
+    ) -> None:
+        """The driver's own suite, as the fake `uv` reports it for a workflow
+        slice: fail, fail_defect, pass, collect_error (the module will not
+        import, which interrupts pytest's whole run), not_found or
+        tool_error. A list is consumed one value per invocation, and its
+        last value stays sticky. `message` is the reason the summary line
+        carries."""
+        self.scripted_test_outcome(file, outcome, message=message)
+
+    def given_ruff_failure(
+        self, file: str, gate: str = "ruff check", outcome: str | list[str] = "fail"
+    ) -> None:
+        """The driver's own lint gate rejects `file`: `gate` is "ruff check"
+        or "ruff format", and the diagnostic names the file and a line the
+        way ruff's arrow line does. A list of outcomes is consumed one value
+        per invocation, so a scenario can script a repaired second turn."""
+        self._load()
+        self.world.setdefault("gate_outcomes", {})[gate] = outcome
+        self.world["ruff_failure_file"] = file
+        self._save()
+
+    def given_markdown_failure(
+        self, file: str, gate: str = "prettier", outcome: str | list[str] = "fail"
+    ) -> None:
+        """`prettier` or `cspell` rejects this changed markdown file."""
+        self._load()
+        self.world.setdefault("gate_outcomes", {})[gate] = outcome
+        self.world["markdown_failure_file"] = file
+        self._save()
+
     def given_check_fails_on(self, file: str) -> None:
         """The repository's type lane rejects this file, with its default
         "argument of the wrong type" error and no TS code - svelte-check's

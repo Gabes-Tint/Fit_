@@ -48,6 +48,15 @@ configuration, dependencies, gates, thresholds, snapshots, or lock files.
 Keep every changed test in the requested test kind: playwright means only
 `*.e2e.ts`; vitest means no `*.e2e.ts`.
 
+When the test kind is `pytest` the slice is a change to this flow's own
+driver, and the paragraphs above about eslint, the harness route, prettier
+and the repository's content gates do not apply. Instead: every changed file
+stays under `workflow/tests/`, only `workflow/tests/test_*.py` files may be
+reported in `test_files`, the tests must satisfy `ruff check workflow` and
+`ruff format --check workflow`, and a test that pytest cannot even collect is
+rejected exactly as a thrown TypeError is elsewhere - fix the import, do not
+stub the module.
+
 Original brief:
 $brief
 

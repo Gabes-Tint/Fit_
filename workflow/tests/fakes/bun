@@ -445,6 +445,35 @@ def cmd_static_gate(argv):
     return 0
 
 
+_MARKDOWN_FAILURE = {
+    "prettier": (
+        "Checking formatting...\n[warn] {file}\n"
+        "[warn] Code style issues found in the above file."
+    ),
+    "cspell": (
+        "{file}:12:5 - Unknown word (fitflow)\n"
+        "CSpell: Files checked: 1, Issues found: 1 in 1 file."
+    ),
+}
+
+
+def cmd_markdown(argv, tool):
+    """Scripted `bun x prettier --check <md>` and `bun x cspell
+    --no-progress <md>`: the markdown half of a workflow slice's gates.
+    Outcome from `gate_outcomes[tool]`, defaulting to pass. "fail" prints
+    the tool's own diagnostic naming a file and exits 1."""
+    outcome, world = _scripted_outcome(tool)
+    if outcome == "tool_error":
+        print(f"{tool} crashed before it checked anything", file=sys.stderr)
+        return 2
+    if outcome != "fail":
+        return 0
+    files = [arg for arg in argv[2:] if not arg.startswith("--")]
+    named = world.get("markdown_failure_file") or (files[0] if files else "workflow/README.md")
+    print(_MARKDOWN_FAILURE[tool].format(file=named))
+    return 1
+
+
 def _smoke_report(ok, release, expected, failure=None):
     """The fields `scripts/deploy/smoke.ts` writes: no commit of its own,
     only the check whose detail names the release it asserted."""
@@ -573,6 +602,8 @@ def main() -> int:
         return cmd_worktree_new(argv[2])
     if argv[:2] == ["run", "worktree:done"]:
         return cmd_worktree_done(argv)
+    if argv[:2] in (["x", "prettier"], ["x", "cspell"]):
+        return cmd_markdown(argv, argv[1])
     if argv[:1] == ["x"]:
         return cmd_test_run(argv)
     if argv[:2] == ["run", "lint:changed"]:
