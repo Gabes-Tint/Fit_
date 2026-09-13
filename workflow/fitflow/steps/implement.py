@@ -29,7 +29,6 @@ from fitflow import (
     turns,
     worktrees,
 )
-from fitflow.acceptance import TEST_FILE
 from fitflow.outcome import FlowFailure, Outcome
 from fitflow.runstate import RunRecord, SliceRecord, retained_inputs
 
@@ -532,12 +531,6 @@ def _check_scope(record: RunRecord, piece: SliceRecord, changed: list[str]) -> N
         boundary = layers.rejects_for_layer(piece.layer, changed_file)
         if boundary is not None:
             raise _contract(record, piece, boundary)
-        if TEST_FILE.search(changed_file) and changed_file.endswith(".e2e.ts") != (
-            piece.test_kind == "playwright"
-        ):
-            raise _contract(
-                record, piece, f"{piece.test_kind} slice changed wrong-kind test: {changed_file}"
-            )
 
 
 def _check_acceptance_unchanged(
