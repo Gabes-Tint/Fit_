@@ -90,7 +90,8 @@ def _remove_worktrees(issue: int, record: RunRecord | None, children: list[int])
     for slug in _slugs(issue, record, children):
         path = worktrees.slice_worktree_path(slug)
         if path.exists():
-            narrate.line(f"🗑️  {slug} worktree: {worktrees.status_summary(path)}")
+            state = worktrees.status_summary(path, dirty="removed; uncommitted changes were")
+            narrate.line(f"🗑️  {slug} worktree: {state}")
             code, output = worktrees.worktree_done(slug, force=True)
             if code != 0:
                 narrate.line(f"   │ worktree:done refused ({output}); removing with git")

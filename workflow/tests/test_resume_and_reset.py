@@ -126,10 +126,10 @@ def _stopped_by_a_gate_crash(
     assert "blocked" in world.issue(number)["labels"]
 
 
-def _stopped_by_an_agent_failure(world, number: int) -> None:
+def _stopped_by_an_agent_failure(world, number: int, files: dict | None = None) -> None:
     _given_planned_story(world, number)
     _delegate_mechanic(world, number)
-    world.agent_fails(f"story-{number}-domain", "mechanic", "provider unavailable")
+    world.agent_fails(f"story-{number}-domain", "mechanic", "provider unavailable", files=files)
     result = run_flow(world, number)
     assert result.returncode == 21, result.stdout + result.stderr
 
@@ -435,7 +435,7 @@ def test_resume_and_reset_need_an_issue_number(world):
 
 
 def test_reset_undoes_a_failed_run_and_a_fresh_run_can_start(world):
-    _stopped_by_an_agent_failure(world, 630)
+    _stopped_by_an_agent_failure(world, 630, files={"src/lib/domain/partial.ts": "// partial\n"})
     assert world.slice_worktree_path("story-630-domain").exists()
     assert world.branch_exists_on_origin("story-630-domain")
 
@@ -450,6 +450,11 @@ def test_reset_undoes_a_failed_run_and_a_fresh_run_can_start(world):
     assert any(c.startswith("Reset by `go.py --reset`") for c in world.issue(630)["comments"])
     assert "removed worktree `story-630-domain`" in result.stdout
     assert "deleted `story-630-domain` on origin" in result.stdout
+    # the worktree is force-removed a line later, so the log says so - and
+    # keeps the file list, the only record of what was thrown away
+    assert "dirty (removed; uncommitted changes were):" in result.stdout
+    assert "?? src/lib/domain/partial.ts" in result.stdout
+    assert "preserved for audit" not in result.stdout
 
     # the story is a fresh pick again
     _given_planned_story(world, 630)
