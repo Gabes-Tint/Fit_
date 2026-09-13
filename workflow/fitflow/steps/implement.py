@@ -627,7 +627,7 @@ def _validate_turn(
             )
         _check_acceptance_is_sound(record, piece, verdict)
         return verdict.why
-    gate_failure = gates.run_turn_gates(path, record.story_number)
+    gate_failure = _run_turn_gates(record, piece, path, changed)
     if gate_failure is not None:
         _check_gate_blames_the_implementation(record, piece, gate_failure)
         return gate_failure.diagnostic
@@ -639,6 +639,17 @@ def _validate_turn(
         "no gate files ✔"
     )
     return None
+
+
+def _run_turn_gates(
+    record: RunRecord, piece: SliceRecord, path, changed: list[str]
+) -> "gates.GateFailure | None":
+    """The gates this turn is judged by. A workflow slice changes Python and
+    prose, which `verify:changed` neither sizes nor runs, so the driver's own
+    gates stand in its place - the same four block 1 ran over the tests."""
+    if piece.layer == "workflow":
+        return gates.run_workflow_gates(path, record.story_number, changed)
+    return gates.run_turn_gates(path, record.story_number)
 
 
 def _check_gate_blames_the_implementation(
@@ -771,7 +782,7 @@ def _report_mismatch(reported: list[str], changed: list[str]) -> str | None:
 def _check_scope(record: RunRecord, piece: SliceRecord, changed: list[str]) -> None:
     for changed_file in changed:
         basename = PurePosixPath(changed_file).name
-        if (
+        if not layers.permits_gate_file(piece.layer, changed_file) and (
             changed_file.startswith(_FORBIDDEN_PREFIXES)
             or basename in _FORBIDDEN_FILES
             or basename.endswith((".snap", ".lock"))

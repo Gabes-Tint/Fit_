@@ -11,7 +11,7 @@ created; and the `in-progress` and `blocked` labels. `needs-gabriel` and
 block 1 - the same things are found by their names.
 """
 
-from fitflow import agents, github, narrate, runstate, settings, worktrees
+from fitflow import agents, github, layers, narrate, runstate, settings, worktrees
 from fitflow.outcome import FlowFailure, Outcome
 from fitflow.runstate import RunRecord
 
@@ -73,7 +73,7 @@ def _slice_slugs(issue: int, record: RunRecord | None, children: list[int]) -> l
     if record is not None:
         return [piece.slug for piece in record.ordered()]
     numbers = (issue, *children)
-    return [f"story-{number}-{layer}" for number in numbers for layer in ("domain", "ui")]
+    return [f"story-{number}-{layer}" for number in numbers for layer in layers.LAYERS]
 
 
 def _slugs(issue: int, record: RunRecord | None, children: list[int]) -> list[str]:

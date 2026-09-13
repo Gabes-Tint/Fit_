@@ -9,6 +9,7 @@ expectation that is waiting for the implementation from a test that throws
 and can never pass."""
 
 import json
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -28,11 +29,37 @@ TEST_FILE = re.compile(r"(\.spec\.ts|\.test\.ts|\.svelte\.spec\.ts|\.e2e\.ts)$")
 WORKFLOW_TESTS = "workflow/tests/"
 
 
+#: A runnable acceptance test of the workflow layer. `conftest.py` and the
+#: fakes are test-side too, but pytest collects neither, so neither can be
+#: the file block 1 reports as an acceptance test.
+WORKFLOW_ACCEPTANCE = re.compile(r"^workflow/tests/(?:[\w.-]+/)*test_[\w.-]+\.py$")
+
+
 def is_test_file(layer: str, path: str) -> bool:
     """Whether block 1 may change `path` on a slice of this layer."""
     if layer == "workflow":
         return path.startswith(WORKFLOW_TESTS)
     return TEST_FILE.search(path) is not None
+
+
+def matches_test_kind(test_kind: str, path: str) -> bool:
+    """Whether a file block 1 changed is of the kind this slice writes: a
+    playwright slice writes only `*.e2e.ts`, a vitest slice writes no
+    `*.e2e.ts`, and a pytest slice writes only inside `workflow/tests/`."""
+    if test_kind == "pytest":
+        return path.startswith(WORKFLOW_TESTS)
+    if test_kind == "playwright":
+        return path.endswith(".e2e.ts")
+    return not path.endswith(".e2e.ts")
+
+
+def names_an_acceptance_test(test_kind: str, path: str) -> bool:
+    """Whether a path block 1 *reported* as an acceptance test can be one.
+    Only pytest distinguishes this from `matches_test_kind`: a fake or a
+    `conftest.py` is a legitimate change and never a test pytest collects."""
+    if test_kind == "pytest":
+        return WORKFLOW_ACCEPTANCE.match(path) is not None
+    return matches_test_kind(test_kind, path)
 
 
 @dataclass(frozen=True)
@@ -382,6 +409,10 @@ def _any_failed(specs: list[dict]) -> bool:
 # that will not parse.
 
 _PYTEST_ARGV = ["uv", "run", "--project", "workflow", "pytest", "-q", "-rA", "--tb=short"]
+#: pytest truncates its short-summary lines to the terminal width, and a
+#: captured pipe is 80 columns, which cuts every message off mid-word. The
+#: driver reads those lines, so it asks for a width that fits them.
+_PYTEST_COLUMNS = "200"
 _PYTEST_STATUS = {"PASSED": "passed", "FAILED": "failed", "ERROR": "error"}
 _PYTEST_RAN = re.compile(
     r"(no tests ran|\d+ (?:passed|failed|error|errors|skipped|deselected)"
@@ -395,6 +426,9 @@ def _check_pytest(worktree: Path, files: list[str]) -> Verdict:
     entries = _pytest_report(worktree, files)
     if entries is None:
         return Verdict(False, f"pytest produced no readable summary for {', '.join(files)}")
+    collection = _collection_error(entries)
+    if collection:
+        return Verdict(False, collection, True)
     failures: list[Failure] = []
     for f in files:
         matching = [entry for entry in entries if _same_file(entry["file"], f)]
@@ -405,50 +439,52 @@ def _check_pytest(worktree: Path, files: list[str]) -> Verdict:
     return Verdict(True, failures=tuple(failures))
 
 
-def _check_pytest_entries(matching: list[dict], filename: str) -> str | None:
-    if not matching:
-        return f"pytest never ran {filename} - no matching test file"
-    collection = _collection_error(matching, filename)
-    if collection:
-        return collection
-    if not any(entry["status"] == "failed" for entry in matching):
-        return f"pytest {filename} passed with no implementation"
-    return None
-
-
-def _collection_error(matching: list[dict], filename: str) -> str | None:
-    """A module pytest could not even import never ran an assertion, so it
-    is not a test failing for want of the implementation - it is a broken
-    test, and it comes back to the mechanic as one."""
-    errors = [entry for entry in matching if entry["status"] == "error"]
-    if not errors:
-        return None
-    return (
-        f"pytest could not collect {filename}: {errors[0]['message'] or '(no error message)'} - "
-        "a collection or import error is not a test failing because the behavior is missing"
-    )
-
-
 def _check_pytest_passing(worktree: Path, files: list[str]) -> Verdict:
     entries = _pytest_report(worktree, files)
     if entries is None:
         return Verdict(False, f"pytest produced no readable summary for {', '.join(files)}")
+    collection = _collection_error(entries)
+    if collection:
+        return Verdict(False, collection, True)
     for f in files:
         matching = [entry for entry in entries if _same_file(entry["file"], f)]
         if not matching:
             return Verdict(False, f"pytest never ran {f} - no matching test file")
-        collection = _collection_error(matching, f)
-        if collection:
-            return Verdict(False, collection, True)
         if any(entry["status"] != "passed" for entry in matching):
             failures = _pytest_failures(matching, f)
             return Verdict(False, _still_failing("pytest", f, failures), True, tuple(failures))
     return Verdict(True)
 
 
+def _check_pytest_entries(matching: list[dict], filename: str) -> str | None:
+    if not matching:
+        return f"pytest never ran {filename} - no matching test file"
+    if not any(entry["status"] == "failed" for entry in matching):
+        return f"pytest {filename} passed with no implementation"
+    return None
+
+
+def _collection_error(entries: list[dict]) -> str | None:
+    """A module pytest could not even import never ran an assertion, so it
+    is not a test failing for want of the implementation - it is a broken
+    test, and it comes back to the mechanic as one. A collection error also
+    interrupts the whole run, so it is judged before any per-file verdict:
+    the other requested files did not "go missing", they never got a turn."""
+    error = next((entry for entry in entries if entry["status"] == "error"), None)
+    if error is None:
+        return None
+    return (
+        f"pytest could not collect {error['file']}: {error['message'] or '(no error message)'}"
+        " - a collection or import error is not a test failing because the behavior is missing"
+    )
+
+
 def _pytest_failures(matching: list[dict], filename: str) -> list[Failure]:
+    """No error location: pytest's short summary carries the message but not
+    the frame that raised it, and `blames_the_test` must never conclude that
+    a thrown error is the acceptance test's fault without one."""
     return [
-        Failure(filename, entry["title"], entry["message"], filename)
+        Failure(filename, entry["title"], entry["message"])
         for entry in matching
         if entry["status"] != "passed"
     ]
@@ -463,7 +499,13 @@ def _same_file(reported: str, requested: str) -> bool:
 
 
 def _pytest_report(worktree: Path, files: list[str]) -> list[dict] | None:
-    result = subprocess.run([*_PYTEST_ARGV, *files], cwd=worktree, capture_output=True, text=True)
+    result = subprocess.run(
+        [*_PYTEST_ARGV, *files],
+        cwd=worktree,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "COLUMNS": _PYTEST_COLUMNS},
+    )
     output = f"{result.stdout}\n{result.stderr}"
     entries = _pytest_entries(output)
     if entries:
