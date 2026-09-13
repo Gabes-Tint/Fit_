@@ -34,7 +34,14 @@ from fitflow.outcome import FlowFailure, Outcome
 from fitflow.runstate import RunRecord, SliceRecord, retained_inputs
 
 _SUCCESSOR = {"mechanic": "builder", "builder": "solver"}
-_FORBIDDEN_PREFIXES = ("workflow/", "quality/", ".github/", "scripts/")
+# The gates the agent is judged by: the quality scripts, the CI workflows
+# and the repository's own scripts stay out of reach of an implementation
+# turn. `workflow/` is deliberately absent - an agent may implement changes
+# to the driver itself (it edits a worktree copy; the running driver is the
+# main checkout's code, and the driver's own suite runs in CI's "Workflow
+# driver" job, not in this block's validation). What the driver never does
+# is merge such a change: block 4 hands that pull request to Gabriel.
+_FORBIDDEN_PREFIXES = ("quality/", ".github/", "scripts/")
 _FORBIDDEN_FILES = {
     "agents.yaml",
     "bun.lock",
@@ -501,7 +508,7 @@ def _validate_turn(
         return mismatch
     narrate.line(
         f"🔍 Verify #{piece.number}: scope ✔ · acceptance pass ✔ · branch identity ✔ · "
-        "no gate or workflow files ✔"
+        "no gate files ✔"
     )
     return None
 

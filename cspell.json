@@ -204,6 +204,8 @@
 		"hashlib",
 		"hexdigest",
 		"timespec",
+		"lockfiles",
+		"unreviewed",
 		"pgrep",
 		"redelegate",
 		"unlaunched"

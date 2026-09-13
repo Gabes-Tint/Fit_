@@ -11,9 +11,9 @@ their replies must match JSON schemas.
 The [delegation and implementation gates](delegation-contract.md) are
 implemented for blocks 1-5: role selection, pre-launch validation, bounded
 repairs, escalation, the final all-slice barrier, delivery (integration
-branch, PR, review, CI, merge), and ship (the merge commit's tag, main's
-own CI, the QA deploy, the flaky decision, the production deploy, the
-Android release and cleanup). An
+branch, PR, review, CI, merge - withheld for a change to the driver itself),
+and ship (the merge commit's tag, main's own CI, the QA deploy, the flaky
+decision, the production deploy, the Android release and cleanup). An
 optional external operator may start and observe a run, but cannot mutate the
 workflow or worktrees while it runs. A stopped or interrupted run leaves its
 retained record and worktrees in place; `go.py <n> --resume` continues it
@@ -35,9 +35,15 @@ diff-sized pre-push gate (`bun run verify:changed`) in the slice worktree,
 whose plan derives the affected specs, e2e files and mutation lanes from the
 actual diff under the repo's dependency and route mapping. A judged failing
 step (exit 1) retries in the same role; a crash, missing, stale or
-inconsistent gate report stops at once. The driver commits, freezes and
-joins at the final barrier; agents never commit or push. Every agent turn
-carries the session id the AI Army CLI printed, and the driver persists it
+inconsistent gate report stops at once. The scope check forbids the gates
+the agent is judged by - anything under `quality/`, `.github/` or
+`scripts/`, plus the lockfiles, the tool configuration and `agents.yaml` -
+but not the driver's own code: an agent may implement a change under
+`workflow/`, because it edits a worktree copy while the running driver is
+the main checkout's code, and the driver's suite is CI's own "Workflow
+driver" job. Block 4 never merges such a change (below). The driver
+commits, freezes and joins at the final barrier; agents never commit or
+push. Every agent turn carries the session id the AI Army CLI printed, and the driver persists it
 with the turn: corrections must come from the same session, an escalated
 role must establish a new one, and a changed, missing or reused session id
 stops the run. Before every turn the driver also re-verifies that the AI
@@ -265,7 +271,7 @@ The run narrates itself as it goes, and saves the same text to
 🔧 Mechanic #1000 (domain) attempt 1/3
 🤖⬅️  mechanic replied in 34s
 📦 Validating #1000 (domain)
-🔍 Verify #1000: scope ✔ · acceptance pass ✔ · branch identity ✔ · no gate or workflow files ✔
+🔍 Verify #1000: scope ✔ · acceptance pass ✔ · branch identity ✔ · no gate files ✔
 🔒 #1000 (domain) frozen at 485e7af…
 ⏳ Implementation barrier: all 2 slices settled
 🏁 Implemented #140 → #1000 domain (mechanic, 485e7af…) · next: block 4, review
@@ -293,6 +299,14 @@ needs clarification) and `❌` a failure. The exit code says which one; see
   `blocked`: there is nothing for a fresh run to retry. The run's record
   under `~/.agents-army/fit_/workflow/runs/story-<n>.json` names each
   deploy, the target it was moving and the reason it failed.
+- **Exit 11 with an open PR — the change is the driver's own.** Every
+  slice was implemented, validated and reviewed, the PR is open and its CI
+  is green, and the merge is the one thing the run will not do: a pull
+  request whose diff touches `workflow/` is handed to Gabriel. The story is
+  labelled `needs-gabriel` and assigned, not `blocked`, the comment names
+  the driver files, and every worktree and branch stays in place. Merge the
+  PR yourself; the story closes with it (`Closes #N`), and the run's
+  worktrees are then cleaned up with `go.py <n> --reset`.
 - **Stopped or failed anywhere else.** Read the comment the run left on the
   story. It says why, and on a failure it lists everything the run created
   and whether each slice worktree is clean or dirty. Failed agent work is
@@ -445,7 +459,7 @@ the story; blocks 2-3 terminal failures additionally label the story
 | 0    | PLANNED              | the whole flow ran (aliases IMPLEMENTED, DELIVERED, SHIPPED); also `--reset` done (RESET)                                                                                                                             |
 | 2    | (usage)              | bad arguments, a bad `agents.yaml`, or a missing deploy target for `FIT_FLOW_SHIP_TO`                                                                                                                                 |
 | 10   | NOTHING_TO_PICK      | no open story is free to pick                                                                                                                                                                                         |
-| 11   | NEEDS_GABRIEL        | the call is Gabriel's, or a slice needs clarification: labelled, assigned, question posted                                                                                                                            |
+| 11   | NEEDS_GABRIEL        | the call is Gabriel's, or a slice needs clarification: labelled, assigned, question posted; also a PR that changes the driver, left open for his merge                                                                |
 | 20   | CANNOT_PICK          | the named issue does not exist, is closed, is not a story, or is held; with `--resume`, also no retained run, a human hold, or a run already shipped                                                                  |
 | 21   | AGENT_FAILED         | an agent turn failed or never gave a reply that fits its schema                                                                                                                                                       |
 | 22   | AGENT_BROKE_CONTRACT | slices break the rules, an agent escaped its scope, or an identity mismatch                                                                                                                                           |

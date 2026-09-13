@@ -115,6 +115,8 @@ flowchart TD
         ci["ci.yml: gate.ts ci --job ...<br/>static, unit, build, mutation-security,<br/>e2e x4 browsers, security, self-test<br/>required check: all-green"]
         green{"all-green?"}
         rerun["gh run rerun --failed once,<br/>counted in the run record"]
+        self_change{"Does the diff touch workflow/?<br/>the PR changes the driver itself"}
+        hand_over["NEEDS_GABRIEL<br/>needs-gabriel, assigned, PR left open,<br/>worktrees kept, never blocked"]
         merge["gh pr merge n<br/>merge queue, no strategy flag,<br/>never update-branch"]
         push --> mechanical
         mechanical -- yes --> reviewer --> verdict
@@ -124,7 +126,9 @@ flowchart TD
         verdict -- merge --> claims
         claims --> ci --> green
         green -- no --> rerun --> ci
-        green -- yes --> merge
+        green -- yes --> self_change
+        self_change -- yes --> hand_over
+        self_change -- no --> merge
     end
 
     subgraph after["5. After merge — ship"]
@@ -255,6 +259,15 @@ flowchart TD
   turn; repairable failures retry, external and contract failures stop
   immediately, and exhaustion retains the last diagnostic for the terminal
   stop. Worktrees are preserved for audit; cleanup is an explicit later action.
+- An implementation turn may change the driver's own code under
+  `workflow/` - the agent edits a worktree copy, the running driver is the
+  main checkout's code, and the driver's suite is CI's own "Workflow
+  driver" job - but block 4 never merges such a pull request: with CI
+  green, the run labels the story `needs-gabriel`, assigns it, names the
+  driver files in a comment and stops at exit 11 with the PR open and the
+  worktrees kept. `quality/`, `.github/` and `scripts/` remain forbidden to
+  an implementation turn outright: they are the gates the work is judged
+  by.
 - A stopped run is continued with `go.py <n> --resume`, which replays
   nothing: every turn the driver saw end is recorded with its reply and a
   digest of the working tree at that moment, so its verdict is re-derived
