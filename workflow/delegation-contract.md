@@ -74,6 +74,23 @@ Consequently the mechanic must write assertions that lint clean both before
 and after the behavior exists (for a missing module: dynamic import through
 the promise chain with `unknown`-typed binding, not suppression).
 
+Failing means what the runner's report says, and the report says more than
+`failed`. A result is proof the expectation bit only when it is `passed`,
+and proof that nothing was tried only when it is skipped (playwright
+`skipped`; vitest `pending`, `skipped` or `todo`); every other status is a
+failure, playwright's `timedOut` and `interrupted` included. That matters
+because an expectation waiting for UI that does not exist yet - the
+ordinary shape of a UI acceptance test before its implementation - times
+out rather than failing an assertion, and counting only `failed` rejected
+correct tests as `TESTS_DO_NOT_FAIL`. A file whose tests were all skipped
+is treated like a file the runner never ran: it neither passed nor failed,
+so block 1 rejects it and block 3 refuses to read it as a passing
+acceptance run. Every rejection for not failing carries the runner's own
+per-test verdict - each test title with the status it was given - and a
+file the report never mentioned is rejected naming the files it did
+contain, so the mechanic can see which assertion did not bite instead of
+only that none did.
+
 ## Where an acceptance test lives
 
 Placement is checked in block 1, before the bytes become immutable. A

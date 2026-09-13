@@ -1668,3 +1668,94 @@ def test_a_misplaced_e2e_file_is_sent_back_to_the_mechanic_with_the_expected_fol
     assert "must live under src/routes/" in result.stdout
     assert "move it to src/routes/LogRow.e2e.ts" in result.stdout
     assert "Mechanic #97 (ui) attempt 2/3" in result.stdout
+
+
+def _given_single_ui_slice(world, number: int, title: str) -> None:
+    world.given_story(number, title=title, labels=["story"])
+    world.planner_answers_whose_call(
+        number,
+        owner="orchestrator",
+        category="none",
+        reason="ordinary work",
+        question="",
+        options=[],
+        recommendation="",
+    )
+    world.planner_answers_slices(
+        number,
+        spans_domain_and_ui=False,
+        slices=[
+            {
+                "layer": "ui",
+                "title": title,
+                "brief": "Write the missing acceptance test.",
+                "acceptance": ["The missing behavior is visible at 360px."],
+                "test_kind": "playwright",
+            }
+        ],
+    )
+
+
+def test_a_playwright_test_that_times_out_counts_as_failing_as_intended(world):
+    """The real shape of a UI acceptance test with no implementation: the
+    expectation waits for an element that never appears and playwright
+    reports `timedOut`, not `failed`. Block 1 counted only `failed` and
+    rejected three correct attempts of story #421 as TESTS_DO_NOT_FAIL."""
+    _given_single_ui_slice(world, 120, "Today's row is marked")
+    slug = "story-120-ui"
+    test_file = "src/routes/plan.e2e.ts"
+    world.mechanic_writes(slug, files={test_file: "// failing\n"}, test_files=[test_file])
+    world.scripted_test_outcome(test_file, ["timed_out", "pass"])
+    world.planner_answers_delegate(120, [delegate_slice(120, "ui", mechanic_signals())])
+    world.agent_implements(
+        slug,
+        "mechanic",
+        files={"src/routes/plan/+page.svelte": "<p>Today, </p>\n"},
+        changed_files=["src/routes/plan/+page.svelte"],
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert f"🧪 {test_file} → failed, as it should ✔" in result.stdout
+    assert "passed with no implementation" not in result.stdout
+
+
+def test_a_playwright_file_whose_tests_all_pass_is_rejected_naming_each_test_status(world):
+    """The rejection has to say what the runner saw, test by test, or the
+    mechanic cannot tell which assertion did not bite."""
+    _given_single_ui_slice(world, 121, "Already satisfied")
+    slug = "story-121-ui"
+    test_file = "src/routes/already.e2e.ts"
+    titles = ["the row shows the Today prefix", "the row is bold"]
+    world.mechanic_writes(slug, files={test_file: "// passes\n"}, test_files=[test_file])
+    world.scripted_test_outcome(test_file, "pass", titles=titles)
+    world.mechanic_replies(slug, [test_file])
+    world.mechanic_replies(slug, [test_file])
+
+    result = run_flow(world)
+
+    assert result.returncode == 24, result.stdout + result.stderr
+    assert f"playwright {test_file} passed with no implementation" in result.stdout
+    assert "the runner reported:" in result.stdout
+    for title in titles:
+        assert f'"{title}" → passed' in result.stdout
+    assert "exhausted 3 attempts" in result.stdout
+
+
+def test_a_playwright_file_whose_tests_are_all_skipped_is_rejected(world):
+    """Skipped is neither passing nor failing: nothing ran, so nothing was
+    proved, and block 1 must not read it as a failing acceptance test."""
+    _given_single_ui_slice(world, 122, "Everything skipped")
+    slug = "story-122-ui"
+    test_file = "src/routes/skipped.e2e.ts"
+    world.mechanic_writes(slug, files={test_file: "// skipped\n"}, test_files=[test_file])
+    world.scripted_test_outcome(test_file, "skipped")
+    world.mechanic_replies(slug, [test_file])
+    world.mechanic_replies(slug, [test_file])
+
+    result = run_flow(world)
+
+    assert result.returncode == 24, result.stdout + result.stderr
+    assert f"playwright {test_file} only skipped its tests, so none of them ran" in result.stdout
+    assert '"the behavior this slice asks for" → skipped' in result.stdout
