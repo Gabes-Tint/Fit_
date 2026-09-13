@@ -29,7 +29,7 @@ describe('LogRow', () => {
 		await expect.element(page.getByText(item().name)).toBeInTheDocument();
 	});
 
-	it('names the brand of a branded entry, beside its source badge (#337)', async () => {
+	it('names the brand of a branded entry (#337)', async () => {
 		// The entry that opened #337: a journal row saying "GREEN APPLE" and
 		// "BRAND PUBLISHED" and nothing that told a person it was hard candy.
 		const entry = { ...item(), name: 'GREEN APPLE', brand: 'CLAEYS' };
@@ -105,14 +105,10 @@ describe('LogRow', () => {
 		await expect.element(page.getByText(String(entry.kcal))).toBeInTheDocument();
 	});
 
-	it('shows a provenance badge for a catalog-backed entry', async () => {
-		await render(LogRow, { props: { item: item(), open: false, step: 0.5, ontoggle: vi.fn() } });
-		expect(document.querySelector('[title]')).not.toBeNull();
-	});
-
-	it('shows no provenance badge for a custom entry', async () => {
-		const custom = { ...item(), provenance: undefined };
-		await render(LogRow, { props: { item: custom, open: false, step: 0.5, ontoggle: vi.fn() } });
+	it('shows no provenance badge, even for a catalog-backed entry (#397)', async () => {
+		const entry = item();
+		expect(entry.provenance).toBeDefined();
+		await render(LogRow, { props: { item: entry, open: false, step: 0.5, ontoggle: vi.fn() } });
 		expect(document.querySelector('[title]')).toBeNull();
 	});
 

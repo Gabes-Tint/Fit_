@@ -79,6 +79,15 @@
 	const onAuthRoute = $derived(AUTH_ROUTES.some((route) => resolve(route) === pathname));
 
 	/**
+	 * The component harness (#398) mounts one component for a Playwright test,
+	 * and a test of a row is not a test of signing in. The server already 404s
+	 * the whole `/dev/` prefix unless the E2E preview flag is set, and the
+	 * Capacitor build refuses the route, so letting it past this client gate
+	 * shows nothing a deployed app can reach.
+	 */
+	const onHarnessRoute = $derived(resolve('/dev/component-harness') === pathname);
+
+	/**
 	 * The whole address that was asked for, fragment included.
 	 *
 	 * The fragment is the part it would be easiest to drop and hardest to
@@ -169,7 +178,7 @@
 	 * the first and need a second mechanism for the rest.
 	 */
 	$effect(() => {
-		if (!restored || onAuthRoute || session.signedIn) return;
+		if (!restored || onAuthRoute || onHarnessRoute || session.signedIn) return;
 		// Where they were headed rides along, so signing in lands on the page they
 		// asked for rather than on the front one.
 		void goto(signInPath(here), { replaceState: true });
@@ -185,6 +194,10 @@
 				underneath: this is the whole screen until there is an account.
 			-->
 			<div class="flex min-h-dvh w-full max-w-lg flex-col justify-center px-5 py-10">
+				{@render children()}
+			</div>
+		{:else if onHarnessRoute}
+			<div class="w-full min-w-0">
 				{@render children()}
 			</div>
 		{:else if session.signedIn}

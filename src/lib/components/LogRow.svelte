@@ -8,7 +8,6 @@
 	import NutritionFactsSheet from './NutritionFactsSheet.svelte';
 	import BrandLabel from './BrandLabel.svelte';
 	import QuantityStepper from './QuantityStepper.svelte';
-	import ProvenanceBadge from './ProvenanceBadge.svelte';
 
 	let {
 		item,
@@ -61,11 +60,12 @@
 		>
 			<div class="min-w-0 flex-1">
 				<p class="truncate font-medium">{item.name}</p>
-				<div class="mt-0.5 flex min-w-0 items-center gap-1.5">
-					<ProvenanceBadge provenance={item.provenance} />
-					<!-- #337: the journal said "GREEN APPLE", "BRAND PUBLISHED" and a
-						portion, and never said Claeys. A brand is what tells a candy from
-						the fruit it is named after, days after the thing was logged. -->
+				<!-- #337: the journal said "GREEN APPLE", "BRAND PUBLISHED" and a
+					portion, and never said Claeys. A brand is what tells a candy from
+					the fruit it is named after, days after the thing was logged.
+					#397: the source badge left the journal row; name, brand and portion
+					each get their own line, and a generic food renders no brand line. -->
+				<div class="mt-0.5 flex min-w-0 flex-col">
 					<BrandLabel brand={item.brand} />
 					<span class="text-muted-foreground truncate text-xs">{portion}</span>
 				</div>
