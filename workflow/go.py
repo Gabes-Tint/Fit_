@@ -10,6 +10,10 @@ integration branch, opens the PR, runs the reviewer unless the change is
 mechanical, verifies CI itself and merges; block 5 ships that merge - its
 tag, main's own CI, the QA deploy, the flaky decision, production, the
 Android release and cleanup.
+
+`--resume` re-enters the same flow at the block a stopped run reached,
+after reconciling its retained record with the worktrees it left;
+`--reset` undoes what a run created and archives its record.
 """
 
 from fitflow import github, issue_context, runstate, steps, worktrees
@@ -45,5 +49,31 @@ def pick_and_plan(issue: int | None) -> Outcome:
         return steps.ship(story, record)
 
 
+def resume(issue: int) -> Outcome:
+    steps.sync()
+    story = steps.pick_for_resume(issue)
+
+    with runstate.story_lock(story.number):
+        record = runstate.load_run(story.number)
+        stage = steps.reconcile(story, record)
+
+        if stage == steps.DELEGATE:
+            context = issue_context.prepare(
+                github.comments(story.number), github.timeline(story.number)
+            )
+            steps.redelegate(story, record, context)
+            stage = steps.IMPLEMENT
+        if stage == steps.IMPLEMENT:
+            steps.implement(story, record)
+            stage = steps.DELIVER
+        if stage == steps.DELIVER:
+            steps.deliver(story, record)
+        return steps.ship(story, record)
+
+
+def reset(issue: int) -> Outcome:
+    return steps.reset(issue)
+
+
 if __name__ == "__main__":
-    run(pick_and_plan)
+    run(pick_and_plan, resume, reset)

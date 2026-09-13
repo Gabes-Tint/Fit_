@@ -8,11 +8,13 @@ The state file `runs/story-<n>.json` is the run's retained record and its
 slice state machines: block 1's slice identities (issue, branch, worktree,
 team, failing-test commit, test files), the frozen startup configuration,
 every assignment revision, attempt counters and turn identities. Every
-transition persists before the next one is chosen. There is no resume
-contract: an interrupted run leaves its state on disk for audit, and a
-fresh run stops rather than replaying anything.
+transition persists before the next one is chosen. A fresh run refuses a
+story that already has a record; `go.py <n> --resume` loads it, reconciles
+every slice against the worktree it left behind (steps/resume.py) and
+continues, and `go.py <n> --reset` archives it beside what it undoes.
 """
 
+import datetime
 import fcntl
 import json
 import os
@@ -135,6 +137,22 @@ _TRANSITIONS: dict[str, frozenset[str]] = {
     "failed": frozenset(),
 }
 
+# The resume-only jumps, sanctioned nowhere else: steps/resume.py puts a
+# slice back where its last turn actually left it. A turn the driver never
+# saw end is voided, so the slice returns to the launch it was about to
+# make (assigned before attempt 1, correcting after); a turn that ended
+# with a valid reply is "running" again with its verdict pending, and
+# block 3 re-derives that verdict without another agent call. `failed`
+# reopens the same way: it records the driver's own judgement, which a
+# fixed driver is allowed to re-derive.
+_RESUME_TRANSITIONS: dict[str, frozenset[str]] = {
+    "assigned": frozenset({"assigned"}),
+    "running": frozenset({"assigned", "correcting", "running"}),
+    "validating": frozenset({"running"}),
+    "correcting": frozenset({"correcting"}),
+    "failed": frozenset({"assigned", "correcting", "running"}),
+}
+
 
 @dataclass
 class SliceRecord:
@@ -176,6 +194,14 @@ class SliceRecord:
         allowed = _TRANSITIONS.get(self.state, frozenset())
         if state not in allowed:
             raise RuntimeError(f"prohibited slice transition {self.state} → {state}")
+        self.state = state
+
+    def resume_to(self, state: str) -> None:
+        """The resume-only counterpart of `move`, for steps/resume.py: a
+        slice goes back to the point its last turn actually reached."""
+        allowed = _RESUME_TRANSITIONS.get(self.state, frozenset())
+        if state not in allowed:
+            raise RuntimeError(f"prohibited resume transition {self.state} → {state}")
         self.state = state
 
 
@@ -269,18 +295,31 @@ class RunRecord:
                 "result": "",
                 "why": "",
                 "session": "",
+                # the reply the turn ended with, and the working tree's
+                # digest at that moment: what a resume re-validates, and
+                # how it knows nobody touched the tree in between
+                "reply": None,
+                "digest": "",
             }
             piece.turns.append(entry)
             self.save()
             return identity
 
     def end_turn(
-        self, piece: SliceRecord, identity: dict, result: str, why: str, session: str = ""
+        self,
+        piece: SliceRecord,
+        identity: dict,
+        result: str,
+        why: str,
+        session: str = "",
+        reply: dict | None = None,
+        digest: str = "",
     ) -> None:
-        """Persist the turn's completion - including the agent's session id -
-        before choosing the next transition. Completing the same identity
-        twice with the same result is a no-op; a conflicting completion or a
-        changed session id is a contract failure."""
+        """Persist the turn's completion - including the agent's session id,
+        its reply and the working tree's digest - before choosing the next
+        transition. Completing the same identity twice with the same result
+        is a no-op; a conflicting completion or a changed session id is a
+        contract failure."""
         with self._lock:
             ident = piece.turn_identity(identity["role"], identity["revision"], identity["attempt"])
             running = [
@@ -295,26 +334,41 @@ class RunRecord:
                     piece.number,
                 )
             for entry in running:
-                if entry["result"] and entry["result"] != result:
-                    raise FlowFailure(
-                        Outcome.AGENT_BROKE_CONTRACT,
-                        f"conflicting completion for turn {ident} on {piece.slug}: "
-                        f"{entry['result']} vs {result}",
-                        piece.number,
-                    )
-                if entry["session"] and session and entry["session"] != session:
-                    raise FlowFailure(
-                        Outcome.AGENT_BROKE_CONTRACT,
-                        f"turn {ident} on {piece.slug} completed from a different "
-                        f"session: {entry['session']} vs {session}",
-                        piece.number,
-                    )
-                entry["status"] = "completed"
-                entry["result"] = result
-                entry["why"] = why
-                if session:
-                    entry["session"] = session
+                self._check_completion(piece, entry, ident, result, session)
+                _complete(entry, result, why, session, reply, digest)
             self.save()
+
+    def _check_completion(
+        self, piece: SliceRecord, entry: dict, ident: dict, result: str, session: str
+    ) -> None:
+        if entry["result"] and entry["result"] != result:
+            raise FlowFailure(
+                Outcome.AGENT_BROKE_CONTRACT,
+                f"conflicting completion for turn {ident} on {piece.slug}: "
+                f"{entry['result']} vs {result}",
+                piece.number,
+            )
+        if entry["session"] and session and entry["session"] != session:
+            raise FlowFailure(
+                Outcome.AGENT_BROKE_CONTRACT,
+                f"turn {ident} on {piece.slug} completed from a different "
+                f"session: {entry['session']} vs {session}",
+                piece.number,
+            )
+
+
+def _complete(
+    entry: dict, result: str, why: str, session: str, reply: dict | None, digest: str
+) -> None:
+    entry["status"] = "completed"
+    entry["result"] = result
+    entry["why"] = why
+    if session:
+        entry["session"] = session
+    if reply is not None:
+        entry["reply"] = reply
+    if digest:
+        entry["digest"] = digest
 
 
 def _matches(entry: dict, identity: dict) -> bool:
@@ -333,14 +387,15 @@ def begin_run(story_number: int, base_sha: str, roster: dict, slices: list) -> R
     `slices` are fitflow.slice.Slice objects, in domain-then-ui order.
 
     A story that already carries a state file is an interrupted or finished
-    earlier run whose workers may have launched uncertainly. There is no
-    resume contract: stop and preserve instead of overwriting the record."""
+    earlier run whose workers may have launched uncertainly. A fresh run
+    never overwrites it: `--resume` continues it, `--reset` archives it."""
     if state_path(story_number).exists():
         raise FlowFailure(
             Outcome.RUN_STATE_CONFLICT,
             f"an earlier run for story #{story_number} left state at "
-            f"{state_path(story_number)}; audit it, then remove the file "
-            "manually before rerunning",
+            f"{state_path(story_number)}; continue it with "
+            f"`go.py {story_number} --resume`, or archive it and undo what it "
+            f"created with `go.py {story_number} --reset`",
             story_number,
             add_blocked=True,
         )
@@ -373,6 +428,42 @@ def begin_run(story_number: int, base_sha: str, roster: dict, slices: list) -> R
     )
     record.save()
     return record
+
+
+def load_run(story_number: int) -> RunRecord:
+    """The retained record of an earlier run, or a stop when there is none:
+    a story with nothing retained has nothing to resume."""
+    path = state_path(story_number)
+    if not path.exists():
+        raise FlowFailure(
+            Outcome.CANNOT_PICK,
+            f"#{story_number} has no retained run at {path}; nothing to resume",
+        )
+    try:
+        return RunRecord.from_dict(json.loads(path.read_text()))
+    except (ValueError, KeyError, TypeError) as error:
+        raise FlowFailure(
+            Outcome.RUN_STATE_CONFLICT,
+            f"the retained run at {path} cannot be read ({error}); audit it, then "
+            f"`go.py {story_number} --reset`",
+            story_number,
+        ) from error
+
+
+def has_run(story_number: int) -> bool:
+    return state_path(story_number).exists()
+
+
+def archive_run(story_number: int) -> Path | None:
+    """Move the record aside for audit - `runs/story-<n>.<stamp>.reset.json`
+    - so a fresh run can begin. None when there was no record."""
+    path = state_path(story_number)
+    if not path.exists():
+        return None
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    target = path.with_name(f"{path.stem}.{stamp}.reset.json")
+    path.replace(target)
+    return target
 
 
 def retained_inputs(story_number: int, layer: str, acceptance_count: int):

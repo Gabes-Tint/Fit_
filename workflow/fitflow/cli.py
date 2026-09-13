@@ -3,6 +3,9 @@ FlowFailure, an unexpected tool error, or a clean Outcome) into a log line, a
 comment on the story when there is one to comment on, and the process exit
 code. The planner's worktree is always removed here, in a finally, no
 matter how the run ended.
+
+Three entry points share this: a fresh run (`go.py [issue]`), a resumed
+one (`go.py <issue> --resume`) and a reset (`go.py <issue> --reset`).
 """
 
 import argparse
@@ -15,8 +18,11 @@ from pathlib import Path
 from fitflow import agent_config, agents, audit, github, narrate, planner, settings
 from fitflow.outcome import FlowFailure, Outcome
 
+Flow = Callable[[int | None], Outcome]
+IssueFlow = Callable[[int], Outcome]
 
-def run(flow: Callable[[int | None], Outcome]) -> None:
+
+def run(flow: Flow, resume: IssueFlow, reset: IssueFlow) -> None:
     config_path = Path(os.environ.get("FIT_FLOW_AGENT_CONFIG", agent_config.DEFAULT_PATH))
     try:
         agents.configure(agent_config.load(config_path))
@@ -27,17 +33,13 @@ def run(flow: Callable[[int | None], Outcome]) -> None:
     except (agent_config.AgentConfigError, settings.ConfigurationError) as error:
         print(f"configuration error: {error}", file=sys.stderr)
         raise SystemExit(2) from error
-    parser = argparse.ArgumentParser(
-        description="Fit_ development flow driver: blocks 1-5, plan to shipped release."
-    )
-    parser.add_argument("issue", nargs="?", type=int, default=None, help="issue number to pick")
-    args = parser.parse_args()
+    args = _parse()
 
     narrate.begin()
     if args.issue is not None:
         narrate.open_for_issue(args.issue)
     try:
-        outcome = flow(args.issue)
+        outcome = _dispatch(args, flow, resume, reset)
     except FlowFailure as failure:
         _report_failure(failure)
         outcome = failure.outcome
@@ -47,6 +49,43 @@ def run(flow: Callable[[int | None], Outcome]) -> None:
         planner.cleanup()
         narrate.close()
     sys.exit(int(outcome))
+
+
+def _dispatch(args: argparse.Namespace, flow: Flow, resume: IssueFlow, reset: IssueFlow) -> Outcome:
+    if args.reset:
+        return reset(args.issue)
+    if args.resume:
+        return resume(args.issue)
+    return flow(args.issue)
+
+
+def _parse() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Fit_ development flow driver: blocks 1-5, plan to shipped release."
+    )
+    parser.add_argument(
+        "issue",
+        nargs="?",
+        type=int,
+        default=None,
+        help="issue number to pick (default: the lowest-numbered open story not held)",
+    )
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--resume",
+        action="store_true",
+        help="continue this issue's retained run from where its last turn left it",
+    )
+    mode.add_argument(
+        "--reset",
+        action="store_true",
+        help="undo what a run created for this issue (worktrees, branches, teams, an open "
+        "PR, child issues, in-progress/blocked) and archive its record",
+    )
+    args = parser.parse_args()
+    if (args.resume or args.reset) and args.issue is None:
+        parser.error("--resume and --reset need an issue number")
+    return args
 
 
 def _report_failure(failure: FlowFailure) -> None:
