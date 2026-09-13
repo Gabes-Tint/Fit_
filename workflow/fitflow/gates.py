@@ -27,6 +27,11 @@ report, or a report contradicting the exit code is an external tool
 failure that stops the run — never an implementation verdict, never a
 success. No full local CI tier is implied.
 
+`run_workflow_gates` covers the third layer. A slice whose code is the
+driver itself changes Python and prose, which none of the bun lanes size or
+run, so ruff, ruff format and - over changed markdown - prettier and cspell
+take their place, in block 1 and in every block 3 turn alike.
+
 A judged failure carries the detail, not just the step names: the gate
 report points at each failed step's captured log, and `duplicates` also
 leaves a jscpd report naming both halves of every clone. Block 3 spent six
@@ -344,15 +349,29 @@ def _step_output(worktree: Path, step: dict) -> str:
 def _tail(output: str) -> list[str]:
     """The last few meaningful lines, ANSI stripped and length capped: a
     gate log is thousands of lines of table and the verdict is at the end."""
-    lines = [
+    return _clip(_meaningful(output)[-_DETAIL_LINES:], drop_first=True)
+
+
+def _head(output: str) -> list[str]:
+    """The first few meaningful lines, for a tool that lists its findings
+    from the top and ends with a count - ruff, prettier and cspell all do.
+    Their tail is the end of the last finding and says least of all."""
+    return _clip(_meaningful(output)[:_DETAIL_LINES], drop_first=False)
+
+
+def _meaningful(output: str) -> list[str]:
+    return [
         text
         for text in (_ANSI.sub("", raw).rstrip() for raw in output.splitlines())
         if text.strip()
-    ][-_DETAIL_LINES:]
+    ]
+
+
+def _clip(lines: list[str], drop_first: bool) -> list[str]:
     while lines and sum(len(text) + 1 for text in lines) > _DETAIL_CHARS:
         if len(lines) == 1:
             return [lines[0][:_DETAIL_CHARS]]
-        lines.pop(0)
+        lines.pop(0 if drop_first else -1)
     return lines
 
 
@@ -410,6 +429,109 @@ def _clone_files(clones: list[dict]) -> frozenset[str]:
         if sides is not None:
             names |= {sides[0]["name"], sides[1]["name"]}
     return frozenset(names)
+
+
+# --- the driver's own gates ----------------------------------------------
+#
+# A workflow slice changes Python and prose, so `verify:changed`,
+# `lint:changed` and `check` have nothing to say about it: they size and run
+# the repository's TypeScript. These four run in their place, in both block 1
+# and block 3, and they are the same four CI's "Workflow driver" job runs
+# plus the repository's markdown pair. Each names the files and lines it
+# rejects, so the failure comes back located and block 3 can tell a gate that
+# blames only the acceptance tests from one that blames the implementation.
+
+_RUFF = ["uv", "run", "--project", "workflow", "ruff"]
+#: ruff points at a file with an arrow line under the rule; older releases
+#: put `path:line:col:` at the start of the diagnostic instead.
+_RUFF_ARROW = re.compile(r"^\s*-->\s+([\w./@+-]+\.py):\d+:\d+\s*$")
+_RUFF_INLINE = re.compile(r"^([\w./@+-]+\.py):\d+:\d+:\s")
+_PRETTIER_WARN = _CULPRIT_PATTERNS["format:check"]
+_CSPELL_ISSUE = re.compile(r"^([\w./@+-]+):\d+:\d+ - ")
+
+#: Where a workflow slice's prose lives. The markdown pair runs only over
+#: the files the turn actually changed, the way `lint:changed` does.
+_MARKDOWN_ROOTS = ("workflow/", "docs/")
+
+
+def run_workflow_gates(
+    worktree: Path, story_number: int, changed: list[str]
+) -> "GateFailure | None":
+    """Run the driver's own gates over a workflow slice's tree and return a
+    repairable failure, or None when they pass.
+
+    Exit 1 is the verdict; any other exit is an external tool failure that
+    stops the run, never an implementation verdict - the same rule the bun
+    gates follow."""
+    for label, argv, patterns in _workflow_steps(changed):
+        failure = _external_step(worktree, story_number, label, argv, patterns)
+        if failure is not None:
+            return failure
+        narrate_gates(0, label)
+    return None
+
+
+def workflow_gate_names(changed: list[str]) -> tuple[str, ...]:
+    """The gates a workflow turn actually runs, in order. The markdown pair
+    is scoped to the files the turn changed, so it is absent from a turn
+    that changed no prose - and the narration must not claim it ran."""
+    return tuple(label for label, _argv, _patterns in _workflow_steps(changed))
+
+
+def changed_markdown(changed: list[str]) -> list[str]:
+    return sorted(
+        name for name in changed if name.endswith(".md") and name.startswith(_MARKDOWN_ROOTS)
+    )
+
+
+def _workflow_steps(changed: list[str]) -> list[tuple[str, list[str], tuple[re.Pattern, ...]]]:
+    steps = [
+        ("ruff check", [*_RUFF, "check", "workflow"], (_RUFF_ARROW, _RUFF_INLINE)),
+        ("ruff format", [*_RUFF, "format", "--check", "workflow"], (_RUFF_ARROW,)),
+    ]
+    markdown = changed_markdown(changed)
+    if markdown:
+        steps.append(
+            ("prettier", ["bun", "x", "prettier", "--check", *markdown], (_PRETTIER_WARN,))
+        )
+        steps.append(
+            ("cspell", ["bun", "x", "cspell", "--no-progress", *markdown], (_CSPELL_ISSUE,))
+        )
+    return steps
+
+
+def _external_step(
+    worktree: Path,
+    story_number: int,
+    label: str,
+    argv: list[str],
+    patterns: tuple[re.Pattern, ...],
+) -> "GateFailure | None":
+    result = _launch(argv, worktree, story_number, label)
+    output = "\n".join(
+        stream.strip() for stream in (result.stdout, result.stderr) if stream.strip()
+    )
+    if result.returncode == 0:
+        return None
+    if result.returncode != 1:
+        raise FlowFailure(
+            Outcome.TOOL_FAILED,
+            f"{label} crashed (exit {result.returncode}): {output[-800:]}",
+            story_number,
+            add_blocked=True,
+        )
+    culprits = _named_files(patterns, output)
+    detail = "\n".join(f"  {line}" for line in _head(output) or ["(the gate printed nothing)"])
+    return GateFailure(f"{label} failed:\n{detail}", culprits, bool(culprits))
+
+
+def _named_files(patterns: tuple[re.Pattern, ...], output: str) -> frozenset[str]:
+    return frozenset(
+        match.group(1)
+        for pattern in patterns
+        for line in output.splitlines()
+        if (match := pattern.match(line)) is not None
+    )
 
 
 def narrate_gates(steps_run: int, tool: str = "verify:changed") -> None:
