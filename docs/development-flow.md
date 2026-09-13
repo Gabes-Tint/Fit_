@@ -205,8 +205,11 @@ flowchart TD
   exhaustion it escalates exactly one level—mechanic to builder or builder to
   solver. An exhausted solver stops and preserves the worktree. Infrastructure,
   authentication, network and tool failures stop immediately without retry or
-  capability escalation. This is separate from block 1's loop for producing
-  failing acceptance tests.
+  capability escalation at this classification level - beneath it, a `gh`
+  call or an `aarmy talk` that fails with a transient signature (a GitHub
+  5xx, a network blip, an empty-message backend error) already got one
+  transparent retry before reaching this policy. This is separate from
+  block 1's loop for producing failing acceptance tests.
 - Each slice selects its role independently. Domain and UI implementation and
   gates may run in parallel in their existing worktrees. An approved slice is
   frozen while its sibling repairs or escalates; the single join/barrier is at
