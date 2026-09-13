@@ -1,16 +1,9 @@
 <script lang="ts">
-	import {
-		calmWeeks,
-		computeTargets,
-		latestWeight,
-		microTargets,
-		rollingAverages
-	} from '$lib/domain/tdee';
-	import { displayWeight, formatWeight, weightUnitAbbr, weightUnitName } from '$lib/domain/units';
+	import { calmWeeks, computeTargets, microTargets, rollingAverages } from '$lib/domain/tdee';
+	import { displayWeight, weightUnitAbbr } from '$lib/domain/units';
 	import { tend } from '$lib/state/tend.svelte';
 	import AvgRow from '$lib/components/AvgRow.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
-	import WeightEntry from '$lib/components/WeightEntry.svelte';
 
 	const profile = $derived(tend.profile);
 	const targets = $derived(profile ? computeTargets(profile) : null);
@@ -19,7 +12,6 @@
 	const weeks = $derived(profile ? calmWeeks(profile.log) : 0);
 	const units = $derived(tend.state.units);
 	const weightAbbr = $derived(weightUnitAbbr(units));
-	const weightName = $derived(weightUnitName(units));
 </script>
 
 <svelte:head>
@@ -32,20 +24,6 @@
 		<PageHeader kicker="Trend, not a streak" title="Progress">
 			{weeks} calm week{weeks === 1 ? '' : 's'} with four or more days logged. A miss never zeroes that.
 		</PageHeader>
-
-		<section class="bg-card rounded-3xl p-4 shadow-border">
-			<div class="flex items-baseline justify-between">
-				<h2 class="font-display text-xl tracking-tight">Weight</h2>
-				<p class="tabular text-muted-foreground text-sm">
-					{formatWeight(latestWeight(profile.weights), units)}
-					<span class="sr-only">{weightName}</span>
-					<span aria-hidden="true">{weightAbbr}</span>
-				</p>
-			</div>
-			<div class="mt-3">
-				<WeightEntry {units} />
-			</div>
-		</section>
 
 		<section class="bg-card rounded-3xl p-5 shadow-border">
 			<h2 class="font-display text-xl tracking-tight">Adaptive TDEE</h2>
@@ -68,7 +46,7 @@
 		</section>
 
 		<section class="bg-card rounded-3xl p-5 shadow-border">
-			<h2 class="font-display text-xl tracking-tight">This week’s average</h2>
+			<h2 class="font-display text-xl tracking-tight">This week's average</h2>
 			<p class="text-muted-foreground mt-1 text-xs">
 				{week.loggedDays} logged days. No pass/fail coloring.
 			</p>

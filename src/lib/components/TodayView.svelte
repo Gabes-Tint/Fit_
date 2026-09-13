@@ -5,11 +5,13 @@
 	import { resolve } from '$app/paths';
 	import {
 		computeTargets,
+		latestWeight,
 		loggedDatesSet,
 		nutritionForDay,
 		rollingAverages
 	} from '$lib/domain/tdee';
 	import { isGlp1, servingStep } from '$lib/domain/profile';
+	import { formatWeight } from '$lib/domain/units';
 	import { calendarWeeks, weekOf } from '$lib/domain/training-plan';
 	import { weeklyAdherence } from '$lib/domain/training-progress';
 	import { trainingWeekText } from '$lib/domain/today-status';
@@ -142,7 +144,12 @@
 			class="bg-card rounded-3xl px-4 pt-3 pb-3 shadow-border"
 			aria-labelledby="today-weight-title"
 		>
-			<h2 id="today-weight-title" class="font-display px-1 text-xl tracking-tight">Weight</h2>
+			<div class="flex items-baseline justify-between">
+				<h2 id="today-weight-title" class="font-display px-1 text-xl tracking-tight">Weight</h2>
+				<p class="tabular text-muted-foreground text-sm">
+					{formatWeight(latestWeight(profile.weights), tend.state.units)}
+				</p>
+			</div>
 			<div class="mt-1 h-[140px]">
 				<WeightChart weights={profile.weights} units={tend.state.units} />
 			</div>
