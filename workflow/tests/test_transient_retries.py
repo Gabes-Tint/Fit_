@@ -163,8 +163,8 @@ def test_narration_order_survives_a_redirected_log(world, tmp_path):
     """A run that stops as a tool failure narrates its `❌` line, then the
     `Stopped:` comment it posts on the story - in that order, even when
     stdout and stderr share one file descriptor as a shell redirect
-    (`go.py > run.log 2>&1`) would. Unflushed stdout is block-buffered
-    once redirected while die()'s stderr copy is not, so without the fix
+    (`go.py > run.log 2>&1`) would. Stdout is block-buffered once
+    redirected, and die()'s stderr copy is not, so without the fix
     the stderr copy lands in the file as soon as it is written while the
     equally-early stdout copy (and everything printed after it) waits for
     the buffer to flush - splicing `❌` into content the log had not yet
