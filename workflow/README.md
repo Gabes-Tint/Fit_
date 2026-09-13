@@ -156,16 +156,16 @@ escalation.
 ```yaml
 planner:
   backend: claude
-  model: haiku
+  model: opus
   effort: low
 mechanic:
   backend: claude
   model: haiku
-  effort: low
+  effort: medium
 builder:
   backend: claude
-  model: sonnet
-  effort: medium
+  model: opus
+  effort: low
 solver:
   backend: claude
   model: opus
@@ -370,12 +370,13 @@ repository root: `bun run lint:docs` and `bun run spellcheck`.
 The validated entries in `agents.yaml` are passed explicitly as flags on every
 `aarmy talk` call.
 
-| role     | backend | model  | effort |
-| -------- | ------- | ------ | ------ |
-| planner  | claude  | haiku  | low    |
-| mechanic | claude  | haiku  | low    |
-| builder  | claude  | sonnet | medium |
-| solver   | claude  | opus   | high   |
+| role     | backend | model | effort |
+| -------- | ------- | ----- | ------ |
+| planner  | claude  | opus  | low    |
+| mechanic | claude  | haiku | medium |
+| builder  | claude  | opus  | low    |
+| solver   | claude  | opus  | high   |
+| reviewer | claude  | opus  | medium |
 
 ### Settings
 
