@@ -431,9 +431,11 @@ def _escalate_or_stop(record: RunRecord, piece: SliceRecord, diagnostic: str) ->
 def _validate_turn(
     record: RunRecord, piece: SliceRecord, reply: dict, frozen_ok: bool = False
 ) -> str | None:
-    """The driver's own independent check of one implementation turn.
-    Returns a repairable diagnostic; contract violations and tooling
-    failures raise at once and never consume a correction."""
+    """The driver's own independent check of one implementation turn:
+    scope, acceptance bytes, the acceptance run and the gates, all on the
+    actual diff, and only then the reply's own account of it. Returns a
+    repairable diagnostic; contract violations and tooling failures raise
+    at once and never consume a correction."""
     with record.transition():
         piece.move("validating")
         record.save()
@@ -444,12 +446,8 @@ def _validate_turn(
     path = worktrees.slice_worktree_path(piece.slug)
     changed = _check_worktree_state(record, piece, path, frozen_ok=frozen_ok)
     if not changed:
-        # even a no-change turn must describe the truth: a reply reporting
-        # phantom files when nothing changed is a contract failure, not a
-        # repairable diagnostic
-        _check_reported_files(record, piece, reply["changed_files"], [])
-        return "no changes were made in the worktree"
-    _check_reported_files(record, piece, reply["changed_files"], changed)
+        phantom = ", ".join(sorted(set(reply["changed_files"])))
+        return f"no changes were made in the worktree; phantom {phantom}"
     _check_scope(record, piece, changed)
     _check_acceptance_unchanged(record, piece, path, changed)
     verdict = acceptance.run_and_check_passing(path, piece.test_files)
@@ -463,6 +461,9 @@ def _validate_turn(
     gate_diagnostic = gates.run_turn_gates(path, record.story_number)
     if gate_diagnostic is not None:
         return gate_diagnostic
+    mismatch = _report_mismatch(reply["changed_files"], changed)
+    if mismatch is not None:
+        return mismatch
     narrate.line(
         f"🔍 Verify #{piece.number}: scope ✔ · acceptance pass ✔ · branch identity ✔ · "
         "no gate or workflow files ✔"
@@ -525,24 +526,26 @@ def _check_reply_structure(record: RunRecord, piece: SliceRecord, reply: object)
         raise _contract(record, piece, "summary must be a non-empty string")
 
 
-def _check_reported_files(
-    record: RunRecord, piece: SliceRecord, reported: list[str], changed: list[str]
-) -> None:
-    """The reply must describe exactly the actual diff: every reported path
-    must exist in the worktree, and every changed path must be reported."""
-    if set(reported) != set(changed):
-        unreported = sorted(set(changed) - set(reported))
-        phantom = sorted(set(reported) - set(changed))
-        sides = [
-            f"{name} {', '.join(paths)}"
-            for name, paths in (("unreported", unreported), ("phantom", phantom))
-            if paths
-        ]
-        raise _contract(
-            record,
-            piece,
-            "reported files do not match the actual diff: " + "; ".join(sides),
-        )
+def _report_mismatch(reported: list[str], changed: list[str]) -> str | None:
+    """The reply must describe exactly the actual diff. Nothing the driver
+    trusts comes from the report - scope, the layer boundary, acceptance
+    immutability and the gates all run on the real diff - so a divergence
+    is an honest defect in the ledger the same agent repairs in one turn,
+    not tampering. Returns the diagnostic, or None when they agree."""
+    if set(reported) == set(changed):
+        return None
+    unreported = sorted(set(changed) - set(reported))
+    phantom = sorted(set(reported) - set(changed))
+    sides = [
+        f"{name} {', '.join(paths)}"
+        for name, paths in (("unreported", unreported), ("phantom", phantom))
+        if paths
+    ]
+    return (
+        "reported files do not match the actual diff: "
+        + "; ".join(sides)
+        + " — list every path the diff touches, including deleted and renamed files"
+    )
 
 
 def _check_scope(record: RunRecord, piece: SliceRecord, changed: list[str]) -> None:

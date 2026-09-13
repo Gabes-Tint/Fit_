@@ -11,6 +11,7 @@ early lines are buffered here and flushed into the file the moment
 """
 
 import datetime
+import os
 import sys
 import threading
 from collections.abc import Iterator
@@ -114,6 +115,16 @@ def close() -> None:
 
 
 def die(text: str) -> None:
-    """A failure line, also to stderr so it is visible even without the log."""
+    """A failure line, also to stderr so it is visible even without the log
+    - unless stderr is the very same open file as stdout, as under a shell's
+    `2>&1`, where the copy would only say the same thing twice."""
     line(text)
-    print(text, file=sys.stderr)
+    if not _stderr_is_stdout():
+        print(text, file=sys.stderr, flush=True)
+
+
+def _stderr_is_stdout() -> bool:
+    try:
+        return os.path.sameopenfile(sys.stdout.fileno(), sys.stderr.fileno())
+    except (AttributeError, OSError, ValueError):
+        return False

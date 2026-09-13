@@ -180,7 +180,9 @@ def test_narration_order_survives_a_redirected_log(world, tmp_path):
     comment_indexes = [i for i, line in enumerate(lines) if line.startswith("✏️")]
     die_indexes = [i for i, line in enumerate(lines) if line.startswith("❌")]
     assert comment_indexes, lines
-    assert die_indexes, lines
+    # stdout and stderr are one file here, so die() prints its line once:
+    # a reader of the combined log sees the failure, not a stutter
+    assert len(die_indexes) == 1, lines
     # die() runs first and posts the failure comment afterward, so the
     # final comment line - the run's very last narration - comes after it
     assert die_indexes[-1] < comment_indexes[-1]
