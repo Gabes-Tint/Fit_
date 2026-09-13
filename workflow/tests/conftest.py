@@ -262,6 +262,52 @@ reviewer:
             session=session,
         )
 
+    def agent_objects(
+        self,
+        slug: str,
+        role: str,
+        tests: list[str],
+        kind: str = "tests_contradict",
+        why: str = "the tests contradict each other: no row order satisfies all of them",
+        proposed_fix: str = "drop the first test; its ranking belongs to the domain slice",
+        summary: str = "I changed nothing: no honest change can make those tests pass together",
+        files: dict[str, str] | None = None,
+        changed_files: list[str] | None = None,
+        objection: dict | None = None,
+    ) -> None:
+        """One implementation turn that rejects the acceptance tests instead
+        of implementing against them. `objection` replaces the whole object,
+        for the malformed shapes the driver has to refuse."""
+        body = (
+            objection
+            if objection is not None
+            else {"kind": kind, "tests": tests, "why": why, "proposed_fix": proposed_fix}
+        )
+        self._queue_turn(
+            f"{slug}/{role}",
+            {
+                "changed_files": changed_files if changed_files is not None else [],
+                "summary": summary,
+                "objection": body,
+            },
+            effects={"files": files} if files else None,
+        )
+
+    def mechanic_repairs(
+        self,
+        slug: str,
+        files: dict[str, str],
+        test_files: list[str],
+        why: str = "the repaired tests still wait for the behavior",
+        delete: list[str] | None = None,
+    ) -> None:
+        """One block 1 test-repair turn, in the driver's own repair worktree:
+        the mechanic commits and never pushes - the driver merges the repair
+        into the slice branch itself."""
+        self.mechanic_writes(
+            slug, files=files, test_files=test_files, why=why, push=False, delete=delete
+        )
+
     def agent_fails(
         self,
         slug: str,

@@ -8,6 +8,12 @@ same issue, team, branch, worktree and accumulated implementation. An
 exhausted solver stops the run and preserves everything. External and
 contract failures stop immediately without consuming a correction.
 
+A turn may also reject the acceptance tests instead of implementing against
+them. The driver verifies that objection itself (steps/objection.py) and,
+when it stands, sends the tests back to block 1's writer, re-freezes the
+repaired set onto the slice branch and relaunches the slice with a fresh
+attempt counter. A refused objection is an ordinary failed attempt.
+
 Two independent slices run their loops in parallel; a succeeded slice is
 frozen - committed by the driver, never rerun while its sibling corrects or
 escalates - and the join releases only when every slice is succeeded with
@@ -39,6 +45,7 @@ from fitflow import (
 )
 from fitflow.outcome import FlowFailure, Outcome
 from fitflow.runstate import RunRecord, SliceRecord, retained_inputs
+from fitflow.steps import objection
 
 _SUCCESSOR = {"mechanic": "builder", "builder": "solver"}
 # The gates the agent is judged by: the quality policy, the CI workflows and
@@ -337,14 +344,19 @@ def _run_slice(record: RunRecord, piece: SliceRecord) -> None:
 
     A resumed slice may arrive "running" with its last turn already
     completed: that turn's verdict is pending, and it is re-derived from
-    the reply and worktree the turn left - no new agent call."""
+    the reply and worktree the turn left - no new agent call. A resumed
+    slice may also arrive "tests_rejected", with block 1's repair of its
+    acceptance tests unfinished: that repair is relaunched before any turn
+    of this loop."""
+    if piece.state == "tests_rejected":
+        objection.repair(record, piece)
     if piece.state == "running":
         last = piece.turns[-1]
         narrate.line(
             f"♻️  #{piece.number} ({piece.layer}) re-validating {piece.role} attempt "
             f"{last['attempt']} from its retained reply, without a new agent call"
         )
-        if _settle(record, piece, last["reply"], piece.attempts):
+        if _settle_or_repair(record, piece, last["reply"], piece.attempts):
             return
     while True:
         _pre_turn_barrier(record, piece)
@@ -360,8 +372,19 @@ def _run_slice(record: RunRecord, piece: SliceRecord) -> None:
         with record.transition():
             digest = worktrees.working_tree_digest(worktrees.slice_worktree_path(piece.slug))
             record.end_turn(piece, identity, "ok", reply["summary"], session, reply, digest)
-        if _settle(record, piece, reply, attempt):
+        if _settle_or_repair(record, piece, reply, attempt):
             return
+
+
+def _settle_or_repair(record: RunRecord, piece: SliceRecord, reply: dict, attempt: int) -> bool:
+    """`_settle`, plus the one verdict it cannot settle on its own: a
+    verified objection to the acceptance tests, which sends them back to
+    block 1 and relaunches this slice on the repaired set."""
+    try:
+        return _settle(record, piece, reply, attempt)
+    except objection.Objected:
+        objection.repair(record, piece)
+        return False
 
 
 def _settle(record: RunRecord, piece: SliceRecord, reply: dict, attempt: int) -> bool:
@@ -369,7 +392,8 @@ def _settle(record: RunRecord, piece: SliceRecord, reply: dict, attempt: int) ->
     the loop must launch again (a correction, or the escalated role's first
     attempt); raises when the run stops."""
     try:
-        rejection = _validate_turn(record, piece, reply)
+        refused = objection.consider(record, piece, reply, scope_breach)
+        rejection = _Rejection(refused) if refused else _validate_turn(record, piece, reply)
     except FlowFailure as failure:
         _settle_as_failed(record, piece, failure.why)
         raise
@@ -539,7 +563,18 @@ def _talk(piece: SliceRecord, prompt_name: str, attempt: int) -> tuple[dict, str
         attempt=str(attempt),
         diagnostic=piece.diagnostics[-1] if piece.diagnostics else "",
         prior_diagnostics="\n".join(f"- {item}" for item in piece.diagnostics) or "(none)",
+        objecting=objection.brief(),
+        repair_note=_repair_note(piece),
     )
+
+
+def _repair_note(piece: SliceRecord) -> str:
+    """What a slice whose tests block 1 already repaired tells its next
+    initial turn. Empty for every other turn, so the brief reads exactly as
+    it did before an objection was possible."""
+    if not piece.test_repair_note:
+        return ""
+    return f"\nThe acceptance tests changed since your last turn:\n\n{piece.test_repair_note}\n"
 
 
 def review_fix_turn(record: RunRecord, piece: SliceRecord, diagnostic: str) -> None:
@@ -798,14 +833,25 @@ def _check_worktree_state(
 
 
 def _check_reply_structure(record: RunRecord, piece: SliceRecord, reply: object) -> None:
-    if not isinstance(reply, dict) or set(reply) != {"changed_files", "summary"}:
-        raise _contract(record, piece, "reply must have exactly changed_files and summary")
+    """The reply's shape, and only its shape. `objection` is optional and
+    its own contents are not judged here: a malformed objection is an
+    ordinary rejected attempt (steps/objection.py), never a stop, and a
+    reply that carries one may leave `changed_files` empty - rejecting the
+    tests is exactly the case where there is nothing honest to change."""
+    required = {"changed_files", "summary"}
+    if not isinstance(reply, dict) or not required <= set(reply) <= required | {"objection"}:
+        raise _contract(
+            record,
+            piece,
+            "reply must have exactly changed_files and summary, and at most an objection "
+            "beside them",
+        )
     files = reply["changed_files"]
-    if (
-        not isinstance(files, list)
-        or not files
-        or any(not isinstance(item, str) or not item.strip() for item in files)
+    if not isinstance(files, list) or any(
+        not isinstance(item, str) or not item.strip() for item in files
     ):
+        raise _contract(record, piece, "changed_files must be an array of paths")
+    if not files and "objection" not in reply:
         raise _contract(record, piece, "changed_files must be a non-empty array of paths")
     if not isinstance(reply["summary"], str) or not reply["summary"].strip():
         raise _contract(record, piece, "summary must be a non-empty string")
@@ -839,10 +885,9 @@ def _check_scope(piece: SliceRecord, changed: list[str]) -> _Rejection | None:
     told exactly which paths to put back and gets its ordinary corrections
     to do it, because a turn that is right about the story and wrong about
     one file is worth one more turn, not a dead run (#337)."""
-    reasons = [reason for reason in map(_out_of_reach(piece), changed) if reason is not None]
-    if not reasons:
+    breach = scope_breach(piece, changed)
+    if breach is None:
         return None
-    breach = "; ".join(reasons)
     return _Rejection(
         f"{breach} — those paths are outside this slice's reach. Put every one of "
         "them back exactly as it was (`git checkout -- <path>` for a file you "
@@ -852,6 +897,15 @@ def _check_scope(piece: SliceRecord, changed: list[str]) -> _Rejection | None:
         "never carry it.",
         breach,
     )
+
+
+def scope_breach(piece: SliceRecord, changed: list[str]) -> str | None:
+    """Why this diff reaches outside the slice, or None when every path
+    belongs. `_check_scope` turns that verdict into a corrective rejection;
+    the objection check needs the verdict alone, because an objection left
+    beside work outside the slice is not one the driver will carry."""
+    reasons = [reason for reason in map(_out_of_reach(piece), changed) if reason is not None]
+    return "; ".join(reasons) or None
 
 
 def _out_of_reach(piece: SliceRecord):

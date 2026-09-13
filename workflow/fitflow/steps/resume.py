@@ -13,11 +13,16 @@ still running on this machine is never relaunched beside. A slice with no
 accepted assignment sends the run back to block 2; a slice interrupted
 inside a review fix is not reconciled here - `--reset` is the honest
 answer for it.
+
+A slice parked in `tests_rejected` is waiting on block 1, not on a turn of
+its own: it stays parked, its unfinished repair turn is voided like any
+other, and block 3 relaunches the repair from a fresh repair worktree.
 """
 
 from fitflow import agents, audit, github, narrate, settings, worktrees
 from fitflow.outcome import FlowFailure, Outcome
 from fitflow.runstate import RunRecord, SliceRecord
+from fitflow.steps import objection
 
 # Where a resumed run continues, in flow order.
 DELEGATE = "delegate"
@@ -106,6 +111,9 @@ def _require_never_launched(record: RunRecord) -> None:
 def _reconcile_slice(record: RunRecord, piece: SliceRecord) -> None:
     if piece.state == "succeeded":
         return
+    if piece.state == "tests_rejected":
+        _reopen_test_repair(record, piece)
+        return
     if _in_review_fix(piece):
         raise _conflict(record, piece, f"was interrupted ({piece.state}) during a review fix")
     if not piece.turns:
@@ -124,6 +132,32 @@ def _reconcile_turn(record: RunRecord, piece: SliceRecord, last: dict) -> None:
         _reopen_for_validation(record, piece, last)
     else:
         _void(record, piece, last, last["why"] or "the turn produced no valid reply")
+
+
+def _reopen_test_repair(record: RunRecord, piece: SliceRecord) -> None:
+    """The slice stays where block 1 has it: block 3 relaunches the repair.
+    A repair turn the driver never saw end is voided first, and one still
+    running on this machine is never relaunched beside."""
+    _require_repair_not_in_flight(record, piece)
+    voided = objection.void_unfinished_repair(record, piece)
+    with record.transition():
+        piece.resume_to("tests_rejected")
+        record.save()
+    note = f", {voided} voided" if voided else ""
+    narrate.line(
+        f"♻️  #{piece.number} ({piece.layer}) rejected the acceptance tests{note}: "
+        f"relaunching block 1's repair"
+    )
+
+
+def _require_repair_not_in_flight(record: RunRecord, piece: SliceRecord) -> None:
+    if agents.turn_in_flight(objection.repair_team(piece), "mechanic"):
+        raise FlowFailure(
+            Outcome.EXECUTION_HELD,
+            f"{piece.slug}: a test repair turn is still running on this machine; "
+            "wait for it to end, or stop it, before resuming",
+            record.story_number,
+        )
 
 
 def _never_launched(record: RunRecord, piece: SliceRecord) -> None:

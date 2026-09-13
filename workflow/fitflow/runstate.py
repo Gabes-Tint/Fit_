@@ -122,16 +122,27 @@ def verify_team_ownership(piece: "SliceRecord") -> None:
 
 # Block 3's level loop, exactly as narrated in implement._run_slice:
 # assigned -> running -> validating -> (correcting -> running | escalating ->
-# (assigned | failed) | succeeded | failed). Block 2's delegation re-confirms
-# "assigned" on the freshly created record (a no-op transition), and block 4's
-# review_fix_turn is the one sanctioned exit from "succeeded", into "fixing"
-# and back through "validating". Every unlisted transition is prohibited.
+# (assigned | failed) | tests_rejected -> assigned | succeeded | failed).
+# Block 2's delegation re-confirms "assigned" on the freshly created record (a
+# no-op transition), and block 4's review_fix_turn is the one sanctioned exit
+# from "succeeded", into "fixing" and back through "validating".
+#
+# "tests_rejected" is block 3's one edge back into block 1: an implementer
+# whose objection the driver verified - no honest change in this slice's
+# layer can make the named acceptance tests pass together - parks the slice
+# there while block 1's writer repairs those tests. A repaired and re-frozen
+# set returns the slice to "assigned" with the same role, revision,
+# assignment, session and worktree and a fresh attempt counter, because the
+# tests it is judged by are new inputs; a repair that cannot be made stops
+# the run and the slice lands in "failed". Every unlisted transition is
+# prohibited.
 _TRANSITIONS: dict[str, frozenset[str]] = {
     "assigned": frozenset({"assigned", "running"}),
     "running": frozenset({"validating", "failed"}),
-    "validating": frozenset({"correcting", "escalating", "succeeded", "failed"}),
+    "validating": frozenset({"correcting", "escalating", "succeeded", "failed", "tests_rejected"}),
     "correcting": frozenset({"running"}),
     "escalating": frozenset({"assigned", "failed"}),
+    "tests_rejected": frozenset({"assigned", "failed"}),
     "succeeded": frozenset({"fixing"}),
     "fixing": frozenset({"validating"}),
     "failed": frozenset(),
@@ -145,11 +156,16 @@ _TRANSITIONS: dict[str, frozenset[str]] = {
 # block 3 re-derives that verdict without another agent call. `failed`
 # reopens the same way: it records the driver's own judgement, which a
 # fixed driver is allowed to re-derive.
+# `tests_rejected` reopens as itself: the repair the stopped run was making
+# is block 1's work, not a turn of this slice's own loop, so the slice stays
+# parked and block 3 relaunches the repair from the top - voiding a repair
+# turn the driver never saw end, exactly as it voids an implementation turn.
 _RESUME_TRANSITIONS: dict[str, frozenset[str]] = {
     "assigned": frozenset({"assigned"}),
     "running": frozenset({"assigned", "correcting", "running"}),
     "validating": frozenset({"running"}),
     "correcting": frozenset({"correcting"}),
+    "tests_rejected": frozenset({"tests_rejected"}),
     "failed": frozenset({"assigned", "correcting", "running"}),
 }
 
@@ -191,6 +207,17 @@ class SliceRecord:
     diagnostics: list[str] = field(default_factory=list)
     assignments: list[dict] = field(default_factory=list)
     turns: list[dict] = field(default_factory=list)
+    # Block 3's edge back into block 1. `objections` keeps every implementer
+    # objection the driver verified, `test_repairs` counts the block 1
+    # repairs they bought (at most two per slice), `test_repair_turns` is
+    # those repairs' own turn ledger - deliberately not `turns`, which is
+    # the implementation ledger the session and attempt checks read - and
+    # `test_repair_note` is what the next implementer turn is told about the
+    # tests it is now judged by.
+    objections: list[dict] = field(default_factory=list)
+    test_repairs: int = 0
+    test_repair_turns: list[dict] = field(default_factory=list)
+    test_repair_note: str = ""
     frozen_commit: str = ""
     implementation_sha: str = ""
 

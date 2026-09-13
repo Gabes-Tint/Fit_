@@ -30,6 +30,8 @@ _REPAIRABLE_OUTCOMES = {
     Outcome.TESTS_DO_NOT_FAIL,
     Outcome.TESTS_INVALID,
 }
+# The same verdicts the block 3 objection loop's own repair budget retries.
+REPAIRABLE_OUTCOMES = frozenset(_REPAIRABLE_OUTCOMES)
 
 
 @dataclass(frozen=True)
@@ -131,6 +133,8 @@ def _run_attempt(prepared: PreparedSlice, attempt: int, diagnostic: str) -> None
         acceptance="\n".join(f"- {item}" for item in piece.acceptance),
         attempt=str(attempt - 1),
         diagnostic=diagnostic,
+        objection="",
+        push_line=f"commit and push the corrected tests to `{slug}`",
     )
     test_files = list(reply["test_files"])
     with narrate.grouped():
@@ -171,6 +175,72 @@ def _verify_pushed(
         f"🔍 Verify #{story_number}: tree clean ✔ · pushed ✔ · files on branch ✔ · "
         "only tests ✔ · lint ✔ · types ✔ · " + ", ".join(gates.FAILING_BRANCH_STEPS) + " ✔"
     )
+
+
+def validate_repaired_tests(
+    slug: str,
+    path: Path,
+    base: str,
+    test_files: list[str],
+    test_kind: str,
+    story_number: int,
+) -> None:
+    """Block 1's own verdict on a set of acceptance tests it repaired after
+    an implementer's verified objection (steps/objection.py), taken in the
+    driver-owned repair worktree: the same content, kind, gate and failure
+    checks a first writing faces.
+
+    Two things differ, and only two. The diff is measured against the
+    slice's failing-test base rather than `origin/main`, because a dependent
+    UI slice's base already carries its domain sibling and none of that is
+    this repair's doing; and nothing is pushed, because the repair branch is
+    the driver's own - it merges the commit into the slice's branch and
+    pushes that."""
+    if not worktrees.is_clean(path):
+        raise FlowFailure(
+            Outcome.TESTS_NOT_PUSHED, f"tree not clean on repair branch {slug}", story_number
+        )
+    if not test_files:
+        raise FlowFailure(Outcome.TESTS_NOT_PUSHED, "mechanic reported no test files", story_number)
+    _check_repaired_files_exist(slug, path, test_files, story_number)
+    changed = worktrees.changed_between(path, base)
+    _check_the_repair_touched_the_tests(slug, changed, test_files, story_number)
+    _check_every_changed_file_is_a_test(slug, changed, story_number)
+    _check_files_match_test_kind(slug, changed, test_kind, story_number)
+    _check_test_quality(slug, path, test_files, story_number)
+    _check_failing_branch_lint(path, story_number)
+    _check_failing_branch_types(path, story_number)
+    _check_failing_branch_gate_steps(path, story_number)
+    narrate.line(
+        f"🔍 Verify #{story_number} repair: tree clean ✔ · only tests ✔ · lint ✔ · types ✔ · "
+        + ", ".join(gates.FAILING_BRANCH_STEPS)
+        + " ✔"
+    )
+    _verify_tests_fail(path, test_files, story_number)
+
+
+def _check_repaired_files_exist(slug: str, path, test_files: list[str], story_number: int) -> None:
+    for test_file in test_files:
+        if not (path / test_file).exists():
+            raise FlowFailure(
+                Outcome.TESTS_NOT_PUSHED,
+                f"{test_file} is not on repair branch {slug}",
+                story_number,
+            )
+
+
+def _check_the_repair_touched_the_tests(
+    slug: str, changed: list[str], test_files: list[str], story_number: int
+) -> None:
+    """A repair that changed nothing has not answered the objection; one
+    that changed only files it does not name has not either."""
+    if not any(test_file in changed for test_file in test_files):
+        raise FlowFailure(
+            Outcome.TESTS_INVALID,
+            f"the repair on {slug} changed none of the acceptance tests it reports "
+            f"({', '.join(test_files)}); the objection is about their content",
+            story_number,
+        )
 
 
 def _check_test_quality(slug: str, path, test_files: list[str], story_number: int) -> None:

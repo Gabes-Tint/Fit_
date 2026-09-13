@@ -2,14 +2,15 @@
 
 Continue in the same session, branch, and worktree for slice #$slice_number:
 $slice_title.
-
-The Python driver rejected attempt $attempt with this concrete diagnostic:
+$objection
+The Python driver rejected the tests after attempt $attempt with this concrete
+diagnostic:
 
 $diagnostic
 
 Fix only the acceptance tests and their test-only branch state. Do not
 implement product behavior. Make the smallest correction needed for the
-driver’s diagnostic, then commit and push the corrected tests to `$branch`.
+driver’s diagnostic, then $push_line.
 Import and exercise the product boundary; never define a local stand-in for
 the missing product function or class inside the test.
 If a new domain module does not exist yet, dynamically import it inside the

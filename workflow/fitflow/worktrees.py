@@ -90,6 +90,20 @@ def create_slice_worktree(slug: str) -> Path:
     return slice_worktree_path(slug)
 
 
+def create_repair_worktree(slug: str, base: str) -> Path:
+    """A slice's own repair worktree: the same installed worktree block 1's
+    mechanic gets, re-pointed at the commit the repaired acceptance tests
+    must fail on - the slice's current failing-test base, which for a
+    dependent UI slice is the driver's merge of its domain sibling. A
+    leftover from a stopped run is removed first, so a relaunched repair
+    starts from the base and not from what the dead one left."""
+    remove_slice_worktree(slice_worktree_path(slug))
+    delete_local_branch(slug)  # defined below; a branch that is not there is what we wanted
+    path = create_slice_worktree(slug)
+    _run_checked(["git", "reset", "--hard", base], cwd=path)
+    return path
+
+
 def remove_slice_worktree(path: Path) -> None:
     subprocess.run(
         ["git", "worktree", "remove", "--force", str(path)],
@@ -242,12 +256,20 @@ def merge_commit(worktree: Path, sha: str) -> None:
     _run_checked(["git", "merge", "--no-edit", sha], cwd=worktree)
 
 
-def merge_sibling(worktree: Path, sha: str, message: str) -> None:
-    """Merge a sibling slice's frozen commit into this slice's own branch,
-    always as an explicit merge commit the driver owns and names: the UI
-    slice implements on top of the domain slice it depends on. A conflict
-    raises; the caller aborts and classifies."""
+def merge_into_slice(worktree: Path, sha: str, message: str) -> None:
+    """Merge one commit into this slice's own branch, always as an explicit
+    merge commit the driver owns and names, and never disturbing the
+    implementer's uncommitted work beside it: `--no-ff` keeps the slice's
+    own history, and git refuses only when the merged commit touches a file
+    the working tree has modified. A conflict raises; the caller aborts and
+    classifies."""
     _run_checked(["git", "merge", "--no-ff", "-m", message, sha], cwd=worktree)
+
+
+def merge_sibling(worktree: Path, sha: str, message: str) -> None:
+    """The sibling case of `merge_into_slice`: a UI slice implements on top
+    of the frozen domain commit it depends on."""
+    merge_into_slice(worktree, sha, message)
 
 
 def abort_merge(worktree: Path) -> None:
