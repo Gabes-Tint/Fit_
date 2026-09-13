@@ -280,6 +280,56 @@ def test_a_resumed_run_relaunches_the_correction_a_forbidden_change_earned(world
     assert "🔒 #607 (domain) frozen at" in result.stdout
 
 
+def _stopped_early_by_a_repeated_diagnostic(world, number: int) -> None:
+    """A first run whose agent kept the same out-of-reach file through its
+    corrective turn: the second rejection is the first one verbatim, so the
+    loop stopped there instead of spending the third attempt."""
+    _given_planned_story(world, number)
+    _delegate_mechanic(world, number)
+    for _ in range(2):
+        world.agent_implements(
+            f"story-{number}-domain",
+            "mechanic",
+            files={**IMPLEMENTATION, "quality/thresholds.json": "{}\n"},
+            changed_files=["quality/thresholds.json", *CHANGED],
+        )
+    first = run_flow(world, number)
+    assert first.returncode == 22, first.stdout + first.stderr
+    assert "stopped early: attempt 2 failed exactly as attempt 1" in first.stdout
+    assert world.run_record(number)["slices"]["domain"]["turns"][-1]["repeated"] is True
+
+
+def test_a_run_stopped_for_a_repeated_diagnostic_stays_stopped_on_resume(world):
+    """Re-deriving that turn's verdict is a function of the bytes it left:
+    with the worktree untouched it can only reach the same diagnostic and
+    stop on it again, so the resume refuses instead of spending the turn."""
+    _stopped_early_by_a_repeated_diagnostic(world, 608)
+
+    result = run_flow(world, 608, "--resume")
+
+    assert result.returncode == 30, result.stdout + result.stderr
+    assert "was stopped early: mechanic attempt 2 failed exactly as attempt 1" in result.stdout
+    assert "nothing in the worktree has changed since" in result.stdout
+    # block 1's turn and the two the stopped run spent: no new agent call
+    assert len(_talks(world, "mechanic", "story-608-domain")) == 3
+
+
+def test_a_worktree_changed_after_an_early_stop_gets_the_ordinary_digest_refusal(world):
+    """The repetition refusal never masks the digest: bytes that moved
+    since the turn ended are not that turn's work, and that is what the
+    resumed run says."""
+    _stopped_early_by_a_repeated_diagnostic(world, 609)
+    (world.slice_worktree_path("story-609-domain") / "quality/thresholds.json").write_text(
+        '{"edited": "by hand"}\n'
+    )
+
+    result = run_flow(world, 609, "--resume")
+
+    assert result.returncode == 30, result.stdout + result.stderr
+    assert "worktree changed since mechanic attempt 2 ended" in result.stdout
+    assert "was stopped early" not in result.stdout
+
+
 def test_resume_refuses_a_worktree_that_changed_since_the_turn_ended(world):
     _stopped_by_a_gate_crash(world, 604)
     (world.slice_worktree_path("story-604-domain") / "src/lib/delegate.ts").write_text(
