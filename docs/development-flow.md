@@ -279,9 +279,14 @@ flowchart TD
   driver" job - but block 4 never merges such a pull request: with CI
   green, the run labels the story `needs-gabriel`, assigns it, names the
   driver files in a comment and stops at exit 11 with the PR open and the
-  worktrees kept. `quality/`, `.github/` and `scripts/` remain forbidden to
-  an implementation turn outright: they are the gates the work is judged
-  by.
+  worktrees kept. `quality/`, `.github/` and the gate script folders
+  (`scripts/ci/`, `scripts/deploy/`, `scripts/github/`, `scripts/quality/`,
+  `scripts/security/`) stay out of reach of an implementation turn: they
+  are the gates the work is judged by. The rest of `scripts/` is ordinary
+  application tooling and a story may be about it. Reaching into a path
+  that is out of reach costs a correction, not the run: the driver names
+  the paths, asks for them back, and stops as `AGENT_BROKE_CONTRACT` only
+  when the budget ends with the change still there.
 - A stopped run is continued with `go.py <n> --resume`, which replays
   nothing: every turn the driver saw end is recorded with its reply and a
   digest of the working tree at that moment, so its verdict is re-derived

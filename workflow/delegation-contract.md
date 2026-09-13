@@ -320,17 +320,37 @@ the same session like any other, not a contract failure; a turn that changed
 nothing at all is the same repairable diagnostic. Any real-diff verdict -
 scope, layer boundary, acceptance bytes, gates - takes precedence over it.
 That diff is the complete delta of the branch and worktree against the
-retained failing-test commit, recomputed at every validation: a prohibited
-gate, threshold, suppression-baseline, lockfile or CI-workflow change
-(#379) cannot be hidden by the timing of a retry commit or an uncommitted
-edit. What is prohibited is what judges the work: everything under
-`quality/`, `.github/` and `scripts/`, the lockfiles, the tool
-configuration files and `workflow/agents.yaml`. The driver's own code under
-`workflow/` is not prohibited - the agent edits a worktree copy while the
-running driver is the main checkout's code, and the driver's suite is CI's
-own "Workflow driver" job, not a block 3 gate - so a slice may implement a
-change to the driver. Merging it is what the driver will not do: see the
-delivery gates. Any local commit happens under driver control before final validation; a
+retained failing-test commit, recomputed at every validation: an
+out-of-reach gate, threshold, suppression-baseline, lockfile or CI-workflow
+change (#379) cannot be hidden by the timing of a retry commit or an
+uncommitted edit. What is out of reach is what judges the work: everything
+under `quality/`, `.github/`, `scripts/ci/`, `scripts/deploy/`,
+`scripts/github/`, `scripts/quality/` and `scripts/security/`, every
+snapshot and lock file, the tool configuration files and
+`workflow/agents.yaml`. Only those script folders: `scripts/` also holds
+the application's own tooling - the ETL pipeline, the search evaluation
+harness, the dev and build helpers - which a story may perfectly well be
+about, and forbidding the whole tree cost #337 a run over
+`scripts/eval/`. The brief the implementer receives renders that list from
+the same constant the validation reads, so the rule the agent is told and
+the rule it is judged by cannot drift. The driver's own code under
+`workflow/` is not out of reach either - the agent edits a worktree copy
+while the running driver is the main checkout's code, and the driver's
+suite is CI's own "Workflow driver" job, not a block 3 gate - so a slice
+may implement a change to the driver. Merging it is what the driver will
+not do: see the delivery gates.
+
+Reaching outside that scope - an out-of-reach path, a file belonging to the
+other layer, or a snapshot or lock file - is a repairable diagnostic, not
+an immediate stop. The driver keeps the worktree and session, names every
+offending path, and asks the same agent to put them back exactly as they
+were and to say so in its summary if the story genuinely needed one of
+them; the next validation judges the whole diff again. It costs an ordinary
+correction and is never escalated to a stronger role - no model is the
+answer to "you changed a file you may not change" - and when the budget
+ends with the change still present the run stops as `AGENT_BROKE_CONTRACT`
+(exit 22). Acceptance-test bytes are the exception: they are judged before
+scope and terminally, because their immutability is the contract itself. Any local commit happens under driver control before final validation; a
 successful slice has a clean, recorded implementation commit and evidence for
 those exact bytes. Implementation agents do not push or open PRs. Block 1's
 already-pushed failing-test branch is an existing input, not delivery approval.
@@ -400,13 +420,13 @@ a passing blip, not a retry/escalation of the turn itself; if the retry
 also fails, the failure reaches this table exactly as before and is
 classified and stopped the same way.
 
-| Precedence and type     | Examples                                                                                                                         | Action                                                            |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| 1: `contract`           | Malformed assignment/reply, escaped worktree, changed workflow, weakened acceptance or policy, identity mismatch                 | Stop immediately; preserve; no retry/escalation.                  |
-| 2: `external`           | Authentication, network, launch, unavailable tool, timeout, crash, missing/invalid runner report                                 | Stop immediately; preserve; no retry/escalation.                  |
-| 3: `human`              | Unresolved product intent, prohibited policy change needed, unmet slice dependency                                               | Stop; preserve; record required decision; no capacity escalation. |
-| 4: `repairable`         | Actual assertion failure, type/lint diagnostic, valid failing gate verdict caused by implementation, misreported `changed_files` | Same-role correction until attempt 3.                             |
-| 5: `capacity_exhausted` | Three validated repairable failures at this role                                                                                 | Escalate one rung, or stop/preserve if solver.                    |
+| Precedence and type     | Examples                                                                                                                                                                                     | Action                                                                                                                                                               |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1: `contract`           | Malformed assignment/reply, agent commit or push, weakened acceptance test, identity mismatch, an out-of-reach or other-layer path still there at the end of the budget                      | Stop immediately; preserve; no retry/escalation. An out-of-reach path is corrected first (row 4) and reaches this row only when the budget ends with it still there. |
+| 2: `external`           | Authentication, network, launch, unavailable tool, timeout, crash, missing/invalid runner report                                                                                             | Stop immediately; preserve; no retry/escalation.                                                                                                                     |
+| 3: `human`              | Unresolved product intent, prohibited policy change needed, unmet slice dependency                                                                                                           | Stop; preserve; record required decision; no capacity escalation.                                                                                                    |
+| 4: `repairable`         | Actual assertion failure, type/lint diagnostic, valid failing gate verdict caused by implementation, misreported `changed_files`, an out-of-reach or other-layer path the agent can put back | Same-role correction until attempt 3. An out-of-reach path is never escalated: it stops at row 1 instead.                                                            |
+| 5: `capacity_exhausted` | Three validated repairable failures at this role                                                                                                                                             | Escalate one rung, or stop/preserve if solver.                                                                                                                       |
 
 A failing gate verdict is repairable only while the implementation could
 repair it. Each failed step's diagnostic carries its own account of what it
