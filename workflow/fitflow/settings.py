@@ -32,6 +32,12 @@ LOGS_DIR = FIT_FLOW_HOME / "logs"
 
 TALK_TIMEOUT = os.environ.get("FIT_FLOW_TALK_TIMEOUT", "1800")
 
+# How long to sleep before the one retry of a `gh` call or an `aarmy talk`
+# that failed with a transient external signature (a GitHub 5xx, a network
+# blip, an empty-message backend error) - see fitflow/github.py's
+# TRANSIENT_SIGNATURES.
+TRANSIENT_RETRY_SECONDS = float(os.environ.get("FIT_FLOW_TRANSIENT_RETRY_SECONDS", "15"))
+
 # Block 4: how long `gh pr checks` may stay pending before the run stops as
 # a tool failure, and how long to sleep between polls. The required check is
 # the ci.yml `all-green` job; `gh pr checks` reports it under the job's
