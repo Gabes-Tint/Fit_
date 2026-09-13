@@ -24,7 +24,11 @@ are immutable inputs to implementation, so they must lint clean both before
 and after the behavior exists.
 
 The tests must fail because the requested behavior is missing, not because of
-syntax, imports, or test-runner errors. Change no production files,
+syntax, imports, or test-runner errors: each one fails on an expectation the
+implementation would satisfy, never on a thrown TypeError, ReferenceError or
+SyntaxError. They must also be type-correct against the helpers they import -
+read each helper's signature in its source before calling it, because the
+driver runs the repository's type lane over this branch. Change no production files,
 configuration, dependencies, gates, thresholds, snapshots, or lock files.
 Keep every changed test in the requested test kind: playwright means only
 `*.e2e.ts`; vitest means no `*.e2e.ts`.

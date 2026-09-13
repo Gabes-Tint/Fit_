@@ -41,6 +41,16 @@ Rules:
 - Write test files only. No implementation code.
 - Import and exercise the product boundary. Never define a local stand-in for
   the missing product function or class inside the test.
+- Every test must be type-correct against the helpers it imports. Read the
+  helper's signature in its source before you call it; the driver runs the
+  repository's type lane over this branch and a type error in a test file is
+  rejected.
+- Every test must fail on an expectation - an `expect` that the missing
+  behavior would satisfy - never on a thrown error. A test that throws a
+  TypeError, ReferenceError or SyntaxError is rejected: it can never pass,
+  whatever the implementation does. Assert what you expect of a value rather
+  than calling something that does not exist yet; a dynamic import of a module
+  that does not exist is the one sanctioned exception.
 - No lint suppression is acceptable in a failing acceptance test - no
   `eslint-disable`, `eslint-enable`, `@ts-ignore` or `@ts-expect-error`. The
   tests are immutable inputs to implementation, so they must lint clean both

@@ -2,8 +2,13 @@
 """Fake `bun`: `run worktree:new <slug>` does a real `git worktree add`;
 `x vitest run ...` / `x playwright test ...` emit a JSON report (the same
 shape the real reporters use) built from a scripted outcome per file:
-"fail" (good - no implementation yet), "pass" (bad), "not_found" (the
-runner never ran that file), or "tool_error" (no JSON report)."""
+"fail" (good - no implementation yet), "fail_defect" (the test itself
+throws, so it can never pass), "pass" (bad), "not_found" (the runner never
+ran that file), or "tool_error" (no JSON report).
+
+A failing file's report carries the test title and the error message the
+driver classifies, taken from `test_messages[file]` when a scenario scripts
+one and from the outcome's own default otherwise."""
 
 import hashlib
 import json
@@ -108,27 +113,63 @@ def _files(argv):
     return [arg for arg in argv[1:] if arg not in FLAGS and not arg.startswith("--")]
 
 
-def _vitest_report(files, outcomes):
+_FAILING = {"fail", "fail_defect", "import_error"}
+_TITLE = "the behavior this slice asks for"
+_EXPECTATION_MESSAGE = "AssertionError: expected undefined to be 42 // Object.is equality"
+_DEFECT_MESSAGE = "TypeError: locator.boundingBox is not a function"
+
+
+def _failure(world, file, outcome):
+    """The title, message and error location a failing file reports. An
+    ordinary "fail" reports a plain failed expectation; "fail_defect" reports
+    a thrown error, by default a TypeError located in the test file itself,
+    and a scenario scripts both to choose what the driver has to classify."""
+    if outcome != "fail_defect":
+        return _TITLE, _EXPECTATION_MESSAGE, ""
+    scripted = world.get("test_messages", {}).get(file, {})
+    return _TITLE, scripted.get("message", _DEFECT_MESSAGE), scripted.get("location", file)
+
+
+def _vitest_report(files, outcomes, world):
     entries = []
     for f in files:
         outcome = outcomes.get(f, "fail")
         if outcome == "not_found":
             continue
-        status = "failed" if outcome in {"fail", "import_error"} else "passed"
-        assertions = [] if outcome == "import_error" else [{"status": status}]
+        status = "failed" if outcome in _FAILING else "passed"
+        title, message, location = _failure(world, f, outcome)
+        stack = f"{message}\n    at {location}:12:30" if location else message
+        assertions = (
+            []
+            if outcome == "import_error"
+            else [
+                {
+                    "title": title,
+                    "fullName": title,
+                    "status": status,
+                    "failureMessages": [stack] if status == "failed" else [],
+                }
+            ]
+        )
         entries.append({"name": f"/worktree/{f}", "status": status, "assertionResults": assertions})
     return {"testResults": entries}
 
 
-def _playwright_report(files, outcomes):
+def _playwright_report(files, outcomes, world):
     suites = []
     for f in files:
         outcome = outcomes.get(f, "fail")
         if outcome == "not_found":
             continue
-        status = "failed" if outcome == "fail" else "passed"
-        suites.append({"specs": [{"file": f, "tests": [{"results": [{"status": status}]}]}]})
-    return {"suites": suites}
+        status = "failed" if outcome in _FAILING else "passed"
+        title, message, location = _failure(world, f, outcome)
+        result = {"status": status}
+        if status == "failed":
+            result["error"] = {"message": message}
+            if location:
+                result["error"]["location"] = {"file": location, "line": 12, "column": 30}
+        suites.append({"specs": [{"title": title, "file": f, "tests": [{"results": [result]}]}]})
+    return {"suites": suites, "errors": []}
 
 
 def cmd_test_run(argv):
@@ -158,9 +199,9 @@ def cmd_test_run(argv):
         print("test runner unavailable")
         return 1
     report = (
-        _playwright_report(files, effective)
+        _playwright_report(files, effective, world)
         if "playwright" in argv
-        else _vitest_report(files, effective)
+        else _vitest_report(files, effective, world)
     )
     print(json.dumps(report))
     return 0
@@ -197,6 +238,38 @@ _LINT_FAILURE_DETAIL = (
     "src/lib/workflow-probe.spec.ts: 5:10 error Unsafe call of an `any` typed "
     "value @typescript-eslint/no-unsafe-call"
 )
+
+
+_CHECK_FAILURE_DETAIL = (
+    "Error: Argument of type 'number' is not assignable to parameter of type 'Locator'. (ts)"
+)
+
+
+def cmd_check():
+    """Scripted `check` (the repository's svelte-check type lane): outcome
+    from `gate_outcomes["check"]`, defaulting to pass. "fail" prints a
+    svelte-check error naming the offending file and exits 1; "tool_error"
+    crashes with an exit code neither 0 nor 1."""
+    import fcntl
+
+    lock_path = world_dir() / "world.lock"
+    with lock_path.open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        world = load()
+        outcome = world.get("gate_outcomes", {}).get("check", "pass")
+        if isinstance(outcome, list) and outcome:
+            outcome = outcome.pop(0)
+            save(world)
+        where = world.get("check_failure_file", "src/routes/typed.e2e.ts")
+    if outcome == "fail":
+        print(f"{where}:12:30")
+        print(_CHECK_FAILURE_DETAIL)
+        print("svelte-check found 1 error and 0 warnings")
+        return 1
+    if outcome == "tool_error":
+        print("svelte-check could not load the project", file=sys.stderr)
+        return 2
+    return 0
 
 
 def cmd_verify_changed():
@@ -375,6 +448,8 @@ def main() -> int:
         return cmd_test_run(argv)
     if argv[:2] == ["run", "lint:changed"]:
         return cmd_lint_changed()
+    if argv[:2] == ["run", "check"]:
+        return cmd_check()
     if argv[:2] == ["run", "verify:changed"]:
         return cmd_verify_changed()
     print(f"fake bun: unsupported command {argv}", file=sys.stderr)

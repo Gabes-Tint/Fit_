@@ -1390,3 +1390,120 @@ def test_a_committed_non_test_file_across_a_retry_is_caught_by_the_branch_delta(
     assert "non-test file changed on story-215-domain: quality/suppression-baseline.json" in (
         result.stdout
     )
+
+
+# --- block 1 accepts only tests that can pass (issue #399) -----------------------
+
+
+def test_an_acceptance_test_that_throws_is_rejected_in_block_1_and_repaired(world):
+    _given_single_domain_slice(world, 216, "Tests that fail for the right reason")
+    slug = "story-216-domain"
+    test_file = "src/lib/thrower.spec.ts"
+    # attempt 1 calls a helper the wrong way, so the test throws instead of
+    # asserting and no implementation could ever make it pass
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// the helper is called with the wrong argument\n"},
+        test_files=[test_file],
+    )
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// corrective attempt: a real expectation\n"},
+        test_files=[test_file],
+    )
+    world.scripted_test_outcome(test_file, ["fail_defect", "fail", "pass"])
+    world.planner_answers_delegate(216, [delegate_slice(216, "domain", mechanic_signals())])
+    world.agent_implements(
+        slug,
+        "mechanic",
+        files={"src/lib/thrower.ts": "export const thrower = () => 42;\n"},
+        changed_files=["src/lib/thrower.ts"],
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "TESTS_INVALID: this test fails because it is broken" in result.stdout
+    # the diagnostic quotes the file, the test title and the runner's message
+    assert "src/lib/thrower.spec.ts" in result.stdout
+    assert "the behavior this slice asks for" in result.stdout
+    assert "TypeError: locator.boundingBox is not a function" in result.stdout
+    assert "Mechanic #216 retrying after attempt 1" in result.stdout
+    assert "Implemented #216" in result.stdout
+
+
+def test_acceptance_tests_that_always_throw_exhaust_the_mechanic(world):
+    _given_single_domain_slice(world, 217, "Tests that never stop throwing")
+    slug = "story-217-domain"
+    test_file = "src/lib/always-throws.spec.ts"
+    for index in range(3):
+        world.mechanic_writes(
+            slug,
+            files={test_file: "// attempt " + str(index) + ": still throwing\n"},
+            test_files=[test_file],
+        )
+    world.scripted_test_outcome(test_file, "fail_defect")
+
+    result = run_flow(world)
+
+    assert result.returncode == 31, result.stdout + result.stderr
+    assert "TESTS_INVALID (exit 31)" in result.stdout
+    assert "exhausted 3 attempts" in result.stdout
+    assert "Stopped: TESTS_INVALID" in "\n".join(world.issue(217)["comments"])
+
+
+def test_type_broken_acceptance_tests_are_rejected_in_block_1_and_repaired(world):
+    _given_single_domain_slice(world, 218, "Type-correct acceptance tests")
+    slug = "story-218-domain"
+    test_file = "src/lib/typed.spec.ts"
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// passes a number where a Locator is expected\n"},
+        test_files=[test_file],
+    )
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// corrective attempt: the helper's real signature\n"},
+        test_files=[test_file],
+    )
+    world.given_gate_outcomes(check=["fail", "pass"])
+    world.given_check_fails_on(test_file)
+    world.scripted_test_outcome(test_file, ["fail", "pass"])
+    world.planner_answers_delegate(218, [delegate_slice(218, "domain", mechanic_signals())])
+    world.agent_implements(
+        slug,
+        "mechanic",
+        files={"src/lib/typed.ts": "export const typed = true;\n"},
+        changed_files=["src/lib/typed.ts"],
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "TESTS_INVALID: check found type errors in the acceptance tests" in result.stdout
+    assert "not assignable to parameter of type 'Locator'" in result.stdout
+    assert test_file + ":12:30" in result.stdout
+    assert "Gates: check" in result.stdout
+    assert "lint ✔ · types ✔" in result.stdout
+    assert "Implemented #218" in result.stdout
+
+
+def test_acceptance_tests_that_never_type_check_exhaust_the_mechanic(world):
+    _given_single_domain_slice(world, 219, "Tests that never type check")
+    slug = "story-219-domain"
+    test_file = "src/lib/never-typed.spec.ts"
+    for index in range(3):
+        world.mechanic_writes(
+            slug,
+            files={test_file: "// attempt " + str(index) + ": still mistyped\n"},
+            test_files=[test_file],
+        )
+    world.given_gate_outcomes(check=["fail", "fail", "fail"])
+    world.given_check_fails_on(test_file)
+
+    result = run_flow(world)
+
+    assert result.returncode == 31, result.stdout + result.stderr
+    assert "TESTS_INVALID (exit 31)" in result.stdout
+    assert "exhausted 3 attempts" in result.stdout
+    assert "Stopped: TESTS_INVALID" in "\n".join(world.issue(219)["comments"])

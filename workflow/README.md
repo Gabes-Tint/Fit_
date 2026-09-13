@@ -79,9 +79,9 @@ files that are not `*.e2e.ts`.
 Because the failing tests become immutable implementation inputs, the driver
 validates them in block 1 as what they will be: the branch must pass the
 repository's change-scoped lint (`bun run lint:changed`, repairable by the
-mechanic until the diagnostic is clean), and acceptance tests carry no lint
-suppression at all (`eslint-disable`, `@ts-ignore`, `@ts-expect-error` are
-rejected). A playwright spec must exercise a component through the
+mechanic until the diagnostic is clean) and its type lane (`bun run check`),
+and acceptance tests carry no lint suppression at all (`eslint-disable`,
+`@ts-ignore`, `@ts-expect-error` are rejected). A playwright spec must exercise a component through the
 repository-owned harness route `/dev/component-harness` (see
 `src/routes/dev/component-harness/+page.svelte`); importing product code
 inside `page.evaluate` is rejected the same way a self-invented route
@@ -89,6 +89,18 @@ fixture is - production files stay off-limits to the mechanic. The harness
 is a test-only surface: the web server 404s `/dev/` without the
 `FIT_COMPONENT_HARNESS=yes` runtime flag and the Capacitor build refuses it
 outright, so it never mounts a component in the shipped app.
+
+Failing is not enough either. The driver reads every failed test's error
+message out of the runner's JSON report and requires a failed expectation: a
+test that throws - a helper called with an argument of the wrong type
+(#399), an undefined name, a syntax error - can never pass however the
+behavior is implemented, so it comes back to the mechanic as
+`TESTS_INVALID` quoting the file, the test title and the runner's own
+message. The same reading runs during implementation: a still-failing
+acceptance test's diagnostic names each failed test and its message, and a
+throw raised inside the acceptance test or a test helper stops the run with
+`TESTS_INVALID` attributed to block 1 rather than spending the
+implementer's corrections on a test nothing can satisfy.
 
 The planner's signals turn is also a bounded loop: an initial reply plus at
 most two corrective retries in the same planner session. A malformed
@@ -417,5 +429,5 @@ the story; blocks 2-3 terminal failures additionally label the story
 | 28   | CAPACITY_EXHAUSTED   | a slice's solver exhausted its 3 attempts; everything preserved                                 |
 | 29   | EXECUTION_HELD       | another `go.py` run already owns this story's lock                                              |
 | 30   | RUN_STATE_CONFLICT   | an earlier run left its retained state behind; audit it, then remove the file manually          |
-| 31   | TESTS_INVALID        | the acceptance tests fail their own gate: lint, a suppression, or a browser-context import      |
+| 31   | TESTS_INVALID        | the acceptance tests fail their own gate: lint, types, a suppression, or a test that throws     |
 | 32   | DEPLOY_FAILED        | a deploy or its smoke check failed after the merge: labelled `needs-gabriel`, never rolled back |
