@@ -2,13 +2,16 @@
 
 Continue in the same session for story #$story_number "$story_title"; the
 same slices, same retained inputs, same schema. Your previous reply was
-rejected by the driver's strict contract validation because:
+rejected by the driver's strict contract validation. The diagnostic below is
+quoted verbatim from that rejection - change only what it names, and leave
+every other field exactly as it validated:
 
-$diagnostic
+"$diagnostic"
 
 Revalidate the entire response yourself against the rules below and
-re-submit it with the same schema. Fix the named mistake and keep everything
-that already validated. Do not invent new signals or change the slice list.
+re-submit it with the same schema. Fix only the named mistake and keep
+everything that already validated. Do not invent new signals or change the
+slice list.
 
 Original instructions for those rules:
 

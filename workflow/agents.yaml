@@ -1,10 +1,12 @@
-# Basic capability selected for planning with tightly constrained judgments.
-# Example: haiku with low reasoning effort.
+# Intermediate capability selected for planning: extracting nine evidenced
+# signals under a precedence table is judgment work, and haiku/low never
+# passed the delegation contract's validation on its first attempt across
+# three real runs. Example: sonnet with medium reasoning effort.
 # Interprets the story and defines its plan, slices and capability signals.
 planner:
   backend: claude
-  model: haiku
-  effort: low
+  model: sonnet
+  effort: medium
 
 # Basic capability selected for focused, well-scoped work with nothing
 # relevant left to decide. Example: haiku with low reasoning effort.

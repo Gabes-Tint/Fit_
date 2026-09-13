@@ -677,7 +677,7 @@ effort validation. No default model or fallback to a different role is allowed.
 Capacity labels describe responsibility, not a hardcoded model family; changing
 the configured model requires a new execution.
 
-The seeded configuration (`haiku`/`low`, `haiku`/`low`, `sonnet`/`medium`,
+The seeded configuration (`sonnet`/`medium`, `haiku`/`low`, `sonnet`/`medium`,
 `opus`/`high`) follows the suggested capacity defaults; the values are
 configuration, not code.
 

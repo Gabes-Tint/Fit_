@@ -59,8 +59,24 @@
 							"additionalProperties": false,
 							"required": ["signal", "source_ref", "detail"],
 							"properties": {
-								"signal": { "type": "string" },
-								"source_ref": { "type": "string" },
+								"signal": {
+									"type": "string",
+									"enum": [
+										"objective_clear",
+										"area_known",
+										"pattern_known",
+										"procedure_complete",
+										"solution_uncertain",
+										"cause_uncertain",
+										"technical_choice",
+										"sensitive_areas",
+										"human_decision"
+									]
+								},
+								"source_ref": {
+									"type": "string",
+									"pattern": "^run-[1-9][0-9]*/(?:(?:domain|ui)/(?:brief|issue_context|failing_tests|branch|worktree|team|acceptance/(?:0|[1-9][0-9]*))|ownership)$"
+								},
 								"detail": { "type": "string" }
 							}
 						}

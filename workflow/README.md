@@ -372,7 +372,7 @@ The validated entries in `agents.yaml` are passed explicitly as flags on every
 
 | role     | backend | model  | effort |
 | -------- | ------- | ------ | ------ |
-| planner  | claude  | haiku  | low    |
+| planner  | claude  | sonnet | medium |
 | mechanic | claude  | haiku  | low    |
 | builder  | claude  | sonnet | medium |
 | solver   | claude  | opus   | high   |
