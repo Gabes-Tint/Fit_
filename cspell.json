@@ -200,6 +200,9 @@
 		"autouse",
 		"excinfo",
 		"unmutated",
-		"unnarrated"
+		"unnarrated",
+		"hashlib",
+		"hexdigest",
+		"timespec"
 	]
 }
