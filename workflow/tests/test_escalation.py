@@ -102,7 +102,7 @@ def test_a_rejected_escalation_leaves_the_exhausted_role_failed() -> None:
     record = _record(piece)
 
     with pytest.raises(FlowFailure) as excinfo:
-        _escalate_or_stop(record, piece, "diagnostic: it never passed")
+        _escalate_or_stop(record, piece, "diagnostic: it never passed", "exhausted its 3 attempts")
 
     assert excinfo.value.outcome is Outcome.PLAN_REJECTED
     # the piece stays the exhausted role at revision 0, not a successor
@@ -136,7 +136,7 @@ def test_a_valid_escalation_mutates_only_after_it_is_accepted() -> None:
     piece = _piece(evidence=good_evidence)
     record = _record(piece)
 
-    _escalate_or_stop(record, piece, "diagnostic: it never passed")
+    _escalate_or_stop(record, piece, "diagnostic: it never passed", "exhausted its 3 attempts")
 
     assert piece.role == "builder"
     assert piece.revision == 1

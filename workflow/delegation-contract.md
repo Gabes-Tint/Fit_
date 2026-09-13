@@ -510,7 +510,9 @@ them; the next validation judges the whole diff again. It costs an ordinary
 correction and is never escalated to a stronger role - no model is the
 answer to "you changed a file you may not change" - and when the budget
 ends with the change still present the run stops as `AGENT_BROKE_CONTRACT`
-(exit 22). Acceptance-test bytes are the exception: they are judged before
+(exit 22). A corrective turn that leaves the same path there ends the
+budget on the spot: the rejection came back verbatim, so the attempt after
+it would only reproduce it. Acceptance-test bytes are the exception: they are judged before
 scope and terminally, because their immutability is the contract itself. Any local commit happens under driver control before final validation; a
 successful slice has a clean, recorded implementation commit and evidence for
 those exact bytes. Implementation agents do not push or open PRs. Block 1's
@@ -526,17 +528,32 @@ most two. It equals assignment `revision`. Attempts reset to zero only on
 escalation. Thus a mechanic start allows at most nine implementation turns,
 a builder start six, and a solver start three, excluding block 1 turns.
 
-| From             | Condition/action                                                                  | To           |
-| ---------------- | --------------------------------------------------------------------------------- | ------------ |
-| `assigned`       | Launch gate passes; reserve attempt 1                                             | `running`    |
-| `running`        | Worker ends normally with a valid reply                                           | `validating` |
-| `validating`     | All independent checks pass at the recorded commit                                | `succeeded`  |
-| `validating`     | Repairable failure and attempt less than 3                                        | `correcting` |
-| `correcting`     | Same role, identity, session and worktree; reserve next attempt                   | `running`    |
-| `validating`     | Repairable failure at attempt 3, role below solver                                | `escalating` |
-| `escalating`     | Immediate next role, matching frozen configuration, new revision and attempt zero | `assigned`   |
-| `validating`     | Repairable failure at attempt 3 on solver                                         | `failed`     |
-| Any active state | External failure, contract violation or required human decision                   | `failed`     |
+Three is a ceiling, not a quota. A correction is worth taking only when the
+agent can act on what it was told, and a diagnostic that comes back
+identical after one says the opposite: the agent already tried, the verdict
+did not move, and the attempts left would only reproduce it. So when the
+rejection of attempt N+1 is the rejection of attempt N, the role's budget
+ends there, exactly as exhaustion would end it - escalating one rung, or
+stopping the run on a solver or a contract breach - and the narration, the
+turn ledger (`"repeated": true`) and the comment on the story all say how
+many attempts went unspent. "Identical" is judged on substance: the
+diagnostics are compared with their commit shas, durations, timestamps and
+absolute worktree paths normalized away, so a rejection naming a different
+file, test or count is a different rejection and its correction is worth
+the attempt. The stronger role always gets its own full budget: an
+escalated role's first attempt has no predecessor to repeat.
+
+| From             | Condition/action                                                                               | To           |
+| ---------------- | ---------------------------------------------------------------------------------------------- | ------------ |
+| `assigned`       | Launch gate passes; reserve attempt 1                                                          | `running`    |
+| `running`        | Worker ends normally with a valid reply                                                        | `validating` |
+| `validating`     | All independent checks pass at the recorded commit                                             | `succeeded`  |
+| `validating`     | Repairable failure differing from the previous attempt's, and attempt less than 3              | `correcting` |
+| `correcting`     | Same role, identity, session and worktree; reserve next attempt                                | `running`    |
+| `validating`     | Repairable failure at attempt 3, or one identical to the previous attempt's, role below solver | `escalating` |
+| `escalating`     | Immediate next role, matching frozen configuration, new revision and attempt zero              | `assigned`   |
+| `validating`     | Repairable failure at attempt 3, or one identical to the previous attempt's, on solver         | `failed`     |
+| Any active state | External failure, contract violation or required human decision                                | `failed`     |
 
 Escalation preserves issue, team, branch, worktree, brief and accumulated
 implementation. The old role's worker must have ended. The next role uses its
@@ -547,8 +564,9 @@ stop as a tool failure. Corrections within a role always reuse its session.
 
 All unlisted transitions are prohibited. In particular: no downgrade, skipped
 rung, early escalation based on an agent's self-assessment, fourth turn at one
-role, or automatic transition out of `succeeded` or `failed`. Exhaustion is the
-only capacity escalation trigger. A request for a stronger model still needs
+role, or automatic transition out of `succeeded` or `failed`. A spent budget is
+the only capacity escalation trigger - spent to attempt 3, or ended early by a
+rejection that repeated verbatim. A request for a stronger model still needs
 the normal independent diagnostic and correction budget.
 
 Persist a turn identity before launching and its completion before choosing
@@ -586,8 +604,8 @@ classified and stopped the same way.
 | 1: `contract`           | Malformed assignment/reply, agent commit or push, weakened acceptance test, identity mismatch, an out-of-reach or other-layer path still there at the end of the budget                      | Stop immediately; preserve; no retry/escalation. An out-of-reach path is corrected first (row 4) and reaches this row only when the budget ends with it still there. |
 | 2: `external`           | Authentication, network, launch, unavailable tool, timeout, crash, missing/invalid runner report                                                                                             | Stop immediately; preserve; no retry/escalation.                                                                                                                     |
 | 3: `human`              | Unresolved product intent, prohibited policy change needed, unmet slice dependency                                                                                                           | Stop; preserve; record required decision; no capacity escalation.                                                                                                    |
-| 4: `repairable`         | Actual assertion failure, type/lint diagnostic, valid failing gate verdict caused by implementation, misreported `changed_files`, an out-of-reach or other-layer path the agent can put back | Same-role correction until attempt 3. An out-of-reach path is never escalated: it stops at row 1 instead.                                                            |
-| 5: `capacity_exhausted` | Three validated repairable failures at this role                                                                                                                                             | Escalate one rung, or stop/preserve if solver.                                                                                                                       |
+| 4: `repairable`         | Actual assertion failure, type/lint diagnostic, valid failing gate verdict caused by implementation, misreported `changed_files`, an out-of-reach or other-layer path the agent can put back | Same-role correction until attempt 3, or until the same rejection comes back verbatim. An out-of-reach path is never escalated: it stops at row 1 instead.           |
+| 5: `capacity_exhausted` | Three validated repairable failures at this role, or two consecutive ones that are the same failure                                                                                          | Escalate one rung, or stop/preserve if solver. The unspent attempts are named in the narration and the comment.                                                      |
 
 A failing gate verdict is repairable only while the implementation could
 repair it. Each failed step's diagnostic carries its own account of what it
@@ -1008,6 +1026,7 @@ re-derive:
 | no turn at all (the launch barrier failed)                     | `assigned`; the loop launches attempt 1                                                                                                                                                                  |
 | status `running` (the driver died mid-turn)                    | refused (`EXECUTION_HELD`) while an `aarmy talk` for that team and role still runs on this machine; otherwise voided                                                                                     |
 | completed with a valid reply (validation stopped or never ran) | the working tree's digest must equal the one recorded when the turn ended, else `RUN_STATE_CONFLICT`; then `running` with its verdict pending, and block 3 re-validates that reply without an agent call |
+| completed and marked `"repeated": true`                        | refused (`RUN_STATE_CONFLICT`): the verdict is a function of bytes that have not changed, so re-validating could only reach the same diagnostic and stop on it again; reset                              |
 | completed without a reply (launch failed, reply malformed)     | voided                                                                                                                                                                                                   |
 | already voided by an earlier resume                            | back to the launch                                                                                                                                                                                       |
 | a review fix, or state `fixing`/`escalating`                   | refused (`RUN_STATE_CONFLICT`): reset                                                                                                                                                                    |
