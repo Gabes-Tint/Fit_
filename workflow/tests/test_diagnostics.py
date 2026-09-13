@@ -1,7 +1,7 @@
 """What "the same diagnostic" means: the substance, not the parts that
 move on their own between two runs of the same failure."""
 
-from fitflow.diagnostics import normalise, same_diagnostic
+from fitflow.diagnostics import normalize, same_diagnostic
 
 
 def test_the_same_text_twice_is_the_same_diagnostic() -> None:
@@ -62,8 +62,8 @@ def test_an_empty_diagnostic_repeats_nothing() -> None:
     assert not same_diagnostic("vitest a.spec.ts still fails", "   ")
 
 
-def test_normalising_leaves_ordinary_words_and_numbers_alone() -> None:
-    assert normalise("the defaced facade of story-1048576 decayed") == (
+def test_normalizing_leaves_ordinary_words_and_numbers_alone() -> None:
+    assert normalize("the defaced facade of story-1048576 decayed") == (
         "the defaced facade of story-1048576 decayed"
     )
 

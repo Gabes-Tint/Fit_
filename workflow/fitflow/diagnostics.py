@@ -13,7 +13,7 @@ have fixed.
 "Identical" is judged on the diagnostic's substance. Two runs of the same
 failure differ in the parts that move on their own - the commit they were
 taken at, how long a step took, the wall-clock stamp a tool printed, the
-absolute worktree path the run happened in - and those are normalised
+absolute worktree path the run happened in - and those are normalized
 away. Everything else counts: a different failing test, a different file,
 a different count is a different failure, and its correction is worth the
 attempt.
@@ -40,7 +40,7 @@ _SUBSTITUTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
 )
 
 
-def normalise(diagnostic: str) -> str:
+def normalize(diagnostic: str) -> str:
     """The diagnostic with its volatile parts replaced by placeholders:
     what two attempts of the same failure have in common."""
     text = diagnostic
@@ -55,4 +55,4 @@ def same_diagnostic(earlier: str, later: str) -> bool:
     predecessor to repeat."""
     if not earlier.strip() or not later.strip():
         return False
-    return normalise(earlier) == normalise(later)
+    return normalize(earlier) == normalize(later)

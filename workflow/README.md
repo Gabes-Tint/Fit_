@@ -61,7 +61,10 @@ Block 4 never merges such a change (below). Reaching into a path that is
 out of reach, or into the other layer, costs a correction rather than the
 run: the driver names the offending paths and asks the same agent to put
 them back, and only a budget that ends with the change still there stops as
-`AGENT_BROKE_CONTRACT`. The driver
+`AGENT_BROKE_CONTRACT`. Block 3's loop stops early on a repeated rejection
+exactly as block 1's does, and an early stop escalates a rung just as
+exhaustion would, so the stronger role still gets its own full budget; only
+an exhausted ladder stops the run. The driver
 commits, freezes and joins at the final barrier; agents never commit or
 push. Every agent turn carries the session id the AI Army CLI printed, and the driver persists it
 with the turn: corrections must come from the same session, an escalated
@@ -105,6 +108,24 @@ and other tooling/infrastructure failures stop immediately. A corrective prompt
 quotes the concrete diagnostic and permits changes only to the acceptance
 tests. Parallel slices run these retry loops independently; the barrier advances
 only after every loop succeeds.
+
+Three is a ceiling, not a quota: a rejection that comes back verbatim after
+a corrective turn ends the loop where it stands, because the diagnostic,
+not the agent, is what would have to change. #406 spent three mechanic
+turns and ten minutes on one line the driver's own test-file rule got
+wrong, which no reply could have fixed. The run stops with the outcome
+exhaustion would have produced, and both the log and the comment on the
+story say why and how many attempts went unspent:
+
+```text
+🛑 Mechanic #406 stopped early: attempt 2 failed exactly as attempt 1 — TESTS_NOT_PUSHED: …
+```
+
+A second rejection that differs in substance - a different file, test or
+count - is ordinary progress and the third attempt is still taken. Shas,
+durations, timestamps and worktree paths are normalized away before the two
+are compared, so a diagnostic that only moved with the clock still counts
+as the same one.
 
 Vitest acceptance specs may define ordinary test helpers, but a spec with no
 product import is rejected when it defines a callable locally and asserts that
@@ -327,9 +348,10 @@ instead of parallel and the driver's own merge sits between them:
 🔧 Mechanic #1001 (ui) attempt 1/3
 ```
 
-`🛑` marks a planned stop (for example, the call is Gabriel's or the slice
-needs clarification) and `❌` a failure. The exit code says which one; see
-[Exit codes](#exit-codes).
+`🛑` marks a planned stop (for example, the call is Gabriel's, the slice
+needs clarification, or a rejection came back verbatim and the remaining
+attempts were left unspent) and `❌` a failure. The exit code says which
+one; see [Exit codes](#exit-codes).
 
 ### After a run
 
@@ -518,7 +540,7 @@ the story; blocks 2-3 terminal failures additionally label the story
 | 25   | WORKTREE_EXISTS      | the slice's worktree or branch already exists                                                                                                                                                                         |
 | 26   | TOOL_FAILED          | `gh`, `git` or `bun` failed unexpectedly, or a reply could not be parsed                                                                                                                                              |
 | 27   | PLAN_REJECTED        | the delegation contract was rejected (bad signals, no evidence, dependent slices); replan                                                                                                                             |
-| 28   | CAPACITY_EXHAUSTED   | a slice's solver exhausted its 3 attempts; everything preserved                                                                                                                                                       |
+| 28   | CAPACITY_EXHAUSTED   | a slice's solver spent its budget - three attempts, or two that failed identically; everything preserved                                                                                                              |
 | 29   | EXECUTION_HELD       | another `go.py` run already owns this story's lock; with `--resume`, a turn is still running here                                                                                                                     |
 | 30   | RUN_STATE_CONFLICT   | an earlier run left its retained state behind: `--resume` continues it, `--reset` archives it; with `--resume`, the record and the worktrees disagree (bytes changed, a review fix was interrupted, the PR is closed) |
 | 31   | TESTS_INVALID        | the acceptance tests fail their own gate: lint, types, a suppression, or a test that throws                                                                                                                           |
