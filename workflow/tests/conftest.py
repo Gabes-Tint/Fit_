@@ -248,13 +248,16 @@ reviewer:
         commit: bool = False,
         rendezvous: str | None = None,
         session: str | None = None,
+        delete: list[str] | None = None,
     ) -> None:
         """One implementation turn: the agent writes files into the worktree
-        but never commits or pushes - the driver owns commits."""
+        but never commits or pushes - the driver owns commits. `delete`
+        removes paths instead of writing them, which is how a corrective
+        turn puts back a file it was told it may not touch."""
         self._queue_turn(
             f"{slug}/{role}",
             {"changed_files": changed_files, "summary": summary},
-            effects={"files": files, "commit": commit, "push": push},
+            effects={"files": files, "delete": delete or [], "commit": commit, "push": push},
             rendezvous=rendezvous,
             session=session,
         )
