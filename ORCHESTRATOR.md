@@ -41,14 +41,16 @@ A question for Gabriel is an issue (`needs-gabriel`): blocked, options including
 
 ## Cycle
 
-`workflow/go.py` is the planned driver for this complete cycle, from issue to
-production. Today it implements blocks 1-4, **Pick and plan, Delegate,
-Implement/validate, and Review/CI/merge** through the merge; block 5, after
-the merge (tag, deploy, smoke, android, cleanup), remains future.
+`workflow/go.py` is the driver for this complete cycle, from issue to
+production. It implements blocks 1-5: **Pick and plan, Delegate,
+Implement/validate, Review/CI/merge, and Ship** - after the merge it waits
+for the version tag and main's CI, deploys QA, decides flakiness, deploys
+production, builds the APK and cleans up. `FIT_FLOW_SHIP_TO=qa` stops the
+ship at QA; hosts and origins come only from the environment.
 
 The [delegation and implementation gates](workflow/delegation-contract.md)
 define role selection, validation, corrections, escalation, the all-slice
-barrier and the delivery gates; blocks 1-4 implement them through the merge.
+barrier, the delivery gates and the ship gates; blocks 1-5 implement them.
 An external operator
 may start and observe a run; it must not mutate the active workflow,
 configuration or slice worktrees. Coordinated cancellation is not implemented:
@@ -59,11 +61,11 @@ resume point.
 2. **Pick** — explicit issue, or lowest-numbered open `story` not held. Empty → stop; queue replenishment is outside this run.
 3. **Plan** — `workflow/go.py` checks whose call (including spend), then creates one slice or exactly two, domain then UI. Domain includes all non-UI work; UI means Svelte interface/routes. Mechanics write failing tests in existing isolated worktrees. Screens: `expectFitsViewport` at 360px.
 4. **Delegate** — rung + why; issue, files, tests, gate; one worktree. Never the shared checkout.
-5. **Implement/validate** — bounded corrections and escalation in each retained worktree; the driver runs the foreground gates, commits and freezes each successful slice, then joins all slices. This is the current end of `go.py`.
-6. **Review** — future: push, open the PR, inspect diff + `gate-*.json`; past mechanical → `reviewer`.
-7. **Merge** — future: `Closes #N`; `gh pr merge <n>`.
-8. **Deploy** — future: user-facing only; smoke; comment what to try.
-9. **Report delivery** — future: one log comment after merge and deploy.
+5. **Implement/validate** — bounded corrections and escalation in each retained worktree; the driver runs the foreground gates, commits and freezes each successful slice, then joins all slices.
+6. **Review** — integration branch, PR; past mechanical → `reviewer`, findings must cite the diff; fix rounds re-freeze and re-review.
+7. **Merge** — `Closes #N`; the driver reads `gh pr checks` itself, one counted rerun; `gh pr merge <n>`.
+8. **Ship** — tag, main CI, QA deploy with smoke, flaky → QA only, else prod, APK; `DEPLOY_FAILED` → `needs-gabriel`, never a rollback.
+9. **Report delivery** — worktrees and branches cleaned once proven landed; one "Shipped" comment on the story.
 
 ## Ladder
 
