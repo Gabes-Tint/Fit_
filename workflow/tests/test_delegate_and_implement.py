@@ -603,23 +603,91 @@ def test_touching_workflow_or_gate_files_is_a_contract_stop(world):
     assert "forbidden file changed: quality/" in result.stdout
 
 
-def test_lying_about_changed_files_is_a_contract_stop(world):
+def test_a_phantom_reported_file_is_corrected_not_a_breach(world):
+    """Nothing the driver trusts comes from the report, so a list naming a
+    path the diff never touched is a repairable diagnostic the same role
+    fixes in its next turn."""
     _given_planned_story(world, 442)
     _delegate_mechanic(world, 442)
     world.agent_implements(
         "story-442-domain",
         "mechanic",
         files={"src/lib/delegate.ts": "export const delegate = true;\n"},
+        changed_files=["src/lib/delegate.ts", "src/lib/never-touched.ts"],
+        summary="reported a file I never wrote",
+    )
+    world.agent_implements(
+        "story-442-domain",
+        "mechanic",
+        files={},
+        changed_files=["src/lib/delegate.ts"],
+        summary="corrected the file list",
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "reported files do not match the actual diff" in result.stdout
+    assert "phantom src/lib/never-touched.ts" in result.stdout
+    # with nothing unreported, the message names only the phantom side (#382)
+    assert "unreported" not in result.stdout
+    assert "correcting after attempt 1" in result.stdout
+    assert "🔒 #442 (domain) frozen at" in result.stdout
+
+
+def test_a_misreported_list_consumes_one_attempt_and_escalates(world):
+    """The mismatch is an ordinary repairable diagnostic: three of them at
+    one role exhaust it and escalate a rung, exactly like a failing gate."""
+    _given_planned_story(world, 496)
+    _delegate_mechanic(world, 496)
+    for _ in range(3):  # mechanic burns its three attempts on the same omission
+        world.agent_implements(
+            "story-496-domain",
+            "mechanic",
+            files={"src/lib/delegate.ts": "export const delegate = true;\n"},
+            changed_files=["src/lib/never-touched.ts"],
+            summary="still the wrong list",
+        )
+    world.agent_implements(
+        "story-496-domain",
+        "builder",
+        files={},
+        changed_files=["src/lib/delegate.ts"],
+        summary="reported what the diff actually touches",
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "unreported src/lib/delegate.ts; phantom src/lib/never-touched.ts" in result.stdout
+    assert "⏫ #496 (domain) escalating mechanic → builder (revision 1, attempts reset)" in (
+        result.stdout
+    )
+    assert "🔒 #496 (domain) frozen at" in result.stdout
+
+
+def test_a_forbidden_file_still_stops_even_when_the_list_is_also_wrong(world):
+    """Every verdict on the real diff outranks the reply's account of it:
+    the forbidden change stops the run immediately instead of being softened
+    into a report correction."""
+    _given_planned_story(world, 497)
+    _delegate_mechanic(world, 497)
+    world.agent_implements(
+        "story-497-domain",
+        "mechanic",
+        files={
+            "src/lib/delegate.ts": "export const delegate = true;\n",
+            "quality/mutation-equivalents.json": "{}\n",
+        },
         changed_files=["src/lib/never-touched.ts"],
-        summary="did nothing real",
+        summary="edited the equivalents file and said nothing",
     )
 
     result = run_flow(world)
 
     assert result.returncode == 22, result.stdout + result.stderr
-    assert "reported files do not match the actual diff" in result.stdout
-    # both divergence sides, reported and real, are named together (#382)
-    assert "unreported src/lib/delegate.ts; phantom src/lib/never-touched.ts" in result.stdout
+    assert "forbidden file changed: quality/" in result.stdout
+    assert "reported files do not match the actual diff" not in result.stdout
 
 
 # --- duplicate execution protection ------------------------------------------------
@@ -971,26 +1039,54 @@ def test_a_ui_slice_changing_a_domain_test_is_a_layer_boundary_stop(world):
     assert "wrong-kind" not in result.stdout
 
 
-def test_an_underreported_file_list_is_a_contract_stop(world):
+def test_an_omitted_deletion_is_corrected_not_a_breach(world):
+    """The deleted path run 5 of issue #399 lost a whole run to: the diff
+    touches it, the reply forgot it, and the diagnostic says so plainly
+    enough for the next turn to fix only the list."""
+    stale = "src/lib/stale.spec.ts"
+    (world.repo / "src" / "lib").mkdir(parents=True, exist_ok=True)
+    (world.repo / stale).write_text("// stale spec\n")
+    subprocess.run(["git", "add", stale], cwd=world.repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "seed stale spec"],
+        cwd=world.repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(["git", "push"], cwd=world.repo, check=True, capture_output=True)
+
     _given_planned_story(world, 467)
     _delegate_mechanic(world, 467)
+    world._queue_turn(
+        "story-467-domain/mechanic",
+        {"changed_files": ["src/lib/delegate.ts"], "summary": "deleted the stale spec"},
+        effects={
+            "files": {"src/lib/delegate.ts": "export const delegate = true;\n"},
+            "delete": [stale],
+            "commit": False,
+            "push": False,
+        },
+    )
     world.agent_implements(
         "story-467-domain",
         "mechanic",
-        files={
-            "src/lib/delegate.ts": "export const delegate = true;\n",
-            "src/lib/helper.ts": "export const helper = 1;\n",
-        },
-        changed_files=["src/lib/delegate.ts"],
-        summary="forgot to report one file",
+        files={},
+        changed_files=["src/lib/delegate.ts", stale],
+        summary="reported the deletion too",
     )
 
     result = run_flow(world)
 
-    assert result.returncode == 22, result.stdout + result.stderr
-    assert "unreported src/lib/helper.ts" in result.stdout
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert f"unreported {stale}" in result.stdout
+    assert "including deleted and renamed files" in result.stdout
     # with nothing phantom, the message names only the unreported side (#382)
     assert "phantom" not in result.stdout
+    assert "correcting after attempt 1" in result.stdout
+    assert "🔒 #467 (domain) frozen at" in result.stdout
+    state = json.loads((world.home / "runs" / "story-467.json").read_text())
+    sessions = {turn["session"] for turn in state["slices"]["domain"]["turns"]}
+    assert sessions == {"story-467-domain/mechanic"}
 
 
 def test_a_previous_runs_state_file_blocks_a_new_run(world):

@@ -42,7 +42,10 @@ Rules:
 - Check your own work by running only the acceptance test files above;
   never run the full test suite. When they all pass, reply.
 
-Reply with the schema fields: changed_files (every path currently changed
-in the worktree since the driver's commit - the full accumulated diff, not
-only the paths touched in this turn, relative to the repo root) and summary
-(what you did and why).
+Reply with the schema fields: changed_files (every path the working tree
+diff touches relative to this branch's starting commit - added, modified,
+deleted and renamed files, both names of a rename, the full accumulated
+diff rather than only the paths touched in this turn, relative to the repo
+root) and summary (what you did and why). The driver compares that list
+against `git status`, so a path you deleted counts exactly like one you
+wrote.

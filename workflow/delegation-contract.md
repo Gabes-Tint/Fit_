@@ -284,6 +284,13 @@ assertions or as success. No full local CI tier is implied.
 
 The driver determines affected specs, e2e files and mutation lanes from the
 actual diff under the recorded policy, not just the agent's reported files.
+`changed_files` must name every path that diff touches - added, modified,
+deleted and renamed, both names of a rename. Because nothing the driver
+trusts is derived from it, a list that disagrees with the diff is a
+repairable diagnostic naming the unreported and phantom paths, corrected in
+the same session like any other, not a contract failure; a turn that changed
+nothing at all is the same repairable diagnostic. Any real-diff verdict -
+scope, layer boundary, acceptance bytes, gates - takes precedence over it.
 That diff is the complete delta of the branch and worktree against the
 retained failing-test commit, recomputed at every validation: a prohibited
 gate, threshold, suppression-baseline, lockfile or workflow change (#379)
@@ -356,13 +363,13 @@ a passing blip, not a retry/escalation of the turn itself; if the retry
 also fails, the failure reaches this table exactly as before and is
 classified and stopped the same way.
 
-| Precedence and type     | Examples                                                                                                         | Action                                                            |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| 1: `contract`           | Malformed assignment/reply, escaped worktree, changed workflow, weakened acceptance or policy, identity mismatch | Stop immediately; preserve; no retry/escalation.                  |
-| 2: `external`           | Authentication, network, launch, unavailable tool, timeout, crash, missing/invalid runner report                 | Stop immediately; preserve; no retry/escalation.                  |
-| 3: `human`              | Unresolved product intent, prohibited policy change needed, unmet slice dependency                               | Stop; preserve; record required decision; no capacity escalation. |
-| 4: `repairable`         | Actual assertion failure, type/lint diagnostic, valid failing gate verdict caused by implementation              | Same-role correction until attempt 3.                             |
-| 5: `capacity_exhausted` | Three validated repairable failures at this role                                                                 | Escalate one rung, or stop/preserve if solver.                    |
+| Precedence and type     | Examples                                                                                                                         | Action                                                            |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| 1: `contract`           | Malformed assignment/reply, escaped worktree, changed workflow, weakened acceptance or policy, identity mismatch                 | Stop immediately; preserve; no retry/escalation.                  |
+| 2: `external`           | Authentication, network, launch, unavailable tool, timeout, crash, missing/invalid runner report                                 | Stop immediately; preserve; no retry/escalation.                  |
+| 3: `human`              | Unresolved product intent, prohibited policy change needed, unmet slice dependency                                               | Stop; preserve; record required decision; no capacity escalation. |
+| 4: `repairable`         | Actual assertion failure, type/lint diagnostic, valid failing gate verdict caused by implementation, misreported `changed_files` | Same-role correction until attempt 3.                             |
+| 5: `capacity_exhausted` | Three validated repairable failures at this role                                                                                 | Escalate one rung, or stop/preserve if solver.                    |
 
 Coordinated cancellation is a future invariant: it should become a terminal
 stop with reason `cancelled`, stop new turns, terminate and reap owned workers
