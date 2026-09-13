@@ -569,3 +569,119 @@ def test_malformed_reviewer_replies_are_corrected_then_accepted(world):
     assert result.returncode == 0, result.stdout + result.stderr
     assert _aarmy_roles(world).count("reviewer") == 2
     assert _pr(world, 500)["state"] == "MERGED"
+
+
+# --- a red CI the driver can read ------------------------------------------
+
+#: What the "Unit and component coverage" job printed on PR #418, twice: a
+#: per-file coverage threshold naming a repository file.
+_COVERAGE_LOG = (
+    "ERROR: Coverage for lines (0%) does not meet global threshold (80%) for src/lib/delivered.ts"
+)
+
+
+def test_a_red_check_whose_log_names_a_file_gets_a_fix_round_and_goes_green(world):
+    _given_planned_story(world, 1000)
+    _delegate(world, 1000, "domain", mechanic_signals())
+    _implement(
+        world, "story-1000-domain", "mechanic", {"src/lib/delivered.ts": "export const ok = 1;\n"}
+    )
+    world.given_failed_log(_COVERAGE_LOG)
+    world.given_checks(500, ["fail", "pending", "pass"])
+    # the fix turn the diagnostic buys
+    _implement(
+        world, "story-1000-domain", "mechanic", {"src/lib/delivered.ts": "export const ok = 2;\n"}
+    )
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "🩺 CI is red: Quality and security" in result.stdout
+    assert "   │ " + _COVERAGE_LOG in result.stdout
+    assert "CI fix round 1/2 on PR #500: src/lib/delivered.ts" in result.stdout
+    gh_argv = [" ".join(call["argv"][:2]) for call in _gh_calls(world)]
+    # a defect the log located is not a flake: no rerun was spent on it
+    assert gh_argv.count("run rerun") == 0
+    assert gh_argv.count("run view") == 1
+    assert _pr(world, 500)["state"] == "MERGED"
+    record = json.loads((world.home / "runs" / "story-1000.json").read_text())
+    assert record["delivery"]["ci_fix_rounds"] == 1
+    assert any(turn["kind"] == "review_fix" for turn in record["slices"]["domain"]["turns"])
+
+
+def test_a_red_check_still_red_after_two_fix_rounds_stops_with_the_diagnostic(world):
+    _given_planned_story(world, 1000)
+    _delegate(world, 1000, "domain", mechanic_signals())
+    _implement(
+        world, "story-1000-domain", "mechanic", {"src/lib/delivered.ts": "export const ok = 1;\n"}
+    )
+    world.given_failed_log(_COVERAGE_LOG)
+    world.given_checks(500, ["fail", "pending", "fail", "pending", "fail"])
+    for constant in ("2", "3"):
+        _implement(
+            world,
+            "story-1000-domain",
+            "mechanic",
+            {"src/lib/delivered.ts": f"export const ok = {constant};\n"},
+        )
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 28, result.stdout + result.stderr
+    assert "CI fix round 1/2" in result.stdout
+    assert "CI fix round 2/2" in result.stdout
+    assert "after 2 CI fix round(s)" in result.stdout
+    assert _COVERAGE_LOG in result.stdout
+    assert "blocked" in world.issue(1000)["labels"]
+    gh_argv = [" ".join(call["argv"][:2]) for call in _gh_calls(world)]
+    assert "pr merge" not in gh_argv
+    record = json.loads((world.home / "runs" / "story-1000.json").read_text())
+    assert record["delivery"]["ci_fix_rounds"] == 2
+
+
+def test_a_red_check_whose_log_names_no_repository_file_gets_the_one_rerun(world):
+    """An artifact upload 403 or a lost runner blames nothing this run can
+    fix; that is still the flake's case, and it still gets exactly one
+    rerun."""
+    _given_planned_story(world, 1000)
+    _delegate(world, 1000, "domain", mechanic_signals())
+    _implement(
+        world, "story-1000-domain", "mechanic", {"src/lib/delivered.ts": "export const ok = 1;\n"}
+    )
+    world.given_failed_log(
+        "##[error]Failed to finalize the artifact upload: 403 Forbidden (quota exceeded)"
+    )
+    world.given_checks(500, ["fail", "pending", "pass"])
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "CI fix round" not in result.stdout
+    gh_argv = [" ".join(call["argv"][:2]) for call in _gh_calls(world)]
+    assert gh_argv.count("run rerun") == 1
+    assert _pr(world, 500)["state"] == "MERGED"
+
+
+def test_a_red_check_that_blames_only_an_acceptance_test_stops_naming_block_1(world):
+    """#397 itself: the file CI blames is the retained acceptance test,
+    whose bytes no implementation turn may change. There is no fix turn that
+    could repair it, so the run says so instead of spending one."""
+    test_file = _given_planned_story(world, 1000)
+    _delegate(world, 1000, "domain", mechanic_signals())
+    _implement(
+        world, "story-1000-domain", "mechanic", {"src/lib/delivered.ts": "export const ok = 1;\n"}
+    )
+    world.given_failed_log(
+        f"ERROR: Coverage for lines (0%) does not meet global threshold (80%) for {test_file}"
+    )
+    world.given_checks(500, "fail")
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 31, result.stdout + result.stderr
+    assert "every file it blames is a retained acceptance test" in result.stdout
+    assert test_file in result.stdout
+    assert "repair the test in block 1" in result.stdout
+    gh_argv = [" ".join(call["argv"][:2]) for call in _gh_calls(world)]
+    assert gh_argv.count("run rerun") == 0
+    assert "pr merge" not in gh_argv

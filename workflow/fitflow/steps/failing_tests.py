@@ -8,7 +8,7 @@ session/worktree. The full independent validation runs after every turn.
 
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from fitflow import (
     acceptance,
@@ -162,6 +162,7 @@ def _verify_pushed(prepared: PreparedSlice, test_files: list[str]) -> None:
     _check_reported_files_are_on_branch(slug, test_files, changed, story_number)
     _check_every_changed_file_is_a_test(slug, piece.layer, changed, story_number)
     _check_files_match_test_kind(slug, changed, test_files, piece.test_kind, story_number)
+    _check_test_files_are_where_they_belong(slug, piece.layer, changed, story_number)
     _check_test_quality(slug, path, test_files, story_number)
     _check_failing_branch_gates(piece, path, changed)
     narrate.line(
@@ -173,7 +174,7 @@ def _verify_pushed(prepared: PreparedSlice, test_files: list[str]) -> None:
 def _branch_gate_summary(layer: str, changed: list[str]) -> str:
     if layer == "workflow":
         return " · ".join(f"{name} ✔" for name in gates.workflow_gate_names(changed))
-    return "lint ✔ · types ✔ · " + ", ".join(gates.FAILING_BRANCH_STEPS) + " ✔"
+    return "placed right ✔ · lint ✔ · types ✔ · " + ", ".join(gates.FAILING_BRANCH_STEPS) + " ✔"
 
 
 def _check_failing_branch_gates(piece: Slice, path, changed: list[str]) -> None:
@@ -303,6 +304,67 @@ def _check_files_match_test_kind(
             "and the runner collects no test from it",
             story_number,
         )
+
+
+#: Where each kind of acceptance test must live, and why.
+#:
+#: `playwright.config.ts` sets no `testDir` - its `testMatch` is
+#: `**/*.e2e.{ts,js}` from the repository root - so playwright itself accepts
+#: an `*.e2e.ts` anywhere. The binding constraint is the coverage lane:
+#: `test:coverage:client` in package.json includes `src/lib/**/*.{ts,svelte}`
+#: as source and excludes only `src/**/*.{test,spec}.{js,ts}`, so an
+#: `*.e2e.ts` under `src/lib/` is counted as a source file that no unit test
+#: ever loads - 0% lines against a per-file threshold of 80%. Every
+#: `*.e2e.ts` in the repository lives under `src/routes/`, and that is the
+#: rule. #397's UI slice put one in `src/lib/components/`, block 3's
+#: `verify:changed` never ran coverage, and CI failed deterministically on
+#: the pull request where nobody could repair the file any more.
+_E2E_DIR = "src/routes/"
+
+#: A vitest spec is named after the module it covers and sits beside it, so
+#: it lives under `src/` like that module. `src/lib/foo.ts` ->
+#: `src/lib/foo.spec.ts`, a component -> `foo.svelte.spec.ts`.
+_SPEC_DIR = "src/"
+
+
+def _check_test_files_are_where_they_belong(
+    slug: str, layer: str, changed: list[str], story_number: int
+) -> None:
+    """Placement, not naming: a test in the wrong folder can pass every gate
+    block 1 runs and still fail CI on the pull request.
+
+    Both rules read the repository's TypeScript layout - the coverage lane's
+    view of `src/` - so a workflow slice is exempt: its own placement rule is
+    enforced above, where `workflow/tests/**` is the only tree it may change
+    and only a `test_*.py` inside it may be reported as an acceptance test."""
+    if layer == "workflow":
+        return
+    for changed_file in changed:
+        expected = _misplaced(changed_file)
+        if expected is not None:
+            raise FlowFailure(
+                Outcome.TESTS_INVALID,
+                f"{changed_file} is in the wrong folder on {slug}: {expected}",
+                story_number,
+            )
+
+
+def _misplaced(changed_file: str) -> str | None:
+    """Why this test file's folder is wrong, or None when it belongs."""
+    if changed_file.endswith(".e2e.ts"):
+        if changed_file.startswith(_E2E_DIR):
+            return None
+        return (
+            f"a playwright acceptance test must live under {_E2E_DIR} - the coverage "
+            f"lane counts an .e2e.ts anywhere else under src/ as uncovered source; "
+            f"move it to {_E2E_DIR}{PurePosixPath(changed_file).name}"
+        )
+    if not changed_file.startswith(_SPEC_DIR):
+        return (
+            f"a vitest spec must sit next to the module it covers, under {_SPEC_DIR} "
+            "(foo.ts -> foo.spec.ts, a component -> foo.svelte.spec.ts)"
+        )
+    return None
 
 
 def _verify_tests_fail(path, test_files: list[str], story_number: int) -> None:

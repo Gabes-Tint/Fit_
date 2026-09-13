@@ -74,6 +74,27 @@ Consequently the mechanic must write assertions that lint clean both before
 and after the behavior exists (for a missing module: dynamic import through
 the promise chain with `unknown`-typed binding, not suppression).
 
+## Where an acceptance test lives
+
+Placement is checked in block 1, before the bytes become immutable. A
+playwright acceptance test (`*.e2e.ts`) must live under `src/routes/`, where
+every one in the repository already does; a vitest spec sits beside the
+module it covers, under `src/`. A file in the wrong folder is a repairable
+diagnostic naming the file and the folder it belongs in, exactly like the
+wrong-test-kind check beside it.
+
+The rule comes from the coverage lane, not from playwright:
+`playwright.config.ts` sets no `testDir`, so it would run an `*.e2e.ts`
+anywhere, while `test:coverage:client` includes `src/lib/**/*.{ts,svelte}`
+as source and excludes only `*.spec.ts`/`*.test.ts`. An `*.e2e.ts` under
+`src/lib/` is therefore a source file no unit test ever loads: 0% lines
+against a per-file threshold of 80%. Block 3's `verify:changed` does not run
+coverage, so nothing saw it until CI, on a pull request where nobody could
+change the file any more (#397).
+
+The rule reads the repository's TypeScript layout, so it is a product
+rule: a `workflow` slice's Python tests are placed by their own rule, below.
+
 ## The workflow layer
 
 A story about this flow's own driver is a slice like any other, at the third
@@ -637,10 +658,44 @@ The driver never trusts the PR's own state: it runs `gh pr checks` itself
 and reads the parsed check list. The required check `all-green` must be
 present and successful, and no check may have failed. A missing,
 unparsable or pending-past-timeout check state is an external tool failure,
-never green. On red, the driver reruns the failed checks exactly once
-(`gh run list` + `gh run rerun --failed`, the count persisted in the run
-record) and polls again; a second red stops the run with
-`CAPACITY_EXHAUSTED` and `blocked` - "then investigate" is a human act.
+never green.
+
+A red check is judged from its own log before it is retried. The driver
+reads the failed jobs' log (`gh run view <run-id> --log-failed`), keeps the
+lines that carry an error marker and the repository paths those lines name,
+and narrates them under a `🩺` head. What happens next depends only on
+what it could read:
+
+- **Located, and a slice of this run owns the file.** The culprits become
+  findings (category `ci`, the blaming log lines as `required_fix`) and the
+  owning slices each take a CI fix turn through the same machinery a review
+  fix uses: the same role, session and worktree, the full block 3
+  re-validation - acceptance still passes unmodified, scope, no gate files
+  - a new driver-made freeze commit, the join re-merged and pushed. At most
+    two such rounds, counted in `delivery.ci_fix_rounds`, a budget of its own
+    that neither the review rounds nor the one counted rerun touch - a
+    resumed run whose rerun is already spent still gets its fix rounds. Still
+    red after both: `CAPACITY_EXHAUSTED` and `blocked`, with the diagnostic
+    in the message.
+- **Located, but every file it blames is a retained acceptance test.**
+  There is no fix turn that could repair it: those bytes are immutable to
+  every implementation turn, and moving the file is not a fix turn's work
+  either - the retained `test_files` list is what the acceptance run, the
+  immutability check and the freeze all read, and a turn that renamed a
+  test would leave that list naming a path none of them can find. The run
+  stops with `TESTS_INVALID` and `blocked`, naming the test and block 1,
+  which is the only place it can still be repaired.
+- **Not located** - no repository path in the log at all (an artifact
+  upload 403, a lost runner), or only paths no slice of this run owns.
+  Nothing may be concluded from a log the driver could not read, so this is
+  the flake's case: the failed checks are rerun exactly once (`gh run list`
+  - `gh run rerun --failed`, the count persisted in the run record) and the
+    driver polls again; a second red stops the run with `CAPACITY_EXHAUSTED`
+    and `blocked` - "then investigate" is a human act.
+
+A rerun and a pushed fix are both slow to register, so after either the
+driver waits for each failed check to leave its failed state before judging
+again: a stale red is not a second failure.
 
 The merge is withheld for one diff: after CI is green and before the merge
 command, the driver reads the PR's own diff against main, and a path under
