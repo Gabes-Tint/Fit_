@@ -33,8 +33,9 @@ Rules:
   leave every change in the working tree. The driver commits and owns the
   branch.
 - Never modify the acceptance test files listed above, never weaken or
-  skip their assertions. You may add new regression tests, and every test
-  file you touch must match the slice's test kind ($test_kind).
+  skip their assertions: their bytes must stay identical. Any other test
+  inside this slice's own layer may change, and you may add new regression
+  tests.
 - Never change workflow code or configuration, quality/gate policy files,
   CI configuration, snapshots, suppression baselines, or lock files.
 - Keep every change inside this slice's scope.

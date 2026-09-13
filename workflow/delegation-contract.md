@@ -34,9 +34,21 @@ agent configuration and gate policy cannot be changed during this run.
 
 Before the failing-test commit is accepted, the driver validates it as what
 it will become: an immutable input. It runs the repository's change-scoped
-lint over the branch (`bun run lint:changed`); a lint failure returns a
-precise, repairable diagnostic (outcome `TESTS_INVALID`, exit 31) to the
-same mechanic retry loop and never reaches implementation. It also rejects
+lint over the branch (`bun run lint:changed`) and the repository's type lane
+(`bun run check`); either failure returns a precise, repairable diagnostic
+(outcome `TESTS_INVALID`, exit 31) to the same mechanic retry loop and never
+reaches implementation.
+
+Failing is also not enough on its own: the driver reads each failed test's
+error message out of the runner's JSON report and requires it to be a failed
+expectation. A test that throws - a helper called with an argument of the
+wrong type (#399), a name that does not exist, a syntax error - can never
+pass however the behavior is implemented, so it is rejected as
+`TESTS_INVALID` with the file, the test title and the runner's own message
+in the diagnostic. A module or export that cannot be resolved is not a
+throw of that kind: the dynamic import of a module that does not exist yet
+is the sanctioned pattern below, and its rejection is exactly the missing
+behavior. It also rejects
 lint suppression directives (`eslint-disable`, `eslint-enable`,
 `@ts-ignore`, `@ts-expect-error`) inside acceptance tests outright: a
 directive that is only satisfied before the implementation exists, such as
@@ -253,7 +265,18 @@ After every turn, the driver independently checks the returned structure,
 actual diff scope and branch identity, acceptance behavior, and the applicable
 foreground pre-push checks in `QUALITY.md`. Acceptance tests retained from
 block 1 must execute and pass; removing, skipping, weakening or replacing their
-assertions is a contract failure. New regression tests may be added. Gate
+assertions is a contract failure. New regression tests may be added, and any
+other test inside the slice's own layer may change.
+
+A still-failing acceptance test is a repairable diagnostic that names every
+failed test's title and error message, so the worker learns what to fix
+rather than only that something failed. When such a failure is a throw
+raised inside the acceptance test itself or a test helper, the test is
+defective and no implementation can satisfy it: the run stops with
+`TESTS_INVALID` attributed to block 1, labelled `blocked`, without
+consuming a correction or spending the escalation ladder, and the story
+needs a fresh run once the test is repaired. A throw raised inside product
+code is an ordinary implementation bug and stays with the correction loop. Gate
 reports must belong to this turn's actual content and requested commands,
 contain every required result and valid artifacts, and have passing exits.
 Missing reports, runner crashes or stale reports cannot be treated as failed
