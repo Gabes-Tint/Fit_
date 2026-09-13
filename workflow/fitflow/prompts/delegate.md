@@ -75,6 +75,23 @@ stops the run; it never silently picks a rung.
 The driver, not you, chooses the rung from these signals and owns all
 transitions afterward.
 
+## Dependent slices
+
+A UI slice that renders what the domain slice supplies is the ordinary
+shape of a two-layer story, and `needs_sibling: true` on the `ui` slice is
+accepted: the driver runs the domain slice first, merges its frozen commit
+into the UI branch, and only then launches the UI implementation, which
+therefore works on a tree where the domain behavior exists. Answer it
+truthfully - a UI slice whose acceptance tests need the domain behavior is
+not independent, and saying otherwise only sends its implementer after a
+test that cannot pass.
+
+The reverse is never accepted: a `domain` slice must never depend on the UI
+slice, because the domain slice is implemented and validated first. Nor may
+both slices depend on each other - neither could run first - and the only
+slice of a one-slice story has no sibling to depend on. The driver rejects
+all three and the run stops.
+
 ## The slices
 
 $slices

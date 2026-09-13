@@ -173,11 +173,45 @@ def _validate_reply(reply: dict, slices: list, story_number: int) -> list[dict]:
         or len(raw) != len(layers)
     ):
         raise _reject(story_number, f"slices must be exactly one proposal per layer {layers}")
+    _validate_dependencies(raw, layers, story_number)
     by_layer = {piece.layer: piece for piece in slices}
     return [
         _validate_proposal(entry, story_number, len(by_layer[entry["layer"]].acceptance))
         for entry in raw
     ]
+
+
+def _validate_dependencies(raw: list[dict], layers: list[str], story_number: int) -> None:
+    """Who may depend on whom. A UI slice that renders what its domain
+    sibling supplies is the ordinary shape of a two-layer story: the driver
+    runs it after the domain slice, on a merge of that slice's frozen
+    commit, instead of rejecting the plan. Everything else is still a
+    rejection - the reverse dependency, a one-slice story with no sibling
+    to wait for, and a circular pair."""
+    dependent = sorted(
+        entry["layer"] for entry in raw if isinstance(entry, dict) and entry.get("needs_sibling")
+    )
+    if not dependent:
+        return
+    if len(layers) == 1:
+        raise _reject(
+            story_number,
+            f"{dependent[0]} is the only slice of this story and has no sibling to "
+            "depend on; it must be implemented and validated on its own",
+        )
+    if len(dependent) > 1:
+        raise _reject(
+            story_number,
+            "every slice depends on its sibling, so neither can ever run first; "
+            "replan the story (a revised plan needs a new run)",
+        )
+    if dependent[0] != "ui":
+        raise _reject(
+            story_number,
+            "a domain slice must never depend on the UI slice: the domain slice is "
+            "implemented and validated first and the UI slice runs on top of it; "
+            "replan the story (a revised plan needs a new run)",
+        )
 
 
 def _validate_proposal(entry: dict, story_number: int, acceptance_count: int) -> dict:
@@ -198,12 +232,6 @@ def _validate_proposal(entry: dict, story_number: int, acceptance_count: int) ->
             f"unresolved signals for {entry['layer']}: "
             f"{', '.join(entry['unresolved'])} - no role can be chosen from "
             "incomplete input",
-        )
-    if entry["needs_sibling"]:
-        raise _reject(
-            story_number,
-            f"{entry['layer']} cannot be implemented and validated independently "
-            "of its sibling slice; replan the story (a revised plan needs a new run)",
         )
     try:
         signals = selection.validate_signals(entry["signals"], f"{entry['layer']} signals")
@@ -279,10 +307,25 @@ def _decide(record: RunRecord, story, proposals: list[dict]) -> None:
         piece.role = decision.role
         piece.revision = 0
         piece.attempts = 0
+        piece.depends_on = _dependency(record, proposal)
         piece.move("assigned")
         piece.assignments.append(envelope)
         narrate.line(f"🎯 #{piece.number} ({piece.layer}) → {decision.role} · {decision.reason}")
+        if piece.depends_on:
+            narrate.line(
+                f"⛓️ #{piece.number} ({piece.layer}) depends on the "
+                f"{piece.depends_on} slice and runs after it"
+            )
     record.save()
+
+
+def _dependency(record: RunRecord, proposal: dict) -> str:
+    """The sibling this slice waits for. Only the accepted shape survives
+    `_validate_dependencies`: the UI slice of a two-slice story waiting for
+    its domain sibling."""
+    if proposal["needs_sibling"] and proposal["layer"] == "ui" and "domain" in record.slices:
+        return "domain"
+    return ""
 
 
 def _launch_barrier(record: RunRecord) -> None:

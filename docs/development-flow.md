@@ -72,7 +72,7 @@ flowchart TD
         builder["builder · intermediate capability<br/>specified slice, known files/area,<br/>existing tests and known pattern"]
         solver["solver · advanced capability<br/>uncertain problem or obscure cause,<br/>sensitive auth or state/store work"]
         assignment["Driver-built assignment per slice:<br/>role + agents.yaml config + signals,<br/>evidence and reason, then the<br/>pre-launch barrier for all slices"]
-        launch["Pre-launch barrier for all assignments<br/>block 1 complete, valid inputs/configuration<br/>exclusive ownership and independent slices"]
+        launch["Pre-launch barrier for all assignments<br/>block 1 complete, valid inputs/configuration<br/>exclusive ownership; slices independent,<br/>or the UI slice declared dependent on domain"]
         planned --> signals --> size
         size --> mechanic --> assignment
         size --> builder --> assignment
@@ -91,11 +91,17 @@ flowchart TD
         escalate["Escalate exactly one level<br/>mechanic → builder → solver"]
         preserve["Stop; preserve worktree<br/>solver exhausted or infra/auth/<br/>network/tool failure"]
         freeze["Freeze approved slice<br/>while sibling corrects or escalates"]
+        dependent{"UI slice declared<br/>dependent on domain?"}
+        bring_in["Driver merges the frozen domain commit<br/>into the UI branch and pushes it<br/>UI acceptance must still fail"]
         delivery_barrier{"Join all settled slices<br/>all succeeded and frozen commits unchanged?"}
         implemented["Block 3 end — implemented<br/>local driver-owned commits frozen<br/>story remains in-progress"]
         push["git push, gh pr create<br/>body ends Closes #N"]
-        launch -- "one loop per slice; parallel when split" --> before_turn --> implement --> turn_gate --> result
+        launch --> dependent
+        dependent -- "no: independent slices" --> before_turn
+        dependent -- "yes: domain first, then UI" --> before_turn
+        before_turn --> implement --> turn_gate --> result
         result -- approved --> freeze --> delivery_barrier
+        freeze -- "domain frozen, UI waits for it" --> bring_in --> before_turn
         result -- repairable --> attempts
         result -- "external/contract/human failure" --> preserve --> delivery_barrier
         attempts -- yes --> correct --> before_turn
@@ -221,10 +227,18 @@ flowchart TD
   5xx, a network blip, an empty-message backend error) already got one
   transparent retry before reaching this policy. This is separate from
   block 1's loop for producing failing acceptance tests.
-- Each slice selects its role independently. Domain and UI implementation and
-  gates may run in parallel in their existing worktrees. An approved slice is
-  frozen while its sibling repairs or escalates; the single join/barrier is at
-  the end of block 3, before delivery or PR creation, not inside Delegate.
+- Each slice selects its role independently. Two independent slices run their
+  domain and UI implementation and gates in parallel in their existing
+  worktrees. A UI slice normally renders what its domain sibling supplies, so
+  its acceptance tests cannot pass before that implementation exists; the
+  planner declares that with `needs_sibling`, block 2 accepts it on the UI
+  slice, and block 3 then runs domain first, then UI on a driver-made merge of
+  the frozen domain commit - pushed, and re-checked so the UI acceptance tests
+  still fail on the merged tree. The dependency never runs the other way, and
+  a domain slice that never freezes leaves the UI slice unlaunched. An
+  approved slice is frozen while its sibling repairs or escalates; the single
+  join/barrier is at the end of block 3, before delivery or PR creation, not
+  inside Delegate.
 - In the implemented path, the driver—not an agent—fetches GitHub issue
   evidence and deterministically normalizes it. Ordinary issues go straight
   from the complete normalized context to the planner; no summarizer runs

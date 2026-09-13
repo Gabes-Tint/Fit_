@@ -28,8 +28,10 @@ check itself, calling agents only at the judgment boxes ("whose call?",
 "spans domain and UI?") and to write the failing tests. Block 2 asks the
 planner to extract each slice's nine capability signals with evidence, then
 the driver itself decides the rung (mechanic, builder or solver) from the
-precedence table. Block 3 runs one bounded implementation loop per slice in
-parallel; after every turn the driver independently validates scope, branch
+precedence table. Block 3 runs one bounded implementation loop per slice -
+in parallel when the two slices are independent, and domain first then UI
+when the UI slice depends on its domain sibling; after every turn the driver
+independently validates scope, branch
 identity and acceptance behavior and then runs the repository's own
 diff-sized pre-push gate (`bun run verify:changed`) in the slice worktree,
 whose plan derives the affected specs, e2e files and mutation lanes from the
@@ -72,6 +74,17 @@ concurrently, each in its already-created isolated worktree/team. The driver
 waits for every mechanic and validation to settle, reports failures in slice
 order, and advances only if every slice succeeds. A successful sibling remains
 available for recovery when another slice fails.
+
+A UI slice usually renders what its domain sibling supplies, so its acceptance
+tests cannot pass before that implementation exists. The planner says so with
+`needs_sibling`, and for the UI slice of a two-slice story the driver accepts
+it instead of rejecting the plan: block 3 runs the domain loop first, then
+merges the frozen domain commit into the UI branch itself, pushes it, checks
+that the UI acceptance tests still fail on the merged tree, and only then
+launches the UI loop. The dependency never runs the other way - a domain slice
+that depends on the UI slice, a circular pair, and a one-slice story that
+claims a sibling are all rejected plans - and a domain slice that never freezes
+leaves the UI slice unlaunched.
 
 Each slice has one initial mechanic turn plus at most two corrective turns—three
 total. Corrections reuse the same mechanic identity, AI Army team/session,
@@ -290,6 +303,19 @@ The run narrates itself as it goes, and saves the same text to
 🔒 #1000 (domain) frozen at 485e7af…
 ⏳ Implementation barrier: all 2 slices settled
 🏁 Implemented #140 → #1000 domain (mechanic, 485e7af…) · next: block 4, review
+```
+
+When the UI slice depends on the domain slice, the two loops are ordered
+instead of parallel and the driver's own merge sits between them:
+
+```text
+⛓️ #1001 (ui) depends on the domain slice and runs after it
+⛓️ #1001 (ui) waits for #1000 (domain)
+🔒 #1000 (domain) frozen at 485e7af…
+⛓️ Bringing #1000 (domain) 485e7af… into #1001 (ui)
+⇪ Pushed story-1001-ui at 9c4d1b0…
+🧪 src/routes/rows.e2e.ts → still failed on the merged tree, as it should ✔
+🔧 Mechanic #1001 (ui) attempt 1/3
 ```
 
 `🛑` marks a planned stop (for example, the call is Gabriel's or the slice
