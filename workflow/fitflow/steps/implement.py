@@ -8,10 +8,16 @@ same issue, team, branch, worktree and accumulated implementation. An
 exhausted solver stops the run and preserves everything. External and
 contract failures stop immediately without consuming a correction.
 
-Two slices run their loops in parallel; a succeeded slice is frozen -
-committed by the driver, never rerun while its sibling corrects or
+Two independent slices run their loops in parallel; a succeeded slice is
+frozen - committed by the driver, never rerun while its sibling corrects or
 escalates - and the join releases only when every slice is succeeded with
 its frozen commit unchanged.
+
+A UI slice that depends on its domain sibling (block 2's `depends_on`) is
+not independent and does not run beside it: the domain loop runs first, the
+driver then merges the frozen domain commit into the UI branch and pushes
+it, and only then does the UI loop launch. If the domain slice never
+freezes, the UI slice is never launched at all.
 """
 
 from concurrent.futures import ThreadPoolExecutor
@@ -91,10 +97,22 @@ def _run_block3(record: RunRecord) -> None:
 
 
 def _run_loops(record: RunRecord, pieces: list[SliceRecord]) -> None:
+    """The slices still to run. A dependent UI slice makes this sequential;
+    two independent ones run in parallel.
+
+    This is also where a resumed run reconciles the dependency rather than
+    steps/resume.py: `_bring_in_sibling` is the same step in both cases and
+    it is idempotent, so a UI slice whose domain sibling is already frozen
+    goes through it here whether its merge was made by this run or by the
+    one that stopped."""
+    if not pieces:
+        return
+    dependent = _dependent_ui(record, pieces)
+    if dependent is not None:
+        _run_dependent_loops(record, pieces, dependent)
+        return
     if len(pieces) == 1:
         _run_slice(record, pieces[0])
-        return
-    if not pieces:
         return
     narrate.line(f"⚡ Starting {len(pieces)} implementation loops in parallel")
     failures = _run_parallel(record, pieces)
@@ -103,6 +121,115 @@ def _run_loops(record: RunRecord, pieces: list[SliceRecord]) -> None:
         for piece, failure in failures:
             narrate.line(f"❌ #{piece.number} ({piece.layer}): {_describe(failure)}")
         raise failures[0][1]
+
+
+def _dependent_ui(record: RunRecord, pieces: list[SliceRecord]) -> SliceRecord | None:
+    """The UI slice waiting for its domain sibling, when it is one of the
+    slices still to run."""
+    for piece in pieces:
+        if piece.depends_on == "domain" and "domain" in record.slices:
+            return piece
+    return None
+
+
+def _run_dependent_loops(
+    record: RunRecord, pieces: list[SliceRecord], ui_piece: SliceRecord
+) -> None:
+    """Domain first, then the UI loop on a driver-made merge of the frozen
+    domain commit. A domain slice that never freezes stops the run here and
+    the UI slice is never launched: it keeps the state block 2 left it in."""
+    domain = record.slices["domain"]
+    narrate.line(f"⛓️ #{ui_piece.number} (ui) waits for #{domain.number} (domain)")
+    if domain in pieces:
+        try:
+            _run_slice(record, domain)
+        except Exception as error:
+            narrate.line(f"❌ #{domain.number} (domain): {_describe(error)}")
+            narrate.line(
+                f"⛓️ #{ui_piece.number} (ui) not launched: waits for #{domain.number} (domain)"
+            )
+            raise
+    _bring_in_sibling(record, ui_piece, domain)
+    _run_slice(record, ui_piece)
+
+
+def _bring_in_sibling(record: RunRecord, piece: SliceRecord, sibling: SliceRecord) -> None:
+    """The driver-controlled step between the two loops: merge the sibling's
+    frozen commit into this slice's branch and push it, so the implementer
+    works on a tree where the behavior it renders actually exists.
+
+    `failing_sha` becomes that merge commit - it is the base every later
+    check compares HEAD, origin and the diff against - while `tests_sha`
+    keeps naming block 1's commit, which is what acceptance immutability
+    means. Already merged (a resumed run) is a no-op."""
+    path = worktrees.slice_worktree_path(piece.slug)
+    if piece.sibling_merged:
+        _verify_sibling_merged(record, piece, path)
+        return
+    narrate.line(
+        f"⛓️ Bringing #{sibling.number} ({sibling.layer}) {sibling.frozen_commit[:12]} "
+        f"into #{piece.number} ({piece.layer})"
+    )
+    try:
+        worktrees.merge_sibling(
+            path,
+            sibling.frozen_commit,
+            f"chore: bring in the {sibling.layer} slice for #{piece.number}",
+        )
+    except Exception as error:
+        worktrees.abort_merge(path)
+        raise FlowFailure(
+            Outcome.PLAN_REJECTED,
+            f"{piece.slug}: merging the frozen {sibling.layer} slice "
+            f"{sibling.frozen_commit[:12]} into it conflicts, so the two slices are not "
+            f"the layered pair the plan claimed; a revised plan in a new run is required "
+            f"({_describe(error)})",
+            record.story_number,
+            add_blocked=True,
+        ) from error
+    merged = worktrees.local_head(path)
+    worktrees.push_branch(path, piece.branch)
+    with record.transition():
+        piece.failing_sha = merged
+        piece.sibling_merged = sibling.frozen_commit
+        record.save()
+    narrate.line(f"⇪ Pushed {piece.branch} at {merged[:12]}")
+    _require_acceptance_still_fails(record, piece, path)
+
+
+def _verify_sibling_merged(record: RunRecord, piece: SliceRecord, path) -> None:
+    if not worktrees.is_ancestor(path, piece.sibling_merged):
+        raise _contract(
+            record,
+            piece,
+            f"the retained merge of the {piece.depends_on} slice "
+            f"{piece.sibling_merged[:12]} is no longer in this branch's history",
+        )
+    narrate.line(
+        f"⛓️ #{piece.number} ({piece.layer}) already carries the {piece.depends_on} slice "
+        f"at {piece.sibling_merged[:12]}"
+    )
+
+
+def _require_acceptance_still_fails(record: RunRecord, piece: SliceRecord, path) -> None:
+    """Block 1's verdict, re-taken on the merged tree: these tests must
+    still fail, or there is nothing left for this slice to implement."""
+    verdict = acceptance.run_and_check_failing(path, piece.test_files)
+    if verdict.ok:
+        narrate.line(
+            f"🧪 {', '.join(piece.test_files)} → still failed on the merged tree, as it should ✔"
+        )
+        return
+    if not verdict.repairable:
+        raise FlowFailure(Outcome.TOOL_FAILED, verdict.why, record.story_number, add_blocked=True)
+    raise FlowFailure(
+        Outcome.TESTS_DO_NOT_FAIL,
+        f"{piece.slug}: the {piece.depends_on} slice alone satisfies the "
+        f"{piece.layer} acceptance tests, so this slice has nothing left to "
+        f"implement ({verdict.why}); a revised plan in a new run is required",
+        record.story_number,
+        add_blocked=True,
+    )
 
 
 def _report_gate(story, record: RunRecord, stage: str) -> None:
@@ -605,7 +732,7 @@ def _check_acceptance_unchanged(
     for test_file in piece.test_files:
         if test_file not in changed:
             continue
-        recorded = worktrees.content_at(path, piece.failing_sha, test_file)
+        recorded = worktrees.content_at(path, piece.acceptance_sha, test_file)
         if recorded is None:
             raise _contract(
                 record, piece, f"acceptance test {test_file} missing at the recorded commit"

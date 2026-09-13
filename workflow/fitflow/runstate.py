@@ -174,6 +174,16 @@ class SliceRecord:
     test_kind: str
     test_files: list[str]
     failing_sha: str
+    # Block 1's failing-test commit, which never moves. `failing_sha` is the
+    # base the driver's later checks compare against, and it does move: when
+    # a UI slice depends on its domain sibling, block 3 merges the frozen
+    # domain commit into the UI branch and `failing_sha` becomes that merge.
+    tests_sha: str = ""
+    # "domain" on a UI slice the planner judged cannot be implemented and
+    # validated before its domain sibling exists; "" for an independent one.
+    depends_on: str = ""
+    # the sibling's frozen commit this slice's branch already carries
+    sibling_merged: str = ""
     role: str = ""
     revision: int = 0
     attempts: int = 0
@@ -183,6 +193,14 @@ class SliceRecord:
     turns: list[dict] = field(default_factory=list)
     frozen_commit: str = ""
     implementation_sha: str = ""
+
+    @property
+    def acceptance_sha(self) -> str:
+        """The commit whose acceptance-test bytes are immutable: the tests
+        exactly as block 1 wrote them. `failing_sha` moves when the driver
+        merges a domain sibling into a dependent UI branch; this does not.
+        A record written before the field existed falls back to it."""
+        return self.tests_sha or self.failing_sha
 
     def turn_identity(self, role: str, revision: int, attempt: int) -> dict:
         return {"layer": self.layer, "role": role, "revision": revision, "attempt": attempt}
@@ -422,6 +440,7 @@ def begin_run(story_number: int, base_sha: str, roster: dict, slices: list) -> R
                 test_kind=piece.test_kind,
                 test_files=list(piece.test_files),
                 failing_sha=piece.commit,
+                tests_sha=piece.commit,
             )
             for piece in slices
         },

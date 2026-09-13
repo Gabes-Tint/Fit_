@@ -239,6 +239,14 @@ def merge_commit(worktree: Path, sha: str) -> None:
     _run_checked(["git", "merge", "--no-edit", sha], cwd=worktree)
 
 
+def merge_sibling(worktree: Path, sha: str, message: str) -> None:
+    """Merge a sibling slice's frozen commit into this slice's own branch,
+    always as an explicit merge commit the driver owns and names: the UI
+    slice implements on top of the domain slice it depends on. A conflict
+    raises; the caller aborts and classifies."""
+    _run_checked(["git", "merge", "--no-ff", "-m", message, sha], cwd=worktree)
+
+
 def abort_merge(worktree: Path) -> None:
     subprocess.run(["git", "merge", "--abort"], cwd=worktree, capture_output=True, text=True)
 
