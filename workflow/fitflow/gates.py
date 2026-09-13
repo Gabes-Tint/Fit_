@@ -448,9 +448,6 @@ _CSPELL_ISSUE = re.compile(r"^([\w./@+-]+):\d+:\d+ - ")
 #: the files the turn actually changed, the way `lint:changed` does.
 _MARKDOWN_ROOTS = ("workflow/", "docs/")
 
-#: The gate names the narration and the docs use, in the order they run.
-WORKFLOW_GATES = ("ruff check", "ruff format", "prettier", "cspell")
-
 
 def run_workflow_gates(
     worktree: Path, story_number: int, changed: list[str]
@@ -467,6 +464,13 @@ def run_workflow_gates(
             return failure
         narrate_gates(0, label)
     return None
+
+
+def workflow_gate_names(changed: list[str]) -> tuple[str, ...]:
+    """The gates a workflow turn actually runs, in order. The markdown pair
+    is scoped to the files the turn changed, so it is absent from a turn
+    that changed no prose - and the narration must not claim it ran."""
+    return tuple(label for label, _argv, _patterns in _workflow_steps(changed))
 
 
 def changed_markdown(changed: list[str]) -> list[str]:

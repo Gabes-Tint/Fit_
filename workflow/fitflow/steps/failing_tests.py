@@ -166,14 +166,14 @@ def _verify_pushed(prepared: PreparedSlice, test_files: list[str]) -> None:
     _check_failing_branch_gates(piece, path, changed)
     narrate.line(
         f"🔍 Verify #{story_number}: tree clean ✔ · pushed ✔ · files on branch ✔ · "
-        "only tests ✔ · " + ", ".join(_branch_gate_names(piece.layer)) + " ✔"
+        "only tests ✔ · " + _branch_gate_summary(piece.layer, changed)
     )
 
 
-def _branch_gate_names(layer: str) -> tuple[str, ...]:
+def _branch_gate_summary(layer: str, changed: list[str]) -> str:
     if layer == "workflow":
-        return gates.WORKFLOW_GATES
-    return ("lint", "types", *gates.FAILING_BRANCH_STEPS)
+        return " · ".join(f"{name} ✔" for name in gates.workflow_gate_names(changed))
+    return "lint ✔ · types ✔ · " + ", ".join(gates.FAILING_BRANCH_STEPS) + " ✔"
 
 
 def _check_failing_branch_gates(piece: Slice, path, changed: list[str]) -> None:

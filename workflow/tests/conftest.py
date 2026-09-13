@@ -513,19 +513,24 @@ reviewer:
         carries."""
         self.scripted_test_outcome(file, outcome, message=message)
 
-    def given_ruff_failure(self, file: str, gate: str = "ruff check") -> None:
+    def given_ruff_failure(
+        self, file: str, gate: str = "ruff check", outcome: str | list[str] = "fail"
+    ) -> None:
         """The driver's own lint gate rejects `file`: `gate` is "ruff check"
         or "ruff format", and the diagnostic names the file and a line the
-        way ruff's arrow line does."""
+        way ruff's arrow line does. A list of outcomes is consumed one value
+        per invocation, so a scenario can script a repaired second turn."""
         self._load()
-        self.world.setdefault("gate_outcomes", {})[gate] = "fail"
+        self.world.setdefault("gate_outcomes", {})[gate] = outcome
         self.world["ruff_failure_file"] = file
         self._save()
 
-    def given_markdown_failure(self, file: str, gate: str = "prettier") -> None:
+    def given_markdown_failure(
+        self, file: str, gate: str = "prettier", outcome: str | list[str] = "fail"
+    ) -> None:
         """`prettier` or `cspell` rejects this changed markdown file."""
         self._load()
-        self.world.setdefault("gate_outcomes", {})[gate] = "fail"
+        self.world.setdefault("gate_outcomes", {})[gate] = outcome
         self.world["markdown_failure_file"] = file
         self._save()
 

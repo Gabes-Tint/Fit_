@@ -83,8 +83,11 @@ def pytest_lines(file, outcome, message):
     if outcome in FAILING:
         return [], [f"FAILED {file}::{TITLE} - {message}"]
     if outcome == "collect_error":
+        # pytest decorates the collection header, so the word ERROR never
+        # starts that line; only the short summary's line does
         return [
-            f"ERROR collecting {file}",
+            f"_______ ERROR collecting {file} _______",
+            f"ImportError while importing test module '{file}'.",
             f"{file}:1: in <module>",
             f"E   {message}",
         ], [f"ERROR {file}"]
