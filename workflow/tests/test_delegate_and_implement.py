@@ -7,6 +7,7 @@ the fake-world state after the run.
 import fcntl
 import json
 import re
+import subprocess
 
 from conftest import (
     delegate_slice,
@@ -909,6 +910,65 @@ def test_a_ui_slice_cannot_implement_the_shared_store(world):
 
     assert result.returncode == 22, result.stdout + result.stderr
     assert "ui slice changed the shared store outside its scope" in result.stdout
+
+
+def test_a_ui_slice_may_delete_its_own_component_spec(world):
+    """A UI slice may delete a component's own vitest spec: only the layer
+    boundary and acceptance-test immutability guard the run (issue #399),
+    not a rule that a playwright slice may only touch .e2e.ts tests."""
+    spec_file = "src/routes/progress/page.svelte.spec.ts"
+    (world.repo / "src" / "routes" / "progress").mkdir(parents=True)
+    (world.repo / spec_file).write_text("// stale component spec\n")
+    subprocess.run(["git", "add", spec_file], cwd=world.repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "seed stale spec"],
+        cwd=world.repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(["git", "push"], cwd=world.repo, check=True, capture_output=True)
+
+    _given_planned_story(world, 472, layer="ui", test_kind="playwright")
+    world.planner_answers_delegate(472, [delegate_slice(472, "ui", mechanic_signals())])
+    world._queue_turn(
+        "story-472-ui/mechanic",
+        {
+            "changed_files": ["src/routes/progress/+page.svelte", spec_file],
+            "summary": "removed the stale component spec",
+        },
+        effects={
+            "files": {"src/routes/progress/+page.svelte": "<div>done</div>\n"},
+            "delete": [spec_file],
+            "commit": False,
+            "push": False,
+        },
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_ui_slice_changing_a_domain_test_is_a_layer_boundary_stop(world):
+    """A UI slice touching a test file in the domain layer is still
+    stopped, but by the layer boundary rather than a wrong-kind rule."""
+    _given_planned_story(world, 473, layer="ui", test_kind="playwright")
+    world.planner_answers_delegate(473, [delegate_slice(473, "ui", mechanic_signals())])
+    _implement(
+        world,
+        "story-473-ui",
+        "mechanic",
+        files={"src/lib/domain/banner.spec.ts": "// domain test\n"},
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 22, result.stdout + result.stderr
+    assert (
+        "ui slice changed a domain file outside its scope: src/lib/domain/banner.spec.ts"
+        in result.stdout
+    )
+    assert "wrong-kind" not in result.stdout
 
 
 def test_an_underreported_file_list_is_a_contract_stop(world):
