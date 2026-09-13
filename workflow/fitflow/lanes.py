@@ -140,7 +140,7 @@ def tolerated_lint_error(error: LaneError) -> bool:
 
 def tolerated_type_error(error: LaneError) -> bool:
     """Whether this type error is the story's missing API talking. A coded
-    diagnostic is judged by its code, an uncoded one by its wording, and a
+    diagnostic is judged by its code, one without a code by its wording, and a
     module that cannot be found by where that module would live."""
     missing = _MISSING_MODULE.match(error.message)
     if missing is not None:

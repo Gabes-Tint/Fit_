@@ -50,7 +50,7 @@ TOLERATED_TYPE_ERRORS = [
 REJECTED_TYPE_ERRORS = [
     ("TS2322", "Type 'string' is not assignable to type 'number'."),
     ("TS1005", "',' expected."),
-    ("TS2304", "Cannot find name 'descrbe'."),
+    ("TS2304", "Cannot find name 'toggleSets'."),
     # a package that is not there is a broken checkout, not a missing API
     ("TS2307", "Cannot find module 'vitest' or its corresponding type declarations."),
     ("TS2307", "Cannot find module '@playwright/test'."),
@@ -81,7 +81,7 @@ src/lib/probe.spec.ts
 """
 
 
-def test_eslints_report_reads_as_one_problem_per_line_under_its_own_file():
+def test_the_eslint_report_reads_as_one_problem_per_line_under_its_own_file():
     reading = lanes.lint_errors(ESLINT_REPORT)
 
     assert reading.complete is True
