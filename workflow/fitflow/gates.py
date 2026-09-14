@@ -18,9 +18,9 @@ repository gate's content steps (`duplicates`, `format:check`,
 mechanic gets the diagnostic. Those four steps judge bytes rather than
 behavior, so they give the same verdict in block 1 as they will in block 3
 - where the test file is immutable and nobody is allowed to repair it
-(#397). `spellcheck` joined them after #422: a mechanic wrote
-`it('untogles a set ...')`, block 1 never looked, and the solver met an
-unknown word in a file it was forbidden to edit - and a dictionary,
+(#397). `spellcheck` joined them after #422, where a mechanic misspelled a
+verb in a test title, block 1 never read it, and the solver met an unknown
+word in a file it was forbidden to edit - beside a dictionary,
 `cspell.json`, that only a workflow slice may touch.
 
 The two lanes return a `LaneFailure`, which carries the same output parsed

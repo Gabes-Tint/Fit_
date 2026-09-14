@@ -46,13 +46,20 @@ Before the failing-test commit is accepted, the driver validates it as what
 it will become: an immutable input. It runs the repository's change-scoped
 lint over the branch (`bun run lint:changed`), the repository's type lane
 (`bun run check`) and the repository gate's own content steps -
-`duplicates`, `format:check` and `check:suppressions`, selected through the
-gate's own `--only` because the full tier would run the tests that must
-still fail here. Those three judge bytes rather than behavior, so their
-verdict on this branch is exactly the verdict block 3 will get on the same
-bytes; any failure returns a precise, repairable diagnostic (outcome
-`TESTS_INVALID`, exit 31) to the same mechanic retry loop and never reaches
-implementation.
+`duplicates`, `format:check`, `check:suppressions` and `spellcheck`,
+selected through the gate's own `--only` because the full tier would run
+the tests that must still fail here. Those four judge bytes rather than
+behavior, so their verdict on this branch is exactly the verdict block 3
+will get on the same bytes; any failure returns a precise, repairable
+diagnostic (outcome `TESTS_INVALID`, exit 31) to the same mechanic retry
+loop and never reaches implementation.
+
+`spellcheck` is there because of #422. The mechanic misspelled a verb in a
+test title; nothing in block 1 read it; block 3's gate then rejected the
+implementation over an unknown word inside a file whose bytes were frozen,
+with the dictionary that could have absolved it (`cspell.json`) a file only
+a workflow slice may add to. A misspelling is a mechanic correction like
+any other, and block 1 is the only place it can be one.
 
 ### Fails as intended includes the API that does not exist yet
 
@@ -541,10 +548,11 @@ ends there, exactly as exhaustion would end it - escalating one rung, or
 stopping the run on a solver or a contract breach - and the narration, the
 turn ledger (`"repeated": true`) and the comment on the story all say how
 many attempts went unspent. "Identical" is judged on substance: the
-diagnostics are compared with their commit shas, durations, timestamps and
+diagnostics are compared with their commit shas, durations, timestamps,
+`svelte-check`'s epoch-millisecond stamps, cspell's cache counts and
 absolute worktree paths normalized away, so a rejection naming a different
-file, test or count is a different rejection and its correction is worth
-the attempt. The stronger role always gets its own full budget: an
+file, test, line or count is a different rejection and its correction is
+worth the attempt. The stronger role always gets its own full budget: an
 escalated role's first attempt has no predecessor to repeat.
 
 | From             | Condition/action                                                                               | To               |
@@ -711,13 +719,40 @@ repair it. Each failed step's diagnostic carries its own account of what it
 found - a capped tail of the step's captured log, and for `duplicates` both
 halves of every clone read out of jscpd's report as
 `file:startLine-endLine` - and, when the step names files reliably, the
-files it blamed. If every one of those files is a retained acceptance test,
-the only bytes that would satisfy the gate are immutable for this turn: the
-failure is block 1's defect, not the implementer's, and the run stops at
-once as `TESTS_INVALID` (exit 31, `blocked`) naming block 1 and the file,
-rather than consuming three corrections and an escalation on it. The rule
-is deliberately conservative: a failure naming any non-test file, and any
-failure whose files the driver cannot extract, stays row 4.
+files it blamed. Those files are then split in two: the retained acceptance
+tests among them, and everything else.
+
+If the acceptance side is everything, the only bytes that would satisfy the
+gate are immutable for this turn: the failure is block 1's defect, not the
+implementer's, and the run stops at once as `TESTS_INVALID` (exit 31,
+`blocked`) naming block 1 and the file, rather than consuming three
+corrections and an escalation on it.
+
+If both sides are non-empty the failure is mixed, and it stays row 4,
+because the implementer's half is real work it can do. The diagnostic names
+the acceptance files as block 1's - immutable, not this turn's to repair,
+and the run will stop as `TESTS_INVALID` if they are all that is left
+failing. That is what the next validation finds once the implementer's half
+is green: the acceptance side is now everything, and the paragraph above
+applies. #422 had exactly this shape - a frozen test's misspelling beside
+type errors in product files - and the solver, told only the raw verdict,
+spent its whole budget on it.
+
+The rule is deliberately conservative: a failure that blames no acceptance
+test at all, and any failure whose files the driver cannot extract,
+concludes nothing and stays row 4.
+
+The same diagnostic also groups any blamed file this slice's layer forbids
+under a heading of its own - _these files are outside your layer (domain) -
+do not edit them; if the failure is theirs, say so in your summary and keep
+your own files green_ - followed by the gate's own lines about them. The
+gate sizes its steps from the tree, not from the slice, so it routinely
+blames a file the scope check would reject the turn for touching: on #422 a
+domain slice was handed six `svelte-check` errors in two UI components,
+told nothing, and then rejected on scope for the turn that went and fixed
+them. This decides nothing new - the scope rule is untouched and still
+says what is out of reach - it only says it in the turn where the
+temptation appears.
 
 Block 3 itself grants no tolerance. `verify:changed`'s `lint` and `check`
 steps must be clean over the implementation, which a correct implementation
@@ -731,8 +766,10 @@ product still does not offer it in the shape they call - a diagnostic for
 the implementer, carrying the tsc and eslint lines and the sentence that
 the fix belongs in the product code. It is an ordinary row 4 correction.
 Any other failed step (`duplicates`, `format:check`, `check:suppressions`,
-a spec), or a blamed acceptance file with no recorded debt, is block 1's
-defect and stops the run as before.
+`spellcheck`, a spec), or a blamed acceptance file with no recorded debt,
+is block 1's defect and stops the run as before - at once when the failure
+is confined to those files, and after the implementer's own half is green
+when it is mixed.
 
 Coordinated cancellation is a future invariant: it should become a terminal
 stop with reason `cancelled`, stop new turns, terminate and reap owned workers

@@ -56,7 +56,7 @@ def test_a_diagnostic_differing_only_in_the_time_a_run_started_is_the_same_diagn
     assert same_diagnostic("Start at  21:09:33", "Start at  21:22:06")
 
 
-def test_a_diagnostic_differing_only_in_cspells_cache_hits_is_the_same_diagnostic() -> None:
+def test_a_diagnostic_differing_only_in_the_cspell_cache_count_is_the_same_diagnostic() -> None:
     assert same_diagnostic(
         "CSpell: Files checked: 749, Issues found: 2 in 1 file.",
         "CSpell: Files checked: 749 (748 from cache), Issues found: 2 in 1 file.",

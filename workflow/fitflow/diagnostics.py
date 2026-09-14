@@ -21,7 +21,7 @@ correction is worth the attempt.
 
 Every one of those movers was in a single #422 diagnostic: the same
 `verify:changed` verdict came back with svelte-check's 13-digit stamps
-redialled, vitest's `Start at` and `Duration` a quarter of a minute later,
+re-stamped, vitest's `Start at` and `Duration` a quarter of a minute later,
 and cspell's file count carrying `(748 from cache)` the second time. The
 substance - which step, which file, which line, how many - had not moved
 at all.
