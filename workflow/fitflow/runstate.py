@@ -263,6 +263,11 @@ class SliceRecord:
     # rule is worth having twice and no more: past that a file that keeps
     # failing locally is a failure, whatever the diff touches.
     flake_cycles: int = 0
+    # TEMPORARY (gates.TEMP_LIGHT_DOMAIN_VALIDATION): whether this slice has
+    # already said in the log that its attempts are validated on the
+    # lightened tier. The line is worth one appearance per slice, not one
+    # per attempt, and a resumed run must not repeat it.
+    light_validation_noted: bool = False
     objections: list[dict] = field(default_factory=list)
     test_repairs: int = 0
     test_repair_turns: list[dict] = field(default_factory=list)

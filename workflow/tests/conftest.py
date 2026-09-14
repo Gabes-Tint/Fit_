@@ -671,7 +671,10 @@ reviewer:
         test:mutation:<lane>`: pass, fail, or tool_error. A list is
         consumed one value per invocation. `verify:fast` scripts block 1's
         content steps over the failing-test branch - `duplicates`,
-        `format:check`, `check:suppressions` and `spellcheck` together."""
+        `format:check`, `check:suppressions` and `spellcheck` together -
+        and `light` scripts the whole `verify:fast` tier, which is what a
+        domain slice's attempts are judged by while the driver's temporary
+        `TEMP_LIGHT_DOMAIN_VALIDATION` is on."""
         self._load()
         self.world.setdefault("gate_outcomes", {}).update(outcomes)
         self._save()
@@ -679,7 +682,7 @@ reviewer:
     def given_failed_gate_steps(self, tier: str, *steps: str) -> None:
         """Which steps a scripted `fail` of that gate reports. Defaults:
         `test:unit:server` for verify:changed, `duplicates` for the
-        verify:fast content steps."""
+        verify:fast content steps and for the `light` tier."""
         self._load()
         self.world.setdefault("gate_failed_steps", {})[tier] = list(steps)
         self._save()

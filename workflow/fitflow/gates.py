@@ -43,6 +43,12 @@ driver itself changes Python and prose, which none of the bun lanes size or
 run, so ruff, ruff format and - over changed markdown - prettier and cspell
 take their place, in block 1 and in every block 3 turn alike.
 
+`TEMP_LIGHT_DOMAIN_VALIDATION` is a temporary exception to "every turn is
+judged by `verify:changed`": while it is True a domain slice's attempts are
+judged by the repository's `verify:fast` tier and the full `verify:changed`
+runs once on the accepted attempt, before the freeze. Its own comment says
+what that trades and how to undo it.
+
 A judged failure carries the detail, not just the step names: the gate
 report points at each failed step's captured log, and `duplicates` also
 leaves a jscpd report naming both halves of every clone. Block 3 spent six
@@ -79,6 +85,46 @@ _FAILING_BRANCH_ARGV = [
     "--only",
     ",".join(FAILING_BRANCH_STEPS),
 ]
+
+#: TEMPORARY, enabled 2026-09-14 on Gabriel's instruction to ship faster.
+#:
+#: A slice is validated again on every attempt, and for a `domain` slice
+#: most of what `verify:changed` sizes is bought for the UI: its layer may
+#: not touch `src/routes/`, `src/lib/components/` or `src/lib/ui/`
+#: (`fitflow.layers`), so the behavior lanes that fan out from those files
+#: prove little about a domain diff attempt by attempt.
+#:
+#: While this is True a domain attempt is judged by `LIGHT_TIER` - the
+#: repository's own `verify:fast`, which is every static step of the
+#: `verify:changed` plan plus the server unit suite that covers
+#: `src/lib/domain/**` - instead of `verify:changed`. What that leaves out
+#: per attempt is the diff-sized spec runs, the mutation lane and the
+#: build/`check:bundle` pair; it leaves out no e2e step, because a domain
+#: diff never plans one (see the note below). The full `verify:changed`
+#: still runs once on the accepted attempt, before the driver freezes the
+#: slice, so nothing is committed on less proof than before; a failure
+#: there is an ordinary gate rejection of that attempt.
+#:
+#: Two facts this constant is honest about rather than papering over:
+#: `verify:changed` is `scripts/quality/verify-changed.ts`, not a `gate.ts`
+#: tier, and it takes no step selection at all - only `--base`,
+#: `--all-browsers` and `--dry-run` - so "the same tier minus its e2e step"
+#: is not expressible without changing a gate file. And a domain diff's
+#: plan carries no e2e step in the first place: `e2e: full suite` is
+#: planned by a changed `.svelte` under `src/lib/components/`, and the
+#: per-route e2e files by `src/routes/**`, both outside a domain slice's
+#: reach.
+#:
+#: Flipping this to False restores `verify:changed` on every attempt of
+#: every slice and makes the freeze run the only-one-tier behavior it had
+#: before; nothing else has to be undone.
+TEMP_LIGHT_DOMAIN_VALIDATION = True
+
+#: The repository tier a lightened attempt is judged by. A real tier of the
+#: repository's own gate, run through the gate's own CLI: the driver still
+#: adds no step list of its own.
+LIGHT_TIER = "verify:fast"
+_LIGHT_TIER_ARGV = ["bun", "scripts/quality/gate.ts", LIGHT_TIER]
 
 _DETAIL_LINES = 12
 _DETAIL_CHARS = 1200
@@ -298,6 +344,20 @@ def run_turn_gates(worktree: Path, story_number: int) -> "GateFailure | None":
             continue
         return _verdict(worktree, story_number, started, result, "verify:changed", _REPORT)
     raise AssertionError("unreachable: the loop returns on attempt 2")
+
+
+def run_light_turn_gates(worktree: Path, story_number: int) -> "GateFailure | None":
+    """Run the lightened tier for this turn and return a repairable failure,
+    or None when it passed. TEMPORARY - see `TEMP_LIGHT_DOMAIN_VALIDATION`
+    for what it leaves out and when the full tier runs instead.
+
+    It writes the same report `run_failing_branch_steps` reads, in the same
+    shape, so a failure comes back located exactly as `verify:changed`'s
+    does. No crash retry: the transient race that earns `verify:changed`
+    one is a mutation run's, and this tier has no mutation lane."""
+    started = time.time()
+    result = _launch(_LIGHT_TIER_ARGV, worktree, story_number, LIGHT_TIER)
+    return _verdict(worktree, story_number, started, result, LIGHT_TIER, _FAILING_BRANCH_REPORT)
 
 
 def _launch(

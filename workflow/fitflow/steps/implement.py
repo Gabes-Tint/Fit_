@@ -965,7 +965,57 @@ def _validate_behavior(
 def _judge_gates(
     record: RunRecord, piece: SliceRecord, path, changed: list[str]
 ) -> "gates.GateFailure | None":
-    """The gates' verdict on this turn, and the rerun-then-solo cycle a
+    """The gates' verdict on this turn: the tier this attempt is judged by,
+    and - while the temporary lightening is on - the full tier once more
+    before the slice is frozen.
+
+    An ordinary slice is judged by its full tier and that is the whole
+    verdict. A lightened domain slice (gates.TEMP_LIGHT_DOMAIN_VALIDATION)
+    is judged attempt by attempt on the cheaper tier, and an attempt that
+    survives it is then put through the full `verify:changed` exactly once,
+    here, before `_freeze` commits anything: what ships carries the same
+    proof it carried before the lightening, and a full-tier failure is an
+    ordinary rejection of this attempt with the ordinary diagnostic and the
+    ordinary untouched-flake rerun."""
+    if not _lightened(piece):
+        return _judge_tier(record, piece, path, changed, full=True)
+    _note_lightened(record, piece)
+    failure = _judge_tier(record, piece, path, changed, full=False)
+    if failure is not None:
+        return failure
+    narrate.line(
+        f"🔍 #{piece.number} ({piece.layer}) accepted on {gates.LIGHT_TIER} — running the "
+        "full verify:changed once before the freeze"
+    )
+    return _judge_tier(record, piece, path, changed, full=True)
+
+
+def _lightened(piece: SliceRecord) -> bool:
+    """Whether this slice's attempts are judged by the lightened tier.
+    TEMPORARY - `gates.TEMP_LIGHT_DOMAIN_VALIDATION` says why, and False
+    there puts every slice back on its full tier for every attempt."""
+    return gates.TEMP_LIGHT_DOMAIN_VALIDATION and piece.layer == "domain"
+
+
+def _note_lightened(record: RunRecord, piece: SliceRecord) -> None:
+    """Say once per slice that its attempts are not the full tier. Once,
+    not once per attempt: it is a fact about the slice, and a resumed run
+    has already said it."""
+    if piece.light_validation_noted:
+        return
+    narrate.line(
+        f"⚡ #{piece.number} ({piece.layer}) validating on {gates.LIGHT_TIER}, without the "
+        "e2e suite (temporary); the full tier runs at freeze"
+    )
+    with record.transition():
+        piece.light_validation_noted = True
+        record.save()
+
+
+def _judge_tier(
+    record: RunRecord, piece: SliceRecord, path, changed: list[str], full: bool
+) -> "gates.GateFailure | None":
+    """One tier's verdict on this turn, and the rerun-then-solo cycle a
     failure earns when it is not plausibly about this turn's work.
 
     Every turn is judged by the whole tier rather than by its own diff, so
@@ -978,39 +1028,45 @@ def _judge_gates(
     let through, and CI remains the judge. A solo failure is a real failure
     and counts. A failure naming anything the diff touches is never rerun -
     that one is about the work."""
-    failure = _run_turn_gates(record, piece, path, changed)
+    failure = _run_turn_gates(record, piece, path, changed, full)
     if failure is None:
-        _record_gate_pass(record, piece)
+        _record_gate_pass(record, piece, full)
         return None
     if not _untouched_flake(piece, path, changed, failure):
         return failure
     if piece.flake_cycles >= _FLAKE_CYCLES:
         narrate.line(
-            f"🛑 {_failed_step(piece, failure)} failed again in files this slice does not "
-            f"touch, but #{piece.number} ({piece.layer}) has spent its {_FLAKE_CYCLES} flake "
-            "reruns this run — the failure counts"
+            f"🛑 {_failed_step(piece, failure, full)} failed again in files this slice does "
+            f"not touch, but #{piece.number} ({piece.layer}) has spent its {_FLAKE_CYCLES} "
+            "flake reruns this run — the failure counts"
         )
         return failure
-    return _rerun_then_solo(record, piece, path, changed, failure)
+    return _rerun_then_solo(record, piece, path, changed, failure, full)
 
 
 def _rerun_then_solo(
-    record: RunRecord, piece: SliceRecord, path, changed: list[str], failure: "gates.GateFailure"
+    record: RunRecord,
+    piece: SliceRecord,
+    path,
+    changed: list[str],
+    failure: "gates.GateFailure",
+    full: bool,
 ) -> "gates.GateFailure | None":
     """One flake cycle: the tier again, and - when it fails the same way -
     the blamed files alone. Both halves are spent together and counted as
     one, so a slice gets at most `_FLAKE_CYCLES` of them in a run."""
     narrate.line(
-        f"🔁 {_failed_step(piece, failure)} failed in {', '.join(sorted(failure.blamed_files))}, "
-        f"which this slice does not touch{_last_pass(piece)} — rerunning once"
+        f"🔁 {_failed_step(piece, failure, full)} failed in "
+        f"{', '.join(sorted(failure.blamed_files))}, "
+        f"which this slice does not touch{_last_pass(piece, full)} — rerunning once"
     )
     with record.transition():
         piece.flake_cycles += 1
         record.save()
-    again = _run_turn_gates(record, piece, path, changed)
+    again = _run_turn_gates(record, piece, path, changed, full)
     if again is None:
-        _record_gate_pass(record, piece)
-        narrate.line(f"✅ {_gate_name(piece)} passed on the rerun: the first run was a flake")
+        _record_gate_pass(record, piece, full)
+        narrate.line(f"✅ {_gate_name(piece, full)} passed on the rerun: the first run was a flake")
         return None
     if again.blamed_files != failure.blamed_files or not _untouched_flake(
         piece, path, changed, again
@@ -1050,7 +1106,7 @@ def _record_flakes(
     file, with the test the gate named, the step that failed and the time.
     Block 4 puts them in front of Gabriel."""
     when = time.strftime("%H:%M")
-    step = _failed_step(piece, failure)
+    step = _failed_step(piece, failure, full=True)
     titles = {test.file: test.title for test in failure.tests}
     with record.transition():
         piece.flakes.extend(
@@ -1094,39 +1150,52 @@ def _touched(piece: SliceRecord, path, changed: list[str]) -> list[str]:
     return [*changed, *worktrees.changed_since(path, piece.failing_sha)]
 
 
-def _last_pass(piece: SliceRecord) -> str:
+def _last_pass(piece: SliceRecord, full: bool = True) -> str:
     """When this tier last passed for this slice, for the narration. It is
     evidence the rerun is worth making, never the condition for making
-    one: a slice with no recorded pass is rerun just the same."""
-    when = piece.gate_passes.get(_gate_name(piece))
+    one: a slice with no recorded pass is rerun just the same. Each tier
+    keeps its own time, so a lightened attempt never quotes back a pass the
+    full tier earned."""
+    when = piece.gate_passes.get(_gate_name(piece, full))
     return f" and which passed at {when}" if when else ""
 
 
-def _record_gate_pass(record: RunRecord, piece: SliceRecord) -> None:
+def _record_gate_pass(record: RunRecord, piece: SliceRecord, full: bool = True) -> None:
     """When this slice's gates last passed: the time `_last_pass` quotes
-    back when a rerun is narrated."""
+    back when a rerun is narrated, under the name of the tier that passed."""
     with record.transition():
-        piece.gate_passes[_gate_name(piece)] = time.strftime("%H:%M")
+        piece.gate_passes[_gate_name(piece, full)] = time.strftime("%H:%M")
         record.save()
 
 
-def _gate_name(piece: SliceRecord) -> str:
-    return "the driver's gates" if piece.layer == "workflow" else "verify:changed"
+def _gate_name(piece: SliceRecord, full: bool = True) -> str:
+    """What to call the tier this turn is judged by. `full` is False only
+    for a lightened attempt (gates.TEMP_LIGHT_DOMAIN_VALIDATION), which is
+    judged by a different tier and must never be narrated as the one it
+    stands in for."""
+    if piece.layer == "workflow":
+        return "the driver's gates"
+    return "verify:changed" if full else gates.LIGHT_TIER
 
 
-def _failed_step(piece: SliceRecord, failure: "gates.GateFailure") -> str:
+def _failed_step(piece: SliceRecord, failure: "gates.GateFailure", full: bool = True) -> str:
     """The failed steps by name, or the gate itself when it runs as one."""
-    return ", ".join(sorted(failure.steps)) or _gate_name(piece)
+    return ", ".join(sorted(failure.steps)) or _gate_name(piece, full)
 
 
 def _run_turn_gates(
-    record: RunRecord, piece: SliceRecord, path, changed: list[str]
+    record: RunRecord, piece: SliceRecord, path, changed: list[str], full: bool = True
 ) -> "gates.GateFailure | None":
     """The gates this turn is judged by. A workflow slice changes Python and
     prose, which `verify:changed` neither sizes nor runs, so the driver's own
-    gates stand in its place - the same four block 1 ran over the tests."""
+    gates stand in its place - the same four block 1 ran over the tests.
+
+    `full` is False for a lightened attempt only, and the driver's own gates
+    are never lightened: they are already the cheap ones."""
     if piece.layer == "workflow":
         return gates.run_workflow_gates(path, record.story_number, changed)
+    if not full:
+        return gates.run_light_turn_gates(path, record.story_number)
     return gates.run_turn_gates(path, record.story_number)
 
 
