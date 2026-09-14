@@ -13,12 +13,13 @@ mechanical, verifies CI itself and merges; block 5 ships that merge - its
 tag, main's own CI, the QA deploy, the flaky decision, production, the
 Android release and cleanup.
 
-`--resume` re-enters the same flow at the block a stopped run reached,
+`--resume` re-enters the same flow at the block a stopped run reached -
+block 1's writers included, for slices whose tests were never frozen -
 after reconciling its retained record with the worktrees it left;
 `--reset` undoes what a run created and archives its record.
 """
 
-from fitflow import github, issue_context, runstate, steps, worktrees
+from fitflow import github, issue_context, runstate, steps
 from fitflow.cli import run
 from fitflow.outcome import Outcome
 
@@ -45,7 +46,7 @@ def pick_and_plan(issue: int | None) -> Outcome:
 
         steps.report_planned(story, slices)
 
-        record = steps.delegate(story, slices, context, worktrees.remote_head("main") or "")
+        record = steps.delegate(story, slices, context)
         steps.implement(story, record)
         steps.deliver(story, record)
         return steps.ship(story, record)
@@ -59,6 +60,12 @@ def resume(issue: int) -> Outcome:
         record = runstate.load_run(story.number)
         stage = steps.reconcile(story, record)
 
+        if stage == steps.WRITE_TESTS:
+            steps.write_failing_tests(
+                steps.unfrozen_slices(record), story.number, record, resuming=True
+            )
+            steps.report_planned(story, record.ordered())
+            stage = steps.DELEGATE
         if stage == steps.DELEGATE:
             context = issue_context.prepare(
                 github.comments(story.number), github.timeline(story.number)

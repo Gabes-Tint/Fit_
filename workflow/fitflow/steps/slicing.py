@@ -20,7 +20,7 @@ solver that could neither obey it nor compile without it).
   from the constants the scope check reads.
 """
 
-from fitflow import agents, audit, github, layers, narrate, planner, settings
+from fitflow import agents, audit, github, layers, narrate, planner, runstate, settings, worktrees
 from fitflow.github import Story
 from fitflow.outcome import FlowFailure, Outcome
 from fitflow.slice import Slice
@@ -29,13 +29,18 @@ _MAX_PLANNER_ATTEMPTS = 3
 
 
 def slice_at_layer_boundary(story: Story, issue_context: str) -> list[Slice]:
+    """The accepted plan, and the run's retained record created from it:
+    once the child issues exist and before any writer launches, so a run
+    that stops anywhere in block 1 can be resumed without planning again.
+    A story that already has a record stops here (RUN_STATE_CONFLICT)."""
     spans, raw_slices = _planned(story, issue_context)
     _apply_clauses(raw_slices)
     detail = f"✂️ yes, split into {len(raw_slices)}" if spans else "no"
     narrate.line(f"🔀 Spans domain and UI? → {detail}")
-    if spans:
-        return _split(story, raw_slices)
-    return [_keep_as_is(story, raw_slices[0])]
+    slices = _split(story, raw_slices) if spans else [_keep_as_is(story, raw_slices[0])]
+    base_sha = worktrees.remote_head("main") or ""
+    runstate.create_run(story.number, base_sha, agents.roster(), slices)
+    return slices
 
 
 def _planned(story: Story, issue_context: str) -> tuple[bool, list[dict]]:

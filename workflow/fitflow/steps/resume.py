@@ -38,6 +38,14 @@ refused on both of its turns: nothing has moved since, so the resume stops
 on it and the tests are repaired by hand or the run is reset. A repair a
 block 4 fix turn's objection sent to block 1 is relaunched by block 4, which
 then carries on with that fix request.
+
+A slice whose acceptance tests block 1 never froze sends the run back to
+block 1 before anything else. Its writer is relaunched at the rung and
+revision the record saved, on the worktree and team block 1 made for it,
+with the retained diagnostic and every rejection so far in its brief.
+Nothing is planned again and no child issue is created. Slices already
+frozen are left exactly as they are, and a writer still running on this
+machine is never launched beside.
 """
 
 from fitflow import agents, audit, github, narrate, settings, turns, worktrees
@@ -46,6 +54,7 @@ from fitflow.runstate import RunRecord, SliceRecord, judged_failed, judged_rejec
 from fitflow.steps import objection
 
 # Where a resumed run continues, in flow order.
+WRITE_TESTS = "write_tests"
 DELEGATE = "delegate"
 IMPLEMENT = "implement"
 DELIVER = "deliver"
@@ -69,13 +78,27 @@ def reconcile(story, record: RunRecord) -> str:
     if story.state != "OPEN":
         raise FlowFailure(Outcome.CANNOT_PICK, f"#{story.number} is {story.state.lower()}")
     _take_back(story)
+    stage = _before_block3(record)
+    if stage:
+        return stage
+    for piece in record.ordered():
+        _reconcile_slice(record, piece)
+    return _after_block3(record)
+
+
+def _before_block3(record: RunRecord) -> str:
+    """Block 1 when a slice's tests were never frozen, block 2 when a slice
+    has no accepted assignment, and "" when every slice reached block 3."""
+    unfrozen = [piece for piece in record.ordered() if not piece.acceptance_sha]
+    for piece in unfrozen:
+        _reopen_block1(record, piece)
+    if unfrozen:
+        return WRITE_TESTS
     if any(not piece.assignments for piece in record.ordered()):
         _require_never_launched(record)
         narrate.line("♻️  No slice has an accepted assignment: continuing at block 2")
         return DELEGATE
-    for piece in record.ordered():
-        _reconcile_slice(record, piece)
-    return _after_block3(record)
+    return ""
 
 
 def _take_back(story) -> None:
@@ -284,6 +307,28 @@ def _live_turn(record: RunRecord, piece: SliceRecord, team: str, role: str) -> b
             record.story_number,
         )
     return state
+
+
+def _reopen_block1(record: RunRecord, piece: SliceRecord) -> None:
+    """A slice with no frozen tests goes back to block 1's writer: the rung
+    the record says its ladder is on (the mechanic when none launched yet).
+    A writer still running on this machine is never launched beside, and a
+    writer that did launch needs the worktree it was writing in."""
+    role = piece.tests_role or "mechanic"
+    if _live_turn(record, piece, piece.team, role):
+        raise FlowFailure(
+            Outcome.EXECUTION_HELD,
+            f"{piece.slug}: a block 1 {role} turn is still running on this machine; "
+            "wait for it to end, or stop it, before resuming",
+            record.story_number,
+        )
+    if piece.tests_role and not worktrees.slice_worktree_path(piece.slug).exists():
+        raise _conflict(record, piece, "worktree is missing")
+    narrate.line(
+        f"♻️  #{piece.number} ({piece.layer}) stopped in block 1: relaunching the {role} "
+        f"at revision {piece.tests_revision}, {len(piece.tests_rejections)} rejection(s) "
+        "in its brief"
+    )
 
 
 def _require_not_in_flight(record: RunRecord, piece: SliceRecord) -> None:

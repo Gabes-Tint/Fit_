@@ -16,10 +16,11 @@ from fitflow.settings import GABRIEL_LOGIN, NEEDS_GABRIEL_LABEL
 _MAX_PLANNER_ATTEMPTS = 3
 
 
-def run(story, slices: list, issue_context: str, base_sha: str) -> RunRecord:
+def run(story, slices: list, issue_context: str) -> RunRecord:
     """Block 2 for every slice of the story: signals turn, selection,
-    envelope, pre-launch barrier. Returns the run record for block 3."""
-    record = begin_run(story.number, base_sha, agents.roster(), slices)
+    envelope, pre-launch barrier, on the record block 1 created and froze.
+    Returns the run record for block 3."""
+    record = begin_run(story.number, slices)
     return decide_and_launch(story, record, issue_context)
 
 

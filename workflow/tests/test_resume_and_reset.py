@@ -737,7 +737,8 @@ def test_reset_of_a_split_story_closes_both_children(world):
 
 def test_reset_without_a_record_cleans_by_name(world):
     """A run that died in block 1 left worktrees, branches and children,
-    but no record: `--reset` finds them by the names the driver gives."""
+    and its record was lost since: `--reset` finds them by the names the
+    driver gives."""
     world.given_story(633, title="Split resume", labels=["story"])
     world.planner_answers_whose_call(
         633,
@@ -776,7 +777,8 @@ def test_reset_without_a_record_cleans_by_name(world):
     world.mechanic_fails("story-1001-ui", "down")
     first = run_flow(world, 633)
     assert first.returncode == 21, first.stdout + first.stderr
-    assert not (world.home / "runs" / "story-633.json").exists()
+    # block 1 kept a record; with it gone, only the names are left to go by
+    (world.home / "runs" / "story-633.json").unlink()
     assert world.slice_worktree_path("story-1000-domain").exists()
 
     result = run_flow(world, 633, "--reset")

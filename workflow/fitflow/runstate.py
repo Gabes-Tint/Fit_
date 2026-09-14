@@ -6,12 +6,14 @@ holds a non-blocking flock on `locks/story-<n>.lock` for its whole life.
 
 The state file `runs/story-<n>.json` is the run's retained record and its
 slice state machines: block 1's slice identities (issue, branch, worktree,
-team, failing-test commit, test files), the frozen startup configuration,
-every assignment revision, attempt counters and turn identities. Every
-transition persists before the next one is chosen. A fresh run refuses a
-story that already has a record; `go.py <n> --resume` loads it, reconciles
-every slice against the worktree it left behind (steps/resume.py) and
-continues, and `go.py <n> --reset` archives it beside what it undoes.
+team, failing-test commit, test files) and its writing ladder, the frozen
+startup configuration, every assignment revision, attempt counters and turn
+identities. Block 1 creates it as soon as the plan is accepted, before any
+writer launches, and every transition persists before the next one is
+chosen. A fresh run refuses a story that already has a record; `go.py <n>
+--resume` loads it, reconciles every slice against the worktree it left
+behind (steps/resume.py) and continues, and `go.py <n> --reset` archives it
+beside what it undoes.
 """
 
 import datetime
@@ -224,14 +226,24 @@ class SliceRecord:
     # implementation has not provided the signature the tests call" from
     # "block 1 accepted a test the repository gate rejects".
     tests_type_debt: dict[str, int] = field(default_factory=dict)
-    # Which role block 1's own ladder ended on, and how many rungs it
+    # Which role block 1's own ladder is on, and how many rungs it has
     # climbed to get there: "mechanic"/0 unless the mechanic's budget ran
-    # out and the builder or solver finished the tests. Block 1 runs before
-    # this record exists, so this is where its ladder is retained, and
-    # steps/objection.py's first test repair starts from this role rather
-    # than from the mechanic - the tests are this role's work.
+    # out and the builder or solver took the tests over. Block 1 saves it
+    # as it climbs, so a stopped run's record says which rung a resume
+    # relaunches, and once the tests are frozen steps/objection.py's first
+    # test repair starts from this role rather than from the mechanic - the
+    # tests are this role's work. Empty until block 1 launches a writer.
     tests_role: str = "mechanic"
     tests_revision: int = 0
+    # The rest of block 1's ladder, saved as it happens so a resume can
+    # relaunch the recorded role with the brief its successor would have
+    # had: how many attempts the current role has launched, how many the
+    # rungs below it spent, the diagnostic the last rejection carried, and
+    # every rejection so far, oldest first, as `<role> attempt <n> — <why>`.
+    tests_attempts: int = 0
+    tests_spent: int = 0
+    tests_diagnostic: str = ""
+    tests_rejections: list[str] = field(default_factory=list)
     # "domain" on a UI slice the planner judged cannot be implemented and
     # validated before its domain sibling exists; "" for an independent one.
     depends_on: str = ""
@@ -518,9 +530,12 @@ def _config_snapshot(roster: dict) -> dict[str, dict[str, str]]:
     }
 
 
-def begin_run(story_number: int, base_sha: str, roster: dict, slices: list) -> RunRecord:
-    """Create and persist the run's retained record from block 1's outputs.
-    `slices` are fitflow.slice.Slice objects, in domain-then-ui order.
+def create_run(story_number: int, base_sha: str, roster: dict, slices: list) -> RunRecord:
+    """Create and persist the run's retained record the moment block 1's
+    plan is accepted, before any writer launches. `slices` are
+    fitflow.slice.Slice objects, in domain-then-ui order; their test fields
+    start empty, and block 1 saves its ladder and each slice's freeze into
+    the record as they happen.
 
     A story that already carries a state file is an interrupted or finished
     earlier run whose workers may have launched uncertainly. A fresh run
@@ -539,35 +554,48 @@ def begin_run(story_number: int, base_sha: str, roster: dict, slices: list) -> R
         story_number=story_number,
         base_sha=base_sha,
         config=_config_snapshot(roster),
-        slices={
-            piece.layer: SliceRecord(
-                number=piece.number,
-                layer=piece.layer,
-                title=piece.title,
-                slug=f"story-{piece.number}-{piece.layer}",
-                branch=f"story-{piece.number}-{piece.layer}",
-                team=f"story-{piece.number}-{piece.layer}",
-                worktree=str(
-                    settings.FIT_REPO
-                    / ".claude"
-                    / "worktrees"
-                    / f"story-{piece.number}-{piece.layer}"
-                ),
-                brief=piece.brief,
-                acceptance=list(piece.acceptance),
-                test_kind=piece.test_kind,
-                test_files=list(piece.test_files),
-                failing_sha=piece.commit,
-                tests_sha=piece.commit,
-                tests_type_debt=dict(piece.tests_type_debt),
-                tests_role=piece.tests_role or "mechanic",
-                tests_revision=piece.tests_revision,
-                ui_called_exports=list(piece.ui_called_exports),
-            )
-            for piece in slices
-        },
+        slices={piece.layer: _slice_record(piece) for piece in slices},
     )
     record.save()
+    return record
+
+
+def _slice_record(piece) -> SliceRecord:
+    slug = f"story-{piece.number}-{piece.layer}"
+    return SliceRecord(
+        number=piece.number,
+        layer=piece.layer,
+        title=piece.title,
+        slug=slug,
+        branch=slug,
+        team=slug,
+        worktree=str(settings.FIT_REPO / ".claude" / "worktrees" / slug),
+        brief=piece.brief,
+        acceptance=list(piece.acceptance),
+        test_kind=piece.test_kind,
+        test_files=[],
+        failing_sha="",
+        tests_role="",
+        ui_called_exports=list(piece.ui_called_exports),
+    )
+
+
+def begin_run(story_number: int, slices: list) -> RunRecord:
+    """Block 2's record: the one block 1 created and froze every slice of,
+    continued rather than created. A slice the record does not hold, or
+    holds with no frozen tests, is not what block 1 handed over."""
+    record = load_run(story_number)
+    for piece in slices:
+        retained = record.slices.get(piece.layer)
+        if retained is None or not retained.acceptance_sha:
+            raise FlowFailure(
+                Outcome.RUN_STATE_CONFLICT,
+                f"the retained run at {state_path(story_number)} holds no frozen "
+                f"{piece.layer} slice for block 2 to continue; audit it, then "
+                f"`go.py {story_number} --reset`",
+                story_number,
+                add_blocked=True,
+            )
     return record
 
 

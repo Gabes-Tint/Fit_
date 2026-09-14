@@ -18,6 +18,14 @@ can answer three failures as easily as one when it is told about three.
 Only a rejection that makes the later checks meaningless - a non-test file
 on the branch, a test in the wrong folder, reported files that are not in
 the diff - still short-circuits.
+
+Block 1 keeps its progress in the run's retained record, which slicing
+created before any writer launched: each slice's rung and revision, its
+attempt counter and every rejection, saved as they happen, and the freeze
+at its tests commit once they are written, validated and pushed. A run
+stopped anywhere in here is continued by `go.py <n> --resume`, which
+relaunches the recorded rung on the same worktree and team with the whole
+history in its brief and leaves frozen slices alone.
 """
 
 import re
@@ -34,10 +42,12 @@ from fitflow import (
     github,
     lanes,
     narrate,
+    runstate,
     turns,
     worktrees,
 )
 from fitflow.outcome import FlowFailure, Outcome
+from fitflow.runstate import RunRecord, SliceRecord
 from fitflow.slice import Slice
 
 _REPAIRABLE_OUTCOMES = {
@@ -74,16 +84,65 @@ class PreparedSlice:
     piece: Slice
     slug: str
     path: Path
+    record: RunRecord
+    retained: SliceRecord
 
 
-def write_failing_tests(slices: list[Slice], story_number: int) -> list[Slice]:
-    prepared = [_prepare(piece) for piece in slices]
+def write_failing_tests(
+    slices: list[Slice],
+    story_number: int,
+    record: RunRecord | None = None,
+    resuming: bool = False,
+) -> list[Slice]:
+    """Block 1's writers for `slices`, saving their progress into the run's
+    retained record - the caller's, or the one slicing left on disk.
+    `resuming` continues slices a stopped run left unfrozen, on the
+    worktree and team it made for them, from the rung the record kept."""
+    record = record or runstate.load_run(story_number)
+    try:
+        return _write_all(slices, story_number, record, resuming)
+    except FlowFailure as failure:
+        _stopped(record, failure.outcome.name)
+        raise
+    except Exception:
+        _stopped(record, Outcome.TOOL_FAILED.name)
+        raise
+
+
+def unfrozen_slices(record: RunRecord) -> list[Slice]:
+    """The slices a resumed block 1 still owes tests for, rebuilt from the
+    record. A frozen slice is not among them: it is left as it is."""
+    return [
+        Slice(
+            piece.number,
+            piece.layer,
+            piece.title,
+            piece.brief,
+            list(piece.acceptance),
+            piece.test_kind,
+            ui_called_exports=list(piece.ui_called_exports),
+        )
+        for piece in record.ordered()
+        if not piece.acceptance_sha
+    ]
+
+
+def _stopped(record: RunRecord, terminal: str) -> None:
+    with record.transition():
+        record.terminal = terminal
+        record.save()
+
+
+def _write_all(
+    slices: list[Slice], story_number: int, record: RunRecord, resuming: bool
+) -> list[Slice]:
+    prepared = [_prepare(piece, record, resuming) for piece in slices]
     if len(prepared) == 1:
-        _write_tests(prepared[0])
+        _write_tests(prepared[0], resuming)
         return slices
 
     narrate.line(f"⚡ Starting {len(prepared)} mechanics in parallel")
-    failures = _run_parallel(prepared)
+    failures = _run_parallel(prepared, resuming)
     narrate.line(f"⏳ Mechanic barrier: all {len(prepared)} slices settled")
     if failures:
         for item, failure in failures:
@@ -97,8 +156,11 @@ def write_failing_tests(slices: list[Slice], story_number: int) -> list[Slice]:
     return slices
 
 
-def _prepare(piece: Slice) -> PreparedSlice:
+def _prepare(piece: Slice, record: RunRecord, resuming: bool) -> PreparedSlice:
     slug = f"story-{piece.number}-{piece.layer}"
+    retained = record.slices[piece.layer]
+    if resuming and retained.tests_role:
+        return _reuse(piece, slug, record, retained)
     if worktrees.slice_worktree_exists(slug):
         raise FlowFailure(
             Outcome.WORKTREE_EXISTS, f"worktree/branch '{slug}' already exists", piece.number
@@ -107,12 +169,24 @@ def _prepare(piece: Slice) -> PreparedSlice:
     audit.worktree_created(slug)
     narrate.line(f"🌿 Worktree {slug} · branch {slug}")
     agents.ensure_fresh_team(slug, path, piece.number)
-    return PreparedSlice(piece, slug, path)
+    return PreparedSlice(piece, slug, path, record, retained)
 
 
-def _run_parallel(prepared: list[PreparedSlice]) -> list[tuple[PreparedSlice, Exception]]:
+def _reuse(piece: Slice, slug: str, record: RunRecord, retained: SliceRecord) -> PreparedSlice:
+    """A resumed slice keeps what block 1 made for it: the same worktree,
+    holding what the stopped writer left, and the same team, whose link
+    must still point at it."""
+    runstate.verify_team_ownership(retained)
+    path = worktrees.slice_worktree_path(slug)
+    narrate.line(f"🌿 Worktree {slug} · branch {slug} · team {retained.team}, kept from the run")
+    return PreparedSlice(piece, slug, path, record, retained)
+
+
+def _run_parallel(
+    prepared: list[PreparedSlice], resuming: bool
+) -> list[tuple[PreparedSlice, Exception]]:
     with ThreadPoolExecutor(max_workers=len(prepared), thread_name_prefix="fit-mechanic") as pool:
-        futures = [(item, pool.submit(_write_tests, item)) for item in prepared]
+        futures = [(item, pool.submit(_write_tests, item, resuming)) for item in prepared]
         return _collect_failures(futures)
 
 
@@ -141,21 +215,87 @@ def _repairable(failure: FlowFailure) -> bool:
 class _Ledger:
     """One slice's block 1 history: which role is writing, how many rungs
     block 1 has climbed, and every diagnostic any of them was given. It is
-    what block 3's `piece.assignments` is to an implementation slice -
-    block 1 has no persisted run record of its own (it runs before
-    `runstate.begin_run`), so the role and revision it ends on are carried
-    on the slice and the diagnostics are carried into the next role's
-    brief."""
+    what block 3's `piece.assignments` is to an implementation slice, and
+    it is saved onto the slice's retained record whenever it changes, so
+    a run stopped anywhere in block 1 resumes on the same rung with the
+    same history (`from_record`). The role and revision the tests end on
+    are carried on the slice too; the diagnostics are carried into the
+    next role's brief."""
 
-    def __init__(self) -> None:
+    def __init__(self, record: RunRecord, retained: SliceRecord) -> None:
+        self._record, self._retained = record, retained
         self.role = "mechanic"
         self.revision = 0
+        # this role's launches in this run of its loop, and those it made
+        # before a resume handed it a fresh loop
         self.attempts = 0
+        self.earlier = 0
         self.spent = 0
+        self.diagnostic = ""
         self.rejections: list[str] = []
+        self.resumed = False
+
+    @classmethod
+    def from_record(cls, record: RunRecord, retained: SliceRecord) -> "_Ledger":
+        """The ladder exactly where a stopped run saved it. The recorded
+        role is relaunched at the same revision with a fresh loop - the
+        budget an escalation hands a new rung - and its first turn opens
+        with every rejection so far."""
+        ledger = cls(record, retained)
+        ledger.role = retained.tests_role or "mechanic"
+        ledger.revision = retained.tests_revision
+        ledger.earlier = retained.tests_attempts
+        ledger.spent = retained.tests_spent
+        ledger.diagnostic = retained.tests_diagnostic
+        ledger.rejections = list(retained.tests_rejections)
+        ledger.resumed = True
+        return ledger
+
+    def save(self) -> None:
+        with self._record.transition():
+            retained = self._retained
+            retained.tests_role, retained.tests_revision = self.role, self.revision
+            retained.tests_attempts = self.earlier + self.attempts
+            retained.tests_spent = self.spent
+            retained.tests_diagnostic = self.diagnostic
+            retained.tests_rejections = list(self.rejections)
+            self._record.save()
+
+    def launched(self, attempt: int) -> None:
+        self.attempts = attempt
+        self.save()
 
     def rejected(self, attempt: int, diagnostic: str) -> None:
-        self.rejections.append(f"{self.role} attempt {attempt} — {diagnostic}")
+        self.diagnostic = diagnostic
+        self.rejections.append(f"{self.role} attempt {self.earlier + attempt} — {diagnostic}")
+        self.save()
+
+    def opening(self) -> str:
+        """What a role's first turn is told when it is not the slice's very
+        first writing: the whole history when a resume relaunches it, the
+        escalation briefing when it has just taken the tests over."""
+        if self.resumed and self.rejections:
+            return self.resumption()
+        if self.revision:
+            return self.briefing()
+        return ""
+
+    def resumption(self) -> str:
+        """What a relaunched role is told: the diagnostic the stopped run
+        ended on, and every rejection these tests have collected."""
+        return (
+            f"Block 1 stopped while the {self.role} was writing these acceptance tests, and the "
+            f"run has been resumed with the {self.role} on them again. The branch and worktree "
+            f"are the ones block 1 left. The last rejection was:\n\n{self.diagnostic}\n\n"
+            f"Every rejection so far, oldest first:\n\n{self._history()}\n\nRead the tests as "
+            f"they stand on the branch before you change anything, then correct them so that "
+            f"all of these are answered at once."
+        )
+
+    def _history(self) -> str:
+        return "\n".join(
+            f"{index}. {entry}" for index, entry in enumerate(self.rejections, start=1)
+        )
 
     def budget_note(self) -> str:
         """How this role's budget ended, for the escalation line: spent to
@@ -184,23 +324,32 @@ class _Ledger:
         return next(role for role, successor in _SUCCESSOR.items() if successor == self.role)
 
 
-def _write_tests(prepared: PreparedSlice) -> None:
+def _write_tests(prepared: PreparedSlice, resuming: bool = False) -> None:
     """Block 1's role ladder for one slice. Each role gets the whole turn
     budget on the same branch, worktree and team; a role that ends it with
     the tests still rejected hands them to the next rung with every
     diagnostic so far, exactly as block 3 escalates an implementation
     (steps/implement._escalate_or_stop). The solver's exhaustion is the
     stop: before #437 the mechanic's was, and #397 stalled on tests one
-    word away from valid."""
-    ledger = _Ledger()
+    word away from valid.
+
+    Every rejection is saved, the solver's last one included, so a resume
+    (`resuming`) relaunches the rung the record holds with all of them."""
+    if resuming:
+        ledger = _Ledger.from_record(prepared.record, prepared.retained)
+    else:
+        ledger = _Ledger(prepared.record, prepared.retained)
+    ledger.save()
     while True:
         try:
             _run_role(prepared, ledger)
             return
         except FlowFailure as failure:
-            if ledger.role not in _SUCCESSOR or not _repairable(failure):
+            if not _repairable(failure):
                 raise
             ledger.rejected(ledger.attempts, f"{failure.outcome.name}: {failure.why}")
+            if ledger.role not in _SUCCESSOR:
+                raise
             _escalate(prepared, ledger)
 
 
@@ -210,9 +359,11 @@ def _run_role(prepared: PreparedSlice, ledger: _Ledger) -> None:
     label = f"{ledger.role.capitalize()} #{piece.number}"
 
     def attempt_turn(attempt: int, diagnostic: str) -> None:
-        ledger.attempts = attempt
         if diagnostic:
             ledger.rejected(attempt - 1, diagnostic)
+        # saved before the launch: a driver killed mid-turn leaves the
+        # record naming the writer a resume must not launch beside
+        ledger.launched(attempt)
         with narrate.grouped():
             narrate.line(f"🔧 {label} ({piece.layer}) attempt {attempt}/{turns.BUDGET}")
         _run_attempt(prepared, ledger, attempt, diagnostic)
@@ -226,8 +377,10 @@ def _escalate(prepared: PreparedSlice, ledger: _Ledger) -> None:
     piece = prepared.piece
     successor = _SUCCESSOR[ledger.role]
     note = ledger.budget_note()
-    ledger.spent += ledger.attempts
+    ledger.spent += ledger.earlier + ledger.attempts
     ledger.role, ledger.revision, ledger.attempts = successor, ledger.revision + 1, 0
+    ledger.earlier, ledger.resumed = 0, False
+    ledger.save()
     agent = agents.roster_entry(successor)
     narrate.line(
         f"⬆️  Block 1 #{piece.number}: {ledger.previous} {note} — "
@@ -238,7 +391,10 @@ def _escalate(prepared: PreparedSlice, ledger: _Ledger) -> None:
 
 def _run_attempt(prepared: PreparedSlice, ledger: _Ledger, attempt: int, diagnostic: str) -> None:
     piece, slug, path = prepared.piece, prepared.slug, prepared.path
-    first = attempt == 1 and ledger.revision == 0
+    # an escalated or resumed role's first turn inherits the whole history
+    # instead of the one diagnostic its predecessor died on
+    opening = "" if diagnostic or attempt > 1 else ledger.opening()
+    first = attempt == 1 and not opening
     reply, _session = agents.talk(
         slug,
         ledger.role,
@@ -251,10 +407,8 @@ def _run_attempt(prepared: PreparedSlice, ledger: _Ledger, attempt: int, diagnos
         test_kind=piece.test_kind,
         brief=piece.brief,
         acceptance="\n".join(f"- {item}" for item in piece.acceptance),
-        attempt=str(ledger.spent + attempt - 1),
-        # an escalated role's first turn inherits the whole history instead
-        # of the one diagnostic its predecessor died on
-        diagnostic=diagnostic or ("" if first else ledger.briefing()),
+        attempt=str(ledger.spent + ledger.earlier + attempt - 1),
+        diagnostic=diagnostic or opening,
         role_name=ledger.role,
         role_capitalized=ledger.role.capitalize(),
         # block 1's own correction turn continues in the session that wrote
@@ -279,7 +433,21 @@ def _run_attempt(prepared: PreparedSlice, ledger: _Ledger, attempt: int, diagnos
     piece.tests_role = ledger.role
     piece.tests_revision = ledger.revision
     piece.commit = worktrees.local_head(path)
+    _freeze(prepared, ledger)
     _comment(piece.number, slug, path, test_files, reply["why_they_fail"], ledger, passing_note)
+
+
+def _freeze(prepared: PreparedSlice, ledger: _Ledger) -> None:
+    """The slice's tests are written, validated and pushed: the record
+    freezes them at their commit, the one block 2 and block 3 reuse
+    unchanged and a resume leaves alone."""
+    piece, record, retained = prepared.piece, prepared.record, prepared.retained
+    with record.transition():
+        retained.test_files = list(piece.test_files)
+        retained.tests_type_debt = dict(piece.tests_type_debt)
+        retained.tests_role, retained.tests_revision = ledger.role, ledger.revision
+        retained.failing_sha = retained.tests_sha = piece.commit
+        record.save()
 
 
 def _check_not_a_reasoned_refusal(test_files: list[str], why: str, story_number: int) -> None:

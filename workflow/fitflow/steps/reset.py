@@ -7,8 +7,9 @@ What it undoes: the slice, integration and release worktrees and their
 local and remote branches; the AI Army teams; an open pull request (a
 merged one is left alone: its work landed); the child issues block 1
 created; and the `in-progress` and `blocked` labels. `needs-gabriel` and
-`paused` are human holds and stay. Without a record - a run that died in
-block 1 - the same things are found by their names.
+`paused` are human holds and stay. Block 1 writes the record as soon as its
+plan is accepted; without one - a run that died before that, or a record
+lost since - the same things are found by their names.
 """
 
 from fitflow import agents, github, layers, narrate, runstate, settings, worktrees
