@@ -13,9 +13,14 @@ so. A turn the driver never saw end, or one that failed before it
 produced a reply, is voided and relaunched under the same attempt number:
 counters are not reset, the ledger keeps the voided entry, and a turn
 still running on this machine is never relaunched beside. A slice with no
-accepted assignment sends the run back to block 2; a slice interrupted
-inside a review fix is not reconciled here - `--reset` is the honest
-answer for it.
+accepted assignment sends the run back to block 2.
+
+A slice interrupted inside one of block 4's fix turns is reconciled the
+same way, and goes back to `fixing`: the run continues in block 4, where
+the fix request finishes its remaining attempts - re-judging the retained
+reply on the bytes it left, or relaunching the turn the driver never saw
+end - before the join is re-verified and the new commit carried onto the
+integration branch.
 
 A slice parked in `tests_rejected` is waiting on block 1, not on a turn of
 its own: it stays parked, its unfinished repair turn is voided like any
@@ -91,7 +96,11 @@ def _pr_merged(record: RunRecord) -> bool:
 
 
 def _after_block3(record: RunRecord) -> str:
-    if any(piece.state != "succeeded" for piece in record.ordered()):
+    unfinished = [piece for piece in record.ordered() if piece.state != "succeeded"]
+    if unfinished and all(piece.state == "fixing" for piece in unfinished):
+        narrate.line("♻️  A block 4 fix was interrupted: continuing at block 4")
+        return DELIVER
+    if unfinished:
         return IMPLEMENT
     if record.terminal == "IMPLEMENTED":
         narrate.line("♻️  Every slice is frozen and reported: continuing at block 4")
@@ -117,8 +126,11 @@ def _reconcile_slice(record: RunRecord, piece: SliceRecord) -> None:
     if piece.state == "tests_rejected":
         _reopen_test_repair(record, piece)
         return
+    if piece.state == "escalating":
+        raise _conflict(record, piece, "was interrupted between two roles")
     if _in_review_fix(piece):
-        raise _conflict(record, piece, f"was interrupted ({piece.state}) during a review fix")
+        _reopen_review_fix(record, piece)
+        return
     if not piece.turns:
         _never_launched(record, piece)
         return
@@ -172,9 +184,32 @@ def _never_launched(record: RunRecord, piece: SliceRecord) -> None:
 
 
 def _in_review_fix(piece: SliceRecord) -> bool:
-    return piece.state in ("fixing", "escalating") or bool(
-        piece.turns and piece.turns[-1]["kind"] == "review_fix"
-    )
+    return piece.state == "fixing" or bool(piece.turns and piece.turns[-1]["kind"] == "review_fix")
+
+
+def _reopen_review_fix(record: RunRecord, piece: SliceRecord) -> None:
+    """A slice stopped inside one of block 4's fix turns goes back to
+    `fixing`, carrying what its last turn actually reached: a reply to
+    re-judge on the bytes it left, or a voided turn for the fix request to
+    relaunch under the same attempt. The request's own budget is what block
+    4 continues against, so a resume buys no extra attempt."""
+    last = piece.turns[-1]
+    note = f"re-judging fix attempt {last.get('fix_attempt', 1)} from its retained reply"
+    if last["status"] == "running":
+        _require_not_in_flight(record, piece)
+        _mark_void(record, piece, last, "the driver stopped while the fix turn was running")
+        note = f"fix attempt {last.get('fix_attempt', 1)} voided; it will be relaunched"
+    elif last["result"] == "void":
+        note = f"relaunching voided fix attempt {last.get('fix_attempt', 1)}"
+    elif last.get("reply") is None:
+        _mark_void(record, piece, last, last["why"] or "the fix turn produced no valid reply")
+        note = f"fix attempt {last.get('fix_attempt', 1)} left no reply; it will be relaunched"
+    else:
+        _require_rejudgeable(record, piece, last)
+    with record.transition():
+        piece.resume_to("fixing")
+        record.save()
+    narrate.line(f"♻️  #{piece.number} ({piece.layer}) stopped in a review fix: {note}")
 
 
 def _require_not_in_flight(record: RunRecord, piece: SliceRecord) -> None:
@@ -190,6 +225,16 @@ def _require_not_in_flight(record: RunRecord, piece: SliceRecord) -> None:
 def _reopen_for_validation(record: RunRecord, piece: SliceRecord, last: dict) -> None:
     """A turn that ended with a valid reply is judged again, on the bytes
     it left; bytes that moved since are not that turn's work."""
+    _require_rejudgeable(record, piece, last)
+    with record.transition():
+        piece.resume_to("running")
+        record.save()
+
+
+def _require_rejudgeable(record: RunRecord, piece: SliceRecord, last: dict) -> None:
+    """What a retained reply must satisfy before its verdict is re-derived:
+    the worktree still there, its bytes exactly the ones the turn left, and
+    a verdict that is not already known to repeat."""
     path = worktrees.slice_worktree_path(piece.slug)
     if not path.exists():
         raise _conflict(record, piece, "worktree is missing")
@@ -202,9 +247,6 @@ def _reopen_for_validation(record: RunRecord, piece: SliceRecord, last: dict) ->
             "audit it, then reset",
         )
     _require_not_stopped_for_repetition(record, piece, last)
-    with record.transition():
-        piece.resume_to("running")
-        record.save()
 
 
 def _require_not_stopped_for_repetition(record: RunRecord, piece: SliceRecord, last: dict) -> None:
@@ -229,13 +271,17 @@ def _require_not_stopped_for_repetition(record: RunRecord, piece: SliceRecord, l
 def _void(record: RunRecord, piece: SliceRecord, last: dict, why: str) -> None:
     """The ledger keeps the entry, marked void; the attempt number is
     reserved again by the relaunch."""
+    _mark_void(record, piece, last, why)
+    _back_to_launch(record, piece, f"attempt {last['attempt']} voided ({why})")
+
+
+def _mark_void(record: RunRecord, piece: SliceRecord, last: dict, why: str) -> None:
     with record.transition():
         last["status"] = "completed"
         last["result"] = "void"
         last["why"] = f"voided on resume: {why}"
         piece.attempts = max(0, piece.attempts - 1)
         record.save()
-    _back_to_launch(record, piece, f"attempt {last['attempt']} voided ({why})")
 
 
 def _back_to_launch(record: RunRecord, piece: SliceRecord, note: str) -> None:
