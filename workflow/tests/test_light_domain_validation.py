@@ -24,7 +24,7 @@ _LIGHT_TIER_ARGV = ["scripts/quality/gate.ts", "verify:fast"]
 _FULL_TIER_ARGV = ["run", "verify:changed"]
 
 
-def _bun_argvs(world) -> list[list[str]]:
+def _bun_commands(world) -> list[list[str]]:
     return [call["argv"] for call in world.calls() if call.get("tool") == "bun"]
 
 
@@ -34,7 +34,7 @@ def _tier_runs(world) -> list[str]:
     content steps run `gate.ts verify:fast --only ...` and are not a
     validation tier, so they are not counted."""
     runs = []
-    for argv in _bun_argvs(world):
+    for argv in _bun_commands(world):
         if argv == _LIGHT_TIER_ARGV:
             runs.append("light")
         elif argv == _FULL_TIER_ARGV:
