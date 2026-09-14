@@ -1,13 +1,28 @@
-"""Box: mechanics write failing acceptance tests.
+"""Box: block 1 writes failing acceptance tests.
 
 The driver prepares slice worktrees and teams sequentially. Once all are
-ready, it runs one mechanic per slice concurrently and waits for every result.
-Each slice gets one initial turn and at most two repair turns in the same
-session/worktree. The full independent validation runs after every turn.
+ready, it runs one writer per slice concurrently and waits for every result.
+Each role gets one initial turn and at most two repair turns in the same
+session/worktree; when a role's budget ends with the tests still rejected,
+block 1 escalates a rung - mechanic, builder, solver - on the same branch
+and worktree, with every diagnostic so far in the successor's brief. The
+full independent validation runs after every turn.
+
+That validation runs *all* of its checks and reports their union. Block 1
+used to stop at the first one that failed, so run 5 of #397 spent the
+mechanic's three attempts on three different gates surfaced one per attempt
+- type errors, then a clone, then a misspelling - and stopped with tests
+that were one word away from valid. Every gate now runs to completion and
+the mechanic gets one diagnostic naming all of them, because a correction
+can answer three failures as easily as one when it is told about three.
+Only a rejection that makes the later checks meaningless - a non-test file
+on the branch, a test in the wrong folder, reported files that are not in
+the diff - still short-circuits.
 """
 
+import re
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 from fitflow import (
@@ -33,6 +48,15 @@ _REPAIRABLE_OUTCOMES = {
 # The same verdicts the block 3 objection loop's own repair budget retries.
 REPAIRABLE_OUTCOMES = frozenset(_REPAIRABLE_OUTCOMES)
 
+#: Block 1's capability ladder, the same rungs and the same order block 3
+#: escalates through (steps/implement._SUCCESSOR). A role that ends its
+#: budget with the tests still rejected hands them to the next one; the
+#: solver is the last rung, and its exhaustion is the run's stop.
+_SUCCESSOR = {"mechanic": "builder", "builder": "solver"}
+
+#: How the acceptance run is named in the union of block 1's checks.
+_ACCEPTANCE = "fails as intended"
+
 
 class ReasonedRefusal(FlowFailure):
     """The mechanic wrote no acceptance test and said why it could not.
@@ -55,7 +79,7 @@ class PreparedSlice:
 def write_failing_tests(slices: list[Slice], story_number: int) -> list[Slice]:
     prepared = [_prepare(piece) for piece in slices]
     if len(prepared) == 1:
-        _run_mechanic(prepared[0])
+        _write_tests(prepared[0])
         return slices
 
     narrate.line(f"⚡ Starting {len(prepared)} mechanics in parallel")
@@ -88,7 +112,7 @@ def _prepare(piece: Slice) -> PreparedSlice:
 
 def _run_parallel(prepared: list[PreparedSlice]) -> list[tuple[PreparedSlice, Exception]]:
     with ThreadPoolExecutor(max_workers=len(prepared), thread_name_prefix="fit-mechanic") as pool:
-        futures = [(item, pool.submit(_run_mechanic, item)) for item in prepared]
+        futures = [(item, pool.submit(_write_tests, item)) for item in prepared]
         return _collect_failures(futures)
 
 
@@ -110,32 +134,115 @@ def _failure(error: Exception) -> str:
     return f"{type(error).__name__} — {error}"
 
 
-def _run_mechanic(prepared: PreparedSlice) -> None:
+def _repairable(failure: FlowFailure) -> bool:
+    return failure.outcome in _REPAIRABLE_OUTCOMES and not isinstance(failure, ReasonedRefusal)
+
+
+class _Ledger:
+    """One slice's block 1 history: which role is writing, how many rungs
+    block 1 has climbed, and every diagnostic any of them was given. It is
+    what block 3's `piece.assignments` is to an implementation slice -
+    block 1 has no persisted run record of its own (it runs before
+    `runstate.begin_run`), so the role and revision it ends on are carried
+    on the slice and the diagnostics are carried into the next role's
+    brief."""
+
+    def __init__(self) -> None:
+        self.role = "mechanic"
+        self.revision = 0
+        self.attempts = 0
+        self.spent = 0
+        self.rejections: list[str] = []
+
+    def rejected(self, attempt: int, diagnostic: str) -> None:
+        self.rejections.append(f"{self.role} attempt {attempt} — {diagnostic}")
+
+    def budget_note(self) -> str:
+        """How this role's budget ended, for the escalation line: spent to
+        the last attempt, or deliberately left unspent on a repeat."""
+        if self.attempts == turns.BUDGET:
+            return f"exhausted its {turns.BUDGET} attempts"
+        return turns.unspent_attempts(self.attempts)
+
+    def briefing(self) -> str:
+        """What the successor is told: every rejection this slice's tests
+        have collected, oldest first, and what it is being asked to do with
+        them."""
+        history = "\n".join(
+            f"{index}. {entry}" for index, entry in enumerate(self.rejections, start=1)
+        )
+        return (
+            f"Block 1 escalated these acceptance tests to you: the {self.previous} could not "
+            f"get them past the driver's checks and its attempts are spent. The branch and "
+            f"worktree are the ones it left. Every rejection so far, oldest first:\n\n"
+            f"{history}\n\nRead the tests as they stand on the branch before you change "
+            f"anything, then correct them so that all of these are answered at once."
+        )
+
+    @property
+    def previous(self) -> str:
+        return next(role for role, successor in _SUCCESSOR.items() if successor == self.role)
+
+
+def _write_tests(prepared: PreparedSlice) -> None:
+    """Block 1's role ladder for one slice. Each role gets the whole turn
+    budget on the same branch, worktree and team; a role that ends it with
+    the tests still rejected hands them to the next rung with every
+    diagnostic so far, exactly as block 3 escalates an implementation
+    (steps/implement._escalate_or_stop). The solver's exhaustion is the
+    stop: before #437 the mechanic's was, and #397 stalled on tests one
+    word away from valid."""
+    ledger = _Ledger()
+    while True:
+        try:
+            _run_role(prepared, ledger)
+            return
+        except FlowFailure as failure:
+            if ledger.role not in _SUCCESSOR or not _repairable(failure):
+                raise
+            ledger.rejected(ledger.attempts, f"{failure.outcome.name}: {failure.why}")
+            _escalate(prepared, ledger)
+
+
+def _run_role(prepared: PreparedSlice, ledger: _Ledger) -> None:
+    """One role's whole budget, in block 1's own repair loop."""
     piece = prepared.piece
+    label = f"{ledger.role.capitalize()} #{piece.number}"
 
     def attempt_turn(attempt: int, diagnostic: str) -> None:
+        ledger.attempts = attempt
+        if diagnostic:
+            ledger.rejected(attempt - 1, diagnostic)
         with narrate.grouped():
-            narrate.line(
-                f"🔧 Mechanic #{piece.number} ({piece.layer}) attempt {attempt}/{turns.BUDGET}"
-            )
-        _run_attempt(prepared, attempt, diagnostic)
+            narrate.line(f"🔧 {label} ({piece.layer}) attempt {attempt}/{turns.BUDGET}")
+        _run_attempt(prepared, ledger, attempt, diagnostic)
 
-    turns.repair_loop(
-        f"Mechanic #{piece.number}",
-        attempt_turn,
-        lambda failure: (
-            failure.outcome in _REPAIRABLE_OUTCOMES and not isinstance(failure, ReasonedRefusal)
-        ),
+    turns.repair_loop(label, attempt_turn, _repairable)
+
+
+def _escalate(prepared: PreparedSlice, ledger: _Ledger) -> None:
+    """Hand the tests to the next rung: one level, the same branch, a fresh
+    budget, and the roster's own model and effort for that role."""
+    piece = prepared.piece
+    successor = _SUCCESSOR[ledger.role]
+    note = ledger.budget_note()
+    ledger.spent += ledger.attempts
+    ledger.role, ledger.revision, ledger.attempts = successor, ledger.revision + 1, 0
+    agent = agents.roster_entry(successor)
+    narrate.line(
+        f"⬆️  Block 1 #{piece.number}: {ledger.previous} {note} — "
+        f"the {successor} takes over the tests"
     )
+    narrate.fields([("Backend", agent.backend), ("Model", agent.model), ("Effort", agent.effort)])
 
 
-def _run_attempt(prepared: PreparedSlice, attempt: int, diagnostic: str) -> None:
+def _run_attempt(prepared: PreparedSlice, ledger: _Ledger, attempt: int, diagnostic: str) -> None:
     piece, slug, path = prepared.piece, prepared.slug, prepared.path
-    prompt = "failing_tests" if attempt == 1 else "correct_failing_tests"
+    first = attempt == 1 and ledger.revision == 0
     reply, _session = agents.talk(
         slug,
-        "mechanic",
-        prompt,
+        ledger.role,
+        "failing_tests" if first else "correct_failing_tests",
         "failing_tests",
         attribute_failures_to=piece.number,
         slice_number=piece.number,
@@ -144,10 +251,12 @@ def _run_attempt(prepared: PreparedSlice, attempt: int, diagnostic: str) -> None
         test_kind=piece.test_kind,
         brief=piece.brief,
         acceptance="\n".join(f"- {item}" for item in piece.acceptance),
-        attempt=str(attempt - 1),
-        diagnostic=diagnostic,
-        role_name="mechanic",
-        role_capitalized="Mechanic",
+        attempt=str(ledger.spent + attempt - 1),
+        # an escalated role's first turn inherits the whole history instead
+        # of the one diagnostic its predecessor died on
+        diagnostic=diagnostic or ("" if first else ledger.briefing()),
+        role_name=ledger.role,
+        role_capitalized=ledger.role.capitalize(),
         # block 1's own correction turn continues in the session that wrote
         # the tests: it needs no inventory of the neighbors it just read
         siblings="",
@@ -156,7 +265,7 @@ def _run_attempt(prepared: PreparedSlice, attempt: int, diagnostic: str) -> None
     )
     test_files = list(reply["test_files"])
     with narrate.grouped():
-        narrate.line(f"📦 Mechanic result #{piece.number} ({piece.layer})")
+        narrate.line(f"📦 {ledger.role.capitalize()} result #{piece.number} ({piece.layer})")
         narrate.fields(
             [
                 ("Test files", ", ".join(test_files) or "(none)"),
@@ -165,11 +274,12 @@ def _run_attempt(prepared: PreparedSlice, attempt: int, diagnostic: str) -> None
         )
     _check_not_a_reasoned_refusal(test_files, reply["why_they_fail"], piece.number)
     debt = _verify_pushed(prepared, test_files)
-    _verify_tests_fail(path, test_files, piece.number)
     piece.test_files = list(test_files)
     piece.tests_type_debt = debt
+    piece.tests_role = ledger.role
+    piece.tests_revision = ledger.revision
     piece.commit = worktrees.local_head(path)
-    _comment(piece.number, slug, path, test_files, reply["why_they_fail"])
+    _comment(piece.number, slug, path, test_files, reply["why_they_fail"], ledger)
 
 
 def _check_not_a_reasoned_refusal(test_files: list[str], why: str, story_number: int) -> None:
@@ -211,7 +321,8 @@ def _verify_pushed(prepared: PreparedSlice, test_files: list[str]) -> dict[str, 
     _check_files_match_test_kind(slug, changed, test_files, piece.test_kind, story_number)
     _check_test_files_are_where_they_belong(slug, piece.layer, changed, story_number)
     _check_test_quality(slug, path, test_files, story_number)
-    debt = _check_failing_branch_gates(piece.layer, piece.number, path, test_files, changed)
+    checks = _branch_checks(piece.layer, story_number, path, test_files, changed)
+    debt = _judged(checks, story_number)
     narrate.line(
         f"🔍 Verify #{story_number}: tree clean ✔ · pushed ✔ · files on branch ✔ · "
         "only tests ✔ · " + _branch_gate_summary(piece.layer, changed)
@@ -230,23 +341,100 @@ def _branch_gate_summary(layer: str, changed: list[str], placement: bool = True)
     return placed + "lint ✔ · types ✔ · " + ", ".join(gates.FAILING_BRANCH_STEPS) + " ✔"
 
 
-def _check_failing_branch_gates(
+@dataclass(frozen=True)
+class _Verdict:
+    """One block 1 check's outcome: what it contributes to the narrated
+    union, the rejection it found (None when it passed), and the type debt
+    it accepted."""
+
+    label: str
+    entries: tuple[str, ...]
+    failure: FlowFailure | None = None
+    debt: dict[str, int] = field(default_factory=dict)
+
+
+def _branch_checks(
     layer: str, story_number: int, path, test_files: list[str], changed: list[str]
-) -> dict[str, int]:
-    """The gates the acceptance tests must already pass, and the type debt
-    the two type-aware lanes accepted. A workflow slice changes Python and
-    prose, so the repository's TypeScript lanes have nothing to say about
-    it and the driver's own four run instead - and a Python test names no
-    TypeScript API, so such a slice never carries debt."""
+) -> list[_Verdict]:
+    """Every gate the acceptance tests must already pass, plus the
+    acceptance run itself - all of them, whatever the earlier ones said.
+    A workflow slice changes Python and prose, so the repository's
+    TypeScript lanes have nothing to say about it and the driver's own four
+    run instead (those stop at their first failing step, in gates.py's own
+    loop) - and a Python test names no TypeScript API, so such a slice
+    never carries debt.
+
+    A crashed gate still raises where it stands: an external tool failure is
+    not a verdict on the tests, so there is nothing to aggregate it with."""
     if layer == "workflow":
-        failure = gates.run_workflow_gates(path, story_number, changed)
-        if failure is not None:
-            raise FlowFailure(Outcome.TESTS_INVALID, failure.diagnostic, story_number)
-        return {}
-    debt = _check_failing_branch_lint(path, test_files, story_number)
-    debt = _merged(debt, _check_failing_branch_types(path, test_files, story_number))
-    _check_failing_branch_gate_steps(path, story_number)
-    return debt
+        return [
+            _workflow_verdict(path, story_number, changed),
+            _acceptance_verdict(path, test_files, story_number),
+        ]
+    return [
+        _lint_verdict(path, test_files, story_number),
+        _type_verdict(path, test_files, story_number),
+        _content_verdict(path, test_files, story_number),
+        _acceptance_verdict(path, test_files, story_number),
+    ]
+
+
+def _judged(verdicts: list[_Verdict], story_number: int) -> dict[str, int]:
+    """The union of every check: the type debt when they all passed, and
+    one diagnostic naming every failure when they did not."""
+    failed = [verdict for verdict in verdicts if verdict.failure is not None]
+    if not failed:
+        debt: dict[str, int] = {}
+        for verdict in verdicts:
+            debt = _merged(debt, verdict.debt)
+        return debt
+    narrate.line(
+        "🧪 Gates: " + " · ".join(entry for verdict in verdicts for entry in verdict.entries)
+    )
+    raise _one_diagnostic(failed, story_number)
+
+
+def _one_diagnostic(failed: list[_Verdict], story_number: int) -> FlowFailure:
+    """Every failure the branch collected, in one rejection the next turn
+    can answer in full: a single failure keeps its own diagnostic verbatim,
+    and several are listed under their own headed lines.
+
+    The outcome is `TESTS_INVALID` as soon as any check found the tests
+    invalid - a test that is both broken and passing is broken - and the
+    sole failure's own outcome otherwise, so a branch whose only fault is
+    that its tests pass is still `TESTS_DO_NOT_FAIL`."""
+    if len(failed) == 1:
+        return failed[0].failure
+    outcome = (
+        Outcome.TESTS_INVALID
+        if any(verdict.failure.outcome is Outcome.TESTS_INVALID for verdict in failed)
+        else failed[0].failure.outcome
+    )
+    # one gate run can reject on several steps at once, and the mechanic has
+    # to answer each of them, so the count is of checks rather than of the
+    # runs that reported them
+    names = [name for verdict in failed for name in verdict.label.split(", ")]
+    body = "\n\n".join(f"{verdict.label}:\n{verdict.failure.why}" for verdict in failed)
+    return FlowFailure(
+        outcome,
+        f"{len(names)} of block 1's checks rejected the acceptance tests "
+        f"({', '.join(names)}); this one correction must answer all {len(names)}, "
+        f"because the next one is judged by all of them again:\n\n{body}",
+        story_number,
+    )
+
+
+def _workflow_verdict(path, story_number: int, changed: list[str]) -> _Verdict:
+    names = gates.workflow_gate_names(changed)
+    failure = gates.run_workflow_gates(path, story_number, changed)
+    if failure is None:
+        return _Verdict("workflow gates", tuple(f"{name} ✔" for name in names))
+    label = failure.headline.split(" failed")[0] or "workflow gates"
+    return _Verdict(
+        label,
+        (f"{label} ✗",),
+        FlowFailure(Outcome.TESTS_INVALID, failure.diagnostic, story_number),
+    )
 
 
 def validate_repaired_tests(
@@ -285,12 +473,12 @@ def validate_repaired_tests(
     _check_every_changed_file_is_a_test(slug, layer, changed, story_number)
     _check_files_match_test_kind(slug, changed, test_files, test_kind, story_number)
     _check_test_quality(slug, path, test_files, story_number)
-    debt = _check_failing_branch_gates(layer, story_number, path, test_files, changed)
+    debt = _judged(_branch_checks(layer, story_number, path, test_files, changed), story_number)
     narrate.line(
         f"🔍 Verify #{story_number} repair: tree clean ✔ · only tests ✔ · "
         + _branch_gate_summary(layer, changed, placement=False)
+        + f" · {_ACCEPTANCE} ✔"
     )
-    _verify_tests_fail(path, test_files, story_number)
     return debt
 
 
@@ -341,7 +529,7 @@ def _check_test_quality(slug: str, path, test_files: list[str], story_number: in
                 )
 
 
-def _check_failing_branch_lint(path, test_files: list[str], story_number: int) -> dict[str, int]:
+def _lint_verdict(path, test_files: list[str], story_number: int) -> _Verdict:
     """The acceptance tests' own change-scoped lint. A story that adds an
     export makes the type-aware rules see `any` flowing out of an import
     that does not resolve yet: #424's spec produced 186 `no-unsafe-*`
@@ -350,13 +538,13 @@ def _check_failing_branch_lint(path, test_files: list[str], story_number: int) -
     mechanic's to fix now."""
     failure = gates.run_changed_lint(path, story_number)
     if failure is None:
-        return {}
-    return _accept_or_reject(
+        return _Verdict("lint:changed", ("lint:changed ✔",))
+    return _lane_verdict(
         failure, test_files, lanes.tolerated_lint_error, "lint:changed", "lint errors", story_number
     )
 
 
-def _check_failing_branch_types(path, test_files: list[str], story_number: int) -> dict[str, int]:
+def _type_verdict(path, test_files: list[str], story_number: int) -> _Verdict:
     """A test that calls a helper with an argument of the wrong type throws
     instead of asserting, so it can never pass however the behavior is
     implemented (#399). The repository's own type lane sees that before the
@@ -370,34 +558,39 @@ def _check_failing_branch_types(path, test_files: list[str], story_number: int) 
     failing as intended; the runtime verdict below still has to hold."""
     failure = gates.run_type_check(path, story_number)
     if failure is None:
-        return {}
-    return _accept_or_reject(
+        return _Verdict("check", ("check ✔",))
+    return _lane_verdict(
         failure, test_files, lanes.tolerated_type_error, "check", "type errors", story_number
     )
 
 
-def _accept_or_reject(
+def _lane_verdict(
     failure: gates.LaneFailure,
     test_files: list[str],
     tolerated,
     lane: str,
     noun: str,
     story_number: int,
-) -> dict[str, int]:
+) -> _Verdict:
     """Accept a lane failure that is entirely the story's missing API
     showing through the acceptance tests, and reject every other one."""
     debt = _missing_api_debt(failure.reading, test_files, tolerated)
     if debt is None:
-        raise FlowFailure(
-            Outcome.TESTS_INVALID,
-            _why_not_the_missing_api(failure, test_files, tolerated),
-            story_number,
+        count = f" ({len(failure.reading.errors)} {noun})" if failure.reading.complete else ""
+        return _Verdict(
+            lane,
+            (f"{lane} ✗{count}",),
+            FlowFailure(
+                Outcome.TESTS_INVALID,
+                _why_not_the_missing_api(failure, test_files, tolerated),
+                story_number,
+            ),
         )
     narrate.line(
         f"🧪 Gates: {lane} — {sum(debt.values())} {noun} inside the acceptance tests, "
         "expected before the implementation exists ✔"
     )
-    return debt
+    return _Verdict(lane, (f"{lane} ✔",), debt=debt)
 
 
 def _missing_api_debt(reading, test_files: list[str], tolerated) -> dict[str, int] | None:
@@ -443,7 +636,7 @@ def _why_not_the_missing_api(failure: gates.LaneFailure, test_files: list[str], 
     )
 
 
-def _check_failing_branch_gate_steps(path, story_number: int) -> None:
+def _content_verdict(path, test_files: list[str], story_number: int) -> _Verdict:
     """Block 3 judges the implementation with the repository gate, and the
     acceptance tests are part of the diff it sizes: a clone, a formatting
     miss or a suppression inside a test file fails that gate on every
@@ -452,8 +645,85 @@ def _check_failing_branch_gate_steps(path, story_number: int) -> None:
     mechanic still owns the file and the failure is an ordinary
     correction."""
     failure = gates.run_failing_branch_steps(path, story_number)
-    if failure is not None:
-        raise FlowFailure(Outcome.TESTS_INVALID, failure.diagnostic, story_number)
+    if failure is None:
+        return _Verdict("content steps", (", ".join(gates.FAILING_BRANCH_STEPS) + " ✔",))
+    words = _unknown_words(failure.diagnostic, test_files)
+    return _Verdict(
+        ", ".join(sorted(failure.steps)) or "content steps",
+        tuple(
+            f"{step} ✗{_step_detail(step, words)}"
+            for step in gates.FAILING_BRANCH_STEPS
+            if step in failure.steps
+        ),
+        FlowFailure(
+            Outcome.TESTS_INVALID, failure.diagnostic + _spelling_guidance(words), story_number
+        ),
+    )
+
+
+#: cspell's own issue line inside a failed `spellcheck` step's detail: the
+#: file it read, and the word it did not know.
+_UNKNOWN_WORD = re.compile(r"^\s*([\w./@+-]+):\d+:\d+ - Unknown word \(([^)]+)\)")
+
+
+def _unknown_words(diagnostic: str, test_files: list[str]) -> dict[str, int]:
+    """Every word `spellcheck` rejected inside one of the acceptance tests,
+    and how often - `{"LINDOR": 4}` for the fixture data #397's mechanic
+    spent its last attempt on. A word cspell met in a file this branch did
+    not write is not the mechanic's to fix, so it is not counted."""
+    counts: dict[str, int] = {}
+    for line in diagnostic.splitlines():
+        match = _UNKNOWN_WORD.match(line)
+        if match is not None and acceptance.owning_test(match.group(1), test_files) is not None:
+            counts[match.group(2)] = counts.get(match.group(2), 0) + 1
+    return counts
+
+
+def _step_detail(step: str, words: dict[str, int]) -> str:
+    """What the narrated union says in parentheses after a failed step. Only
+    `spellcheck` has something that short and that useful to say."""
+    if step != "spellcheck" or not words:
+        return ""
+    # the suppressed rule is about the multiplication sign the union line
+    # deliberately uses after the word cspell rejected
+    counted = ", ".join(f"{word} ×{count}" for word, count in sorted(words.items()))  # noqa: RUF001
+    return f" ({counted})"
+
+
+def _spelling_guidance(words: dict[str, int]) -> str:
+    """What the writer can actually do about an unknown word inside a test
+    file it owns. Not much, and saying so is the point: `cspell.json` is a
+    workflow file this branch may not touch, and an inline `cspell:ignore`
+    is not a way round it either - `scripts/quality/suppressions.ts` counts
+    `cspell:ignore` and `cspell:disable` as suppressions and
+    `quality/threshold-baseline.json` ratchets unjustified suppressions at
+    0, so the directive would fail `check:suppressions` on the next run of
+    these same steps. That leaves one option, and #397's `LINDOR` fixture
+    is exactly the case: fixture data is invented, so invent it out of
+    words the dictionary already knows."""
+    if not words:
+        return ""
+    named = ", ".join(sorted(words))
+    return (
+        f"\ncspell does not know {named} inside the acceptance tests. Spell the fixture data "
+        "with words the dictionary already knows - a fixture name is invented, so invent one "
+        "cspell accepts - rather than keeping a real-world name it has never seen. You cannot "
+        "add the word to `cspell.json` from this branch (only a workflow slice may change it), "
+        "and an inline `cspell:ignore` comment is not an alternative: `check:suppressions` "
+        "counts it as a suppression and the unjustified ratchet is 0, so it would fail these "
+        "same steps on the next attempt."
+    )
+
+
+def _acceptance_verdict(path, test_files: list[str], story_number: int) -> _Verdict:
+    """The acceptance run, as one more check in the union: the tests must
+    run, fail, and fail on an expectation (#429). A tool failure still
+    raises where it stands - it is not a verdict on the tests."""
+    try:
+        _verify_tests_fail(path, test_files, story_number)
+    except FlowFailure as failure:
+        return _Verdict(_ACCEPTANCE, (f"{_ACCEPTANCE} ✗",), failure)
+    return _Verdict(_ACCEPTANCE, (f"{_ACCEPTANCE} ✔",))
 
 
 def _check_failures_are_expectations(verdict, story_number: int) -> None:
@@ -595,10 +865,16 @@ def _verify_tests_fail(path, test_files: list[str], story_number: int) -> None:
     _check_failures_are_expectations(verdict, story_number)
 
 
-def _comment(story_number: int, slug: str, path, test_files: list[str], why: str) -> None:
+def _comment(
+    story_number: int, slug: str, path, test_files: list[str], why: str, ledger: "_Ledger"
+) -> None:
     sha = worktrees.local_head(path)
+    written_by = f"Written by: {ledger.role}"
+    if ledger.revision:
+        written_by += f" (block 1 escalated {ledger.revision} rung(s) to reach it)"
     body = (
-        f"Branch: {slug}\nCommit: {sha}\nTest files: {', '.join(test_files)}\n\n"
+        f"Branch: {slug}\nCommit: {sha}\nTest files: {', '.join(test_files)}\n"
+        f"{written_by}\n\n"
         f"Why they fail: {why}\n\nReady for block 2 (delegate)."
     )
     narrate.comment_posted(story_number, body)

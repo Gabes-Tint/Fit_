@@ -29,11 +29,13 @@ def _given_planned_story(
     signals: dict | None = None,
     titles: list[str] | None = None,
     extra: dict[str, str] | None = None,
+    writer: str = "mechanic",
 ) -> str:
     """Block 1 for a one-slice story: failing tests written, validated and
     pushed, and the slice delegated to an implementer. `signals` chooses
     which role that is, `titles` how many tests the acceptance file reports,
-    and `extra` writes further test files beside it."""
+    `extra` writes further test files beside it, and `writer` is the rung
+    block 1's own ladder ended on."""
     world.given_story(number, title="Rows show the brand", labels=["story"])
     world.planner_answers_whose_call(
         number,
@@ -58,7 +60,16 @@ def _given_planned_story(
         ],
     )
     slug = f"story-{number}-domain"
-    world.mechanic_writes(slug, files={TEST: "// failing\n", **(extra or {})}, test_files=[TEST])
+    if writer != "mechanic":
+        # block 1's own ladder: the mechanic's budget ends with nothing
+        # pushed and the rung above it writes the tests instead (#437)
+        for attempt in (1, 2):
+            world.mechanic_changes_without_pushing(
+                slug, files={TEST: f"// mechanic attempt {attempt}\n"}, test_files=[TEST]
+            )
+    world.mechanic_writes(
+        slug, files={TEST: "// failing\n", **(extra or {})}, test_files=[TEST], role=writer
+    )
     world.scripted_test_outcome(TEST, outcomes, titles=titles)
     world.planner_answers_delegate(
         number, [delegate_slice(number, "domain", signals or mechanic_signals())]
@@ -693,3 +704,43 @@ def test_the_repair_brief_lists_the_sibling_tests_of_the_same_kind(world):
     assert f'- `{SIBLING}` — first test: "brand rows"' in repair_prompt
     # the file under repair is not its own sibling
     assert f"- `{TEST}`" not in repair_prompt
+
+
+def test_resume_relaunches_the_repair_with_the_role_block_1_ended_on(world):
+    """Block 1 escalates its own writer when a rung runs out (#437), and the
+    slice retains which role finally wrote the tests. The repair an
+    objection asks for is that role's work - it is the one that knows what
+    the tests meant - so a run stopped inside the repair relaunches the
+    builder, not the mechanic whose attempts were spent before a line was
+    ever pushed."""
+    slug = _given_planned_story(world, 471, ["fail", "fail"], writer="builder")
+    world.scripted_test_outcome(REPAIRED, ["fail", "pass"])
+    world.agent_objects(slug, "mechanic", tests=[TEST], why=WHY)
+    # no repair turn is scripted, so the first run dies at block 1's launch
+    stopped = run_flow(world, 471)
+
+    assert stopped.returncode == 21, stopped.stdout + stopped.stderr
+    assert "⬆️  Block 1 #471: mechanic stopped early" in stopped.stdout
+    assert "the builder takes over the tests" in stopped.stdout
+    piece = world.run_record(471)["slices"]["domain"]
+    assert piece["tests_role"] == "builder" and piece["state"] == "tests_rejected"
+    assert "no scripted turn left for story-471-domain-tests-1/builder" in stopped.stdout
+
+    world.agent_repairs(
+        f"{slug}-tests-1",
+        "builder",
+        files={REPAIRED: "// repaired\n"},
+        test_files=[REPAIRED],
+        delete=[TEST],
+    )
+    world.agent_implements(slug, "mechanic", files=WORK, changed_files=sorted(WORK))
+
+    result = run_flow(world, 471, "--resume")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "relaunching block 1's repair (builder)" in result.stdout
+    # the dead run's launch and the resumed one, both the builder's, and
+    # the mechanic was never asked to repair tests it did not write
+    assert len(_talks(world, "builder", f"{slug}-tests-1")) == 2
+    assert _talks(world, "mechanic", f"{slug}-tests-1") == []
+    assert world.run_record(471)["slices"]["domain"]["test_files"] == [REPAIRED]

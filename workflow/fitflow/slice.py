@@ -27,3 +27,10 @@ class Slice:
     # because the API it calls does not exist yet - block 1 accepted those,
     # and block 3 reads this to know it did.
     tests_type_debt: dict[str, int] = field(default_factory=dict)
+    # Which role finally wrote these tests, and how many rungs block 1 had
+    # to climb to get them: "mechanic"/0 unless block 1's own ladder
+    # escalated. Block 3's repair of a rejected test set starts from this
+    # role rather than from the mechanic, because this is the role that
+    # knows what the tests mean.
+    tests_role: str = "mechanic"
+    tests_revision: int = 0

@@ -52,9 +52,10 @@ def _given_planned_driver_story(world, number: int = 1000) -> str:
     return f"story-{number}-workflow"
 
 
-def _mechanic_pushes_tests(world, slug: str, attempt: int = 1, **kwargs) -> None:
-    """One mechanic turn. `attempt` only varies the bytes: a retry that
-    rewrote the file identically would have nothing to commit."""
+def _mechanic_pushes_tests(world, slug: str, attempt: object = 1, **kwargs) -> None:
+    """One block 1 turn. `attempt` only varies the bytes: a retry that
+    rewrote the file identically would have nothing to commit. `role`
+    reaches `mechanic_writes` for the rungs above the mechanic."""
     body = f"# attempt {attempt}\n{FAILING_TEST}"
     world.mechanic_writes(slug, files={TEST_FILE: body}, test_files=[TEST_FILE], **kwargs)
 
@@ -178,6 +179,9 @@ def test_ruff_on_the_tests_branch_hands_its_own_diagnostic_to_the_mechanic(world
     _mechanic_pushes_tests(world, slug, attempt=1)
     _mechanic_pushes_tests(world, slug, attempt=2)
     world.given_ruff_failure(TEST_FILE, outcome=["fail", "pass"])
+    # block 1 runs every check on every attempt, the acceptance run
+    # included, so the rejected attempt consumes a pytest run of its own
+    world.given_pytest_results(TEST_FILE, ["fail", "fail", "pass"])
     _delegate(world, 1000)
     _implement(world, slug, {LADDER: "LADDER = (1, 2, 4)\n"})
 
@@ -199,7 +203,15 @@ def test_tests_that_never_satisfy_ruff_stop_the_mechanic_early(world):
     slug = _given_planned_driver_story(world)
     for attempt in (1, 2, 3):
         _mechanic_pushes_tests(world, slug, attempt=attempt)
+    # block 1 escalates a rung when a role's budget ends with the tests
+    # still rejected (#437), so the ladder above the mechanic is scripted
+    # too and only the solver's exhaustion stops the run
+    for index, role in enumerate(("builder", "builder", "solver", "solver"), start=4):
+        _mechanic_pushes_tests(world, slug, attempt=index, role=role)
     world.given_ruff_failure(TEST_FILE, gate="ruff format")
+    # the tests keep failing as they should; only the gate is wrong, so
+    # every attempt collects the identical diagnostic
+    world.given_pytest_results(TEST_FILE, "fail")
 
     result = run_flow(world, "1000")
 
@@ -207,6 +219,7 @@ def test_tests_that_never_satisfy_ruff_stop_the_mechanic_early(world):
     assert "TESTS_INVALID: ruff format failed" in result.stdout
     assert "🛑 Mechanic #1000 stopped early: attempt 2 failed exactly as attempt 1" in result.stdout
     assert "1 of 3 attempts went unspent" in result.stdout
+    assert "🛑 Solver #1000 stopped early: attempt 2 failed exactly as attempt 1" in result.stdout
     assert "Stopped: TESTS_INVALID" in "\n".join(world.issue(1000)["comments"])
 
 

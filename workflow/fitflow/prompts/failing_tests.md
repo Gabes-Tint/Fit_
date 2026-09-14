@@ -105,7 +105,9 @@ Rules:
   (the suppression ratchet the rule above already forbids) and `spellcheck`
   (cspell over the repository: every word in a test title, a comment or an
   identifier must be one it knows - you cannot add to `cspell.json` from
-  here, so spell it right).
+  here, and an inline cspell-ignore comment is itself a suppression
+  `check:suppressions` counts against a ratchet of 0, so spell it right and
+  invent fixture data out of words the dictionary already knows).
 - If a new domain module does not exist yet, dynamically import it inside the
   assertion and call the expected export in the promise chain. This makes the
   assertion fail both while the module is absent and while its behavior is

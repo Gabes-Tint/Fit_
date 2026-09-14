@@ -216,6 +216,14 @@ class SliceRecord:
     # implementation has not provided the signature the tests call" from
     # "block 1 accepted a test the repository gate rejects".
     tests_type_debt: dict[str, int] = field(default_factory=dict)
+    # Which role block 1's own ladder ended on, and how many rungs it
+    # climbed to get there: "mechanic"/0 unless the mechanic's budget ran
+    # out and the builder or solver finished the tests. Block 1 runs before
+    # this record exists, so this is where its ladder is retained, and
+    # steps/objection.py's first test repair starts from this role rather
+    # than from the mechanic - the tests are this role's work.
+    tests_role: str = "mechanic"
+    tests_revision: int = 0
     # "domain" on a UI slice the planner judged cannot be implemented and
     # validated before its domain sibling exists; "" for an independent one.
     depends_on: str = ""
@@ -511,6 +519,8 @@ def begin_run(story_number: int, base_sha: str, roster: dict, slices: list) -> R
                 failing_sha=piece.commit,
                 tests_sha=piece.commit,
                 tests_type_debt=dict(piece.tests_type_debt),
+                tests_role=piece.tests_role or "mechanic",
+                tests_revision=piece.tests_revision,
                 ui_called_exports=list(piece.ui_called_exports),
             )
             for piece in slices

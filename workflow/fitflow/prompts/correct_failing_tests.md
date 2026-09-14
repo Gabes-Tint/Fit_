@@ -10,7 +10,11 @@ $diagnostic
 Fix only the acceptance tests and their test-only branch state. Do not
 implement product behavior. Make the smallest correction that answers the
 driver’s diagnostic and, when an objection is quoted above, the whole of what
-that objection is about - not only its last sentence. Then $push_line.
+that objection is about - not only its last sentence. When the diagnostic
+lists more than one failure, each under its own headed line, answer every one
+of them in this single turn: the driver runs all of its checks on every
+attempt, so a correction that fixes one of them comes straight back with the
+rest. Then $push_line.
 Import and exercise the product boundary; never define a local stand-in for
 the missing product function or class inside the test.
 If a new domain module does not exist yet, dynamically import it inside the
@@ -34,7 +38,9 @@ repository - you cannot add a word to `cspell.json` from here, so spell it
 right). When the diagnostic above names a clone, it gives both halves as
 `file:startLine-endLine`: read those exact line ranges before you change
 anything; when it names an unknown word, it gives the file, line and column
-it sits at.
+it sits at, and the only fix available to you is spelling the fixture data
+with words cspell already knows - an inline cspell-ignore comment is
+itself a suppression `check:suppressions` counts against a ratchet of 0.
 
 The tests must fail because the requested behavior is missing, not because of
 syntax, imports, or test-runner errors: each one fails on an expectation the

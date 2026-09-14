@@ -449,9 +449,11 @@ def repair(record: RunRecord, piece: SliceRecord) -> None:
 
 
 def repair_role(piece: SliceRecord) -> str:
-    """Who repairs the tests. The first repair goes back to the mechanic
-    that wrote them: it knows what it meant, and most objections are a
-    detail it can put right. The second goes to the role that objected -
+    """Who repairs the tests. The first repair goes back to the role that
+    wrote them - the mechanic, unless block 1's own ladder escalated and
+    the builder or solver finished them: it knows what it meant, and most
+    objections are a detail it can put right. The second goes to the role
+    that objected -
     the builder or solver whose own tree already holds the implementation
     those tests are wrong about - because the first repair answered the
     objection it was given and was objected to again, and a mechanic that
@@ -459,7 +461,7 @@ def repair_role(piece: SliceRecord) -> str:
     work (#421). Nothing else changes: the same repair worktree, the same
     brief, the same two turns, the same validation."""
     if piece.test_repairs == 0 or not piece.objections:
-        return "mechanic"
+        return piece.tests_role or "mechanic"
     return piece.objections[-1]["role"]
 
 

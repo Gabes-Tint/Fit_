@@ -687,6 +687,11 @@ def test_mechanic_not_pushing_stops_the_flow(world):
         test_files=["src/lib/y.spec.ts"],
     )
     world.mechanic_replies("story-90-domain", ["src/lib/y.spec.ts"])
+    _ladder_repeats(
+        lambda role, index: world.mechanic_replies(
+            "story-90-domain", ["src/lib/y.spec.ts"], role=role
+        )
+    )
 
     result = run_flow(world)
 
@@ -694,13 +699,10 @@ def test_mechanic_not_pushing_stops_the_flow(world):
     assert not world.branch_exists_on_origin("story-90-domain")
     assert any("stopped" in c.lower() for c in world.issue(90)["comments"])
     assert "stopped early: attempt 2 failed exactly as attempt 1" in result.stdout
-    mechanic_calls = [
-        call
-        for call in world.calls()
-        if call.get("tool") == "aarmy"
-        and call.get("argv", [None, None])[0:2] == ["talk", "mechanic"]
-    ]
-    assert len(mechanic_calls) == 2
+    # each rung took the two attempts the repeated diagnostic was worth
+    assert len(_mechanic_talks(world)) == 2
+    assert len(_talks(world, "builder")) == 2
+    assert len(_talks(world, "solver")) == 2
 
 
 def test_mechanic_corrects_repairable_failure_on_first_retry(world):
@@ -804,6 +806,7 @@ def test_the_same_mechanic_diagnostic_twice_stops_before_the_last_attempt(world)
         slug, files={test_file: "// attempt one\n"}, test_files=[test_file]
     )
     world.mechanic_replies(slug, [test_file])
+    _ladder_repeats(lambda role, index: world.mechanic_replies(slug, [test_file], role=role))
 
     result = run_flow(world)
 
@@ -870,6 +873,11 @@ def test_mechanic_changing_a_non_test_file_stops_the_flow(world):
     )
     world.mechanic_replies("story-95-domain", ["src/lib/z.spec.ts"])
     world.mechanic_replies("story-95-domain", ["src/lib/z.spec.ts"])
+    _ladder_repeats(
+        lambda role, index: world.mechanic_replies(
+            "story-95-domain", ["src/lib/z.spec.ts"], role=role
+        )
+    )
 
     result = run_flow(world)
 
@@ -883,6 +891,7 @@ def test_slice_rejects_changed_test_for_the_other_runner(world):
     test_file = "src/routes/wrong-runner.e2e.ts"
     world.mechanic_writes(slug, files={test_file: "// wrong kind\n"}, test_files=[test_file])
     world.mechanic_replies(slug, [test_file])
+    _ladder_repeats(lambda role, index: world.mechanic_replies(slug, [test_file], role=role))
 
     result = run_flow(world)
 
@@ -923,6 +932,11 @@ def test_tests_that_already_pass_stop_the_flow(world):
     world.scripted_test_outcome("src/lib/w.spec.ts", "pass")
     world.mechanic_replies("story-100-domain", ["src/lib/w.spec.ts"])
     world.mechanic_replies("story-100-domain", ["src/lib/w.spec.ts"])
+    _ladder_repeats(
+        lambda role, index: world.mechanic_replies(
+            "story-100-domain", ["src/lib/w.spec.ts"], role=role
+        )
+    )
 
     result = run_flow(world)
 
@@ -942,6 +956,7 @@ def test_vitest_import_failure_does_not_count_as_failing_acceptance_test(world):
     world.mechanic_writes(slug, files={test_file: test_source}, test_files=[test_file])
     world.scripted_test_outcome(test_file, "import_error")
     world.mechanic_replies(slug, [test_file])
+    _ladder_repeats(lambda role, index: world.mechanic_replies(slug, [test_file], role=role))
 
     result = run_flow(world)
 
@@ -982,6 +997,11 @@ def test_playwright_file_that_never_ran_stops_the_flow(world):
     world.scripted_test_outcome("src/routes/gone.e2e.ts", "not_found")
     world.mechanic_replies("story-105-ui", ["src/routes/gone.e2e.ts"])
     world.mechanic_replies("story-105-ui", ["src/routes/gone.e2e.ts"])
+    _ladder_repeats(
+        lambda role, index: world.mechanic_replies(
+            "story-105-ui", ["src/routes/gone.e2e.ts"], role=role
+        )
+    )
 
     result = run_flow(world)
 
@@ -1133,12 +1153,15 @@ def test_lint_broken_acceptance_tests_are_rejected_in_block_1_and_repaired(world
             ]
         }
     )
+
     world.mechanic_writes(
         slug,
         files={test_file: "// corrective attempt: unknown-typed dynamic import\n"},
         test_files=[test_file],
     )
-    world.scripted_test_outcome(test_file, ["fail", "pass"])
+    # every check runs on every attempt now, so the acceptance run happens
+    # on the rejected attempt too: one more "fail" before block 3 lands
+    world.scripted_test_outcome(test_file, ["fail", "fail", "pass"])
     world.planner_answers_delegate(210, [delegate_slice(210, "domain", mechanic_signals())])
     world.agent_implements(
         slug,
@@ -1172,7 +1195,10 @@ def test_acceptance_tests_that_always_fail_lint_the_same_way_stop_the_mechanic_e
             files={test_file: f"const mod: any = {index};\nexpect(mod.missing()).toBe(true);\n"},
             test_files=[test_file],
         )
-    world.given_gate_outcomes(**{"lint:changed": ["fail", "fail"]})
+    # a plain outcome, not a list: the gate keeps failing the same way for
+    # every attempt of every rung block 1 climbs
+    world.given_gate_outcomes(**{"lint:changed": "fail"})
+    _ladder_writes(world, slug, test_file)
 
     result = run_flow(world)
 
@@ -1193,11 +1219,40 @@ def test_acceptance_tests_that_always_fail_lint_the_same_way_stop_the_mechanic_e
 
 
 def _mechanic_talks(world) -> list[dict]:
+    return _talks(world, "mechanic")
+
+
+def _talks(world, role: str) -> list[dict]:
     return [
         call
         for call in world.calls()
-        if call.get("tool") == "aarmy" and call["argv"][0:2] == ["talk", "mechanic"]
+        if call.get("tool") == "aarmy" and call["argv"][0:2] == ["talk", role]
     ]
+
+
+def _ladder_writes(world, slug: str, test_file: str) -> None:
+    """The two rungs above the mechanic, each rewriting the same acceptance
+    file and hitting the same gate the mechanic could not get past."""
+    _ladder_repeats(
+        lambda role, index: world.mechanic_writes(
+            slug,
+            files={test_file: f"// {role} attempt {index}\n"},
+            test_files=[test_file],
+            role=role,
+        )
+    )
+
+
+def _ladder_repeats(script) -> None:
+    """Script the two rungs above the mechanic (#437). A rejection no reply
+    can fix no longer stops the run where the mechanic's budget ends: block
+    1 hands the tests to the builder and then to the solver, each with its
+    own full budget on the same branch, and only the solver's exhaustion
+    stops the run. `script(role, index)` queues one turn; the index only
+    varies the bytes, because a turn that rewrote the file identically
+    would have nothing to commit."""
+    for index, role in enumerate(("builder", "builder", "solver", "solver"), start=3):
+        script(role, index)
 
 
 def test_lint_suppression_directives_in_acceptance_tests_are_rejected(world):
@@ -1481,6 +1536,7 @@ def test_acceptance_tests_that_always_throw_the_same_way_stop_the_mechanic_early
             test_files=[test_file],
         )
     world.scripted_test_outcome(test_file, "fail_defect")
+    _ladder_writes(world, slug, test_file)
 
     result = run_flow(world)
 
@@ -1510,7 +1566,9 @@ def test_a_type_error_outside_the_acceptance_tests_is_rejected_in_block_1_and_re
     )
     world.given_gate_outcomes(check=["fail", "pass"])
     world.given_check_fails_on(fixture)
-    world.scripted_test_outcome(test_file, ["fail", "pass"])
+    # every check runs on every attempt now, so the acceptance run happens
+    # on the rejected attempt too: one more "fail" before block 3 lands
+    world.scripted_test_outcome(test_file, ["fail", "fail", "pass"])
     world.planner_answers_delegate(218, [delegate_slice(218, "domain", mechanic_signals())])
     world.agent_implements(
         slug,
@@ -1541,12 +1599,15 @@ def test_acceptance_tests_that_never_type_check_the_same_way_stop_the_mechanic_e
             files={test_file: "// attempt " + str(index) + ": still mistyped\n"},
             test_files=[test_file],
         )
-    world.given_gate_outcomes(check=["fail", "fail"])
+    # a plain outcome, not a list: the gate keeps failing the same way for
+    # every attempt of every rung block 1 climbs
+    world.given_gate_outcomes(check="fail")
     # TS2322 is not one of the missing-API codes: no implementation makes a
     # string assignable to a number, so it stays the mechanic's to fix
     world.given_type_errors_in(
         [test_file], ["TS2322"], "Type 'string' is not assignable to 'number'"
     )
+    _ladder_writes(world, slug, test_file)
 
     result = run_flow(world)
 
@@ -1658,6 +1719,7 @@ def test_a_syntax_error_is_still_rejected_however_the_type_lane_was_answered(wor
     world.scripted_test_outcome(
         test_file, "fail_defect", message="SyntaxError: Unexpected token ')'"
     )
+    _ladder_writes(world, slug, test_file)
 
     result = run_flow(world)
 
@@ -1684,6 +1746,7 @@ def test_a_type_error_in_a_fixture_outside_the_acceptance_tests_is_still_rejecte
         )
     world.given_gate_outcomes(check="fail")
     world.given_type_errors_in([test_file, fixture], ["TS2339", "TS2339"])
+    _ladder_writes(world, slug, test_file)
 
     result = run_flow(world)
 
@@ -1711,6 +1774,7 @@ def test_a_non_type_lint_rule_inside_the_acceptance_tests_is_still_rejected(worl
         ["@typescript-eslint/no-unsafe-call", "no-console"],
         "Unexpected console statement.",
     )
+    _ladder_writes(world, slug, test_file)
 
     result = run_flow(world)
 
@@ -1764,7 +1828,9 @@ def test_acceptance_tests_that_clone_themselves_are_rejected_in_block_1(world):
     )
     world.given_gate_outcomes(**{"verify:fast": ["fail", "pass"]})
     world.given_duplicate_clone("lib/cloned.spec.ts", "lib/cloned.spec.ts")
-    world.scripted_test_outcome(test_file, ["fail", "pass"])
+    # every check runs on every attempt now, so the acceptance run happens
+    # on the rejected attempt too: one more "fail" before block 3 lands
+    world.scripted_test_outcome(test_file, ["fail", "fail", "pass"])
     world.planner_answers_delegate(220, [delegate_slice(220, "domain", mechanic_signals())])
     world.agent_implements(
         slug,
@@ -1799,8 +1865,11 @@ def test_acceptance_tests_that_never_pass_the_content_steps_stop_the_mechanic_ea
             files={test_file: f"// attempt {index}: still the same block twice\n"},
             test_files=[test_file],
         )
-    world.given_gate_outcomes(**{"verify:fast": ["fail", "fail"]})
+    # a plain outcome, not a list: the gate keeps failing the same way for
+    # every attempt of every rung block 1 climbs
+    world.given_gate_outcomes(**{"verify:fast": "fail"})
     world.given_duplicate_clone("lib/always-cloned.spec.ts", "lib/always-cloned.spec.ts")
+    _ladder_writes(world, slug, test_file)
 
     result = run_flow(world)
 
@@ -1831,7 +1900,9 @@ def test_unformatted_acceptance_tests_are_rejected_in_block_1(world):
     world.given_gate_outcomes(**{"verify:fast": ["fail", "pass"]})
     world.given_failed_gate_steps("verify:fast", "format:check")
     world.given_gate_failure_file(test_file)
-    world.scripted_test_outcome(test_file, ["fail", "pass"])
+    # every check runs on every attempt now, so the acceptance run happens
+    # on the rejected attempt too: one more "fail" before block 3 lands
+    world.scripted_test_outcome(test_file, ["fail", "fail", "pass"])
     world.planner_answers_delegate(222, [delegate_slice(222, "domain", mechanic_signals())])
     world.agent_implements(
         slug,
@@ -1870,7 +1941,9 @@ def test_misspelled_acceptance_tests_are_rejected_in_block_1(world):
     world.given_gate_outcomes(**{"verify:fast": ["fail", "pass"]})
     world.given_failed_gate_steps("verify:fast", "spellcheck")
     world.given_gate_failure_file(test_file)
-    world.scripted_test_outcome(test_file, ["fail", "pass"])
+    # every check runs on every attempt now, so the acceptance run happens
+    # on the rejected attempt too: one more "fail" before block 3 lands
+    world.scripted_test_outcome(test_file, ["fail", "fail", "pass"])
     world.planner_answers_delegate(223, [delegate_slice(223, "domain", mechanic_signals())])
     world.agent_implements(
         slug,
@@ -2007,6 +2080,7 @@ def test_a_playwright_file_whose_tests_all_pass_is_rejected_naming_each_test_sta
     world.scripted_test_outcome(test_file, "pass", titles=titles)
     world.mechanic_replies(slug, [test_file])
     world.mechanic_replies(slug, [test_file])
+    _ladder_repeats(lambda role, index: world.mechanic_replies(slug, [test_file], role=role))
 
     result = run_flow(world)
 
@@ -2030,9 +2104,329 @@ def test_a_playwright_file_whose_tests_are_all_skipped_is_rejected(world):
     world.scripted_test_outcome(test_file, "skipped")
     world.mechanic_replies(slug, [test_file])
     world.mechanic_replies(slug, [test_file])
+    _ladder_repeats(lambda role, index: world.mechanic_replies(slug, [test_file], role=role))
 
     result = run_flow(world)
 
     assert result.returncode == 24, result.stdout + result.stderr
     assert f"playwright {test_file} only skipped its tests, so none of them ran" in result.stdout
     assert '"the behavior this slice asks for" → skipped' in result.stdout
+
+
+# --- block 1 reports every failing check at once (#437, from #397 run 5) -------
+
+
+def _implements(world, slug: str, number: int, module: str) -> None:
+    """Blocks 2 and 3 for a one-slice story whose block 1 finally settled."""
+    world.planner_answers_delegate(number, [delegate_slice(number, "domain", mechanic_signals())])
+    world.agent_implements(
+        slug,
+        "mechanic",
+        files={module: "export const ready = true;\n"},
+        changed_files=[module],
+    )
+
+
+def test_one_diagnostic_names_every_check_the_acceptance_tests_failed(world):
+    """Run 5 of #397: attempt 1 was told about type errors only (the content
+    steps never ran because `check` failed first), attempt 2 about a clone,
+    attempt 3 about a misspelling, and the run stopped with tests one word
+    away from valid. All of them now come back together, and one correction
+    answers all of them."""
+    _given_single_domain_slice(world, 240, "Tests that fail three gates at once")
+    slug = "story-240-domain"
+    test_file = "src/lib/chocolate.spec.ts"
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// attempt 1: mistyped, cloned and misspelled\n"},
+        test_files=[test_file],
+    )
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// corrective attempt: all three answered at once\n"},
+        test_files=[test_file],
+    )
+    world.given_gate_outcomes(check=["fail", "pass"], **{"verify:fast": ["fail", "pass"]})
+    world.given_type_errors_in(
+        [test_file] * 4, ["TS2322"] * 4, "Type 'string' is not assignable to 'number'"
+    )
+    world.given_failed_gate_steps("verify:fast", "duplicates", "spellcheck")
+    world.given_duplicate_clone("lib/chocolate.spec.ts", "lib/chocolate.spec.ts")
+    world.given_gate_failure_file(test_file)
+    world.given_unknown_word("LINDOR", times=4)
+    world.scripted_test_outcome(test_file, ["fail", "fail", "pass"])
+    _implements(world, slug, 240, "src/lib/chocolate.ts")
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    # one union line: what passed, what failed, and what each failure was
+    assert (
+        "🧪 Gates: lint:changed ✔ · check ✗ (4 type errors) · duplicates ✗ · "
+        # the narration's own multiplication sign after the rejected word
+        "spellcheck ✗ (LINDOR \u00d74) · fails as intended ✔" in result.stdout
+    )
+    assert "3 of block 1's checks rejected the acceptance tests" in result.stdout
+    # each failure under its own headed line, with its own detail
+    correction = _mechanic_talks(world)[1]["prompt"]
+    assert "check:\n" in correction and "duplicates, spellcheck:\n" in correction
+    assert "Type 'string' is not assignable to 'number'" in correction
+    assert "lib/chocolate.spec.ts:40-49 ↔ lib/chocolate.spec.ts:90-99" in correction
+    assert f"{test_file}:2277:6 - Unknown word (LINDOR)" in correction
+    # one correction, not three: two block 1 turns, then block 3's own
+    assert len(_mechanic_talks(world)) == 3
+    assert "Implemented #240" in result.stdout
+
+
+def test_a_spelling_failure_tells_the_writer_what_it_may_do_about_the_word(world):
+    """cspell.json is a workflow file this branch may not touch, and an
+    inline `cspell:ignore` is itself a suppression `check:suppressions`
+    counts against a ratchet of 0. So there is exactly one thing to say,
+    and block 1 says it."""
+    _given_single_domain_slice(world, 245, "Fixture data cspell knows")
+    slug = "story-245-domain"
+    test_file = "src/lib/fixtures.spec.ts"
+    world.mechanic_writes(
+        slug, files={test_file: "// attempt 1: a real-world name\n"}, test_files=[test_file]
+    )
+    world.mechanic_writes(
+        slug, files={test_file: "// corrective attempt: an invented name\n"}, test_files=[test_file]
+    )
+    world.given_gate_outcomes(**{"verify:fast": ["fail", "pass"]})
+    world.given_failed_gate_steps("verify:fast", "spellcheck")
+    world.given_gate_failure_file(test_file)
+    world.given_unknown_word("LINDOR", times=4)
+    world.scripted_test_outcome(test_file, ["fail", "fail", "pass"])
+    _implements(world, slug, 245, "src/lib/fixtures.ts")
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    correction = " ".join(_mechanic_talks(world)[1]["prompt"].split())
+    assert "cspell does not know LINDOR inside the acceptance tests" in correction
+    assert "Spell the fixture data with words the dictionary already knows" in correction
+    assert "cannot add the word to `cspell.json` from this branch" in correction
+    assert "an inline `cspell:ignore` comment is not an alternative" in correction
+    assert "Implemented #245" in result.stdout
+
+
+def test_a_non_test_file_on_the_branch_still_short_circuits_the_gates(world):
+    """A rejection that makes the later checks meaningless still stops the
+    validation where it stands: there is no point lint-checking a branch
+    that may not carry this file at all."""
+    _given_single_domain_slice(world, 246, "Only tests on the tests branch")
+    slug = "story-246-domain"
+    test_file = "src/lib/scoped.spec.ts"
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// failing\n", "src/lib/scoped.ts": "export const scoped = 1;\n"},
+        test_files=[test_file],
+    )
+    world.mechanic_replies(slug, [test_file])
+    _ladder_repeats(lambda role, index: world.mechanic_replies(slug, [test_file], role=role))
+
+    result = run_flow(world)
+
+    assert result.returncode == 23, result.stdout + result.stderr
+    assert f"non-test file changed on {slug}: src/lib/scoped.ts" in result.stdout
+    # no gate ran at all, and no union was reported
+    assert "🧪 Gates:" not in result.stdout
+    assert not [
+        call
+        for call in world.calls()
+        if call.get("tool") == "bun" and call["argv"][:2] == ["run", "lint:changed"]
+    ]
+
+
+def test_the_accepted_type_debt_survives_a_union_with_another_failure(world):
+    """#431's rule reads the aggregated verdict now: the type errors the
+    missing API produces inside the acceptance files are still accepted and
+    still recorded, while the clone beside them is still a rejection."""
+    _given_single_domain_slice(world, 247, "A new API and a clone")
+    slug = "story-247-domain"
+    test_file = "src/lib/toggle.spec.ts"
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// attempt 1: calls toggleSet(1, 0), and clones itself\n"},
+        test_files=[test_file],
+    )
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// corrective attempt: the shared setup extracted\n"},
+        test_files=[test_file],
+    )
+    world.given_gate_outcomes(check="fail", **{"verify:fast": ["fail", "pass"]})
+    world.given_type_errors_in(
+        [test_file, test_file], ["TS2554", "TS2339"], "Expected 1 arguments, but got 2"
+    )
+    world.given_duplicate_clone("lib/toggle.spec.ts", "lib/toggle.spec.ts")
+    world.scripted_test_outcome(test_file, ["fail", "fail", "pass"])
+    _implements(world, slug, 247, "src/lib/toggle.ts")
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (
+        "🧪 Gates: lint:changed ✔ · check ✔ · duplicates ✗ · fails as intended ✔" in result.stdout
+    )
+    # the rejection is the clone alone, so it keeps its own diagnostic
+    assert "TESTS_INVALID: duplicates, format:check, check:suppressions, spellcheck failed" in (
+        result.stdout
+    )
+    assert "of block 1's checks rejected" not in result.stdout
+    assert world.run_record(247)["slices"]["domain"]["tests_type_debt"] == {test_file: 2}
+
+
+# --- block 1 escalates the role when a rung runs out (#437) --------------------
+
+
+def test_the_builder_takes_over_when_the_mechanic_exhausts_its_attempts(world):
+    """Three different rejections spend the mechanic's whole budget, and
+    #397 stopped there. The tests go up a rung instead, on the same branch,
+    with every diagnostic the mechanic collected."""
+    _given_single_domain_slice(world, 248, "Tests the mechanic cannot finish")
+    slug = "story-248-domain"
+    test_file = "src/lib/handover.spec.ts"
+    world.mechanic_changes_without_pushing(
+        slug, files={test_file: "// attempt 1: never pushed\n"}, test_files=[test_file]
+    )
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// attempt 2: left dirty\n"},
+        test_files=[test_file],
+        commit=False,
+        push=False,
+    )
+    world.mechanic_writes(
+        slug,
+        files={"src/routes/handover.e2e.ts": "// attempt 3: the wrong runner\n"},
+        test_files=["src/routes/handover.e2e.ts"],
+    )
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// the builder's tests\n"},
+        test_files=[test_file],
+        role="builder",
+        # the mechanic's last attempt pushed the wrong-runner file before
+        # the driver rejected it, so the builder takes it back off the branch
+        delete=["src/routes/handover.e2e.ts"],
+    )
+    world.scripted_test_outcome(test_file, ["fail", "pass"])
+    _implements(world, slug, 248, "src/lib/handover.ts")
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (
+        "⬆️  Block 1 #248: mechanic exhausted its 3 attempts — "
+        "the builder takes over the tests" in result.stdout
+    )
+    assert "🔧 Builder #248 (domain) attempt 1/3" in result.stdout
+    # the builder inherits the whole history, not only the last rejection
+    handover = _talks(world, "builder")[0]["prompt"]
+    assert "Block 1 escalated these acceptance tests to you" in handover
+    assert "1. mechanic attempt 1 — TESTS_NOT_PUSHED: local HEAD not pushed" in handover
+    assert "2. mechanic attempt 2 — TESTS_NOT_PUSHED: tree not clean" in handover
+    assert "3. mechanic attempt 3 — TESTS_NOT_PUSHED: vitest slice changed wrong-kind test" in (
+        handover
+    )
+    assert len(_talks(world, "builder")) == 1
+    # the record and the story say which role the tests came from
+    assert world.run_record(248)["slices"]["domain"]["tests_role"] == "builder"
+    assert any("Written by: builder" in comment for comment in world.issue(248)["comments"])
+    assert "Implemented #248" in result.stdout
+
+
+def test_a_repeated_rejection_escalates_exactly_as_exhaustion_does(world):
+    """#428's early stop is a budget that ended, so it hands the tests up a
+    rung like any other. The attempts it deliberately left unspent are the
+    mechanic's, not the builder's: the builder gets its own three."""
+    _given_single_domain_slice(world, 249, "Tests the mechanic repeats itself on")
+    slug = "story-249-domain"
+    test_file = "src/lib/repeated.spec.ts"
+    world.mechanic_changes_without_pushing(
+        slug, files={test_file: "// attempt 1\n"}, test_files=[test_file]
+    )
+    world.mechanic_replies(slug, [test_file])
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// the builder pushed them\n"},
+        test_files=[test_file],
+        role="builder",
+    )
+    world.scripted_test_outcome(test_file, ["fail", "pass"])
+    _implements(world, slug, 249, "src/lib/repeated.ts")
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "🛑 Mechanic #249 stopped early: attempt 2 failed exactly as attempt 1" in result.stdout
+    assert "⬆️  Block 1 #249: mechanic stopped early: attempt 2 failed exactly as attempt 1" in (
+        result.stdout
+    )
+    assert "1 of 3 attempts went unspent — the builder takes over the tests" in result.stdout
+    # two block 1 turns, then block 3's implementation turn
+    assert len(_mechanic_talks(world)) == 3
+    assert "Implemented #249" in result.stdout
+
+
+def test_the_solver_takes_over_when_the_builder_runs_out_too(world):
+    _given_single_domain_slice(world, 250, "Tests two rungs cannot write")
+    slug = "story-250-domain"
+    test_file = "src/lib/ladder.spec.ts"
+    for role in ("mechanic", "builder"):
+        for attempt in (1, 2):
+            world.mechanic_changes_without_pushing(
+                slug,
+                files={test_file: f"// {role} attempt {attempt}\n"},
+                test_files=[test_file],
+                role=role,
+            )
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// the solver pushed them\n"},
+        test_files=[test_file],
+        role="solver",
+    )
+    world.scripted_test_outcome(test_file, ["fail", "pass"])
+    _implements(world, slug, 250, "src/lib/ladder.ts")
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "the builder takes over the tests" in result.stdout
+    assert "⬆️  Block 1 #250: builder stopped early" in result.stdout
+    assert "the solver takes over the tests" in result.stdout
+    assert "🔧 Solver #250 (domain) attempt 1/3" in result.stdout
+    # the solver's brief carries both rungs' rejections
+    handover = _talks(world, "solver")[0]["prompt"]
+    assert "mechanic attempt 1 —" in handover and "builder attempt 1 —" in handover
+    assert world.run_record(250)["slices"]["domain"]["tests_role"] == "solver"
+    assert world.run_record(250)["slices"]["domain"]["tests_revision"] == 2
+
+
+def test_the_solver_running_out_is_where_block_1_stops(world):
+    """The ladder ends where block 3's does: the solver is the last rung,
+    and its exhausted budget is the run's stop, with every rung's attempts
+    spent rather than the mechanic's alone."""
+    _given_single_domain_slice(world, 251, "Tests nobody can write")
+    slug = "story-251-domain"
+    test_file = "src/lib/impossible.spec.ts"
+    for role in ("mechanic", "builder", "solver"):
+        for attempt in (1, 2):
+            world.mechanic_changes_without_pushing(
+                slug,
+                files={test_file: f"// {role} attempt {attempt}\n"},
+                test_files=[test_file],
+                role=role,
+            )
+
+    result = run_flow(world)
+
+    assert result.returncode == 23, result.stdout + result.stderr
+    assert "🛑 Solver #251 stopped early: attempt 2 failed exactly as attempt 1" in result.stdout
+    assert "takes over the tests" in result.stdout
+    assert "Stopped: TESTS_NOT_PUSHED" in "\n".join(world.issue(251)["comments"])
+    assert [len(_talks(world, role)) for role in ("mechanic", "builder", "solver")] == [2, 2, 2]
+    # block 2 never ran: the run stopped inside block 1
+    assert "🎯 #251" not in result.stdout

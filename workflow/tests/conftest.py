@@ -400,16 +400,21 @@ reviewer:
         slug: str,
         test_files: list[str],
         why: str = "the behavior is not implemented yet",
+        role: str = "mechanic",
     ) -> None:
+        """A block 1 reply that changes nothing on the branch. `role` is
+        whichever rung block 1's ladder is on: the builder and the solver
+        answer the same prompt on the same branch when the mechanic's
+        attempts run out."""
         self._queue_turn(
-            f"{slug}/mechanic",
+            f"{slug}/{role}",
             {"test_files": test_files, "why_they_fail": why},
         )
 
     def mechanic_changes_without_pushing(
-        self, slug: str, files: dict[str, str], test_files: list[str]
+        self, slug: str, files: dict[str, str], test_files: list[str], role: str = "mechanic"
     ) -> None:
-        self.mechanic_writes(slug, files, test_files, push=False)
+        self.mechanic_writes(slug, files, test_files, push=False, role=role)
 
     def gh_fails_on(self, *substrings: str) -> None:
         """Any `gh` call whose argv (joined) contains one of these
@@ -691,6 +696,14 @@ reviewer:
         self.world["clone_locations"] = [first, second]
         if then is not None:
             self.world["clone_pairs"] = [[first, second], list(then)]
+        self._save()
+
+    def given_unknown_word(self, word: str, times: int = 1) -> None:
+        """The word a failing `spellcheck` step says it does not know, and
+        how many places in the blamed file it sits in."""
+        self._load()
+        self.world["unknown_word"] = word
+        self.world["unknown_word_times"] = times
         self._save()
 
     def given_gate_failure_file(self, file: str) -> None:

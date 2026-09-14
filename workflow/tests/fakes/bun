@@ -405,6 +405,25 @@ _STEP_DETAIL = {
 }
 
 
+def _spellcheck_detail(world, file):
+    """cspell's own output for the word a scenario scripts, once per place
+    it sits: #397's mechanic spent its last attempt on a fixture name cspell
+    met four times in one file."""
+    word = world.get("unknown_word")
+    if not word:
+        return None
+    issues = "\n".join(
+        f"{file}:{2277 + index}:6 - Unknown word ({word})"
+        for index in range(int(world.get("unknown_word_times", 1)))
+    )
+    return (
+        "$ cspell --no-progress --cache --cache-location reports/quality/cache/cspell .\n"
+        f"{issues}\nCSpell: Files checked: 749, Issues found: "
+        f"{world.get('unknown_word_times', 1)} in 1 file.\n"
+        'error: script "spellcheck" exited with code 1'
+    )
+
+
 def _clone_pair(world):
     """The two halves `duplicates` reports. A scenario that scripts more
     than one pair gets one per invocation, the last sticky: an implementer
@@ -469,18 +488,25 @@ def _write_step_log(cwd, label, step, text):
     return str(path.relative_to(cwd))
 
 
+def _detail_of(cwd, world, step):
+    """What a failed step printed: jscpd's real report for `duplicates`, the
+    scripted unknown word for `spellcheck`, and the step's own template
+    otherwise."""
+    blamed = world.get("gate_failure_file", "src/lib/probe.spec.ts")
+    if step == "duplicates":
+        return _write_jscpd_report(cwd, world)
+    spelled = _spellcheck_detail(world, blamed) if step == "spellcheck" else None
+    if spelled:
+        return spelled
+    return _STEP_DETAIL.get(step, f"{step} failed").format(file=blamed)
+
+
 def _gate_report(cwd, world, label, failed):
     """Write the report and the per-step logs a real gate run leaves, and
     return the report's own `ok`."""
     steps = []
     for step in failed:
-        detail = (
-            _write_jscpd_report(cwd, world)
-            if step == "duplicates"
-            else _STEP_DETAIL.get(step, f"{step} failed").format(
-                file=world.get("gate_failure_file", "src/lib/probe.spec.ts")
-            )
-        )
+        detail = _detail_of(cwd, world, step)
         steps.append(
             {
                 "name": step,

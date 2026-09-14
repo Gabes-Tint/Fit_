@@ -161,7 +161,7 @@ def _reopen_test_repair(record: RunRecord, piece: SliceRecord) -> None:
     note = f", {voided} voided" if voided else ""
     narrate.line(
         f"♻️  #{piece.number} ({piece.layer}) rejected the acceptance tests{note}: "
-        f"relaunching block 1's repair"
+        f"relaunching block 1's repair ({objection.repair_role(piece)})"
     )
 
 
