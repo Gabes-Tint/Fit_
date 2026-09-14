@@ -58,6 +58,18 @@ def story_lock(story_number: int):
         handle.close()
 
 
+def story_locked(story_number: int) -> bool:
+    """Whether a live go.py process owns the story's flock right now. The
+    probe releases the lock again as soon as it has its answer."""
+    lock_path(story_number).parent.mkdir(parents=True, exist_ok=True)
+    with lock_path(story_number).open("w") as probe:
+        try:
+            fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return True
+        return False
+
+
 def verify_exclusive(story_number: int) -> None:
     """Before a turn: the run's own flock must still be the only one on the
     story lock. A fresh exclusive acquire succeeding means ownership was

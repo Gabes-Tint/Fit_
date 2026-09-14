@@ -70,7 +70,12 @@ def _stop_or_retry(
     means the diagnostic, not the agent, is the problem: the loop stops
     with the failure exhaustion would have raised, saying so."""
     if attempt >= last:
-        narrate.headed(f"🛑 {label} exhausted {BUDGET} attempts — ", diagnostic)
+        ended = (
+            f"exhausted {BUDGET} attempts"
+            if last == BUDGET
+            else f"stopped at attempt {attempt}, the last one this run allowed"
+        )
+        narrate.headed(f"🛑 {label} {ended} — ", diagnostic)
         raise failure
     if same_diagnostic(previous, diagnostic):
         narrate.headed(

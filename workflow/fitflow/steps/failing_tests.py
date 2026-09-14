@@ -373,7 +373,8 @@ def _run_role(prepared: PreparedSlice, ledger: _Ledger) -> None:
         if attempt == first and diagnostic:
             diagnostic = ledger.resumed_briefing(diagnostic)
         with narrate.grouped():
-            narrate.line(f"🔧 {label} ({piece.layer}) attempt {attempt}/{turns.BUDGET}")
+            scale = f"{attempt}/{turns.BUDGET}" if attempt <= turns.BUDGET else f"{attempt} (grace)"
+            narrate.line(f"🔧 {label} ({piece.layer}) attempt {scale}")
         try:
             _run_attempt(prepared, ledger, attempt, diagnostic)
         except FlowFailure as failure:
