@@ -206,7 +206,7 @@ routinely about one - the rule that an `.e2e.ts` belongs under `src/routes/`,
 say - and its allowlist scope check still judges what the slice actually
 changes.
 
-#422 is what the rules are for. Its domain slice changed the exported
+Story #422 is what the rules are for. Its domain slice changed the exported
 signatures of `src/lib/state/tend.svelte.ts` - `toggleSet`, `addSet`,
 `noteExercise` - which routes call, and its brief said "Update existing
 callers so the app still compiles". A domain slice may not touch

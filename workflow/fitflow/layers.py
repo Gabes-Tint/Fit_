@@ -121,7 +121,7 @@ _FOLLOW_THE_CALLERS = re.compile(
 _AREAS = {"domain": "the UI areas", "ui": "the store and the domain areas"}
 
 
-def _unbriefable_prefixes(layer: str, adopts_domain: bool) -> tuple[str, ...]:
+def _off_limits_prefixes(layer: str, adopts_domain: bool) -> tuple[str, ...]:
     """The areas a brief for this layer may not name. Empty for a workflow
     slice: a driver story is routinely *about* a product path - the rule
     that an `.e2e.ts` belongs under `src/routes/`, say - and naming it is
@@ -146,7 +146,7 @@ def brief_contradiction(layer: str, brief: str, adopts_domain: bool = False) -> 
     rule too; that costs the planner one corrective turn and is the price
     of a check that cannot be argued with. The sibling slice is where those
     files belong, and the brief can say so without naming them."""
-    for prefix in _unbriefable_prefixes(layer, adopts_domain):
+    for prefix in _off_limits_prefixes(layer, adopts_domain):
         if prefix in brief:
             return (
                 f"the {layer} brief names {prefix}, which a {layer} slice may not change; "

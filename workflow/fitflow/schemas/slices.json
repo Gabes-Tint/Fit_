@@ -14,14 +14,7 @@
 			"items": {
 				"type": "object",
 				"additionalProperties": false,
-				"required": [
-					"layer",
-					"title",
-					"brief",
-					"acceptance",
-					"test_kind",
-					"ui_called_exports"
-				],
+				"required": ["layer", "title", "brief", "acceptance", "test_kind", "ui_called_exports"],
 				"properties": {
 					"layer": {
 						"type": "string",

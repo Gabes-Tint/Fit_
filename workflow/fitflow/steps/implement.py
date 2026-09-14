@@ -1161,9 +1161,14 @@ def _outside_this_layer(piece: SliceRecord, failure: gates.GateFailure) -> str:
     turn that went and fixed them - two contradictory instructions across
     two turns. This decides nothing new; `scope_breach` still says what is
     out of reach, and this only reads the same rule over the culprits the
-    gate produced."""
+    gate produced - including its one widening, so the store and the domain
+    modules a dependent ui slice was briefed to adopt are never headed as
+    off-limits to the slice whose own work they are."""
+    adopts_domain = _adopts_domain(piece)
     outside = sorted(
-        name for name in failure.culprits if layers.rejects_for_layer(piece.layer, name) is not None
+        name
+        for name in failure.culprits
+        if layers.rejects_for_layer(piece.layer, name, adopts_domain) is not None
     )
     if not outside:
         return ""
