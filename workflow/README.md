@@ -418,9 +418,12 @@ escalation to a new role starts that role's own session within the same
 team. The run holds an exclusive flock on the story
 (`~/.agents-army/fit_/workflow/locks/story-<n>.lock`) for its whole life, so
 a second execution fails without starting workers, and it persists its
-lifecycle state under `~/.agents-army/fit_/workflow/runs/story-<n>.json` for
-audit. There is no resume contract: a fresh run after a killed one stops
-rather than replaying anything.
+lifecycle state under `~/.agents-army/fit_/workflow/runs/story-<n>.json`
+from the moment block 1 accepts the plan, before any writer starts. Block 1
+is retained and resumable like every later block: the record keeps each
+slice's identity, its writer's role, revision and attempts, and every
+rejection. A fresh run on a story that already has a record stops with
+exit 30 and names `--resume` and `--reset`; nothing is replayed.
 
 ### It acts for real
 
@@ -443,11 +446,11 @@ FIT_FLOW_SHIP_TO=prod uv run go.py 351  # ...and also deploy to QA, then prod
 
 From the repository root: `uv run --project workflow workflow/go.py 351`.
 
-| argument   | what                                                                                                                                                                                                                                                                                                              |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `issue`    | the story to pick; without it, the lowest-numbered open story not held                                                                                                                                                                                                                                            |
-| `--resume` | needs `issue`. Continues the story's retained run: a turn that ended with a valid reply is re-validated on the bytes it left (no new agent call); a turn that died or failed before replying is voided and relaunched under the same attempt number; block 2, 4 and 5 re-enter from what the record already holds |
-| `--reset`  | needs `issue`. Removes the slice, integration and release worktrees and their local and remote branches, deletes the teams, closes an open PR and the child issues, drops `in-progress` and `blocked`, and archives `runs/story-<n>.json` as `runs/story-<n>.<stamp>.reset.json`. Destructive on purpose          |
+| argument   | what                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `issue`    | the story to pick; without it, the lowest-numbered open story not held                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `--resume` | needs `issue`. Continues the story's retained run: a turn that ended with a valid reply is re-validated on the bytes it left (no new agent call); a turn that died or failed before replying is voided and relaunched under the same attempt number; block 1 relaunches an unfrozen slice's writer at its recorded role and revision on the same worktree and team, with its retained diagnostic and every rejection so far, and never replans; block 2, 4 and 5 re-enter from what the record already holds |
+| `--reset`  | needs `issue`. Removes the slice, integration and release worktrees and their local and remote branches, deletes the teams, closes an open PR and the child issues, drops `in-progress` and `blocked`, and archives `runs/story-<n>.json` as `runs/story-<n>.<stamp>.reset.json`. Destructive on purpose                                                                                                                                                                                                     |
 
 "Held" means labelled `in-progress`, `blocked`, `needs-gabriel` or `paused`.
 Exit 0 means the whole flow ran: every slice implemented and validated, and

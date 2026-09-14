@@ -18,7 +18,7 @@ after reconciling its retained record with the worktrees it left;
 `--reset` undoes what a run created and archives its record.
 """
 
-from fitflow import github, issue_context, runstate, steps, worktrees
+from fitflow import github, issue_context, runstate, steps
 from fitflow.cli import run
 from fitflow.outcome import Outcome
 
@@ -45,7 +45,7 @@ def pick_and_plan(issue: int | None) -> Outcome:
 
         steps.report_planned(story, slices)
 
-        record = steps.delegate(story, slices, context, worktrees.remote_head("main") or "")
+        record = steps.delegate(story, context)
         steps.implement(story, record)
         steps.deliver(story, record)
         return steps.ship(story, record)
@@ -59,6 +59,12 @@ def resume(issue: int) -> Outcome:
         record = runstate.load_run(story.number)
         stage = steps.reconcile(story, record)
 
+        if stage == steps.WRITE_TESTS:
+            slices = steps.write_failing_tests(
+                runstate.planned_slices(record), story.number, record, resume=True
+            )
+            steps.report_planned(story, slices)
+            stage = steps.DELEGATE
         if stage == steps.DELEGATE:
             context = issue_context.prepare(
                 github.comments(story.number), github.timeline(story.number)

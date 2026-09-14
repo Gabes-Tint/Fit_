@@ -6,12 +6,14 @@ holds a non-blocking flock on `locks/story-<n>.lock` for its whole life.
 
 The state file `runs/story-<n>.json` is the run's retained record and its
 slice state machines: block 1's slice identities (issue, branch, worktree,
-team, failing-test commit, test files), the frozen startup configuration,
-every assignment revision, attempt counters and turn identities. Every
-transition persists before the next one is chosen. A fresh run refuses a
-story that already has a record; `go.py <n> --resume` loads it, reconciles
-every slice against the worktree it left behind (steps/resume.py) and
-continues, and `go.py <n> --reset` archives it beside what it undoes.
+team, failing-test commit, test files) and its writing progress, the frozen
+startup configuration, every assignment revision, attempt counters and turn
+identities. Block 1 creates it as soon as the plan is accepted, before any
+writer starts, and every transition persists before the next one is chosen.
+A fresh run refuses a story that already has a record; `go.py <n> --resume`
+loads it, reconciles every slice against the worktree it left behind
+(steps/resume.py) and continues - in block 1 when a slice's tests are not
+frozen yet - and `go.py <n> --reset` archives it beside what it undoes.
 """
 
 import datetime
@@ -25,6 +27,7 @@ from pathlib import Path
 
 from fitflow import layers, settings
 from fitflow.outcome import FlowFailure, Outcome
+from fitflow.slice import Slice
 
 
 def lock_path(story_number: int) -> Path:
@@ -53,6 +56,18 @@ def story_lock(story_number: int):
         yield
     finally:
         handle.close()
+
+
+def story_locked(story_number: int) -> bool:
+    """Whether a live go.py process owns the story's flock right now. The
+    probe releases the lock again as soon as it has its answer."""
+    lock_path(story_number).parent.mkdir(parents=True, exist_ok=True)
+    with lock_path(story_number).open("w") as probe:
+        try:
+            fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return True
+        return False
 
 
 def verify_exclusive(story_number: int) -> None:
@@ -224,14 +239,31 @@ class SliceRecord:
     # implementation has not provided the signature the tests call" from
     # "block 1 accepted a test the repository gate rejects".
     tests_type_debt: dict[str, int] = field(default_factory=dict)
-    # Which role block 1's own ladder ended on, and how many rungs it
+    # Which role block 1's own ladder is writing with, and how many rungs it
     # climbed to get there: "mechanic"/0 unless the mechanic's budget ran
-    # out and the builder or solver finished the tests. Block 1 runs before
-    # this record exists, so this is where its ladder is retained, and
-    # steps/objection.py's first test repair starts from this role rather
-    # than from the mechanic - the tests are this role's work.
+    # out and the builder or solver took the tests over. Once the tests are
+    # frozen it is the role that finished them, and steps/objection.py's
+    # first test repair starts from this role rather than from the mechanic
+    # - the tests are this role's work.
     tests_role: str = "mechanic"
     tests_revision: int = 0
+    # Block 1's own ledger, persisted as it happens so a stopped run resumes
+    # its writer instead of replanning (steps/failing_tests._Ledger).
+    # `tests_attempts` is the attempt the current role last launched and
+    # `tests_judged` the last one the driver reached a verdict on - a
+    # launch with no verdict is relaunched under the same number.
+    # `tests_spent` counts the attempts earlier rungs spent, and
+    # `tests_rejections` keeps every rejection any rung was given, oldest
+    # first, as {role, revision, attempt, diagnostic}: the successor's
+    # briefing and a resumed turn's diagnostic are both rendered from it.
+    # `tests_grace_granted` marks the one attempt a resume grants a role
+    # whose budget had already ended. The tests are frozen when
+    # `tests_sha` is set.
+    tests_attempts: int = 0
+    tests_judged: int = 0
+    tests_spent: int = 0
+    tests_rejections: list[dict] = field(default_factory=list)
+    tests_grace_granted: bool = False
     # "domain" on a UI slice the planner judged cannot be implemented and
     # validated before its domain sibling exists; "" for an independent one.
     depends_on: str = ""
@@ -518,23 +550,30 @@ def _config_snapshot(roster: dict) -> dict[str, dict[str, str]]:
     }
 
 
-def begin_run(story_number: int, base_sha: str, roster: dict, slices: list) -> RunRecord:
-    """Create and persist the run's retained record from block 1's outputs.
-    `slices` are fitflow.slice.Slice objects, in domain-then-ui order.
+def refuse_retained_run(story_number: int) -> None:
+    """A story that already carries a state file is an interrupted or
+    finished earlier run whose workers may have launched uncertainly. A
+    fresh run never overwrites it: `--resume` continues it, `--reset`
+    archives it."""
+    if not state_path(story_number).exists():
+        return
+    raise FlowFailure(
+        Outcome.RUN_STATE_CONFLICT,
+        f"an earlier run for story #{story_number} left state at "
+        f"{state_path(story_number)}; continue it with "
+        f"`go.py {story_number} --resume`, or archive it and undo what it "
+        f"created with `go.py {story_number} --reset`",
+        story_number,
+        add_blocked=True,
+    )
 
-    A story that already carries a state file is an interrupted or finished
-    earlier run whose workers may have launched uncertainly. A fresh run
-    never overwrites it: `--resume` continues it, `--reset` archives it."""
-    if state_path(story_number).exists():
-        raise FlowFailure(
-            Outcome.RUN_STATE_CONFLICT,
-            f"an earlier run for story #{story_number} left state at "
-            f"{state_path(story_number)}; continue it with "
-            f"`go.py {story_number} --resume`, or archive it and undo what it "
-            f"created with `go.py {story_number} --reset`",
-            story_number,
-            add_blocked=True,
-        )
+
+def create_run(story_number: int, base_sha: str, roster: dict, slices: list[Slice]) -> RunRecord:
+    """Create and persist the run's retained record from block 1's accepted
+    plan, before any writer starts. `slices` are fitflow.slice.Slice
+    objects, in domain-then-ui order; their test fields start empty and
+    block 1 fills them in as each slice's tests freeze."""
+    refuse_retained_run(story_number)
     record = RunRecord(
         story_number=story_number,
         base_sha=base_sha,
@@ -569,6 +608,45 @@ def begin_run(story_number: int, base_sha: str, roster: dict, slices: list) -> R
     )
     record.save()
     return record
+
+
+def begin_run(story_number: int) -> RunRecord:
+    """Block 2's entry into the record block 1 created and froze: the same
+    record continues, it is never created again. A slice whose tests are not
+    frozen means block 1 has not finished, and nothing can be delegated."""
+    record = load_run(story_number)
+    unfrozen = [piece.slug for piece in record.ordered() if not piece.acceptance_sha]
+    if unfrozen:
+        raise FlowFailure(
+            Outcome.RUN_STATE_CONFLICT,
+            f"block 1 has not frozen the acceptance tests of {', '.join(unfrozen)}; "
+            f"continue it with `go.py {story_number} --resume`",
+            story_number,
+            add_blocked=True,
+        )
+    return record
+
+
+def planned_slices(record: RunRecord) -> list[Slice]:
+    """Block 1's slices as the record holds them, for a resumed block 1:
+    the plan is never asked for again."""
+    return [
+        Slice(
+            piece.number,
+            piece.layer,
+            piece.title,
+            piece.brief,
+            list(piece.acceptance),
+            piece.test_kind,
+            test_files=list(piece.test_files),
+            commit=piece.acceptance_sha,
+            ui_called_exports=list(piece.ui_called_exports),
+            tests_type_debt=dict(piece.tests_type_debt),
+            tests_role=piece.tests_role,
+            tests_revision=piece.tests_revision,
+        )
+        for piece in record.ordered()
+    ]
 
 
 def load_run(story_number: int) -> RunRecord:

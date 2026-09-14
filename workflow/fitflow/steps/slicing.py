@@ -18,9 +18,14 @@ solver that could neither obey it nor compile without it).
   the ui slice of the same story becomes dependent and carries the
   adopt-and-clean clause. Both clauses are rendered in `fitflow.layers`,
   from the constants the scope check reads.
+
+Once the plan is accepted and any child issues exist, this box creates the
+run's retained record (fitflow.runstate.create_run), before any writer
+starts: from here on a stopped run is resumed, never replanned, and a fresh
+run on the story stops with RUN_STATE_CONFLICT.
 """
 
-from fitflow import agents, audit, github, layers, narrate, planner, settings
+from fitflow import agents, audit, github, layers, narrate, planner, runstate, settings, worktrees
 from fitflow.github import Story
 from fitflow.outcome import FlowFailure, Outcome
 from fitflow.slice import Slice
@@ -33,9 +38,9 @@ def slice_at_layer_boundary(story: Story, issue_context: str) -> list[Slice]:
     _apply_clauses(raw_slices)
     detail = f"✂️ yes, split into {len(raw_slices)}" if spans else "no"
     narrate.line(f"🔀 Spans domain and UI? → {detail}")
-    if spans:
-        return _split(story, raw_slices)
-    return [_keep_as_is(story, raw_slices[0])]
+    slices = _split(story, raw_slices) if spans else [_keep_as_is(story, raw_slices[0])]
+    runstate.create_run(story.number, worktrees.remote_head("main") or "", agents.roster(), slices)
+    return slices
 
 
 def _planned(story: Story, issue_context: str) -> tuple[bool, list[dict]]:
