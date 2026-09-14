@@ -53,11 +53,52 @@ WORKFLOW_TESTS = "workflow/tests/"
 WORKFLOW_ACCEPTANCE = re.compile(r"^workflow/tests/(?:[\w.-]+/)*test_[\w.-]+\.py$")
 
 
+#: The repository's shared test support. `tests/` at the root holds the
+#: setup the suites import - `e2e-support.ts`, `preview-server.ts`,
+#: `catalog-fixture.ts` - beside a few specs of its own.
+TEST_SUPPORT = "tests/"
+
+
 def is_test_file(layer: str, path: str) -> bool:
-    """Whether block 1 may change `path` on a slice of this layer."""
+    """Whether `path` is an acceptance test of a slice of this layer: the
+    files block 1 freezes, block 3 must leave byte-identical and the
+    runners collect. What block 1 may *change* is wider - `is_test_side`."""
     if layer == "workflow":
         return path.startswith(WORKFLOW_TESTS)
     return TEST_FILE.search(path) is not None
+
+
+def is_test_support(layer: str, path: str) -> bool:
+    """Whether `path` is shared test support: a file under `tests/` that is
+    not itself an acceptance test. Block 1 may change these beside the
+    tests it writes, and they stay out of the acceptance set - they are
+    ordinary branch content, not bytes an implementer is judged against.
+
+    #337 run 5 is why they are writable at all. Three `*.e2e.ts` files
+    repeated the same eleven-, fifteen- and seventeen-line playwright
+    setup, `duplicates` (jscpd, ratchet 0) rejected the new one, and the
+    only correction available - lifting that setup into
+    `tests/e2e-support.ts`, where the suites already keep their shared
+    helpers - came straight back as "non-test file changed". The
+    duplicates gate reads the e2e files themselves, so shared setup has to
+    live in a helper; a writer that may not touch the helpers cannot
+    answer that gate at all.
+
+    A workflow slice has none: `workflow/tests/**` is test-side whole
+    already, and the root `tests/` tree is outside the driver's layer."""
+    return layer != "workflow" and _under_test_support(path)
+
+
+def is_test_side(layer: str, path: str) -> bool:
+    """Whether block 1 may change `path` on a slice of this layer: an
+    acceptance test, or the shared test support those tests import.
+    Everything else - product code under `src/`, scripts, configuration -
+    is refused exactly as it was."""
+    return is_test_file(layer, path) or is_test_support(layer, path)
+
+
+def _under_test_support(path: str) -> bool:
+    return path.startswith(TEST_SUPPORT) and TEST_FILE.search(path) is None
 
 
 def matches_test_kind(test_kind: str, path: str) -> bool:
@@ -73,10 +114,13 @@ def matches_test_kind(test_kind: str, path: str) -> bool:
 
 def names_an_acceptance_test(test_kind: str, path: str) -> bool:
     """Whether a path block 1 *reported* as an acceptance test can be one.
-    Only pytest distinguishes this from `matches_test_kind`: a fake or a
-    `conftest.py` is a legitimate change and never a test pytest collects."""
+    A legitimate change is not automatically one: a fake or a `conftest.py`
+    is never a test pytest collects, and shared test support under `tests/`
+    is never a test the repository's runners collect either."""
     if test_kind == "pytest":
         return WORKFLOW_ACCEPTANCE.match(path) is not None
+    if _under_test_support(path):
+        return False
     return matches_test_kind(test_kind, path)
 
 

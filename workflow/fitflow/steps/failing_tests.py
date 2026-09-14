@@ -317,8 +317,10 @@ def _verify_pushed(prepared: PreparedSlice, test_files: list[str]) -> dict[str, 
         raise FlowFailure(Outcome.TESTS_NOT_PUSHED, "mechanic reported no test files", story_number)
     changed = worktrees.changed_files(path, slug)
     _check_reported_files_are_on_branch(slug, test_files, changed, story_number)
-    _check_every_changed_file_is_a_test(slug, piece.layer, changed, story_number)
-    _check_files_match_test_kind(slug, changed, test_files, piece.test_kind, story_number)
+    _check_every_changed_file_is_test_side(slug, piece.layer, changed, story_number)
+    _check_files_match_test_kind(
+        slug, piece.layer, changed, test_files, piece.test_kind, story_number
+    )
     _check_test_files_are_where_they_belong(slug, piece.layer, changed, story_number)
     _check_test_quality(slug, path, test_files, story_number)
     checks = _branch_checks(piece.layer, story_number, path, test_files, changed)
@@ -482,8 +484,8 @@ def validate_repaired_tests(
     kept = [test_file for test_file in test_files if (path / test_file).exists()]
     changed = worktrees.changed_between(path, base)
     _check_the_repair_touched_the_tests(slug, changed, named, story_number)
-    _check_every_changed_file_is_a_test(slug, layer, changed, story_number)
-    _check_files_match_test_kind(slug, changed, kept, test_kind, story_number)
+    _check_every_changed_file_is_test_side(slug, layer, changed, story_number)
+    _check_files_match_test_kind(slug, layer, changed, kept, test_kind, story_number)
     _check_test_quality(slug, path, kept, story_number)
     debt = _judged(_branch_checks(layer, story_number, path, kept, changed), story_number)
     narrate.line(
@@ -670,7 +672,13 @@ def _missing_api_debt(reading, test_files: list[str], tolerated) -> dict[str, in
     """How many tolerated errors each acceptance file carries, or None the
     moment the lane reported anything else: an error outside the acceptance
     files, a rule the implementation will not answer, or output the driver
-    could not read in full."""
+    could not read in full.
+
+    A shared helper under `tests/` is outside the acceptance files, so a
+    lint or type error inside one is never tolerated debt. Nothing there is
+    waiting for an API the story has not written yet - the helper carries
+    setup the suites already run - so it has to compile and lint on its own
+    today, and the writer that moved code into it owns that."""
     if not reading.complete:
         return None
     debt: dict[str, int] = {}
@@ -726,7 +734,15 @@ def _content_verdict(path, test_files: list[str], story_number: int) -> _Verdict
     implementation attempt, and by then the test's bytes are immutable and
     nobody can repair them (#397). The same steps run here, where the
     mechanic still owns the file and the failure is an ordinary
-    correction."""
+    correction.
+
+    They size the branch's own diff rather than the reported acceptance
+    set, so a shared helper under `tests/` that the tests lifted their
+    setup into is judged by them too - which is the point: an edit there
+    can break a suite this slice never looked at, and `duplicates`,
+    `format:check`, `check:suppressions` and `spellcheck` read it exactly
+    as they read the tests. `lint:changed` is the branch diff as well, and
+    `check` types the whole tree."""
     failure = gates.run_failing_branch_steps(path, story_number)
     if failure is None:
         return _Verdict("content steps", (", ".join(gates.FAILING_BRANCH_STEPS) + " ✔",))
@@ -834,15 +850,25 @@ def _check_reported_files_are_on_branch(
             )
 
 
-def _check_every_changed_file_is_a_test(
+def _check_every_changed_file_is_test_side(
     slug: str, layer: str, changed: list[str], story_number: int
 ) -> None:
-    """Only test-side files may change here. For a workflow slice the whole
-    of `workflow/tests/` is test-side - a new flow scenario needs its
+    """Only test-side files may change here: the acceptance tests, and the
+    shared test support they import. For a workflow slice the whole of
+    `workflow/tests/` is test-side - a new flow scenario needs its
     `given_*` helper in `conftest.py` and often a scripted answer in a fake,
-    and none of that is driver code."""
+    and none of that is driver code. For a product slice the test support
+    is the root `tests/` tree, and #337 run 5 is why it is in reach: the
+    `duplicates` gate reads the e2e files, so setup repeated across them
+    has to move into a helper there, and a writer forbidden the helpers
+    could not answer the gate at all (acceptance.is_test_support).
+
+    The support files are branch content, not acceptance bytes: they are
+    never added to `test_files`, so block 3 may edit them like any other
+    file it has in reach. Everything else - `src/`, `scripts/`,
+    configuration - is refused with the same diagnostic as before."""
     for changed_file in changed:
-        if not acceptance.is_test_file(layer, changed_file):
+        if not acceptance.is_test_side(layer, changed_file):
             raise FlowFailure(
                 Outcome.TESTS_NOT_PUSHED,
                 f"non-test file changed on {slug}: {changed_file}",
@@ -851,9 +877,24 @@ def _check_every_changed_file_is_a_test(
 
 
 def _check_files_match_test_kind(
-    slug: str, changed: list[str], test_files: list[str], test_kind: str, story_number: int
+    slug: str,
+    layer: str,
+    changed: list[str],
+    test_files: list[str],
+    test_kind: str,
+    story_number: int,
 ) -> None:
-    mismatched = [path for path in changed if not acceptance.matches_test_kind(test_kind, path)]
+    """The kind rule is about the tests: a shared helper under `tests/` is
+    of no runner's kind - `tests/e2e-support.ts` is imported by playwright
+    specs and named like none of them - so the changed-file rule skips it.
+    Reporting one as an acceptance test is still refused below: no runner
+    collects a test from it."""
+    mismatched = [
+        path
+        for path in changed
+        if not acceptance.is_test_support(layer, path)
+        and not acceptance.matches_test_kind(test_kind, path)
+    ]
     if mismatched:
         raise FlowFailure(
             Outcome.TESTS_NOT_PUSHED,
@@ -902,10 +943,17 @@ def _check_test_files_are_where_they_belong(
     Both rules read the repository's TypeScript layout - the coverage lane's
     view of `src/` - so a workflow slice is exempt: its own placement rule is
     enforced above, where `workflow/tests/**` is the only tree it may change
-    and only a `test_*.py` inside it may be reported as an acceptance test."""
+    and only a `test_*.py` inside it may be reported as an acceptance test.
+
+    Shared test support is exempt for the same reason in reverse: `tests/`
+    is where the repository already keeps its helpers, so a file there is
+    in the folder it belongs in and neither rule has anything to say
+    about it."""
     if layer == "workflow":
         return
     for changed_file in changed:
+        if acceptance.is_test_support(layer, changed_file):
+            continue
         expected = _misplaced(changed_file)
         if expected is not None:
             raise FlowFailure(
