@@ -1485,6 +1485,7 @@ re-derive:
 | no turn at all (the launch barrier failed)                     | `assigned`; the loop launches attempt 1                                                                                                                                                                  |
 | status `running` (the driver died mid-turn)                    | refused (`EXECUTION_HELD`) while an `aarmy talk` for that team and role still runs on this machine; otherwise voided                                                                                     |
 | completed with a valid reply (validation stopped or never ran) | the working tree's digest must equal the one recorded when the turn ended, else `RUN_STATE_CONFLICT`; then `running` with its verdict pending, and block 3 re-validates that reply without an agent call |
+| completed with a `diagnostic` for the attempt the role is on   | back to `correcting` and relaunched rather than re-judged: that verdict is the driver's own and the bytes have not moved. The next attempt, or one grace attempt when the budget is spent (#337 run 4)   |
 | completed and marked `"repeated": true`                        | refused (`RUN_STATE_CONFLICT`): the verdict is a function of bytes that have not changed, so re-validating could only reach the same diagnostic and stop on it again; reset                              |
 | completed without a reply (launch failed, reply malformed)     | voided                                                                                                                                                                                                   |
 | already voided by an earlier resume                            | back to the launch                                                                                                                                                                                       |
@@ -1496,7 +1497,18 @@ re-derive:
 A `failed` entry is the driver's verdict on the work only when a diagnostic
 sits beside it. A validation that died on an external tool failure records
 `failed` too, and no verdict: that reply is re-judged like any other, because
-nothing has judged it yet.
+nothing has judged it yet. Block 3 settles the slice rather than the turn, so
+an exhausted budget leaves that turn's own `result` at `ok` and the slice at
+`failed`: the `diagnostic` beside the attempt is what says a verdict was
+reached, and it is the same text the relaunched turn is corrected from.
+
+The grace attempt past the budget exists because a resume follows a driver
+that was fixed, so the rejection that spent the last attempt may have been the
+driver's own. It is labelled `attempt 4 (grace)` and judged exactly as the
+three before it. Block 3 grants it once per slice and records that
+(`grace_granted`), so a second resume of the same slice finds the mark and
+stops (`RUN_STATE_CONFLICT`): the budget is spent and what is left is a human
+call.
 
 Voiding keeps the ledger entry (status `completed`, result `void`, the reason
 in `why`), decrements `attempts` by one, and returns the slice to `assigned`
