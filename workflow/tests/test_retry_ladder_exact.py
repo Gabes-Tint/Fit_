@@ -76,3 +76,8 @@ def test_merge_pr_already_merged_is_not_merged_twice(monkeypatch):
     github.merge_pr(500)
 
     assert calls == [("pr", "merge", "500")]
+
+
+def test_graphql_non_200_status_code_is_transient():
+    assert github.is_transient('non-200 OK status code: 502 Bad Gateway body: ""')
+    assert not github.is_transient('title: "see #502"')
