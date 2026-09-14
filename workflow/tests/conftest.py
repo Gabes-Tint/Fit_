@@ -698,6 +698,14 @@ reviewer:
             self.world["clone_pairs"] = [[first, second], list(then)]
         self._save()
 
+    def given_unknown_word(self, word: str, times: int = 1) -> None:
+        """The word a failing `spellcheck` step says it does not know, and
+        how many places in the blamed file it sits in."""
+        self._load()
+        self.world["unknown_word"] = word
+        self.world["unknown_word_times"] = times
+        self._save()
+
     def given_gate_failure_file(self, file: str) -> None:
         """The file a failing `format:check`, `check:suppressions`,
         `spellcheck` or `lint` step names in its output."""

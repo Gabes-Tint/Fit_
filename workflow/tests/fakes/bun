@@ -398,6 +398,25 @@ _STEP_DETAIL = {
 }
 
 
+def _spellcheck_detail(world, file):
+    """cspell's own output for the word a scenario scripts, once per place
+    it sits: #397's mechanic spent its last attempt on a fixture name cspell
+    met four times in one file."""
+    word = world.get("unknown_word")
+    if not word:
+        return None
+    issues = "\n".join(
+        f"{file}:{2277 + index}:6 - Unknown word ({word})"
+        for index in range(int(world.get("unknown_word_times", 1)))
+    )
+    return (
+        "$ cspell --no-progress --cache --cache-location reports/quality/cache/cspell .\n"
+        f"{issues}\nCSpell: Files checked: 749, Issues found: "
+        f"{world.get('unknown_word_times', 1)} in 1 file.\n"
+        'error: script "spellcheck" exited with code 1'
+    )
+
+
 def _clone_pair(world):
     """The two halves `duplicates` reports. A scenario that scripts more
     than one pair gets one per invocation, the last sticky: an implementer
@@ -467,13 +486,13 @@ def _gate_report(cwd, world, label, failed):
     return the report's own `ok`."""
     steps = []
     for step in failed:
-        detail = (
-            _write_jscpd_report(cwd, world)
-            if step == "duplicates"
-            else _STEP_DETAIL.get(step, f"{step} failed").format(
-                file=world.get("gate_failure_file", "src/lib/probe.spec.ts")
-            )
-        )
+        blamed = world.get("gate_failure_file", "src/lib/probe.spec.ts")
+        if step == "duplicates":
+            detail = _write_jscpd_report(cwd, world)
+        elif step == "spellcheck" and _spellcheck_detail(world, blamed):
+            detail = _spellcheck_detail(world, blamed)
+        else:
+            detail = _STEP_DETAIL.get(step, f"{step} failed").format(file=blamed)
         steps.append(
             {
                 "name": step,

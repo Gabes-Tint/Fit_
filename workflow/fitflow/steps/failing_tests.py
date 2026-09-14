@@ -410,13 +410,16 @@ def _one_diagnostic(failed: list[_Verdict], story_number: int) -> FlowFailure:
         if any(verdict.failure.outcome is Outcome.TESTS_INVALID for verdict in failed)
         else failed[0].failure.outcome
     )
+    # one gate run can reject on several steps at once, and the mechanic has
+    # to answer each of them, so the count is of checks rather than of the
+    # runs that reported them
+    names = [name for verdict in failed for name in verdict.label.split(", ")]
     body = "\n\n".join(f"{verdict.label}:\n{verdict.failure.why}" for verdict in failed)
     return FlowFailure(
         outcome,
-        f"{len(failed)} of block 1's checks rejected the acceptance tests "
-        f"({', '.join(verdict.label for verdict in failed)}); this one correction must "
-        f"answer all {len(failed)}, because the next one is judged by all of them "
-        f"again:\n\n{body}",
+        f"{len(names)} of block 1's checks rejected the acceptance tests "
+        f"({', '.join(names)}); this one correction must answer all {len(names)}, "
+        f"because the next one is judged by all of them again:\n\n{body}",
         story_number,
     )
 
