@@ -614,12 +614,12 @@ for a defect in the tests.
 An implementation reply therefore always carries an `objection`, which is
 `null` when the implementer has none and otherwise an object:
 
-| field          | meaning                                                                 |
-| -------------- | ----------------------------------------------------------------------- |
-| `kind`         | `tests_contradict`, `tests_out_of_layer` or `tests_wrong`               |
-| `tests`        | the acceptance test files it is about, from this slice's retained list  |
-| `why`          | why no honest change inside this slice's layer makes them pass together |
-| `proposed_fix` | the repair the implementer proposes, or `null` when it proposes none    |
+| field          | meaning                                                                                  |
+| -------------- | ---------------------------------------------------------------------------------------- |
+| `kind`         | `tests_contradict`, `tests_out_of_layer` or `tests_wrong`                                |
+| `tests`        | what it is about: a retained acceptance test file, or one test as `<file>::<test title>` |
+| `why`          | why no honest change inside this slice's layer makes them pass together                  |
+| `proposed_fix` | the repair the implementer proposes, or `null` when it proposes none                     |
 
 The field is required rather than optional because `aarmy` only loads a
 schema in codex's strict structured-outputs dialect, where every property of
@@ -629,16 +629,27 @@ thing to the driver, and so do a `proposed_fix` that is absent, `null` or
 empty.
 
 `changed_files` may be empty when an objection is present, and only then.
+It may also be non-empty: see [Objecting beside finished
+work](#objecting-beside-finished-work).
 
 The driver never takes an objection on trust. It verifies, in this order,
 that the objection is well formed and names a known kind; that every file it
-names is one of this slice's own retained acceptance tests; that the
-worktree carries no commit of the agent's own and nothing outside the
-slice's reach; and that the acceptance run on that same working tree still
-fails on at least one of the named files. A malformed or unverifiable
-objection is an ordinary failed attempt - the diagnostic names the condition
-that failed, and it costs one of the role's three attempts. An unreadable
-runner report is a tool failure, never a verdict on the objection.
+names - the whole path, or the left half of a `<file>::<test title>` - is one
+of this slice's own retained acceptance tests; that the worktree carries no
+commit of the agent's own and nothing outside the slice's reach; and that one
+acceptance run over this slice's whole test set, on that same working tree,
+still fails on everything the objection names. That last check is per test,
+not per file: a named test must have failed, and a whole file named on its own
+must hold at least one failing test. A malformed or unverifiable objection is
+an ordinary failed attempt - the diagnostic names the condition that failed,
+with the runner's own status for each test it disagrees about, and it costs
+one of the role's three attempts. An unreadable runner report, or a requested
+file no runner ran, is a tool failure, never a verdict on the objection.
+
+The verified objection carries that run's findings into the repair: how each
+named test failed - an assertion that bit, a thrown error, or an expectation
+that timed out - in the runner's own words, because "these tests are wrong" is
+not something the next agent can act on.
 
 A verified objection moves the slice to `tests_rejected` with `objected` on
 the turn's ledger entry. It costs the turn, and nothing more: the attempt
@@ -647,10 +658,26 @@ counter is reset when the repair lands.
 Block 1's writer then repairs the tests, as a correction turn in a
 driver-owned repair worktree branched from the slice's current failing-test
 base - so a dependent UI slice repairs against the tree that already carries
-its domain sibling. The turn carries the objection, its proposed fix, and
-the rule: repair the tests so an honest implementation inside this slice's
+its domain sibling. The turn carries the objection, its proposed fix, how each
+named test failed, an inventory of the repository's own sibling tests of the
+same kind (nearest paths first, one line each, from `git ls-files` in that
+worktree, so the repair imitates the fixtures, clock control and state seeding
+that already exist), and - when work was kept - that the implementation is in
+the slice's worktree and only the named tests are to be repaired. The rule is
+unchanged: repair the tests so an honest implementation inside this slice's
 own layer can make them pass together, never weaken them into tests that
-pass with no implementation. The repaired set faces block 1's usual
+pass with no implementation.
+
+**Who repairs.** The first repair goes back to the mechanic that wrote the
+tests: it knows what it meant, and most objections are a detail it can put
+right. A second goes to the role that objected - the builder or solver, the
+same model and effort block 3 gives that role - in the same kind of repair
+worktree, with the same brief plus every objection and every repair so far.
+#421 is the reason: the mechanic repaired exactly what it was told, twice, and
+the third objection was about something neither repair had been asked to see,
+while the role that objected had already read the product and the tests
+together. `MAX_REPAIRS` is still 2, and the repair ledger records which role
+made each one. The repaired set faces block 1's usual
 validation - a clean tree, test files only, the requested test kind, the
 repository's lint, type and content gates, and a failure on an expectation
 rather than a throw (`_check_failures_are_expectations`) - measured against
@@ -666,10 +693,14 @@ the repaired tests, because the rejected set's was recorded about files that
 no longer judge this slice. The slice returns to `assigned` with the same role, revision,
 assignment, session and worktree and `attempts` reset to zero: the tests it
 is judged by are new inputs, so the role gets its full budget against them,
-and its next initial turn is told the tests were repaired and how.
+and its next initial turn is told the tests were repaired and how. When the
+objection stood beside work, that turn is also told its own work was kept
+exactly as it left it, which tests were repaired around it, and that every
+other acceptance test passed on its tree - otherwise the obvious reading of
+"the tests were repaired" is "start again".
 
 Budgets: at most two repairs per slice (`test_repairs`), at most two
-mechanic turns per repair, kept in the slice's own `test_repair_turns`
+turns per repair, kept in the slice's own `test_repair_turns`
 ledger rather than in `turns`, which stays the implementation ledger the
 session and attempt checks read. A verified objection after two repairs
 stops the run as `TESTS_INVALID` (exit 31, `blocked`) with every objection
@@ -678,6 +709,32 @@ what the run cannot get past. A repair block 1 cannot make stops the same
 way and leaves the slice in `tests_rejected`, because that is what it is -
 `--resume` relaunches the repair, from a fresh repair worktree, rather than
 sending the implementer back at tests nobody fixed.
+
+### Objecting beside finished work
+
+On #421 the builder objected three times, was right three times, and had the
+one-line implementation in its own tree the whole way: six of the seven
+acceptance tests would have passed with it, and the fourth chip the seventh
+test wanted was unreachable with the single template the fixture seeded. The
+objection loop had no shape for "these are wrong, the rest are done", so the
+run delivered nothing.
+
+An objection may therefore stand beside work in the worktree. When the tree
+carries changes since the failing-test base, two further conditions hold:
+
+- the objection names a **strict subset** of the slice's tests - every test
+  the acceptance run reported cannot be named; naming one test of a file as
+  `<file>::<test title>` is how a single-file slice qualifies;
+- every test the objection does **not** name already **passes** on that same
+  tree, in the same run.
+
+A refusal names which: the test that still fails, or the fact that every test
+of the slice was named. The changes themselves face the ordinary scope check -
+nothing outside the slice, no commit of the agent's own - exactly as before,
+and the work stays uncommitted in the slice's worktree while block 1 repairs
+the tests. The repair merge touches only test files; if it would conflict with
+that work, it is the existing `AGENT_BROKE_CONTRACT` path, because the tree
+then holds changes only block 1 may write.
 
 This is not the dependent-slice check. A UI slice whose acceptance tests the
 domain sibling alone already satisfies is caught before its loop ever

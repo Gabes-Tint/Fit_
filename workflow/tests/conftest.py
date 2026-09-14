@@ -305,8 +305,29 @@ reviewer:
         """One block 1 test-repair turn, in the driver's own repair worktree:
         the mechanic commits and never pushes - the driver merges the repair
         into the slice branch itself."""
+        self.agent_repairs(
+            slug, "mechanic", files=files, test_files=test_files, why=why, delete=delete
+        )
+
+    def agent_repairs(
+        self,
+        slug: str,
+        role: str,
+        files: dict[str, str],
+        test_files: list[str],
+        why: str = "the repaired tests still wait for the behavior",
+        delete: list[str] | None = None,
+    ) -> None:
+        """The same turn by whichever role the driver sent it to: a second
+        repair goes to the role that objected, not to the mechanic."""
         self.mechanic_writes(
-            slug, files=files, test_files=test_files, why=why, push=False, delete=delete
+            slug,
+            files=files,
+            test_files=test_files,
+            why=why,
+            push=False,
+            delete=delete,
+            role=role,
         )
 
     def agent_fails(
@@ -343,9 +364,10 @@ reviewer:
         commit: bool = True,
         delete: list[str] | None = None,
         rendezvous: str | None = None,
+        role: str = "mechanic",
     ) -> None:
         self._queue_turn(
-            f"{slug}/mechanic",
+            f"{slug}/{role}",
             {"test_files": test_files, "why_they_fail": why},
             effects={
                 "files": files,
@@ -540,14 +562,16 @@ reviewer:
     def scripted_test_outcome(
         self,
         file: str,
-        outcome: str | list[str],
+        outcome: str | dict[str, str] | list[str | dict[str, str]],
         message: str | None = None,
         location: str | None = None,
         titles: list[str] | None = None,
     ) -> None:
         """Outcome: fail, timed_out, fail_defect, pass, skipped,
         import_error, not_found, or tool_error. A list is consumed one value
-        per runner invocation. `message` and `location` are the error a
+        per runner invocation, and a value may be a mapping of test title to
+        outcome, which is how one test of a file fails while the rest of the
+        file passes. `message` and `location` are the error a
         `fail_defect` invocation reports and the file it says threw it; a
         plain `fail` always reports an ordinary failed expectation and a
         `timed_out` one the message playwright writes when an expectation
