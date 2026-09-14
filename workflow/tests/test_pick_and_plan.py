@@ -944,6 +944,60 @@ def test_tests_that_already_pass_stop_the_flow(world):
     assert any("stopped" in c.lower() for c in world.issue(100)["comments"])
 
 
+def test_the_freeze_names_the_acceptance_tests_that_already_pass_on_the_base(world):
+    """#337 run 6. "Fails as intended" is asked of the file, so a set where
+    one test fails is frozen whole - and three of that slice's four tests
+    had passed since #341 and #347 landed. They are regression guards, not
+    this slice's work, and the freeze says so on the log and on the issue
+    without stopping anything."""
+    _given_single_domain_slice(world, 103, "Rows show the brand")
+    slug = "story-103-domain"
+    spec = "src/lib/rows.spec.ts"
+    guard = "a row carries its brand"
+    criterion = "a row without a brand says so"
+    world.mechanic_writes(slug, files={spec: "// failing\n"}, test_files=[spec])
+    world.scripted_test_outcome(
+        spec, [{guard: "pass", criterion: "fail"}, "pass"], titles=[guard, criterion]
+    )
+    world.planner_answers_delegate(103, [delegate_slice(103, "domain", mechanic_signals())])
+    world.agent_implements(
+        slug,
+        "mechanic",
+        files={"src/lib/rows.ts": "export const brand = true;\n"},
+        changed_files=["src/lib/rows.ts"],
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    note = (
+        f"⚠️ 1 of 2 acceptance tests already pass on the base: {spec}::{guard} — they "
+        "guard existing behavior and are not this slice's work"
+    )
+    assert note in result.stdout
+    assert any(note in comment for comment in world.issue(103)["comments"])
+
+
+def test_a_set_where_every_test_fails_says_nothing_about_tests_that_already_pass(world):
+    _given_single_domain_slice(world, 104, "Rows show the brand")
+    slug = "story-104-domain"
+    spec = "src/lib/rows.spec.ts"
+    world.mechanic_writes(slug, files={spec: "// failing\n"}, test_files=[spec])
+    world.scripted_test_outcome(spec, ["fail", "pass"])
+    world.planner_answers_delegate(104, [delegate_slice(104, "domain", mechanic_signals())])
+    world.agent_implements(
+        slug,
+        "mechanic",
+        files={"src/lib/rows.ts": "export const brand = true;\n"},
+        changed_files=["src/lib/rows.ts"],
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "already pass on the base" not in result.stdout
+
+
 def test_vitest_import_failure_does_not_count_as_failing_acceptance_test(world):
     _given_single_domain_slice(world, 101, "Broken product import")
     slug = "story-101-domain"

@@ -123,6 +123,14 @@ Rules:
   `git push -u origin $branch`.
 - Never run a command with run_in_background; do not run the full test suite,
   only the files you wrote.
+- A test that passes on the base is a regression guard, not an acceptance
+  criterion. The driver asks whether the set fails, and one failing test
+  answers that for the whole file, so a test written around behavior the
+  repository already has is frozen and judged beside the real ones without
+  anybody noticing. Write a test for what this slice has to change; when a
+  criterion is already met on `main`, say so in `why_they_fail` rather than
+  inventing a failing test around it, and if every criterion already passes,
+  say that instead of writing one failing test to carry the set.
 - Never reply with no test files. If you believe no acceptance test can be
   written for this slice, say why in `why_they_fail` and name the file you
   would have written: the driver stops the run with your reason rather than

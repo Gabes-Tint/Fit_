@@ -273,13 +273,13 @@ def _run_attempt(prepared: PreparedSlice, ledger: _Ledger, attempt: int, diagnos
             ]
         )
     _check_not_a_reasoned_refusal(test_files, reply["why_they_fail"], piece.number)
-    debt = _verify_pushed(prepared, test_files)
+    debt, passing_note = _verify_pushed(prepared, test_files)
     piece.test_files = list(test_files)
     piece.tests_type_debt = debt
     piece.tests_role = ledger.role
     piece.tests_revision = ledger.revision
     piece.commit = worktrees.local_head(path)
-    _comment(piece.number, slug, path, test_files, reply["why_they_fail"], ledger)
+    _comment(piece.number, slug, path, test_files, reply["why_they_fail"], ledger, passing_note)
 
 
 def _check_not_a_reasoned_refusal(test_files: list[str], why: str, story_number: int) -> None:
@@ -299,12 +299,13 @@ def _check_not_a_reasoned_refusal(test_files: list[str], why: str, story_number:
     )
 
 
-def _verify_pushed(prepared: PreparedSlice, test_files: list[str]) -> dict[str, int]:
+def _verify_pushed(prepared: PreparedSlice, test_files: list[str]) -> tuple[dict[str, int], str]:
     """Every check the branch must pass before its bytes become immutable.
-    Returns the type debt the acceptance tests carry: how many type and
+    Returns the type debt the acceptance tests carry - how many type and
     type-aware lint errors each one has because the API it calls does not
-    exist yet. Block 3 reads it to tell "the implementation has not provided
-    the signature yet" from "block 1 accepted a broken test"."""
+    exist yet, which block 3 reads to tell "the implementation has not
+    provided the signature yet" from "block 1 accepted a broken test" - and
+    the freeze's note about the tests that already pass on the base."""
     piece, slug, path = prepared.piece, prepared.slug, prepared.path
     story_number = piece.number
     if not worktrees.is_clean(path):
@@ -329,7 +330,7 @@ def _verify_pushed(prepared: PreparedSlice, test_files: list[str]) -> dict[str, 
         f"🔍 Verify #{story_number}: tree clean ✔ · pushed ✔ · files on branch ✔ · "
         "only tests ✔ · " + _branch_gate_summary(piece.layer, changed)
     )
-    return debt
+    return debt, _passing_note(checks)
 
 
 def _merged(first: dict[str, int], second: dict[str, int]) -> dict[str, int]:
@@ -353,6 +354,8 @@ class _Verdict:
     entries: tuple[str, ...]
     failure: FlowFailure | None = None
     debt: dict[str, int] = field(default_factory=dict)
+    # what the acceptance run found already passing, for the freeze to say
+    passing_note: str = ""
 
 
 def _branch_checks(
@@ -449,12 +452,13 @@ def validate_repaired_tests(
     story_number: int,
     named: list[str],
     objected_to: list[str],
-) -> tuple[list[str], dict[str, int]]:
+) -> tuple[list[str], dict[str, int], str]:
     """Block 1's own verdict on a set of acceptance tests it repaired after
     an implementer's verified objection (steps/objection.py), taken in the
     driver-owned repair worktree: the same content, kind, gate and failure
     checks a first writing faces. Returns the acceptance set the repair
-    leaves behind and the type debt that set carries, which replaces the
+    leaves behind, the freeze's note about whichever of those tests already
+    pass on the base, and the type debt that set carries, which replaces the
     rejected set's: the tests block 3 is now judged against are these, and
     `tests_type_debt` is how block 3 tells "the implementation has not
     provided the signature yet" from "block 1 accepted a broken test".
@@ -487,13 +491,14 @@ def validate_repaired_tests(
     _check_every_changed_file_is_test_side(slug, layer, changed, story_number)
     _check_files_match_test_kind(slug, layer, changed, kept, test_kind, story_number)
     _check_test_quality(slug, path, kept, story_number)
-    debt = _judged(_branch_checks(layer, story_number, path, kept, changed), story_number)
+    checks = _branch_checks(layer, story_number, path, kept, changed)
+    debt = _judged(checks, story_number)
     narrate.line(
         f"🔍 Verify #{story_number} repair: tree clean ✔ · only tests ✔ · "
         + _branch_gate_summary(layer, changed, placement=False)
         + f" · {_ACCEPTANCE} ✔"
     )
-    return kept, debt
+    return kept, debt, _passing_note(checks)
 
 
 def _check_the_repair_kept_the_unnamed_tests(
@@ -819,10 +824,16 @@ def _acceptance_verdict(path, test_files: list[str], story_number: int) -> _Verd
     run, fail, and fail on an expectation (#429). A tool failure still
     raises where it stands - it is not a verdict on the tests."""
     try:
-        _verify_tests_fail(path, test_files, story_number)
+        note = _verify_tests_fail(path, test_files, story_number)
     except FlowFailure as failure:
         return _Verdict(_ACCEPTANCE, (f"{_ACCEPTANCE} ✗",), failure)
-    return _Verdict(_ACCEPTANCE, (f"{_ACCEPTANCE} ✔",))
+    return _Verdict(_ACCEPTANCE, (f"{_ACCEPTANCE} ✔",), passing_note=note)
+
+
+def _passing_note(verdicts: list[_Verdict]) -> str:
+    """The acceptance run's note about tests that already pass, for the
+    comment the freeze posts. Only the acceptance check carries one."""
+    return next((verdict.passing_note for verdict in verdicts if verdict.passing_note), "")
 
 
 def _check_failures_are_expectations(verdict, story_number: int) -> None:
@@ -981,7 +992,9 @@ def _misplaced(changed_file: str) -> str | None:
     return None
 
 
-def _verify_tests_fail(path, test_files: list[str], story_number: int) -> None:
+def _verify_tests_fail(path, test_files: list[str], story_number: int) -> str:
+    """The acceptance run block 1 freezes on, and what it says about the
+    tests that passed in it."""
     for test_file in test_files:
         if not test_file.endswith((".e2e.ts", ".py")):
             diagnostic = acceptance.rejects_local_stand_in(path / test_file)
@@ -994,19 +1007,52 @@ def _verify_tests_fail(path, test_files: list[str], story_number: int) -> None:
         raise FlowFailure(Outcome.TESTS_DO_NOT_FAIL, verdict.why, story_number)
     narrate.line(f"🧪 {', '.join(test_files)} → failed, as it should ✔")
     _check_failures_are_expectations(verdict, story_number)
+    return _note_tests_that_already_pass(verdict)
+
+
+def _note_tests_that_already_pass(verdict) -> str:
+    """Narrate what this run says about the acceptance tests that pass on
+    the base, and return the same line for the freeze's comment; "" when
+    every one of them fails.
+
+    "Fails as intended" is asked of the set, and one failing test answers
+    it for the whole file - so #337 run 6 froze four acceptance tests of
+    which three had passed since #341 and #347 landed, and nobody was told.
+    Tests like those are worth keeping: they guard behavior that already
+    exists. They are not acceptance criteria for this slice, and naming
+    them at the freeze is how the difference stays visible - to Gabriel on
+    the issue, and to the implementer reading the log. It is a line, not a
+    gate: nothing stops."""
+    passing = acceptance.already_passing(verdict)
+    if not passing:
+        return ""
+    note = (
+        f"⚠️ {len(passing)} of {len(verdict.statuses)} acceptance tests already pass on the "
+        f"base: {', '.join(passing)} — they guard existing behavior and are not this "
+        f"slice's work"
+    )
+    narrate.line(note)
+    return note
 
 
 def _comment(
-    story_number: int, slug: str, path, test_files: list[str], why: str, ledger: "_Ledger"
+    story_number: int,
+    slug: str,
+    path,
+    test_files: list[str],
+    why: str,
+    ledger: "_Ledger",
+    passing_note: str = "",
 ) -> None:
     sha = worktrees.local_head(path)
     written_by = f"Written by: {ledger.role}"
     if ledger.revision:
         written_by += f" (block 1 escalated {ledger.revision} rung(s) to reach it)"
+    already = f"\n\n{passing_note}" if passing_note else ""
     body = (
         f"Branch: {slug}\nCommit: {sha}\nTest files: {', '.join(test_files)}\n"
         f"{written_by}\n\n"
-        f"Why they fail: {why}\n\nReady for block 2 (delegate)."
+        f"Why they fail: {why}{already}\n\nReady for block 2 (delegate)."
     )
     narrate.comment_posted(story_number, body)
     github.comment(story_number, body)

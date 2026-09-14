@@ -441,8 +441,8 @@ def repair(record: RunRecord, piece: SliceRecord) -> None:
     audit.worktree_created(slug)
     narrate.line(f"🌿 Worktree {slug} · branch {slug} at {piece.failing_sha[:12]}")
     agents.ensure_fresh_team(slug, path, piece.number)
-    test_files, why, debt = _repair_loop(record, piece, slug, path, role)
-    _refreeze(record, piece, path, test_files, why, debt)
+    test_files, why, debt, passing_note = _repair_loop(record, piece, slug, path, role)
+    _refreeze(record, piece, path, test_files, why, debt, passing_note)
     worktrees.remove_slice_worktree(path)
     worktrees.delete_local_branch(slug)
     agents.delete_team(slug)
@@ -477,7 +477,7 @@ def _repair_headline(piece: SliceRecord, number: int, role: str) -> str:
 
 def _repair_loop(
     record: RunRecord, piece: SliceRecord, slug: str, path: Path, role: str
-) -> tuple[list[str], str, dict[str, int]]:
+) -> tuple[list[str], str, dict[str, int], str]:
     """The repair's own bounded budget, independent of the implementer's: a
     block 1 verdict the mechanic can repair becomes the next turn's
     diagnostic, and the last turn's stops the run. An agent or tool failure
@@ -534,7 +534,7 @@ def _repair_turn(
     turn: int,
     diagnostic: str,
     role: str,
-) -> tuple[list[str], str, dict[str, int]]:
+) -> tuple[list[str], str, dict[str, int], str]:
     entry = _begin_repair_turn(record, piece, slug, turn, role)
     try:
         reply, session = _talk(piece, slug, path, diagnostic, role)
@@ -553,7 +553,7 @@ def _repair_turn(
                 ("Why they fail", reply["why_they_fail"]),
             ]
         )
-    kept, debt = failing_tests.validate_repaired_tests(
+    kept, debt, passing_note = failing_tests.validate_repaired_tests(
         slug,
         path,
         piece.failing_sha,
@@ -564,7 +564,7 @@ def _repair_turn(
         named,
         list(piece.objections[-1]["tests"]),
     )
-    return kept, reply["why_they_fail"], debt
+    return kept, reply["why_they_fail"], debt, passing_note
 
 
 def _judged_set(piece: SliceRecord, named: list[str]) -> list[str]:
@@ -754,6 +754,7 @@ def _refreeze(
     test_files: list[str],
     why: str,
     debt: dict[str, int],
+    passing_note: str = "",
 ) -> None:
     """The repaired tests become this slice's inputs: merged into the slice
     branch beside the implementer's uncommitted work, pushed, and recorded.
@@ -792,7 +793,7 @@ def _refreeze(
         record.save()
     narrate.line(f"🔒 #{piece.number} ({piece.layer}) tests re-frozen at {repair_sha[:12]}")
     narrate.line(f"⇪ Pushed {piece.branch} at {merged[:12]}")
-    _comment(record, piece, repair_sha, test_files, why)
+    _comment(record, piece, repair_sha, test_files, why, passing_note)
 
 
 def _kept_note(piece: SliceRecord, slice_path: Path, test_files: list[str]) -> str:
@@ -844,14 +845,20 @@ def _merge_repair(record: RunRecord, piece: SliceRecord, slice_path: Path, sha: 
 
 
 def _comment(
-    record: RunRecord, piece: SliceRecord, repair_sha: str, test_files: list[str], why: str
+    record: RunRecord,
+    piece: SliceRecord,
+    repair_sha: str,
+    test_files: list[str],
+    why: str,
+    passing_note: str = "",
 ) -> None:
     entry = piece.objections[-1]
+    already = f"\n\n{passing_note}" if passing_note else ""
     body = (
         f"Acceptance tests repaired for #{piece.number} ({piece.layer}) after the "
         f"{entry['role']}'s objection ({entry['kind']}), repair {piece.test_repairs}"
         f"/{MAX_REPAIRS}.\nCommit: {repair_sha}\nTest files: {', '.join(test_files)}\n\n"
-        f"Why they fail: {why}\n\n{_rendered(entry)}"
+        f"Why they fail: {why}{already}\n\n{_rendered(entry)}"
     )
     narrate.comment_posted(record.story_number, body)
     github.comment(record.story_number, body)

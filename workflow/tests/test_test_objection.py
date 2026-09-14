@@ -567,13 +567,13 @@ def test_resume_remakes_the_repair_branch_a_stopped_repair_left_standing(world):
     So the relaunched repair asks for the name that is already taken, and
     `worktrees.create_repair_worktree` is what makes that work: it removes
     the worktree and deletes the branch before creating either."""
-    slug = _given_planned_story(world, 476, ["fail", "fail"])
+    slug = _given_planned_story(world, 482, ["fail", "fail"])
     world.scripted_test_outcome(REPAIRED, ["fail", "pass"])
     world.agent_objects(slug, "mechanic", tests=[TEST], why=WHY)
     # the repair turn dies before it can reply, so its worktree stands
     world.mechanic_fails(f"{slug}-tests-1", "the repair turn died")
 
-    stopped = run_flow(world, 476)
+    stopped = run_flow(world, 482)
 
     assert stopped.returncode == 21, stopped.stdout + stopped.stderr
     repair_worktree = world.slice_worktree_path(f"{slug}-tests-1")
@@ -591,11 +591,11 @@ def test_resume_remakes_the_repair_branch_a_stopped_repair_left_standing(world):
         changed_files=["src/lib/rows.ts"],
     )
 
-    result = run_flow(world, 476, "--resume")
+    result = run_flow(world, 482, "--resume")
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "🩹 Repairing #476 (domain) tests in block 1 (repair 1/2)" in result.stdout
-    piece = world.run_record(476)["slices"]["domain"]
+    assert "🩹 Repairing #482 (domain) tests in block 1 (repair 1/2)" in result.stdout
+    piece = world.run_record(482)["slices"]["domain"]
     assert piece["state"] == "succeeded" and piece["test_files"] == [REPAIRED]
     # the repair landed from the base, not from what the dead one left
     assert not (world.slice_worktree_path(slug) / "src/lib/leftover.spec.ts").exists()
@@ -606,7 +606,7 @@ def test_resume_after_a_repair_block_1_could_not_make_stops_instead_of_repeating
     moving `test_repairs`, so the branch name and the repair number are the
     same ones again. Relaunching it could only reach the same refusal: the
     resume stops and says who repairs the tests now."""
-    slug = _given_planned_story(world, 477, ["fail", "fail"])
+    slug = _given_planned_story(world, 483, ["fail", "fail"])
     world.scripted_test_outcome(REPAIRED, ["fail"])
     world.agent_objects(slug, "mechanic", tests=[TEST], why=WHY)
     for turn in (1, 2):
@@ -620,24 +620,24 @@ def test_resume_after_a_repair_block_1_could_not_make_stops_instead_of_repeating
             delete=[TEST] if turn == 1 else None,
         )
 
-    stopped = run_flow(world, 477)
+    stopped = run_flow(world, 483)
 
     assert stopped.returncode == 31, stopped.stdout + stopped.stderr
-    assert world.run_record(477)["slices"]["domain"]["test_repair_spent"] == 1
+    assert world.run_record(483)["slices"]["domain"]["test_repair_spent"] == 1
 
     # a repair is scripted for the resume; the driver must not reach it
     _repair(world, slug)
 
-    result = run_flow(world, 477, "--resume")
+    result = run_flow(world, 483, "--resume")
 
     assert result.returncode == 30, result.stdout + result.stderr
     assert (
-        "story-477-domain spent both of block 1's turns on repair 1 and its acceptance "
+        "story-483-domain spent both of block 1's turns on repair 1 and its acceptance "
         "tests are still rejected" in result.stdout
     )
-    assert "repair them by hand; audit it, then `go.py 477 --reset`" in result.stdout
-    assert "🩹 Repairing #477" not in result.stdout
-    piece = world.run_record(477)["slices"]["domain"]
+    assert "repair them by hand; audit it, then `go.py 483 --reset`" in result.stdout
+    assert "🩹 Repairing #483" not in result.stdout
+    piece = world.run_record(483)["slices"]["domain"]
     assert piece["state"] == "tests_rejected" and piece["test_repairs"] == 0
     assert len(piece["test_repair_turns"]) == 2
 
@@ -713,7 +713,7 @@ def test_the_repair_prompt_quotes_the_objection_once(world):
     """The prompt's diagnostic slot used to carry the objection verbatim
     beside the objection section that already quoted it, so a repair brief
     opened with the same wall of text twice (#337 run 6)."""
-    slug = _given_planned_story(world, 478, ["fail", "fail"])
+    slug = _given_planned_story(world, 484, ["fail", "fail"])
     world.scripted_test_outcome(REPAIRED, ["fail", "pass"])
     world.agent_objects(slug, "mechanic", tests=[TEST], why=WHY)
     _repair(world, slug)
@@ -724,7 +724,7 @@ def test_the_repair_prompt_quotes_the_objection_once(world):
         changed_files=["src/lib/rows.ts"],
     )
 
-    result = run_flow(world, 478)
+    result = run_flow(world, 484)
 
     assert result.returncode == 0, result.stdout + result.stderr
     prompt = _talks(world, "mechanic", f"{slug}-tests-1")[0]["prompt"]
@@ -739,7 +739,7 @@ def test_the_second_repair_is_told_the_history_once_and_not_the_turn_it_is_takin
     the ledger before the agent is asked anything; all of it went into the
     prompt, so the solver was handed the same two repairs twice in two
     wordings and an empty line for its own turn."""
-    slug = _given_planned_story(world, 479, ["fail", "fail"], signals=builder_signals())
+    slug = _given_planned_story(world, 485, ["fail", "fail"], signals=builder_signals())
     world.scripted_test_outcome(REPAIRED, ["fail", "fail", "fail", "pass"])
     world.agent_objects(slug, "builder", tests=[TEST], why=WHY)
     # repair 1 turn 1 drags a production file along and is refused; turn 2
@@ -753,7 +753,7 @@ def test_the_second_repair_is_told_the_history_once_and_not_the_turn_it_is_takin
     )
     world.mechanic_fails(f"{slug}-tests-1", "the repair turn died")
 
-    stopped = run_flow(world, 479)
+    stopped = run_flow(world, 485)
 
     assert stopped.returncode == 21, stopped.stdout + stopped.stderr
     # the resumed run makes repair 1 over again, from turn 1, and the
@@ -773,12 +773,12 @@ def test_the_second_repair_is_told_the_history_once_and_not_the_turn_it_is_takin
         test_files=[REPAIRED],
     )
     world.agent_implements(slug, "builder", files=WORK, changed_files=list(WORK))
-    world.reviewer_answers(479, "merge")
+    world.reviewer_answers(485, "merge")
 
-    result = run_flow(world, 479, "--resume")
+    result = run_flow(world, 485, "--resume")
 
     assert result.returncode == 0, result.stdout + result.stderr
-    piece = world.run_record(479)["slices"]["domain"]
+    piece = world.run_record(485)["slices"]["domain"]
     # both runs' repair turns are on the ledger, twice for repair 1 turn 1
     assert [(turn["repair"], turn["turn"]) for turn in piece["test_repair_turns"]] == [
         (1, 1),
@@ -872,6 +872,40 @@ def test_the_implementers_work_survives_the_repair_and_the_next_brief_says_so(wo
     assert "Your own work was kept exactly as you left it (src/lib/rows.ts)" in brief
     assert f"the repair changed only {TEST}::{SECOND}" in brief
     assert "every other acceptance test of this slice passed on your tree" in brief
+
+
+def test_the_repair_freeze_names_the_tests_that_already_pass_on_the_base(world):
+    """The re-freeze is a freeze like the first one: a repaired set in which
+    some tests pass on the base is accepted, and says which ones."""
+    slug = _given_partial_story(
+        world,
+        486,
+        ["fail", {FIRST: "pass", SECOND: "fail"}, {FIRST: "pass", SECOND: "fail"}, "pass"],
+    )
+    world.agent_objects(
+        slug,
+        "builder",
+        tests=[f"{TEST}::{SECOND}"],
+        why="no row can say it has no brand while the fixture gives every row one",
+        files=WORK,
+        changed_files=list(WORK),
+    )
+    world.mechanic_repairs(f"{slug}-tests-1", files={TEST: "// repaired\n"}, test_files=[TEST])
+    world.agent_implements(slug, "builder", files=WORK, changed_files=list(WORK))
+    world.reviewer_answers(486, "merge")
+
+    result = run_flow(world, 486)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    note = (
+        f"⚠️ 1 of 2 acceptance tests already pass on the base: {TEST}::{FIRST} — they "
+        "guard existing behavior and are not this slice's work"
+    )
+    assert note in result.stdout
+    assert any(
+        "Acceptance tests repaired" in comment and note in comment
+        for comment in world.issue(486)["comments"]
+    )
 
 
 def test_a_partial_objection_is_refused_when_a_test_it_did_not_name_still_fails(world):
