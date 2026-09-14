@@ -902,3 +902,157 @@ def test_a_ci_fix_round_turn_gets_the_same_budget(world):
     assert "review fix attempt 2/3" in result.stdout
     assert _pr(world, 500)["state"] == "MERGED"
     assert [turn["fix_attempt"] for turn in _fix_turns(world)] == [1, 2]
+
+
+# --- the untouched test that fails locally: rerun, then run alone -----------------
+
+_UNTOUCHED_E2E = "src/routes/sync.e2e.ts"
+_UNTOUCHED_TITLE = "is on today's log on the next device to sign in"
+
+
+def _given_an_untouched_e2e_failure(world, outcomes: list[str], file: str = _UNTOUCHED_E2E) -> None:
+    """`verify:changed`'s full e2e suite failing inside one file, in
+    playwright's own summary shape - the project, the file and the test -
+    with one scripted outcome per gate run."""
+    world.given_failed_gate_steps("verify:changed", "e2e: full suite")
+    world.given_gate_failure_file(file)
+    world.given_gate_outcomes(**{"verify:changed": outcomes})
+
+
+def _given_an_implemented_story(world, number: int = 1000, turns: int = 1) -> str:
+    """A planned story whose mechanic is ready to take `turns` of them."""
+    test_file = _given_planned_story(world, number)
+    _delegate(world, number, "domain", mechanic_signals())
+    for turn in range(turns):
+        _implement(
+            world,
+            f"story-{number}-domain",
+            "mechanic",
+            {"src/lib/delivered.ts": f"export const ok = {turn + 1};\n"},
+        )
+    return test_file
+
+
+def _solo_runs(world) -> list[list[str]]:
+    return [
+        call["argv"]
+        for call in world.calls()
+        if call.get("tool") == "bun" and call["argv"][:3] == ["x", "playwright", "test"]
+    ]
+
+
+def test_an_untouched_test_is_rerun_once_with_no_earlier_pass_to_lean_on(world):
+    """#420 run 2: every review fix failed the tier inside a file the slice
+    never touched, and no rerun was ever spent because the record carried no
+    earlier pass for it. The first gate a slice runs has none either, and
+    nothing about that makes the failure more likely to be the work's: an
+    untouched test is rerun once on its own account."""
+    _given_an_implemented_story(world)
+    _given_an_untouched_e2e_failure(world, ["fail", "pass"])
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (
+        f"🔁 e2e: full suite failed in {_UNTOUCHED_E2E}, which this slice does not touch "
+        "— rerunning once" in result.stdout
+    )
+    assert "which passed at" not in result.stdout
+    assert "verify:changed passed on the rerun: the first run was a flake" in result.stdout
+    assert "correcting after attempt 1" not in result.stdout
+    assert _pr(world, 500)["state"] == "MERGED"
+
+
+def test_an_untouched_test_that_survives_the_rerun_and_passes_alone_is_a_flake(world):
+    """The second failure is not yet a verdict. The file is run on its own,
+    in the project the gate said it failed in, and a pass there is the
+    flake's own signature: it fails inside the whole suite and nowhere
+    else. The turn goes on, and CI is left to judge the file."""
+    _given_an_implemented_story(world)
+    _given_an_untouched_e2e_failure(world, ["fail", "fail"])
+    world.scripted_test_outcome(_UNTOUCHED_E2E, "pass")
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (
+        f"🔁 {_UNTOUCHED_E2E} fails in the full suite and passes alone — a local flake "
+        "in a file this slice does not touch; CI judges it" in result.stdout
+    )
+    assert "correcting after attempt 1" not in result.stdout
+    assert _solo_runs(world) == [
+        ["x", "playwright", "test", _UNTOUCHED_E2E, "--project=mobile-chrome", "--reporter=json"]
+    ]
+    flakes = world.run_record(1000)["slices"]["domain"]["flakes"]
+    assert [flake["file"] for flake in flakes] == [_UNTOUCHED_E2E]
+    assert flakes[0]["step"] == "e2e: full suite"
+    assert _UNTOUCHED_TITLE in flakes[0]["test"]
+    assert f"Local flake: `{_UNTOUCHED_E2E}`" in _pr(world, 500)["body"]
+    assert any("Local flake" in comment for comment in world.issue(1000)["comments"])
+
+
+def test_an_untouched_test_that_fails_alone_too_is_a_real_failure(world):
+    """The rerun and the solo run are how a flake proves itself, not a way
+    around a red test. A file that fails on its own is failing, and the turn
+    is corrected on it like any other."""
+    _given_an_implemented_story(world, turns=2)
+    _given_an_untouched_e2e_failure(world, ["fail", "fail", "pass"])
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert f"❌ {_UNTOUCHED_E2E} fails alone too — the failure is this turn's" in result.stdout
+    assert "correcting after attempt 1" in result.stdout
+    assert world.run_record(1000)["slices"]["domain"]["flakes"] == []
+    assert "Local flake" not in _pr(world, 500)["body"]
+
+
+def test_a_failure_in_the_slices_own_acceptance_test_is_never_rerun(world):
+    """The rule is about tests that are no part of this slice. Its own
+    acceptance tests sit outside its diff by construction - block 1 wrote
+    and froze them - and a failure in them is about the work."""
+    test_file = _given_an_implemented_story(world, turns=2)
+    _given_an_untouched_e2e_failure(world, ["fail", "pass"], file=test_file)
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "rerunning once" not in result.stdout
+    assert "correcting after attempt 1" in result.stdout
+
+
+def test_a_slice_reruns_an_untouched_failure_twice_and_then_lets_it_count(world):
+    """Two cycles per slice per run, and the third failure counts - across
+    the escalation, because the budget belongs to the slice and not to the
+    role. A file that keeps failing locally for a whole run is a failure,
+    whatever the diff touches."""
+    test_file = _given_planned_story(world, 1000)
+    _delegate(world, 1000, "domain", mechanic_signals())
+    # the second attempt fails its acceptance run instead, so three
+    # different diagnostics reach the budget and no two are identical
+    world.scripted_test_outcome(test_file, ["fail", "pass", "fail", "pass"])
+    for turn in range(3):
+        _implement(
+            world,
+            "story-1000-domain",
+            "mechanic",
+            {"src/lib/delivered.ts": f"export const ok = {turn + 1};\n"},
+        )
+    for turn in range(2):
+        _implement(
+            world,
+            "story-1000-domain",
+            "builder",
+            {"src/lib/delivered.ts": f"export const raised = {turn + 1};\n"},
+        )
+    _given_an_untouched_e2e_failure(world, ["fail", "fail", "fail", "fail", "fail", "pass"])
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.count("rerunning once") == 2
+    assert (
+        "🛑 e2e: full suite failed again in files this slice does not touch, but #1000 "
+        "(domain) has spent its 2 flake reruns this run — the failure counts" in result.stdout
+    )
+    assert "escalating mechanic → builder" in result.stdout

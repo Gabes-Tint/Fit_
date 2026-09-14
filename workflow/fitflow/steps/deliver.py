@@ -210,7 +210,7 @@ def _open_pr(story, record: RunRecord, path: Path) -> int:
         f"Slices: {parts}.\n"
         "Every slice passed the driver's independent validation and the "
         "repository's diff-sized pre-push gate; the join re-verified the "
-        "frozen commits before this branch was built.\n\nCloses "
+        f"frozen commits before this branch was built.\n{flake_note(record)}\nCloses "
         f"#{story.number}"
     )
     number = github.create_pr(story.title, body, record.delivery["integration_branch"])
@@ -798,6 +798,25 @@ def _merge(story, record: RunRecord) -> None:
     narrate.line(f"🤝 Merged PR #{pr_number}")
 
 
+def flake_note(record: RunRecord) -> str:
+    """The local flakes this run waved through, one line each, for the PR
+    body and the issue comment. A test file no slice touches that fails the
+    whole tier twice and passes alone is let through (steps/implement.py);
+    Gabriel sees which ones, and CI is what actually judged them. Empty
+    when there were none, so an ordinary delivery reads exactly as before."""
+    lines = [
+        f"- Local flake: `{flake['file']}`"
+        + (f" - {flake['test']}" if flake["test"] else "")
+        + f" failed {flake['step']} at {flake['when']} for #{piece.number} ({piece.layer}) "
+        "and passed when run alone; CI judged it."
+        for piece in record.ordered()
+        for flake in piece.flakes
+    ]
+    if not lines:
+        return ""
+    return "\nLocal flakes tolerated:\n" + "\n".join(lines) + "\n"
+
+
 def _report(story, record: RunRecord) -> None:
     parts = ", ".join(
         f"#{piece.number} {piece.layer} ({piece.frozen_commit[:12]})" for piece in record.ordered()
@@ -805,7 +824,7 @@ def _report(story, record: RunRecord) -> None:
     body = (
         f"Delivered: PR #{record.delivery['pr_number']} merged "
         f"({record.delivery['integration_sha'][:12]}). Slices: {parts}. "
-        "Next: block 5, after merge."
+        f"Next: block 5, after merge.\n{flake_note(record)}"
     )
     narrate.comment_posted(story.number, body)
     github.comment(story.number, body)
