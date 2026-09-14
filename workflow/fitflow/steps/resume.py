@@ -154,7 +154,7 @@ def _reopen_test_repair(record: RunRecord, piece: SliceRecord) -> None:
 
 
 def _require_repair_not_in_flight(record: RunRecord, piece: SliceRecord) -> None:
-    if agents.turn_in_flight(objection.repair_team(piece), "mechanic"):
+    if agents.turn_in_flight(objection.repair_team(piece), objection.repair_role(piece)):
         raise FlowFailure(
             Outcome.EXECUTION_HELD,
             f"{piece.slug}: a test repair turn is still running on this machine; "

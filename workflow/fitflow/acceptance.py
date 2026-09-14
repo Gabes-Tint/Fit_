@@ -93,6 +93,149 @@ class Verdict:
         return failure_reason.defects(self.failures)
 
 
+@dataclass(frozen=True)
+class TestStatus:
+    """One test as its runner reported it: which file and title, the
+    runner's own status word, and the error message when it carried one.
+
+    A verdict per file answers "did this file fail"; an objection scoped to
+    named tests, and the check that every other test of the slice passes
+    beside it, need the per-test grain instead - which is why this shape
+    exists next to `Verdict` rather than inside it."""
+
+    file: str
+    title: str
+    status: str
+    runner: str
+    message: str = ""
+
+    @property
+    def name(self) -> str:
+        """How an objection names this test: the pytest node-id spelling,
+        `file::title`, or the bare path when the report gave no title."""
+        return f"{self.file}::{self.title}" if self.title else self.file
+
+    @property
+    def passed(self) -> bool:
+        return self.status == _PASSED
+
+    @property
+    def failed(self) -> bool:
+        return _is_failure(self.status, _SKIPPED[self.runner])
+
+    def described(self) -> str:
+        """How this test failed, in the words the repairer needs: a timeout
+        and a thrown error are not the same defect as an assertion that
+        bit and said what it wanted."""
+        if not self.failed:
+            return f'"{self.title or self.file}" → {self.status or "unknown"}'
+        return f'"{self.title or self.file}" → {self._how()}'
+
+    def _how(self) -> str:
+        detail = failure_reason.summary(self.message) if self.message else ""
+        tail = f": {detail}" if detail else ""
+        if self.status in _TIMED_OUT:
+            return f"timed out waiting for an expectation{tail}"
+        if self.message and failure_reason.classify(self.message) == failure_reason.DEFECT:
+            return f"threw{tail}"
+        return f"failed an expectation{tail}"
+
+
+@dataclass(frozen=True)
+class Report:
+    """Every test of a set of files, as one acceptance run saw them. `ok`
+    is false only when a runner judged nothing - an unparsable report, or a
+    requested file it never ran - which is a tooling failure and never a
+    verdict about the tests."""
+
+    ok: bool
+    why: str = ""
+    statuses: tuple[TestStatus, ...] = ()
+
+    def of(self, file: str) -> list[TestStatus]:
+        return [status for status in self.statuses if status.file == file]
+
+    def named(self, name: str) -> list[TestStatus]:
+        """The tests one objection entry names: every test of a file, or
+        the single `file::title` it spells out."""
+        return [status for status in self.statuses if name in (status.file, status.name)]
+
+    def described(self) -> list[str]:
+        return [f"{status.file} {status.described()}" for status in self.statuses]
+
+
+def run_and_report(worktree: Path, test_files: list[str]) -> Report:
+    """One acceptance run over `test_files`, reported test by test rather
+    than judged file by file."""
+    collected: list[TestStatus] = []
+    for runner in ("vitest", "playwright", "pytest"):
+        files = [f for f in test_files if _runner(f) == runner]
+        if not files:
+            continue
+        report = _REPORTERS[runner](worktree, files)
+        if report is None:
+            return Report(False, f"{runner} produced no parsable report for {', '.join(files)}")
+        for f in files:
+            statuses = _STATUSES[runner](report, f)
+            if not statuses:
+                return Report(False, f"{runner} never ran {f} - no matching test file")
+            collected.extend(statuses)
+    return Report(True, statuses=tuple(collected))
+
+
+def _vitest_test_statuses(report: dict, filename: str) -> list[TestStatus]:
+    entries = report.get("testResults", [])
+    entry = next((e for e in entries if str(e.get("name", "")).endswith(filename)), None)
+    if entry is None:
+        return []
+    assertions = entry.get("assertionResults") or []
+    if not assertions:
+        # a file that died before any assertion reports its reason once, on
+        # the entry itself, and no test of its own
+        return [TestStatus(filename, "", "failed", "vitest", str(entry.get("message") or ""))]
+    return [
+        TestStatus(
+            filename,
+            str(assertion.get("title") or assertion.get("fullName") or ""),
+            str(assertion.get("status") or ""),
+            "vitest",
+            str(next(iter(assertion.get("failureMessages") or []), "")),
+        )
+        for assertion in assertions
+    ]
+
+
+def _playwright_test_statuses(report: dict, filename: str) -> list[TestStatus]:
+    specs = [
+        spec
+        for spec in _flatten_specs(report.get("suites", []))
+        if str(spec.get("file", "")).endswith(filename)
+    ]
+    statuses = [
+        TestStatus(
+            filename,
+            str(spec.get("title") or ""),
+            str(result.get("status") or ""),
+            "playwright",
+            str(_playwright_failure(spec, result, filename).message),
+        )
+        for spec, result in _playwright_results(specs)
+    ]
+    statuses.extend(
+        TestStatus(filename, failure.title, "failed", "playwright", failure.message)
+        for failure in _load_failures(report, filename)
+    )
+    return statuses
+
+
+def _pytest_test_statuses(entries: list[dict], filename: str) -> list[TestStatus]:
+    return [
+        TestStatus(filename, entry["title"], entry["status"], "pytest", entry["message"])
+        for entry in entries
+        if _same_file(entry["file"], filename)
+    ]
+
+
 def owning_test(name: str, test_files: list[str]) -> str | None:
     """Which retained acceptance test a tool blamed, or None when it blamed
     something else. Tools report their own relative paths - jscpd's are
@@ -526,6 +669,15 @@ def _playwright_statuses(specs: list[dict]) -> list[tuple[str, str]]:
 _PASSED = "passed"
 _PLAYWRIGHT_SKIPPED = ("skipped",)
 _VITEST_SKIPPED = ("pending", "skipped", "todo")
+_PYTEST_SKIPPED = ("skipped",)
+_SKIPPED = {
+    "vitest": _VITEST_SKIPPED,
+    "playwright": _PLAYWRIGHT_SKIPPED,
+    "pytest": _PYTEST_SKIPPED,
+}
+#: Playwright says `timedOut` where an expectation waited for UI that
+#: never appeared; vitest has no such word and reports it as a failure.
+_TIMED_OUT = ("timedOut", "interrupted")
 
 
 def _is_failure(status: object, skipped: tuple[str, ...]) -> bool:
@@ -704,3 +856,18 @@ def _pytest_error_detail(output: str) -> str:
         if (match := _ERROR_FRAME.match(line)) is not None
     ]
     return "; ".join(frames[-_ERROR_FRAMES:])
+
+
+# The per-runner halves `run_and_report` composes: how a run is asked for a
+# report, and how that report's per-test statuses are read out of it. They
+# sit at the bottom because they name functions defined above them.
+_REPORTERS = {
+    "vitest": _vitest_report,
+    "playwright": _playwright_report,
+    "pytest": _pytest_report,
+}
+_STATUSES = {
+    "vitest": _vitest_test_statuses,
+    "playwright": _playwright_test_statuses,
+    "pytest": _pytest_test_statuses,
+}

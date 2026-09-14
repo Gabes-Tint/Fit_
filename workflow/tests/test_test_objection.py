@@ -256,7 +256,12 @@ def test_a_second_objection_after_two_repairs_stops_as_tests_invalid(world):
     result = run_flow(world, 466)
 
     assert result.returncode == 31, result.stdout + result.stderr
-    assert "🩹 Repairing #466 (domain) tests in block 1 (repair 2/2)" in result.stdout
+    # the second repair names its repairer: here the objector is the
+    # mechanic itself, so the mechanic keeps it
+    assert (
+        "🩹 Repairing #466 (domain) tests in block 1 (repair 2/2, mechanic — "
+        "the mechanic's repair was objected to again)" in result.stdout
+    )
     assert "rejects the acceptance tests again after 2 block 1 repairs" in result.stdout
     # both verified objections reach the story, in the stop's own comment
     stop = next(body for body in world.issue(466)["comments"] if body.startswith("Stopped:"))
