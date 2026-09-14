@@ -17,8 +17,8 @@ test.describe('live workout with all exercises on one page', () => {
 	test('renders all three exercises as blocks in routine order', async ({ page }) => {
 		// All three exercises from Full body should be visible
 		await expect(page.getByRole('heading', { name: 'Squat', level: 1 })).toBeVisible();
-		await expect(page.getByRole('heading', { name: 'Bench press', level: 1 })).toBeVisible();
-		await expect(page.getByRole('heading', { name: 'Deadlift', level: 1 })).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'Bench Press', level: 1 })).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'Seated Row', level: 1 })).toBeVisible();
 
 		// Each should have their own set table
 		const squat = page
@@ -26,15 +26,15 @@ test.describe('live workout with all exercises on one page', () => {
 			.filter({ has: page.getByText('Squat', { exact: true }) });
 		const bench = page
 			.getByRole('region')
-			.filter({ has: page.getByText('Bench press', { exact: true }) });
-		const deadlift = page
+			.filter({ has: page.getByText('Bench Press', { exact: true }) });
+		const seatedRow = page
 			.getByRole('region')
-			.filter({ has: page.getByText('Deadlift', { exact: true }) });
+			.filter({ has: page.getByText('Seated Row', { exact: true }) });
 
 		// Each exercise region should have an Add set button
 		await expect(squat.getByRole('button', { name: 'Add set' })).toBeVisible();
 		await expect(bench.getByRole('button', { name: 'Add set' })).toBeVisible();
-		await expect(deadlift.getByRole('button', { name: 'Add set' })).toBeVisible();
+		await expect(seatedRow.getByRole('button', { name: 'Add set' })).toBeVisible();
 	});
 
 	test('does not show Exercise N of M counter or Next exercise button', async ({ page }) => {
@@ -46,16 +46,16 @@ test.describe('live workout with all exercises on one page', () => {
 	});
 
 	test('ticking a set in the second exercise only affects that exercise', async ({ page }) => {
-		// Find the set button for set 1 in the Bench press section
+		// Find the set button for set 1 in the Bench Press section
 		const benchSection = page
 			.getByRole('region')
-			.filter({ has: page.getByText('Bench press', { exact: true }) });
+			.filter({ has: page.getByText('Bench Press', { exact: true }) });
 
 		// Get the set 1 done button for bench press
 		const benchSet1Button = benchSection.getByRole('button', { name: 'Set 1 done' }).first();
 		await benchSet1Button.click();
 
-		// Bench press set 1 should be marked done
+		// Bench Press set 1 should be marked done
 		await expect(benchSet1Button).toHaveAttribute('aria-pressed', 'true');
 
 		// Squat set 1 should still be undone
@@ -65,26 +65,28 @@ test.describe('live workout with all exercises on one page', () => {
 		const squatSet1Button = squatSection.getByRole('button', { name: 'Set 1 done' }).first();
 		await expect(squatSet1Button).toHaveAttribute('aria-pressed', 'false');
 
-		// Deadlift set 1 should still be undone
-		const deadliftSection = page
+		// Seated Row set 1 should still be undone
+		const seatedRowSection = page
 			.getByRole('region')
-			.filter({ has: page.getByText('Deadlift', { exact: true }) });
-		const deadliftSet1Button = deadliftSection.getByRole('button', { name: 'Set 1 done' }).first();
-		await expect(deadliftSet1Button).toHaveAttribute('aria-pressed', 'false');
+			.filter({ has: page.getByText('Seated Row', { exact: true }) });
+		const seatedRowSet1Button = seatedRowSection
+			.getByRole('button', { name: 'Set 1 done' })
+			.first();
+		await expect(seatedRowSet1Button).toHaveAttribute('aria-pressed', 'false');
 	});
 
 	test('notes field persists per-exercise', async ({ page }) => {
-		// Find the notes field for the third exercise (Deadlift)
-		const deadliftSection = page
+		// Find the notes field for the third exercise (Seated Row)
+		const seatedRowSection = page
 			.getByRole('region')
-			.filter({ has: page.getByText('Deadlift', { exact: true }) });
-		const deadliftNotes = deadliftSection.getByLabel('Notes');
+			.filter({ has: page.getByText('Seated Row', { exact: true }) });
+		const seatedRowNotes = seatedRowSection.getByLabel('Notes');
 
-		// Type a note in Deadlift
-		await deadliftNotes.fill('Good form today');
-		await expect(deadliftNotes).toHaveValue('Good form today');
+		// Type a note in Seated Row
+		await seatedRowNotes.fill('Good form today');
+		await expect(seatedRowNotes).toHaveValue('Good form today');
 
-		// Check that Squat and Bench notes are empty
+		// Check that Squat and Bench Press notes are empty
 		const squatSection = page
 			.getByRole('region')
 			.filter({ has: page.getByText('Squat', { exact: true }) });
@@ -93,20 +95,20 @@ test.describe('live workout with all exercises on one page', () => {
 
 		const benchSection = page
 			.getByRole('region')
-			.filter({ has: page.getByText('Bench press', { exact: true }) });
+			.filter({ has: page.getByText('Bench Press', { exact: true }) });
 		const benchNotes = benchSection.getByLabel('Notes');
 		await expect(benchNotes).toHaveValue('');
 
-		// Deadlift note should still be there
-		await expect(deadliftNotes).toHaveValue('Good form today');
+		// Seated Row note should still be there
+		await expect(seatedRowNotes).toHaveValue('Good form today');
 	});
 
 	test('footer button labels the next undone set and reads Finish when all sets done', async ({
 		page
 	}) => {
-		// Initial state: should label "Log squat set 1"
+		// Initial state: should label "Log Squat set 1"
 		let footerButton = page.getByRole('button', {
-			name: /Log (Squat|Bench press|Deadlift) set \d+/
+			name: /Log (Squat|Bench Press|Seated Row) set \d+/
 		});
 		await expect(footerButton).toBeVisible();
 		await expect(footerButton).toContainText('set 1');
@@ -123,15 +125,15 @@ test.describe('live workout with all exercises on one page', () => {
 		await squatSet2.click();
 		await squatSet3.click();
 
-		// Now button should label "Log bench press set 1"
-		footerButton = page.getByRole('button', { name: /Log (Bench press|Deadlift) set \d+/ });
-		await expect(footerButton).toContainText('Bench press');
+		// Now button should label "Log Bench Press set 1"
+		footerButton = page.getByRole('button', { name: /Log (Bench Press|Seated Row) set \d+/ });
+		await expect(footerButton).toContainText('Bench Press');
 		await expect(footerButton).toContainText('set 1');
 
-		// Tick all sets in Bench press
+		// Tick all sets in Bench Press
 		const benchSection = page
 			.getByRole('region')
-			.filter({ has: page.getByText('Bench press', { exact: true }) });
+			.filter({ has: page.getByText('Bench Press', { exact: true }) });
 		const benchSet1 = benchSection.getByRole('button', { name: 'Set 1 done' }).first();
 		const benchSet2 = benchSection.getByRole('button', { name: 'Set 2 done' }).first();
 		const benchSet3 = benchSection.getByRole('button', { name: 'Set 3 done' }).first();
@@ -140,22 +142,29 @@ test.describe('live workout with all exercises on one page', () => {
 		await benchSet2.click();
 		await benchSet3.click();
 
-		// Now button should label "Log deadlift set 1"
-		footerButton = page.getByRole('button', { name: /Log Deadlift set \d+/ });
-		await expect(footerButton).toContainText('Deadlift');
+		// Now button should label "Log Seated Row set 1"
+		footerButton = page.getByRole('button', { name: /Log Seated Row set \d+/ });
+		await expect(footerButton).toContainText('Seated Row');
 		await expect(footerButton).toContainText('set 1');
 
-		// Tick all sets in Deadlift
-		const deadliftSection = page
+		// Tick all sets in Seated Row
+		const seatedRowSection = page
 			.getByRole('region')
-			.filter({ has: page.getByText('Deadlift', { exact: true }) });
-		const deadliftSet1 = deadliftSection.getByRole('button', { name: 'Set 1 done' }).first();
-		const deadliftSet2 = deadliftSection.getByRole('button', { name: 'Set 2 done' }).first();
-		const deadliftSet3 = deadliftSection.getByRole('button', { name: 'Set 3 done' }).first();
+			.filter({ has: page.getByText('Seated Row', { exact: true }) });
+		const seatedRowSet1 = seatedRowSection.getByRole('button', { name: 'Set 1 done' }).first();
+		const seatedRowSet2 = seatedRowSection.getByRole('button', { name: 'Set 2 done' }).first();
+		const seatedRowSet3 = seatedRowSection.getByRole('button', { name: 'Set 3 done' }).first();
 
-		await deadliftSet1.click();
-		await deadliftSet2.click();
-		await deadliftSet3.click();
+		await seatedRowSet1.click();
+		await seatedRowSet2.click();
+		await seatedRowSet3.click();
+
+		// Continue clicking footer button for remaining exercises: Machine Press (3), Barbell Curl (2), Calf Raise (3)
+		// Click until we get to 17 of 17
+		for (let i = 0; i < 8; i++) {
+			footerButton = page.getByRole('button', { name: /^Log / });
+			await footerButton.click();
+		}
 
 		// Button should now read "Finish"
 		const finishButton = page.getByRole('button', { name: 'Finish' });
@@ -168,12 +177,12 @@ test.describe('live workout with all exercises on one page', () => {
 	});
 
 	test('header shows overall sets count across all exercises', async ({ page }) => {
-		// Full body has 3 exercises with 3 sets each = 9 total sets
-		// Header should show "3 of 9 sets" or similar
+		// Full body has 6 exercises with a total of 17 sets
+		// Header should show "X of 17 sets"
 		await expect(page.getByText(/\d+ of \d+ sets/)).toBeVisible();
 
-		// The exact count should be "0 of 9 sets" initially (no sets ticked)
-		const initialCount = page.getByText('0 of 9 sets');
+		// The exact count should be "0 of 17 sets" initially (no sets ticked)
+		const initialCount = page.getByText('0 of 17 sets');
 		await expect(initialCount).toBeVisible();
 
 		// Tick one set in squat
@@ -183,18 +192,18 @@ test.describe('live workout with all exercises on one page', () => {
 		const squatSet1 = squatSection.getByRole('button', { name: 'Set 1 done' }).first();
 		await squatSet1.click();
 
-		// Header should now show "1 of 9 sets"
-		await expect(page.getByText('1 of 9 sets')).toBeVisible();
+		// Header should now show "1 of 17 sets"
+		await expect(page.getByText('1 of 17 sets')).toBeVisible();
 
 		// Tick another set in bench
 		const benchSection = page
 			.getByRole('region')
-			.filter({ has: page.getByText('Bench press', { exact: true }) });
+			.filter({ has: page.getByText('Bench Press', { exact: true }) });
 		const benchSet1 = benchSection.getByRole('button', { name: 'Set 1 done' }).first();
 		await benchSet1.click();
 
-		// Header should now show "2 of 9 sets"
-		await expect(page.getByText('2 of 9 sets')).toBeVisible();
+		// Header should now show "2 of 17 sets"
+		await expect(page.getByText('2 of 17 sets')).toBeVisible();
 	});
 
 	test('fits viewport at 360px with three exercises with five sets each', async ({ page }) => {
@@ -211,17 +220,17 @@ test.describe('live workout with all exercises on one page', () => {
 
 		const benchSection = page
 			.getByRole('region')
-			.filter({ has: page.getByText('Bench press', { exact: true }) });
+			.filter({ has: page.getByText('Bench Press', { exact: true }) });
 		const benchAddSet = benchSection.getByRole('button', { name: 'Add set' });
 		await benchAddSet.click();
 		await benchAddSet.click();
 
-		const deadliftSection = page
+		const seatedRowSection = page
 			.getByRole('region')
-			.filter({ has: page.getByText('Deadlift', { exact: true }) });
-		const deadliftAddSet = deadliftSection.getByRole('button', { name: 'Add set' });
-		await deadliftAddSet.click();
-		await deadliftAddSet.click();
+			.filter({ has: page.getByText('Seated Row', { exact: true }) });
+		const seatedRowAddSet = seatedRowSection.getByRole('button', { name: 'Add set' });
+		await seatedRowAddSet.click();
+		await seatedRowAddSet.click();
 
 		// Check that nothing overflows the viewport
 		await expectFitsViewport(page);
