@@ -1339,9 +1339,9 @@ def test_a_previous_runs_state_file_blocks_a_new_run(world):
     assert result.returncode == 30, result.stdout + result.stderr
     assert "left state at" in result.stdout
     assert "blocked" in world.issue(468)["labels"]
-    # block 1 ran to completion; the interrupted state stopped delegation
-    # before any implementation worker launched
-    assert len(_talks(world, "mechanic", "story-468-domain")) == 1
+    # the retained record stops the fresh run at the pick, before block 1
+    # asks the planner anything or launches a writer (#462)
+    assert len(_talks(world, "mechanic", "story-468-domain")) == 0
 
 
 # --- third review round: sessions, layer boundaries, truthful terminals ----------

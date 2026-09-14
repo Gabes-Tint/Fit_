@@ -33,24 +33,28 @@ def repair_loop[T](
     label: str,
     run: Callable[[int, str], T],
     repairable: Callable[[FlowFailure], bool],
+    first: int = 1,
+    last: int = BUDGET,
+    diagnostic: str = "",
 ) -> T:
-    """Call `run(attempt, diagnostic)` for attempt 1..BUDGET, `diagnostic`
-    starting empty. A FlowFailure `repairable` rejects propagates at once,
+    """Call `run(attempt, diagnostic)` for attempt first..last, `diagnostic`
+    starting as given - empty for a loop that starts at its first attempt,
+    the retained verdict for one a resume continues. A FlowFailure
+    `repairable` rejects propagates at once,
     unnarrated - the caller's own contract/tool-failure handling applies to
     it. A repairable failure becomes the next attempt's diagnostic and is
     narrated as a retry, as an early stop when it repeats the previous
     attempt's diagnostic, or as exhaustion on the last attempt, then
     re-raised. Attempt 1 succeeding is silent; a later attempt succeeding
     is narrated."""
-    diagnostic = ""
-    for attempt in range(1, BUDGET + 1):
+    for attempt in range(first, last + 1):
         try:
             result = run(attempt, diagnostic)
         except FlowFailure as failure:
             if not repairable(failure):
                 raise
             previous, diagnostic = diagnostic, f"{failure.outcome.name}: {failure.why}"
-            _stop_or_retry(label, failure, attempt, previous, diagnostic)
+            _stop_or_retry(label, failure, attempt, previous, diagnostic, last)
             continue
         if attempt > 1:
             narrate.line(f"✅ {label} passed validation on attempt {attempt}")
@@ -59,13 +63,13 @@ def repair_loop[T](
 
 
 def _stop_or_retry(
-    label: str, failure: FlowFailure, attempt: int, previous: str, diagnostic: str
+    label: str, failure: FlowFailure, attempt: int, previous: str, diagnostic: str, last: int
 ) -> None:
     """Narrate this attempt's rejection, and return only when another
     attempt is worth taking. An identical failure after a corrective turn
     means the diagnostic, not the agent, is the problem: the loop stops
     with the failure exhaustion would have raised, saying so."""
-    if attempt == BUDGET:
+    if attempt >= last:
         narrate.headed(f"🛑 {label} exhausted {BUDGET} attempts — ", diagnostic)
         raise failure
     if same_diagnostic(previous, diagnostic):

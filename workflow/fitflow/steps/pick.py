@@ -1,8 +1,12 @@
 """Box: pick - the named issue, or the lowest-numbered open story not held
 by in-progress, blocked, needs-gabriel, or paused.
+
+A story that already has a retained run is refused here, before any planner
+turn: the record, not the hold its run left, is what the stop names, with
+`--resume` and `--reset` as the ways on.
 """
 
-from fitflow import audit, github, narrate, settings
+from fitflow import audit, github, narrate, runstate, settings
 from fitflow.github import Story
 from fitflow.outcome import FlowFailure, Outcome
 
@@ -26,6 +30,7 @@ def _pick_explicit(issue: int) -> Story:
         raise FlowFailure(Outcome.CANNOT_PICK, f"#{issue} is {story.state.lower()}")
     if settings.STORY_LABEL not in story.labels:
         raise FlowFailure(Outcome.CANNOT_PICK, f"#{issue} is not labelled '{settings.STORY_LABEL}'")
+    runstate.refuse_retained_run(issue)
     held = _held_by(story)
     if held:
         raise FlowFailure(Outcome.CANNOT_PICK, f"#{issue} is held by {', '.join(sorted(held))}")
@@ -68,6 +73,7 @@ def _pick_lowest() -> Story | None:
         return None
     story = free[0]
     narrate.open_for_issue(story.number)
+    runstate.refuse_retained_run(story.number)
     _announce(story)
     return story
 

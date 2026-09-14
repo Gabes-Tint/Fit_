@@ -9,7 +9,7 @@ from fitflow.steps.implement import run as run_implement
 from fitflow.steps.pick import pick_for_resume, pick_story
 from fitflow.steps.report import report_planned
 from fitflow.steps.reset import run as run_reset
-from fitflow.steps.resume import DELEGATE, DELIVER, IMPLEMENT, SHIP, reconcile
+from fitflow.steps.resume import DELEGATE, DELIVER, IMPLEMENT, SHIP, WRITE_TESTS, reconcile
 from fitflow.steps.ship import run as run_ship
 from fitflow.steps.slicing import slice_at_layer_boundary
 from fitflow.steps.sync import sync
@@ -26,6 +26,7 @@ __all__ = [
     "DELIVER",
     "IMPLEMENT",
     "SHIP",
+    "WRITE_TESTS",
     "delegate",
     "deliver",
     "hand_to_gabriel",
