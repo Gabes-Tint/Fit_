@@ -851,7 +851,7 @@ not change anything", and the turn was rejected for the one thing nobody
 had done. Every acceptance file the repair did not touch still judges the
 slice, and the type-debt tolerance still covers it.
 
-The objection's naming is the repair's whole licence: it may rewrite or
+The objection's naming is the repair's whole warrant: it may rewrite or
 delete the files and `<file>::<title>` tests the objection names, and
 nothing else. A repair that deletes another acceptance file, or removes
 from one every test the objection did not name, is refused as

@@ -505,7 +505,7 @@ def _check_the_repair_kept_the_unnamed_tests(
     """A repair answers an objection; it does not shrink the slice.
 
     The objection names what it rejects as a whole file or as
-    `<file>::<title>`, and that naming is the repair's whole licence: it may
+    `<file>::<title>`, and that naming is the repair's whole warrant: it may
     rewrite or delete what was named and nothing else. #422 run 4 is why
     the rule is checked rather than only written in the brief - told that
     the type errors in an acceptance file it had not touched were "outside
