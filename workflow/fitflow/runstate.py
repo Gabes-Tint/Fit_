@@ -466,6 +466,17 @@ def _complete(
         entry["digest"] = digest
 
 
+def judged_failed(turn: dict) -> bool:
+    """Whether this turn's entry carries the driver's verdict on the work,
+    rather than a judgement that never reached one. `failed` is written by
+    both - a rejection the validation reached, and a validation that died
+    on an external tool failure on the way - and only the first leaves the
+    diagnostic beside it. The difference is what a resume turns on: a
+    verdict on unchanged bytes is not re-derived, it is answered by another
+    turn."""
+    return turn.get("result") == "failed" and bool(turn.get("diagnostic"))
+
+
 def _matches(entry: dict, identity: dict) -> bool:
     return all(entry[key] == value for key, value in identity.items())
 

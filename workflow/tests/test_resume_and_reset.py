@@ -740,6 +740,98 @@ def test_resume_relaunches_a_review_fix_turn_that_never_replied(world):
     assert [turn["fix_attempt"] for turn in turns] == [1, 1]
 
 
+def _fix_turn_straying(world, number: int, stray: str, previous: str | None = None) -> None:
+    """One fix turn that reaches outside its slice, putting back the path
+    the previous turn was told to: three different strays are three
+    different diagnostics, which is what spends the whole budget."""
+    world.agent_implements(
+        f"story-{number}-domain",
+        "builder",
+        files={**FIXED, stray: "export const stray = true;\n"},
+        changed_files=["src/lib/delegate.ts", stray],
+        delete=[previous] if previous else None,
+        summary=f"strayed into {stray}",
+    )
+
+
+def test_resume_relaunches_a_review_fix_turn_already_judged_failed(world):
+    """#420 runs 2 and 3: run 2 judged the last fix attempt failed, and run
+    3's resume re-derived that same verdict on the same bytes at the same
+    last attempt - a whole run with no agent turn in it. A verdict on the
+    ledger is not re-derived: the turn is relaunched, and a budget spent by
+    the driver's own rejection buys exactly one grace attempt."""
+    _given_a_fix_verdict(world, 632)
+    _fix_turn_straying(world, 632, "src/routes/first.ts")
+    _fix_turn_straying(world, 632, "src/routes/second.ts", "src/routes/first.ts")
+    _fix_turn_straying(world, 632, "src/routes/third.ts", "src/routes/second.ts")
+    first = run_flow(world, 632)
+    assert first.returncode == 28, first.stdout + first.stderr
+    retained = world.run_record(632)["slices"]["domain"]["turns"][-1]
+    assert (retained["result"], retained["fix_attempt"]) == ("failed", 3)
+
+    world.agent_implements(
+        "story-632-domain",
+        "builder",
+        files=FIXED,
+        changed_files=CHANGED,
+        delete=["src/routes/third.ts"],
+    )
+    world.reviewer_answers(632, "merge")
+
+    result = run_flow(world, 632, "--resume")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "fix attempt 3 was judged failed; it will be relaunched, not re-judged" in result.stdout
+    assert "granting one grace attempt after a driver-side rejection" in result.stdout
+    assert "review fix attempt 4 (grace)" in result.stdout
+    assert "re-validating its review fix attempt" not in result.stdout
+    assert world.pull(500)["state"] == "MERGED"
+    assert [turn["fix_attempt"] for turn in _review_fixes(world, 632)] == [1, 2, 3, 4]
+
+
+def test_resume_relaunches_a_failed_fix_at_the_next_attempt_of_its_budget(world):
+    """A failed fix turn with budget left is relaunched at the next attempt
+    of that budget and granted nothing: the grace attempt is only for a
+    budget the driver's own rejection spent."""
+    _given_a_fix_verdict(world, 633)
+    _fix_turn_straying(world, 633, "src/routes/first.ts")
+    _fix_turn_straying(world, 633, "src/routes/second.ts", "src/routes/first.ts")
+    _fix_turn_straying(world, 633, "src/routes/third.ts", "src/routes/second.ts")
+    first = run_flow(world, 633)
+    assert first.returncode == 28, first.stdout + first.stderr
+
+    def stopped_with_an_attempt_left(state):
+        """The same verdict, one attempt earlier: a fix request the driver
+        stopped at attempt 2 with the third still unspent."""
+        state["slices"]["domain"]["turns"][-1]["fix_attempt"] = 2
+
+    world.rewrite_run_record(633, stopped_with_an_attempt_left)
+    world.agent_implements(
+        "story-633-domain",
+        "builder",
+        files=FIXED,
+        changed_files=CHANGED,
+        delete=["src/routes/third.ts"],
+    )
+    world.reviewer_answers(633, "merge")
+
+    result = run_flow(world, 633, "--resume")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "fix attempt 2 was judged failed; it will be relaunched, not re-judged" in result.stdout
+    assert "grace attempt" not in result.stdout
+    assert "review fix attempt 3/3" in result.stdout
+    assert world.pull(500)["state"] == "MERGED"
+
+
+def _review_fixes(world, number: int) -> list[dict]:
+    return [
+        turn
+        for turn in world.run_record(number)["slices"]["domain"]["turns"]
+        if turn["kind"] == "review_fix"
+    ]
+
+
 def test_resume_re_judges_a_review_fix_turn_from_its_retained_reply(world):
     """The fix turn replied and the driver died judging it. The reply and
     the tree digest are on the ledger, so the verdict is re-derived on the

@@ -727,27 +727,95 @@ def _fix_turns(world, number: int = 1000) -> list[dict]:
     return [turn for turn in piece["turns"] if turn["kind"] == "review_fix"]
 
 
-def test_a_review_fix_that_reports_phantom_files_gets_a_corrective_turn(world):
+def _fix_turn_straying(world, stray: str, previous: str | None = None, number: int = 1000) -> None:
+    """One fix turn that reaches outside its slice - a domain slice writing
+    a route - putting back the path the previous turn was told to. A
+    different stray each time is a different diagnostic each time."""
+    world.agent_implements(
+        f"story-{number}-domain",
+        "builder",
+        files={"src/lib/delivered.ts": "export const ok = 2;\n", stray: "export const x = 1;\n"},
+        changed_files=["src/lib/delivered.ts", stray],
+        delete=[previous] if previous else None,
+        summary=f"strayed into {stray}",
+    )
+
+
+def test_a_review_fix_that_reports_phantom_files_is_corrected_from_the_diff(world):
     """#406 run 4's stop: a fix turn listed two files its diff never
-    touched. A block 3 turn is corrected on exactly that diagnostic; the
-    fix turn now is too, instead of ending the run."""
+    touched. A block 3 turn keeps its attempt over that now (#420), and so
+    does a fix turn - the driver has just judged the real diff and takes
+    its own reading of it."""
     _given_a_fix_verdict(world)
     _fix_turn_reporting(world, "2", ["src/lib/delivered.ts", "src/lib/phantom.ts"])
-    _fix_turn_reporting(world, "3", ["src/lib/delivered.ts"])
     world.reviewer_answers(1000, "merge")
 
     result = run_flow(world, "1000")
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "review fix attempt 1/3" in result.stdout
-    assert "review fix diagnostic: reported files do not match the actual diff" in result.stdout
-    assert "correcting its review fix after attempt 1" in result.stdout
-    assert "review fix attempt 2/3" in result.stdout
+    assert "reported files corrected from the diff: phantom src/lib/phantom.ts" in result.stdout
+    assert "correcting its review fix after attempt 1" not in result.stdout
+    assert "review fix attempt 2/3" not in result.stdout
     assert _pr(world, 500)["state"] == "MERGED"
     turns = _fix_turns(world)
-    assert [turn["fix_attempt"] for turn in turns] == [1, 2]
-    assert [turn["attempt"] for turn in turns] == [2, 3]
+    assert [turn["fix_attempt"] for turn in turns] == [1]
+    assert turns[-1]["reply"]["changed_files"] == ["src/lib/delivered.ts"]
     assert all(turn["status"] == "completed" for turn in turns)
+
+
+def _given_a_tracked_file(world, path: str, content: str = "export const kept = 1;\n") -> None:
+    """A file already on main when the story starts: the implementation
+    never touches it, so it is in no commit the slice makes."""
+    (world.repo / path).parent.mkdir(parents=True, exist_ok=True)
+    (world.repo / path).write_text(content)
+    subprocess.run(["git", "add", path], cwd=world.repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", f"seed {path}"], cwd=world.repo, check=True, capture_output=True
+    )
+    subprocess.run(["git", "push"], cwd=world.repo, check=True, capture_output=True)
+
+
+def test_a_fix_turn_that_edits_a_tracked_file_is_seen_without_a_commit(world):
+    """#420 run 3, the whole bug: the fix edited a file that was already on
+    main and committed nothing, so the accumulated diff - read as a commit
+    range - missed it, and the reply that honestly named it was rejected
+    for a phantom with every gate green."""
+    _given_a_tracked_file(world, "src/lib/history.ts")
+    _given_a_fix_verdict(world)
+    world.agent_implements(
+        "story-1000-domain",
+        "builder",
+        files={
+            "src/lib/delivered.ts": "export const ok = 2;\n",
+            "src/lib/history.ts": "export const kept = 2;\n",
+        },
+        changed_files=["src/lib/delivered.ts", "src/lib/history.ts"],
+    )
+    world.reviewer_answers(1000, "merge")
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "phantom" not in result.stdout
+    assert "reported files corrected from the diff" not in result.stdout
+    assert [turn["fix_attempt"] for turn in _fix_turns(world)] == [1]
+    assert _pr(world, 500)["state"] == "MERGED"
+
+
+def test_a_fix_turn_records_the_commit_its_diff_is_measured_from(world):
+    """The base a fix turn is judged against is on its ledger entry, so a
+    resume judges the reply against the commit it was written against and
+    not against whatever the slice has moved to since (#420)."""
+    _given_a_fix_verdict(world)
+    _fix_turn_reporting(world, "2", ["src/lib/delivered.ts"])
+    world.reviewer_answers(1000, "merge")
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    piece = world.run_record(1000)["slices"]["domain"]
+    assert _fix_turns(world)[-1]["diff_base"] == piece["failing_sha"]
 
 
 def test_a_review_fix_that_fails_the_same_way_twice_stops_early(world):
@@ -755,8 +823,9 @@ def test_a_review_fix_that_fails_the_same_way_twice_stops_early(world):
     a corrective turn ends it where it stands, with the unspent attempts
     named, rather than buying a third turn that could only repeat it."""
     _given_a_fix_verdict(world)
-    for constant in ("2", "3"):
-        _fix_turn_reporting(world, constant, ["src/lib/delivered.ts", "src/lib/phantom.ts"])
+    for _ in range(2):
+        _fix_turn_reporting(world, "2", ["src/lib/delivered.ts"])
+    _given_a_gate_that_blames(world, "src/lib/delivered.ts", ["pass", "fail", "fail"])
 
     result = run_flow(world, "1000")
 
@@ -772,8 +841,9 @@ def test_three_different_review_fix_failures_exhaust_the_budget(world):
     """Three turns, three different diagnostics, and only then the stop -
     with every turn in the ledger."""
     _given_a_fix_verdict(world)
-    for index, constant in enumerate(("2", "3", "4")):
-        _fix_turn_reporting(world, constant, ["src/lib/delivered.ts", f"src/lib/phantom{index}.ts"])
+    _fix_turn_straying(world, "src/routes/first.ts")
+    _fix_turn_straying(world, "src/routes/second.ts", "src/routes/first.ts")
+    _fix_turn_straying(world, "src/routes/third.ts", "src/routes/second.ts")
 
     result = run_flow(world, "1000")
 
@@ -872,8 +942,8 @@ def test_a_gate_failure_in_a_test_the_fix_touched_is_not_rerun(world):
 
 
 def test_a_ci_fix_round_turn_gets_the_same_budget(world):
-    """A CI fix round's turn is a fix turn: one that reports a file it never
-    touched is corrected, not fatal."""
+    """A CI fix round's turn is a fix turn: one the turn gates reject is
+    corrected in a second attempt of the same request, not fatal."""
     _given_planned_story(world, 1000)
     _delegate(world, 1000, "domain", mechanic_signals())
     _implement(
@@ -881,24 +951,20 @@ def test_a_ci_fix_round_turn_gets_the_same_budget(world):
     )
     world.given_failed_log(_COVERAGE_LOG)
     world.given_checks(500, ["fail", "pending", "pass"])
-    world.agent_implements(
-        "story-1000-domain",
-        "mechanic",
-        files={"src/lib/delivered.ts": "export const ok = 2;\n"},
-        changed_files=["src/lib/delivered.ts", "src/lib/phantom.ts"],
-    )
-    world.agent_implements(
-        "story-1000-domain",
-        "mechanic",
-        files={"src/lib/delivered.ts": "export const ok = 3;\n"},
-        changed_files=["src/lib/delivered.ts"],
-    )
+    for constant in ("2", "3"):
+        world.agent_implements(
+            "story-1000-domain",
+            "mechanic",
+            files={"src/lib/delivered.ts": f"export const ok = {constant};\n"},
+            changed_files=["src/lib/delivered.ts"],
+        )
+    _given_a_gate_that_blames(world, "src/lib/delivered.ts", ["pass", "fail", "pass", "pass"])
 
     result = run_flow(world, "1000")
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "CI fix round 1/2 on PR #500" in result.stdout
-    assert "review fix diagnostic: reported files do not match the actual diff" in result.stdout
+    assert "review fix diagnostic: verify:changed failed" in result.stdout
     assert "review fix attempt 2/3" in result.stdout
     assert _pr(world, 500)["state"] == "MERGED"
     assert [turn["fix_attempt"] for turn in _fix_turns(world)] == [1, 2]

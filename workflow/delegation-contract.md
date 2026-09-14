@@ -618,16 +618,22 @@ The driver determines affected specs, e2e files and mutation lanes from the
 actual diff under the recorded policy, not just the agent's reported files.
 `changed_files` must name every path that diff touches - added, modified,
 deleted and renamed, both names of a rename. Because nothing the driver
-trusts is derived from it, a list that disagrees with the diff is a
-repairable diagnostic naming the unreported and phantom paths, corrected in
-the same session like any other, not a contract failure; a turn that changed
-nothing at all is the same repairable diagnostic. Any real-diff verdict -
-scope, layer boundary, acceptance bytes, gates - takes precedence over it.
-That diff is the complete delta of the branch and worktree against the
-retained failing-test commit, recomputed at every validation: an
-out-of-reach gate, threshold, suppression-baseline, lockfile or CI-workflow
-change (#379) cannot be hidden by the timing of a retry commit or an
-uncommitted edit. What is out of reach is what judges the work: everything
+trusts is derived from it, a list that disagrees with the diff is neither a
+contract failure nor, once every real-diff verdict is green, a rejection:
+the driver logs the unreported and phantom paths, writes the actual diff
+over the reported list on the turn's record, and lets the turn pass. The
+diff is the truth, and an attempt spent telling an agent something the
+driver already knows is an attempt lost - #420 run 3 ended a run on one. A
+mismatch beside a failing gate or a breached boundary is never reached:
+that turn is rejected on the failure it must answer, and any real-diff
+verdict - scope, layer boundary, acceptance bytes, gates - takes precedence
+over the report. A turn that changed nothing at all remains a repairable
+diagnostic. That diff is the complete delta of the branch and worktree
+against the retained failing-test commit - committed, uncommitted and
+untracked alike, because a fix turn edits tracked files and never commits
+(#420) - recomputed at every validation: an out-of-reach gate, threshold,
+suppression-baseline, lockfile or CI-workflow change (#379) cannot be
+hidden by the timing of a retry commit or an uncommitted edit. What is out of reach is what judges the work: everything
 under `quality/`, `.github/`, `scripts/ci/`, `scripts/deploy/`,
 `scripts/github/`, `scripts/quality/` and `scripts/security/`, every
 snapshot and lock file, the tool configuration files and
@@ -1104,7 +1110,8 @@ request where it stands, naming the attempts left unspent. Every attempt is
 on the slice's turn ledger, with the reply and the working tree's digest,
 under the same session continuity rules as any other turn; the attempt
 inside the request is recorded as `fix_attempt` beside the slice-wide
-`attempt`. None of this consumes block 3's budget, and a scope breach
+`attempt`, and the commit its diff is measured from as `diff_base`, so a
+resume judges the reply against the commit the agent wrote it against. None of this consumes block 3's budget, and a scope breach
 inside a fix turn is what #419 made it everywhere else: a correctable
 rejection, spending one attempt of this budget.
 
@@ -1114,7 +1121,8 @@ could not repair the finding under review, and that is a human call, not a
 new escalation - the escalation ladder is spent by definition once block 3
 succeeded. One failed validation is not that call, though. #406 lost a run
 to a fix turn that listed two files its diff never touched, the cheapest
-diagnostic there is and one a block 3 turn is simply corrected on.
+diagnostic there is - and one the driver now simply corrects from the diff,
+because it was never the agent's to answer.
 
 Every turn - block 3's and block 4's alike - is judged by the whole gate
 tier rather than by its own diff, so it inherits every test in it. The
@@ -1428,9 +1436,15 @@ re-derive:
 | completed and marked `"repeated": true`                        | refused (`RUN_STATE_CONFLICT`): the verdict is a function of bytes that have not changed, so re-validating could only reach the same diagnostic and stop on it again; reset                              |
 | completed without a reply (launch failed, reply malformed)     | voided                                                                                                                                                                                                   |
 | already voided by an earlier resume                            | back to the launch                                                                                                                                                                                       |
-| a fix turn (kind `review_fix`), or state `fixing`              | the same four rules above, but back to `fixing`: block 4 finishes the fix request, re-judging a retained reply or relaunching a voided turn under the same `fix_attempt`                                 |
+| a fix turn (kind `review_fix`), or state `fixing`              | the same four rules above, but back to `fixing`: block 4 finishes the fix request, re-judging a retained reply with no verdict yet, or relaunching a voided turn under the same `fix_attempt`            |
+| a fix turn already recorded `failed`                           | back to `fixing` and relaunched rather than re-judged: that verdict is on the ledger and the bytes have not moved. The next `fix_attempt`, or one grace attempt when the budget is spent (#420 run 3)    |
 | state `escalating` (interrupted between two roles)             | refused (`RUN_STATE_CONFLICT`): reset                                                                                                                                                                    |
 | state `tests_rejected` (block 1 is repairing the tests)        | stays parked; an unfinished repair turn is voided and block 3 relaunches the repair from a fresh repair worktree, with the role block 1 ended on (`tests_role`) rather than the mechanic                 |
+
+A `failed` entry is the driver's verdict on the work only when a diagnostic
+sits beside it. A validation that died on an external tool failure records
+`failed` too, and no verdict: that reply is re-judged like any other, because
+nothing has judged it yet.
 
 Voiding keeps the ledger entry (status `completed`, result `void`, the reason
 in `why`), decrements `attempts` by one, and returns the slice to `assigned`

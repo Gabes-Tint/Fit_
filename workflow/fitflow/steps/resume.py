@@ -20,7 +20,10 @@ same way, and goes back to `fixing`: the run continues in block 4, where
 the fix request finishes its remaining attempts - re-judging the retained
 reply on the bytes it left, or relaunching the turn the driver never saw
 end - before the join is re-verified and the new commit carried onto the
-integration branch.
+integration branch. A fix turn already recorded as failed is the one thing
+never re-judged: its verdict is on the ledger, the bytes have not moved,
+and re-deriving it could only reach it again, so block 4 relaunches that
+turn instead.
 
 A slice parked in `tests_rejected` is waiting on block 1, not on a turn of
 its own: it stays parked, its unfinished repair turn is voided like any
@@ -29,7 +32,7 @@ other, and block 3 relaunches the repair from a fresh repair worktree.
 
 from fitflow import agents, audit, github, narrate, settings, worktrees
 from fitflow.outcome import FlowFailure, Outcome
-from fitflow.runstate import RunRecord, SliceRecord
+from fitflow.runstate import RunRecord, SliceRecord, judged_failed
 from fitflow.steps import objection
 
 # Where a resumed run continues, in flow order.
@@ -189,21 +192,28 @@ def _in_review_fix(piece: SliceRecord) -> bool:
 
 def _reopen_review_fix(record: RunRecord, piece: SliceRecord) -> None:
     """A slice stopped inside one of block 4's fix turns goes back to
-    `fixing`, carrying what its last turn actually reached: a reply to
-    re-judge on the bytes it left, or a voided turn for the fix request to
-    relaunch under the same attempt. The request's own budget is what block
-    4 continues against, so a resume buys no extra attempt."""
+    `fixing`, carrying what its last turn actually reached: a reply with no
+    verdict to re-judge on the bytes it left, a voided turn for the fix
+    request to relaunch under the same attempt, or a turn already judged
+    failed, which block 4 relaunches one attempt further on. The request's
+    own budget is what block 4 continues against, so a resume buys no extra
+    attempt - except the single grace attempt a spent budget earns when the
+    verdict that spent it was the driver's own."""
     last = piece.turns[-1]
-    note = f"re-judging fix attempt {last.get('fix_attempt', 1)} from its retained reply"
+    attempt = last.get("fix_attempt", 1)
+    note = f"re-judging fix attempt {attempt} from its retained reply"
     if last["status"] == "running":
         _require_not_in_flight(record, piece)
         _mark_void(record, piece, last, "the driver stopped while the fix turn was running")
-        note = f"fix attempt {last.get('fix_attempt', 1)} voided; it will be relaunched"
+        note = f"fix attempt {attempt} voided; it will be relaunched"
     elif last["result"] == "void":
-        note = f"relaunching voided fix attempt {last.get('fix_attempt', 1)}"
+        note = f"relaunching voided fix attempt {attempt}"
     elif last.get("reply") is None:
         _mark_void(record, piece, last, last["why"] or "the fix turn produced no valid reply")
-        note = f"fix attempt {last.get('fix_attempt', 1)} left no reply; it will be relaunched"
+        note = f"fix attempt {attempt} left no reply; it will be relaunched"
+    elif judged_failed(last):
+        _require_not_stopped_for_repetition(record, piece, last)
+        note = f"fix attempt {attempt} was judged failed; it will be relaunched, not re-judged"
     else:
         _require_can_be_rejudged(record, piece, last)
     with record.transition():
