@@ -1,5 +1,6 @@
 """Box: the implementer rejects the acceptance tests, and block 1 repairs
-them - block 3's one edge back into block 1.
+them - the one edge back into block 1, open to block 3's implementation
+turns and to block 4's fix turns alike.
 
 Block 1's tests are immutable inputs to implementation, and that is the
 point: an implementer may not weaken what judges it. But immutable is not
@@ -45,6 +46,19 @@ re-frozen: `tests_sha` becomes the repair commit and `failing_sha` the
 merge. The slice then returns to `assigned` with the same role, revision,
 assignment, session and worktree and a fresh attempt counter, because the
 tests it is judged by are new inputs.
+
+The channel stays open once the slice has succeeded (#463). A block 4 fix
+turn may object too, on the same terms and through the same `consider`: the
+tree it is judged on sits at the freeze commit the fix request started from,
+not the failing-test base, so that is the HEAD it must still be at and the
+commit its left-behind work is read against. A refused objection is the fix
+turn's ordinary diagnostic and costs that fix attempt; a verified one costs
+only the turn. The repair is the same repair against the same budget, but the
+slice comes out of it still `fixing`, on the same fix attempt, with the
+merged repair as both its failing-test base and its frozen commit: the fix
+request carries on against the repaired tests, the freeze that ends it
+carries the repair onto the integration branch, and the review takes another
+round.
 
 At most two repairs per slice. A third verified objection stops the run as
 TESTS_INVALID with every objection in the message, because at that point the
@@ -132,11 +146,16 @@ def brief() -> str:
 
 
 def consider(
-    record: RunRecord, piece: SliceRecord, reply: dict, scope_breach: ScopeBreach
+    record: RunRecord,
+    piece: SliceRecord,
+    reply: dict,
+    scope_breach: ScopeBreach,
+    fix_turn: bool = False,
 ) -> str | None:
-    """The single call block 3's `_settle` makes before it judges a turn the
-    ordinary way. None when the reply carries no objection; the diagnostic
-    to correct from when it carries one the driver refuses; and `Objected`
+    """The single call block 3's `_settle` and block 4's `_settle_fix` make
+    before they judge a turn the ordinary way. None when the reply carries
+    no objection; the diagnostic to correct from when it carries one the
+    driver refuses; and `Objected`
     - not a return - when the objection verifies.
 
     `"objection": null` is how a reply says it has none: the schema lists
@@ -151,7 +170,7 @@ def consider(
         piece.move("validating")
         record.save()
     narrate.line(f"📦 Validating #{piece.number} ({piece.layer}) objection to the tests")
-    checked = _verify(record, piece, raw, scope_breach)
+    checked = _verify(record, piece, raw, scope_breach, _base(piece, fix_turn))
     if checked.refusal is not None:
         return (
             f"your objection to the acceptance tests was refused: {checked.refusal}. "
@@ -161,8 +180,15 @@ def consider(
     raise Objected
 
 
+def _base(piece: SliceRecord, fix_turn: bool) -> str:
+    """The commit the objecting turn started on. A block 3 turn starts on the
+    failing-test base; a block 4 fix turn on the freeze commit its fix
+    request started from, which already carries the slice's frozen work."""
+    return piece.frozen_commit if fix_turn else piece.failing_sha
+
+
 def _verify(
-    record: RunRecord, piece: SliceRecord, raw: object, scope_breach: ScopeBreach
+    record: RunRecord, piece: SliceRecord, raw: object, scope_breach: ScopeBreach, base: str
 ) -> _Checked:
     """The first verification condition that fails, or what the accepted
     objection carries. Ordered cheapest first: the reply's own shape, then
@@ -171,10 +197,10 @@ def _verify(
     shape = _malformed(raw) or _not_this_slice(piece, raw)
     if shape is not None:
         return _Checked(shape)
-    head = _moved_head(piece, path)
+    head = _moved_head(path, base)
     if head is not None:
         return _Checked(head)
-    work = worktrees.changed_since(path, piece.failing_sha)
+    work = worktrees.changed_since(path, base)
     breach = _out_of_scope(piece, work, scope_breach)
     if breach is not None:
         return _Checked(breach)
@@ -230,11 +256,11 @@ def _not_this_slice(piece: SliceRecord, raw: dict) -> str | None:
     )
 
 
-def _moved_head(piece: SliceRecord, path: Path) -> str | None:
+def _moved_head(path: Path, base: str) -> str | None:
     """An objection is judged on the turn's own working tree, so that tree
     must still carry no commit of the agent's own."""
     head = worktrees.local_head(path)
-    if head == piece.failing_sha:
+    if head == base:
         return None
     return (
         f"local HEAD moved to {head[:7]} — an objection is judged on the turn's own "
@@ -767,18 +793,31 @@ def _refreeze(
 
     `test_files` is the judged union `_judged_set` built, less whatever the
     objection named and the repair deleted, so a slice comes out of a repair
-    with the acceptance set it went in with plus the repair's own files."""
+    with the acceptance set it went in with plus the repair's own files.
+
+    An objection from a block 4 fix turn comes out differently: the slice
+    stays `fixing` and keeps its attempt counter, because the fix request
+    goes on against the repaired tests rather than starting over, and the
+    merge becomes its frozen commit as well - the commit its next fix turn
+    starts on, is judged against, and must change something beyond."""
     repair_sha = worktrees.local_head(path)
     slice_path = worktrees.slice_worktree_path(piece.slug)
+    fix_turn = in_fix_request(piece)
     kept = _kept_note(piece, slice_path, test_files)
     _merge_repair(record, piece, slice_path, repair_sha)
     merged = worktrees.local_head(slice_path)
     worktrees.push_branch(slice_path, piece.branch)
+    goes_on = (
+        "your fix request goes on against these tests, on the fix attempt the objection was "
+        "made in, and your frozen work is still in the worktree"
+        if fix_turn
+        else "your attempts start over against these tests, and your accumulated work is still "
+        "in the worktree"
+    )
     note = (
         f"The acceptance tests you rejected were repaired in block 1 and re-frozen at "
         f"{repair_sha[:12]}. They are now {', '.join(test_files)}, and they fail because: "
-        f"{why}{kept} Read them again before you change anything: your attempts start over "
-        f"against these tests, and your accumulated work is still in the worktree."
+        f"{why}{kept} Read them again before you change anything: {goes_on}."
     )
     with record.transition():
         piece.tests_sha = repair_sha
@@ -786,14 +825,25 @@ def _refreeze(
         piece.test_files = list(test_files)
         piece.tests_type_debt = dict(debt)
         piece.test_repairs += 1
-        piece.attempts = 0
         piece.test_repair_note = note
         piece.diagnostics.append(note)
-        piece.move("assigned")
+        if fix_turn:
+            piece.frozen_commit = merged
+            piece.move("fixing")
+        else:
+            piece.attempts = 0
+            piece.move("assigned")
         record.save()
     narrate.line(f"🔒 #{piece.number} ({piece.layer}) tests re-frozen at {repair_sha[:12]}")
     narrate.line(f"⇪ Pushed {piece.branch} at {merged[:12]}")
     _comment(record, piece, repair_sha, test_files, why, passing_note)
+
+
+def in_fix_request(piece: SliceRecord) -> bool:
+    """Whether the objection being repaired was made by a block 4 fix turn:
+    repair turns keep their own ledger, so the implementation ledger's last
+    turn is still the one that objected."""
+    return bool(piece.turns) and piece.turns[-1]["kind"] == "review_fix"
 
 
 def _kept_note(piece: SliceRecord, slice_path: Path, test_files: list[str]) -> str:

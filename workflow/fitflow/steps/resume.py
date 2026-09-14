@@ -35,7 +35,9 @@ other, and block 3 relaunches the repair from a fresh repair worktree - the
 branch and worktree the stopped repair left behind are removed and remade
 from the slice's failing-test base. The exception is a repair block 1 was
 refused on both of its turns: nothing has moved since, so the resume stops
-on it and the tests are repaired by hand or the run is reset.
+on it and the tests are repaired by hand or the run is reset. A repair a
+block 4 fix turn's objection sent to block 1 is relaunched by block 4, which
+then carries on with that fix request.
 """
 
 from fitflow import agents, audit, github, narrate, settings, turns, worktrees
@@ -108,7 +110,7 @@ def _pr_merged(record: RunRecord) -> bool:
 
 def _after_block3(record: RunRecord) -> str:
     unfinished = [piece for piece in record.ordered() if piece.state != "succeeded"]
-    if unfinished and all(piece.state == "fixing" for piece in unfinished):
+    if unfinished and all(_in_block4(piece) for piece in unfinished):
         narrate.line("♻️  A block 4 fix was interrupted: continuing at block 4")
         return DELIVER
     if unfinished:
@@ -118,6 +120,14 @@ def _after_block3(record: RunRecord) -> str:
         return DELIVER
     narrate.line("♻️  Every slice is frozen: continuing at block 3's report")
     return IMPLEMENT
+
+
+def _in_block4(piece: SliceRecord) -> bool:
+    """A slice stopped inside a fix request: in one of its turns, or parked on
+    the repair one of them sent to block 1."""
+    return piece.state == "fixing" or (
+        piece.state == "tests_rejected" and objection.in_fix_request(piece)
+    )
 
 
 def _require_never_launched(record: RunRecord) -> None:
@@ -246,6 +256,14 @@ def _reopen_review_fix(record: RunRecord, piece: SliceRecord) -> None:
     elif judged_failed(last):
         _require_not_stopped_for_repetition(record, piece, last)
         note = f"fix attempt {attempt} was judged failed; it will be relaunched, not re-judged"
+    elif last["result"] == "objected":
+        # the objection was verified and its repair has landed: the merge
+        # moved the tree past the digest the turn left, and there is no
+        # verdict left to re-derive - only the same attempt to relaunch
+        note = (
+            f"fix attempt {attempt} objected and its tests were repaired; "
+            "it relaunches against them"
+        )
     else:
         _require_can_be_rejudged(record, piece, last)
     with record.transition():
