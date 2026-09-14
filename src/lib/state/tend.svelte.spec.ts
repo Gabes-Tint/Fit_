@@ -2249,3 +2249,99 @@ describe('the version the stored document carries', () => {
 		expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
 	});
 });
+
+describe('per-exercise store actions with optional exerciseIndex', () => {
+	it('toggleSet with exerciseIndex marks a specific exercise set as done', () => {
+		const store = inSession();
+		store.toggleSet(0, 1);
+		expect(store.state.activeWorkout?.exercises[1]?.sets[0]?.done).toBe(true);
+		expect(store.state.activeWorkout?.exercises[0]?.sets[0]?.done).toBe(false);
+		expect(store.state.activeWorkout?.exercises[2]?.sets[0]?.done).toBe(false);
+	});
+
+	it('bumpSet with exerciseIndex modifies the reps of a specific exercise', () => {
+		const store = inSession();
+		store.bumpSet(0, 'reps', 1, 2);
+		expect(store.state.activeWorkout?.exercises[2]?.sets[0]?.reps).toBe(11);
+		expect(store.state.activeWorkout?.exercises[0]?.sets[0]?.reps).toBe(8);
+		expect(store.state.activeWorkout?.exercises[1]?.sets[0]?.reps).toBe(8);
+	});
+
+	it('addSet with exerciseIndex appends to a specific exercise', () => {
+		const store = inSession();
+		const exercise1Before = store.state.activeWorkout?.exercises[1]?.sets.length ?? 0;
+		const lastReps = store.state.activeWorkout?.exercises[1]?.sets.at(-1)?.reps;
+		const lastLoad = store.state.activeWorkout?.exercises[1]?.sets.at(-1)?.load;
+		store.addSet(1);
+		const exercise1After = store.state.activeWorkout?.exercises[1]?.sets.length ?? 0;
+		expect(exercise1After).toBe(exercise1Before + 1);
+		expect(store.state.activeWorkout?.exercises[1]?.sets.at(-1)?.reps).toBe(lastReps);
+		expect(store.state.activeWorkout?.exercises[1]?.sets.at(-1)?.load).toBe(lastLoad);
+		expect(store.state.activeWorkout?.exercises[0]?.sets.length).toBe(3);
+	});
+
+	it('noteExercise with exerciseIndex stores the note on a specific exercise', () => {
+		const store = inSession();
+		store.noteExercise('slow', 2);
+		expect(store.state.activeWorkout?.exercises[2]?.note).toBe('slow');
+		expect(store.state.activeWorkout?.exercises[0]?.note).toBe('');
+		expect(store.state.activeWorkout?.exercises[1]?.note).toBe('');
+	});
+
+	it('swapExercise with exerciseIndex swaps a specific exercise', () => {
+		const store = inSession();
+		store.swapExercise('Leg Press', 1);
+		expect(store.state.activeWorkout?.exercises[1]?.name).toBe('Leg Press');
+		expect(store.state.activeWorkout?.exercises[1]?.group).toBe('Legs');
+		expect(store.state.activeWorkout?.exercises[0]?.name).toBe('Squat');
+		expect(store.state.activeWorkout?.exercises[2]?.name).toBe('Seated Row');
+	});
+
+	it('swapExercise with exerciseIndex refuses an unknown movement', () => {
+		const store = inSession();
+		const beforeName = store.state.activeWorkout?.exercises[1]?.name;
+		store.swapExercise('Tyre Flip', 1);
+		expect(store.state.activeWorkout?.exercises[1]?.name).toBe(beforeName);
+	});
+
+	it('toggleSet without exerciseIndex keeps today behavior and uses the workout exerciseIndex', () => {
+		const store = inSession();
+		store.toggleSet(0);
+		expect(store.state.activeWorkout?.exercises[0]?.sets[0]?.done).toBe(true);
+	});
+
+	it('bumpSet without exerciseIndex keeps today behavior', () => {
+		const store = inSession();
+		store.bumpSet(0, 'reps', 1);
+		expect(store.state.activeWorkout?.exercises[0]?.sets[0]?.reps).toBe(9);
+	});
+
+	it('addSet without exerciseIndex keeps today behavior', () => {
+		const store = inSession();
+		const exercise0Before = store.state.activeWorkout?.exercises[0]?.sets.length ?? 0;
+		store.addSet();
+		const exercise0After = store.state.activeWorkout?.exercises[0]?.sets.length ?? 0;
+		expect(exercise0After).toBe(exercise0Before + 1);
+	});
+
+	it('noteExercise without exerciseIndex keeps today behavior', () => {
+		const store = inSession();
+		store.noteExercise('hard');
+		expect(store.state.activeWorkout?.exercises[0]?.note).toBe('hard');
+	});
+
+	it('swapExercise without exerciseIndex keeps today behavior', () => {
+		const store = inSession();
+		store.swapExercise('Leg Press');
+		expect(store.state.activeWorkout?.exercises[0]?.name).toBe('Leg Press');
+	});
+
+	it('exerciseIndex out of range does nothing', () => {
+		const store = inSession();
+		const beforeSets0 = store.state.activeWorkout?.exercises[0]?.sets[0]?.done;
+		const beforeSets1 = store.state.activeWorkout?.exercises[1]?.sets[0]?.done;
+		store.toggleSet(0, 99);
+		expect(store.state.activeWorkout?.exercises[0]?.sets[0]?.done).toBe(beforeSets0);
+		expect(store.state.activeWorkout?.exercises[1]?.sets[0]?.done).toBe(beforeSets1);
+	});
+});
