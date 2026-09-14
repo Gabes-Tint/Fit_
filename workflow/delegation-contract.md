@@ -58,6 +58,47 @@ will get on the same bytes; any failure returns a precise, repairable
 diagnostic (outcome `TESTS_INVALID`, exit 31) to the same retry loop and
 never reaches implementation.
 
+### What the failing-test branch may carry
+
+Two kinds of file, and nothing else: the acceptance tests themselves, and
+the repository's shared test support - a file under `tests/` that is not
+itself a test, such as `tests/e2e-support.ts`. Product code under `src/`,
+anything under `scripts/`, configuration, a snapshot or a lock file is still
+`TESTS_NOT_PUSHED` (exit 23) with the same "non-test file changed"
+diagnostic, and it still short-circuits the gates.
+
+The support tree is in reach because the `duplicates` gate is. In run 5 of
+issue #337, block 1's new `*.e2e.ts` repeated the setup two other e2e files
+already carried, jscpd rejected the clone against a ratchet of 0, and the
+repair that answered it - lifting the shared lines into
+`tests/e2e-support.ts`, where the suites already keep their helpers - came
+straight back refused as a non-test file. That gate reads the e2e files
+themselves, so shared setup has to live in a helper, and a writer that may
+not touch the helpers cannot answer it at all.
+
+A support file is branch content, not an acceptance byte. It never enters
+`test_files`: naming one there is the same correction as naming a
+`conftest.py` in a `workflow` slice, because no runner collects a test from
+it. The frozen set block 3 must leave byte-identical is therefore the tests
+alone, and the helper is a file an implementer may edit like any other
+inside its reach - `tests/**` was never outside a `domain` or `ui` slice's
+scope, so block 3 is unchanged. The placement and test-kind rules skip the
+helpers as well: `tests/` is the folder they belong in, and a helper is of
+no runner's kind.
+
+An edit there can break a suite this slice never looked at, so every gate
+block 1 runs keeps sizing the branch's diff rather than the reported
+acceptance set: `duplicates`, `format:check`, `check:suppressions` and
+`spellcheck` read the helper exactly as they read the tests, `lint:changed`
+is the diff, and `check` types the whole tree. The tolerance for the story's
+missing API stops at the acceptance files, so a lint or type error inside a
+helper is a rejection - nothing there is waiting for an API the story has
+not written yet.
+
+A `workflow` slice has no support tree of this kind: `workflow/tests/**` is
+test-side whole already (below), and the root `tests/` is outside the
+driver's layer.
+
 ### Every check runs, and the writer is told all of them
 
 Those checks, and the acceptance run beside them, all run on every attempt
@@ -866,7 +907,8 @@ title can be read from is judged whole - deleted, or emptied of every
 `it`/`test` block - rather than test by test.
 
 The repaired set faces block 1's usual
-validation - a clean tree, test files only, the requested test kind, the
+validation - a clean tree, test-side files only (the tests and the shared
+support under `tests/`), the requested test kind, the
 repository's lint, type and content gates, and a failure on an expectation
 rather than a throw (`_check_failures_are_expectations`) - measured against
 that base rather than `origin/main`, and nothing is pushed from there.
