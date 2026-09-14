@@ -51,8 +51,86 @@ selected through the gate's own `--only` because the full tier would run
 the tests that must still fail here. Those four judge bytes rather than
 behavior, so their verdict on this branch is exactly the verdict block 3
 will get on the same bytes; any failure returns a precise, repairable
-diagnostic (outcome `TESTS_INVALID`, exit 31) to the same mechanic retry
-loop and never reaches implementation.
+diagnostic (outcome `TESTS_INVALID`, exit 31) to the same retry loop and
+never reaches implementation.
+
+### Every check runs, and the writer is told all of them
+
+Those checks, and the acceptance run beside them, all run on every attempt
+and their failures are reported together. Run 5 of #397 is the rule's
+evidence: `check` failed first, so the `verify:fast` set never ran at all,
+and the mechanic's three attempts went on three gates surfaced one per
+attempt - type errors, then a clone, then `LINDOR` used four times as
+fixture data - each attempt correcting exactly the one diagnostic it was
+given. The run stopped `TESTS_INVALID` with tests one word away from valid.
+
+So the driver aggregates. The narrated union names every check with its
+verdict and, where the check has something short to say, its detail:
+
+```text
+🧪 Gates: lint:changed ✔ · check ✗ (4 type errors) · duplicates ✗ · spellcheck ✗ (LINDOR ×4) · fails as intended ✔
+```
+
+and the diagnostic the next turn receives lists each failure under its own
+headed line, prefixed by how many there are and that one correction must
+answer all of them. A single failure keeps its own diagnostic verbatim, so
+nothing about a one-gate rejection changed. The outcome of a union is
+`TESTS_INVALID` as soon as any check found the tests invalid, and the sole
+failure's own outcome otherwise (a branch whose only fault is that its
+tests pass is still `TESTS_DO_NOT_FAIL`, exit 24). The accepted type debt
+below is computed over the union exactly as it was over a lone lane.
+
+Rejections that make the later checks meaningless still short-circuit, and
+the gates do not run at all: a non-test file on the branch, a test file in a
+folder it may not live in, a reported file that is not in the diff, a
+suppression directive or a browser-context import inside a test. A crashed
+gate (`TOOL_FAILED`) also stops where it stands - an external tool failure
+is not a verdict on the tests, so there is nothing to aggregate it with. For
+a `workflow` slice the driver's own four gates keep stopping at their first
+failing step, because they are a sequence of separate commands rather than
+one gate run; that first failure is still aggregated with the acceptance run.
+
+When `spellcheck` rejects a word inside one of the acceptance files, the
+diagnostic also says what may be done about it, and there is exactly one
+thing: spell the fixture data with words the dictionary already knows. The
+mechanic cannot add to `cspell.json` (a workflow file, not on this branch),
+and an inline cspell-ignore comment is not an alternative either -
+`scripts/quality/suppressions.ts` counts cspell-ignore and
+cspell-disable comments as suppressions and `quality/threshold-baseline.json`
+ratchets unjustified suppressions at 0, so the directive would fail
+`check:suppressions` on the next run of these same steps.
+
+### Block 1 escalates its writer too
+
+Block 1 runs the same capability ladder block 3 runs: mechanic, then
+builder, then solver. A role whose budget ends with the tests still
+rejected - spent to its last attempt, or stopped early because its
+diagnostic came back identical - hands them to the next rung on the same
+branch, worktree and team, with a fresh budget of three attempts and every
+rejection any rung collected in its brief. Nothing else changes: the roster
+supplies each role's backend, model and effort, the correction prompt is
+the same one, and the acceptance tests stay the only thing that may change.
+
+```text
+⬆️  Block 1 #397: mechanic exhausted its 3 attempts — the builder takes over the tests
+```
+
+The solver is the last rung, and its exhausted budget is the stop block 1
+used to make when the mechanic's ran out: the outcome and exit code of that
+stop are unchanged (`TESTS_INVALID` exit 31, `TESTS_NOT_PUSHED` exit 23,
+`TESTS_DO_NOT_FAIL` exit 24 - whichever the last verdict was), and a
+refusal with a stated reason still stops at once without escalating,
+because it is about the brief rather than the branch.
+
+Block 1 has no retained run record of its own - it runs before
+`runstate.begin_run` - so its ledger is what it hands forward: the role it
+ended on and the number of rungs it climbed are retained on the slice
+(`tests_role`, `tests_revision`), the comment on the story says which role
+wrote the tests, and every rejection is carried in the successor's brief. A
+run interrupted inside block 1 itself has nothing to resume and never did;
+what resumes is the slice, and block 3's repair of a rejected test set goes
+to the role block 1 ended on rather than to the mechanic, both on a fresh
+run and on a `--resume` that relaunches a repair from `tests_rejected`.
 
 `spellcheck` is there because of #422. The mechanic misspelled a verb in a
 test title; nothing in block 1 read it; block 3's gate then rejected the
@@ -676,9 +754,10 @@ unchanged: repair the tests so an honest implementation inside this slice's
 own layer can make them pass together, never weaken them into tests that
 pass with no implementation.
 
-**Who repairs.** The first repair goes back to the mechanic that wrote the
-tests: it knows what it meant, and most objections are a detail it can put
-right. A second goes to the role that objected - the builder or solver, the
+**Who repairs.** The first repair goes back to the role that wrote the
+tests - the mechanic, or whichever rung block 1's own ladder ended on
+(`tests_role`): it knows what it meant, and most objections are a detail it
+can put right. A second goes to the role that objected - the builder or solver, the
 same model and effort block 3 gives that role - in the same kind of repair
 worktree, with the same brief plus every objection and every repair so far.
 Issue #421 is the reason: the mechanic repaired exactly what it was told, twice, and
@@ -1254,6 +1333,7 @@ re-derive:
 | already voided by an earlier resume                            | back to the launch                                                                                                                                                                                       |
 | a fix turn (kind `review_fix`), or state `fixing`              | the same four rules above, but back to `fixing`: block 4 finishes the fix request, re-judging a retained reply or relaunching a voided turn under the same `fix_attempt`                                 |
 | state `escalating` (interrupted between two roles)             | refused (`RUN_STATE_CONFLICT`): reset                                                                                                                                                                    |
+| state `tests_rejected` (block 1 is repairing the tests)        | stays parked; an unfinished repair turn is voided and block 3 relaunches the repair from a fresh repair worktree, with the role block 1 ended on (`tests_role`) rather than the mechanic                 |
 
 Voiding keeps the ledger entry (status `completed`, result `void`, the reason
 in `why`), decrements `attempts` by one, and returns the slice to `assigned`

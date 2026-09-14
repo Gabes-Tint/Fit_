@@ -481,18 +481,25 @@ def _write_step_log(cwd, label, step, text):
     return str(path.relative_to(cwd))
 
 
+def _detail_of(cwd, world, step):
+    """What a failed step printed: jscpd's real report for `duplicates`, the
+    scripted unknown word for `spellcheck`, and the step's own template
+    otherwise."""
+    blamed = world.get("gate_failure_file", "src/lib/probe.spec.ts")
+    if step == "duplicates":
+        return _write_jscpd_report(cwd, world)
+    spelled = _spellcheck_detail(world, blamed) if step == "spellcheck" else None
+    if spelled:
+        return spelled
+    return _STEP_DETAIL.get(step, f"{step} failed").format(file=blamed)
+
+
 def _gate_report(cwd, world, label, failed):
     """Write the report and the per-step logs a real gate run leaves, and
     return the report's own `ok`."""
     steps = []
     for step in failed:
-        blamed = world.get("gate_failure_file", "src/lib/probe.spec.ts")
-        if step == "duplicates":
-            detail = _write_jscpd_report(cwd, world)
-        elif step == "spellcheck" and _spellcheck_detail(world, blamed):
-            detail = _spellcheck_detail(world, blamed)
-        else:
-            detail = _STEP_DETAIL.get(step, f"{step} failed").format(file=blamed)
+        detail = _detail_of(cwd, world, step)
         steps.append(
             {
                 "name": step,

@@ -70,8 +70,9 @@ an implementation, the objection must name a strict subset of the slice's
 tests and every test it does not name must already pass there, and its work
 then stays in the worktree while the tests it named are repaired around it -
 which is how six of seven tests get delivered instead of none (#421). The
-first repair is the mechanic that wrote the tests; a second is made by the
-role that objected, with every objection and repair so far in its brief.
+first repair is the role that wrote the tests - the mechanic, or the rung
+block 1 escalated to; a second is made by the role that objected, with every
+objection and repair so far in its brief.
 An objection the driver cannot verify is an ordinary failed attempt;
 at most two repairs per slice, and a verified objection after those stops as
 `TESTS_INVALID` with every objection in the comment. The scope check puts the gates the
@@ -151,6 +152,50 @@ quotes the concrete diagnostic and permits changes only to the acceptance
 tests. Parallel slices run these retry loops independently; the barrier advances
 only after every loop succeeds.
 
+That validation runs every check it has and reports their union, rather
+than stopping at the first one that fails. Run 5 of #397 is why: the
+mechanic's three attempts went on three different gates surfaced one per
+attempt—type errors first (the content steps never ran, because `check`
+failed before them), then a clone, then a misspelled fixture name—each
+attempt fixing the previous diagnostic, and the run stopped with tests one
+word away from valid. So `lint:changed`, `check`, the content steps and the
+acceptance run all run to completion now, and the writer gets one
+diagnostic naming every failure under its own headed line:
+
+```text
+🧪 Gates: lint:changed ✔ · check ✗ (4 type errors) · duplicates ✗ · spellcheck ✗ (LINDOR ×4) · fails as intended ✔
+```
+
+Only a rejection that makes the later checks meaningless still
+short-circuits: a non-test file on the branch, a test in a folder it may not
+live in, reported files that are not in the diff. Everything that judges the
+tests themselves is aggregated, the accepted type debt is computed over the
+union exactly as before, and a crashed gate still stops the run at once
+rather than being folded into a verdict. When `spellcheck` rejects a word
+inside an acceptance test the diagnostic also says what can be done about
+it, which is one thing: spell the fixture data with words the dictionary
+knows. `cspell.json` is a workflow file this branch may not touch, and an
+inline cspell-ignore comment is itself a suppression that
+`scripts/quality/suppressions.ts` counts against an unjustified ratchet of
+0—so it would only fail the next run of the same steps.
+
+Block 1 also escalates its writer, as block 3 escalates its implementer. A
+role whose budget ends with the tests still rejected—spent to the last
+attempt, or stopped early on a repeated diagnostic—hands them to the next
+rung on the same branch, worktree and team, with a fresh budget and every
+rejection so far in its brief:
+
+```text
+⬆️  Block 1 #397: mechanic exhausted its 3 attempts — the builder takes over the tests
+```
+
+Mechanic, then builder, then solver; the solver's exhaustion is the stop
+the mechanic's used to be, and the outcome and exit code of that stop are
+unchanged. The role that finally wrote the tests is retained on the slice,
+so block 3's repair of a rejected test set goes back to it rather than to
+the mechanic, and a `--resume` of a slice parked in `tests_rejected`
+relaunches that role.
+
 Three is a ceiling, not a quota: a rejection that comes back verbatim after
 a corrective turn ends the loop where it stands, because the diagnostic,
 not the agent, is what would have to change. #406 spent three mechanic
@@ -192,7 +237,8 @@ them, so a ten-line clone inside an acceptance test is caught while the
 mechanic still owns the file rather than failing six implementation
 attempts (#397), and a misspelled test title while the mechanic can still
 retype it rather than as a word block 3's solver may neither correct nor
-add to the dictionary (#422),
+add to the dictionary (#422). All of them run on every attempt, and their
+failures come back together (above),
 and acceptance tests carry no lint suppression at all (`eslint-disable`,
 `@ts-ignore`, `@ts-expect-error` are rejected). A playwright spec must exercise a component through the
 repository-owned harness route `/dev/component-harness` (see
