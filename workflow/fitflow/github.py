@@ -22,7 +22,7 @@ FIELDS = "number,title,body,labels,state,assignees"
 TRANSIENT_SIGNATURES = (
     r"something went wrong while executing your query",
     r"http[ /]?5\d\d",
-    r"(?:status|http)\s*50[234]",
+    r"(?:status(?:\s+code)?:?|http)\s*50[234]",
     r"timed?\s?out",
     r"connection reset",
     r"could not resolve host",
