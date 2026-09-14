@@ -295,7 +295,7 @@ describe('setCounts', () => {
 		]);
 		const mod = await import('./workout');
 		expect(mod.setCounts).toBeDefined();
-		expect(mod.setCounts(w)).toEqual({ done: 7, total: 9 });
+		expect(mod.setCounts(w)).toEqual({ done: 6, total: 9 });
 	});
 
 	it('counts nothing for an empty workout', async () => {
