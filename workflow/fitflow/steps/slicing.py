@@ -32,7 +32,10 @@ def slice_at_layer_boundary(story: Story, issue_context: str) -> list[Slice]:
     """The accepted plan, and the run's retained record created from it:
     once the child issues exist and before any writer launches, so a run
     that stops anywhere in block 1 can be resumed without planning again.
-    A story that already has a record stops here (RUN_STATE_CONFLICT)."""
+    A story that already has a record stops (RUN_STATE_CONFLICT) before
+    the planner is asked anything, so a fresh run on it never opens a
+    second set of child issues."""
+    runstate.refuse_existing_run(story.number)
     spans, raw_slices = _planned(story, issue_context)
     _apply_clauses(raw_slices)
     detail = f"✂️ yes, split into {len(raw_slices)}" if spans else "no"

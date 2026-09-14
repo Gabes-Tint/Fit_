@@ -43,6 +43,7 @@ from fitflow import (
     lanes,
     narrate,
     runstate,
+    settings,
     turns,
     worktrees,
 )
@@ -165,6 +166,7 @@ def _prepare(piece: Slice, record: RunRecord, resuming: bool) -> PreparedSlice:
         raise FlowFailure(
             Outcome.WORKTREE_EXISTS, f"worktree/branch '{slug}' already exists", piece.number
         )
+    _claim(record, retained)
     path = worktrees.create_slice_worktree(slug)
     audit.worktree_created(slug)
     narrate.line(f"🌿 Worktree {slug} · branch {slug}")
@@ -172,12 +174,30 @@ def _prepare(piece: Slice, record: RunRecord, resuming: bool) -> PreparedSlice:
     return PreparedSlice(piece, slug, path, record, retained)
 
 
+def _claim(record: RunRecord, retained: SliceRecord) -> None:
+    """The slice is block 1's from here on, saved before its worktree and
+    team are made: a run stopped between this and its writer's launch -
+    killed, or stopped by the next slice's preparation - leaves a record
+    that says the worktree is its own, so a resume reuses it instead of
+    refusing it as somebody else's."""
+    with record.transition():
+        retained.tests_role = "mechanic"
+        record.save()
+
+
 def _reuse(piece: Slice, slug: str, record: RunRecord, retained: SliceRecord) -> PreparedSlice:
     """A resumed slice keeps what block 1 made for it: the same worktree,
     holding what the stopped writer left, and the same team, whose link
-    must still point at it."""
-    runstate.verify_team_ownership(retained)
+    must still point at it. A run stopped after claiming the slice but
+    before making one of them makes it now, as that run would have."""
     path = worktrees.slice_worktree_path(slug)
+    if not path.exists():
+        path = worktrees.create_slice_worktree(slug)
+        audit.worktree_created(slug)
+    if (settings.TEAMS_DIR / retained.team / "worktree").is_symlink():
+        runstate.verify_team_ownership(retained)
+    else:
+        agents.ensure_fresh_team(slug, path, piece.number)
     narrate.line(f"🌿 Worktree {slug} · branch {slug} · team {retained.team}, kept from the run")
     return PreparedSlice(piece, slug, path, record, retained)
 

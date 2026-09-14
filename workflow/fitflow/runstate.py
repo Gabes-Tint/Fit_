@@ -530,6 +530,24 @@ def _config_snapshot(roster: dict) -> dict[str, dict[str, str]]:
     }
 
 
+def refuse_existing_run(story_number: int) -> None:
+    """A story that already carries a state file is an interrupted or
+    finished earlier run whose workers may have launched uncertainly. A
+    fresh run never overwrites it: `--resume` continues it, `--reset`
+    archives it."""
+    if not state_path(story_number).exists():
+        return
+    raise FlowFailure(
+        Outcome.RUN_STATE_CONFLICT,
+        f"an earlier run for story #{story_number} left state at "
+        f"{state_path(story_number)}; continue it with "
+        f"`go.py {story_number} --resume`, or archive it and undo what it "
+        f"created with `go.py {story_number} --reset`",
+        story_number,
+        add_blocked=True,
+    )
+
+
 def create_run(story_number: int, base_sha: str, roster: dict, slices: list) -> RunRecord:
     """Create and persist the run's retained record the moment block 1's
     plan is accepted, before any writer launches. `slices` are
@@ -537,19 +555,9 @@ def create_run(story_number: int, base_sha: str, roster: dict, slices: list) -> 
     start empty, and block 1 saves its ladder and each slice's freeze into
     the record as they happen.
 
-    A story that already carries a state file is an interrupted or finished
-    earlier run whose workers may have launched uncertainly. A fresh run
-    never overwrites it: `--resume` continues it, `--reset` archives it."""
-    if state_path(story_number).exists():
-        raise FlowFailure(
-            Outcome.RUN_STATE_CONFLICT,
-            f"an earlier run for story #{story_number} left state at "
-            f"{state_path(story_number)}; continue it with "
-            f"`go.py {story_number} --resume`, or archive it and undo what it "
-            f"created with `go.py {story_number} --reset`",
-            story_number,
-            add_blocked=True,
-        )
+    A story that already carries a state file is refused here as well as
+    before planning (`refuse_existing_run`)."""
+    refuse_existing_run(story_number)
     record = RunRecord(
         story_number=story_number,
         base_sha=base_sha,

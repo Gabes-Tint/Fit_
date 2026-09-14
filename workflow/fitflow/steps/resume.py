@@ -322,7 +322,7 @@ def _reopen_block1(record: RunRecord, piece: SliceRecord) -> None:
             "wait for it to end, or stop it, before resuming",
             record.story_number,
         )
-    if piece.tests_role and not worktrees.slice_worktree_path(piece.slug).exists():
+    if piece.tests_attempts and not worktrees.slice_worktree_path(piece.slug).exists():
         raise _conflict(record, piece, "worktree is missing")
     narrate.line(
         f"♻️  #{piece.number} ({piece.layer}) stopped in block 1: relaunching the {role} "
