@@ -96,18 +96,21 @@ test.describe('week planner "Today" label', () => {
 
 		await openPlan(page);
 
-		// Plan Full body on today (Wed 30)
-		await page.getByRole('button', { name: /^Wed / }).click();
-		await expect(page.getByRole('dialog')).toBeVisible();
-		await page
-			.getByRole('dialog')
-			.getByRole('button', { name: /Full body/ })
-			.click();
-		await page.getByRole('button', { name: 'Close' }).click();
+		// Plan Full body on today (Wed 30) four times
+		const todayButton = page.getByRole('button', { name: /^Today, Wed 30/ });
+		for (let i = 0; i < 4; i++) {
+			await todayButton.click();
+			await expect(page.getByRole('dialog')).toBeVisible();
+			await page
+				.getByRole('dialog')
+				.getByRole('button', { name: /Full body/ })
+				.click();
+			await expect(page.getByRole('dialog')).toBeHidden();
+		}
 
 		await atNarrowPhone(page);
-		const todayButton = page.getByRole('button', { name: /^Today, Wed 30/ });
-		await expect(todayButton).toBeVisible();
+		const chipsInRow = todayButton.locator('[class*="chip"]');
+		await expect(chipsInRow).toHaveCount(4);
 		await expectFitsViewport(page, todayButton);
 	});
 });
