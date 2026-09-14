@@ -67,8 +67,8 @@ anything under `scripts/`, configuration, a snapshot or a lock file is still
 `TESTS_NOT_PUSHED` (exit 23) with the same "non-test file changed"
 diagnostic, and it still short-circuits the gates.
 
-The support tree is in reach because the `duplicates` gate is. Run 5 of
-#337: block 1's new `*.e2e.ts` repeated the setup two other e2e files
+The support tree is in reach because the `duplicates` gate is. In run 5 of
+issue #337, block 1's new `*.e2e.ts` repeated the setup two other e2e files
 already carried, jscpd rejected the clone against a ratchet of 0, and the
 repair that answered it - lifting the shared lines into
 `tests/e2e-support.ts`, where the suites already keep their helpers - came
