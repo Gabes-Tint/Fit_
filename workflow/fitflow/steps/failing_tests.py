@@ -149,7 +149,7 @@ def _run_attempt(prepared: PreparedSlice, attempt: int, diagnostic: str) -> None
         role_name="mechanic",
         role_capitalized="Mechanic",
         # block 1's own correction turn continues in the session that wrote
-        # the tests: it needs no inventory of the neighbours it just read
+        # the tests: it needs no inventory of the neighbors it just read
         siblings="",
         objection="",
         push_line=f"commit and push the corrected tests to `{slug}`",

@@ -673,7 +673,7 @@ tests: it knows what it meant, and most objections are a detail it can put
 right. A second goes to the role that objected - the builder or solver, the
 same model and effort block 3 gives that role - in the same kind of repair
 worktree, with the same brief plus every objection and every repair so far.
-#421 is the reason: the mechanic repaired exactly what it was told, twice, and
+Issue #421 is the reason: the mechanic repaired exactly what it was told, twice, and
 the third objection was about something neither repair had been asked to see,
 while the role that objected had already read the product and the tests
 together. `MAX_REPAIRS` is still 2, and the repair ledger records which role
