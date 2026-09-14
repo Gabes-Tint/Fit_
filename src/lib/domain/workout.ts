@@ -1,4 +1,4 @@
-import type { Routine, Workout, WorkoutExercise, WorkoutSet } from '$lib/domain/types';
+import type { Routine, Workout, WorkoutSet } from '$lib/domain/types';
 
 /**
  * Open a routine into the workout that will record it. Sets are written out up
@@ -61,10 +61,6 @@ export function workoutVolume(workout: Workout): number {
 export function elapsedSeconds(workout: Workout, now: number): number {
 	const end = workout.finishedAt ?? now;
 	return Math.max(0, Math.floor((end - workout.startedAt) / 1000));
-}
-
-export function currentExercise(workout: Workout): WorkoutExercise | undefined {
-	return workout.exercises[workout.exerciseIndex];
 }
 
 /**
