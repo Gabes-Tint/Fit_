@@ -596,10 +596,13 @@ running on the machine is never relaunched beside; a turn that died or never
 produced a reply is voided and relaunched under the same attempt number. A
 slice parked in `tests_rejected` stays parked, its unfinished repair turn is
 voided the same way, and block 3 relaunches block 1's repair from a fresh
-repair worktree. An
+repair worktree. A slice interrupted inside one of block 4's fix turns is
+reconciled by the same two rules and goes back to `fixing`: the run
+continues in block 4, the fix request finishes its remaining attempts, and
+only then is the join re-verified and the new commit carried onto the
+integration branch. An
 assignment or correction with no reserved turn proceeds normally. Changed
-bytes, an interrupted review fix or an unreadable record stop and preserve
-the worktree. A resume resets no counter. The one thing that does is a
+bytes or an unreadable record stop and preserve the worktree. A resume resets no counter. The one thing that does is a
 landed block 1 repair of the acceptance tests, and only because the tests
 that counter was counting attempts against are gone (see
 [Rejecting the tests](#rejecting-the-tests)).
@@ -619,12 +622,12 @@ for a defect in the tests.
 An implementation reply therefore always carries an `objection`, which is
 `null` when the implementer has none and otherwise an object:
 
-| field          | meaning                                                                 |
-| -------------- | ----------------------------------------------------------------------- |
-| `kind`         | `tests_contradict`, `tests_out_of_layer` or `tests_wrong`               |
-| `tests`        | the acceptance test files it is about, from this slice's retained list  |
-| `why`          | why no honest change inside this slice's layer makes them pass together |
-| `proposed_fix` | the repair the implementer proposes, or `null` when it proposes none    |
+| field          | meaning                                                                                  |
+| -------------- | ---------------------------------------------------------------------------------------- |
+| `kind`         | `tests_contradict`, `tests_out_of_layer` or `tests_wrong`                                |
+| `tests`        | what it is about: a retained acceptance test file, or one test as `<file>::<test title>` |
+| `why`          | why no honest change inside this slice's layer makes them pass together                  |
+| `proposed_fix` | the repair the implementer proposes, or `null` when it proposes none                     |
 
 The field is required rather than optional because `aarmy` only loads a
 schema in codex's strict structured-outputs dialect, where every property of
@@ -634,16 +637,27 @@ thing to the driver, and so do a `proposed_fix` that is absent, `null` or
 empty.
 
 `changed_files` may be empty when an objection is present, and only then.
+It may also be non-empty: see [Objecting beside finished
+work](#objecting-beside-finished-work).
 
 The driver never takes an objection on trust. It verifies, in this order,
 that the objection is well formed and names a known kind; that every file it
-names is one of this slice's own retained acceptance tests; that the
-worktree carries no commit of the agent's own and nothing outside the
-slice's reach; and that the acceptance run on that same working tree still
-fails on at least one of the named files. A malformed or unverifiable
-objection is an ordinary failed attempt - the diagnostic names the condition
-that failed, and it costs one of the role's three attempts. An unreadable
-runner report is a tool failure, never a verdict on the objection.
+names - the whole path, or the left half of a `<file>::<test title>` - is one
+of this slice's own retained acceptance tests; that the worktree carries no
+commit of the agent's own and nothing outside the slice's reach; and that one
+acceptance run over this slice's whole test set, on that same working tree,
+still fails on everything the objection names. That last check is per test,
+not per file: a named test must have failed, and a whole file named on its own
+must hold at least one failing test. A malformed or unverifiable objection is
+an ordinary failed attempt - the diagnostic names the condition that failed,
+with the runner's own status for each test it disagrees about, and it costs
+one of the role's three attempts. An unreadable runner report, or a requested
+file no runner ran, is a tool failure, never a verdict on the objection.
+
+The verified objection carries that run's findings into the repair: how each
+named test failed - an assertion that bit, a thrown error, or an expectation
+that timed out - in the runner's own words, because "these tests are wrong" is
+not something the next agent can act on.
 
 A verified objection moves the slice to `tests_rejected` with `objected` on
 the turn's ledger entry. It costs the turn, and nothing more: the attempt
@@ -652,10 +666,26 @@ counter is reset when the repair lands.
 Block 1's writer then repairs the tests, as a correction turn in a
 driver-owned repair worktree branched from the slice's current failing-test
 base - so a dependent UI slice repairs against the tree that already carries
-its domain sibling. The turn carries the objection, its proposed fix, and
-the rule: repair the tests so an honest implementation inside this slice's
+its domain sibling. The turn carries the objection, its proposed fix, how each
+named test failed, an inventory of the repository's own sibling tests of the
+same kind (nearest paths first, one line each, from `git ls-files` in that
+worktree, so the repair imitates the fixtures, clock control and state seeding
+that already exist), and - when work was kept - that the implementation is in
+the slice's worktree and only the named tests are to be repaired. The rule is
+unchanged: repair the tests so an honest implementation inside this slice's
 own layer can make them pass together, never weaken them into tests that
-pass with no implementation. The repaired set faces block 1's usual
+pass with no implementation.
+
+**Who repairs.** The first repair goes back to the mechanic that wrote the
+tests: it knows what it meant, and most objections are a detail it can put
+right. A second goes to the role that objected - the builder or solver, the
+same model and effort block 3 gives that role - in the same kind of repair
+worktree, with the same brief plus every objection and every repair so far.
+#421 is the reason: the mechanic repaired exactly what it was told, twice, and
+the third objection was about something neither repair had been asked to see,
+while the role that objected had already read the product and the tests
+together. `MAX_REPAIRS` is still 2, and the repair ledger records which role
+made each one. The repaired set faces block 1's usual
 validation - a clean tree, test files only, the requested test kind, the
 repository's lint, type and content gates, and a failure on an expectation
 rather than a throw (`_check_failures_are_expectations`) - measured against
@@ -671,10 +701,14 @@ the repaired tests, because the rejected set's was recorded about files that
 no longer judge this slice. The slice returns to `assigned` with the same role, revision,
 assignment, session and worktree and `attempts` reset to zero: the tests it
 is judged by are new inputs, so the role gets its full budget against them,
-and its next initial turn is told the tests were repaired and how.
+and its next initial turn is told the tests were repaired and how. When the
+objection stood beside work, that turn is also told its own work was kept
+exactly as it left it, which tests were repaired around it, and that every
+other acceptance test passed on its tree - otherwise the obvious reading of
+"the tests were repaired" is "start again".
 
 Budgets: at most two repairs per slice (`test_repairs`), at most two
-mechanic turns per repair, kept in the slice's own `test_repair_turns`
+turns per repair, kept in the slice's own `test_repair_turns`
 ledger rather than in `turns`, which stays the implementation ledger the
 session and attempt checks read. A verified objection after two repairs
 stops the run as `TESTS_INVALID` (exit 31, `blocked`) with every objection
@@ -683,6 +717,32 @@ what the run cannot get past. A repair block 1 cannot make stops the same
 way and leaves the slice in `tests_rejected`, because that is what it is -
 `--resume` relaunches the repair, from a fresh repair worktree, rather than
 sending the implementer back at tests nobody fixed.
+
+### Objecting beside finished work
+
+On #421 the builder objected three times, was right three times, and had the
+one-line implementation in its own tree the whole way: six of the seven
+acceptance tests would have passed with it, and the fourth chip the seventh
+test wanted was unreachable with the single template the fixture seeded. The
+objection loop had no shape for "these are wrong, the rest are done", so the
+run delivered nothing.
+
+An objection may therefore stand beside work in the worktree. When the tree
+carries changes since the failing-test base, two further conditions hold:
+
+- the objection names a **strict subset** of the slice's tests - every test
+  the acceptance run reported cannot be named; naming one test of a file as
+  `<file>::<test title>` is how a single-file slice qualifies;
+- every test the objection does **not** name already **passes** on that same
+  tree, in the same run.
+
+A refusal names which: the test that still fails, or the fact that every test
+of the slice was named. The changes themselves face the ordinary scope check -
+nothing outside the slice, no commit of the agent's own - exactly as before,
+and the work stays uncommitted in the slice's worktree while block 1 repairs
+the tests. The repair merge touches only test files; if it would conflict with
+that work, it is the existing `AGENT_BROKE_CONTRACT` path, because the tree
+then holds changes only block 1 may write.
 
 This is not the dependent-slice check. A UI slice whose acceptance tests the
 domain sibling alone already satisfies is caught before its loop ever
@@ -885,16 +945,42 @@ reviewer that wrote anything is a contract failure.
 A `fix` verdict is the one sanctioned exit from `succeeded`. Each finding is
 routed to its slice by the layer boundaries - a finding outside every slice
 is a contract failure. Affected slices, in domain-then-UI order, each take
-one fix turn: the same role, session and worktree, the findings as the
+one fix request: the same role, session and worktree, the findings as the
 diagnostic, then the full block 3 validation (scope, acceptance bytes,
 gates) and a new driver-made freeze commit. The slice transitions
-`succeeded` → `fixing` → `validating` → `succeeded`; the fix turn is
-recorded with kind `review_fix` and does not consume block 3's attempt
-budget - the review loop has its own. A fix turn that fails validation
+`succeeded` → `fixing` → `validating` → `succeeded`, and the turns are
+recorded with kind `review_fix`.
+
+A fix request is bounded exactly as a block 3 role is, and separately from
+it: three attempts in the same role, session and worktree, each corrective
+turn carrying the rejection it is answering, and the repetition rule -
+a diagnostic that comes back identical after a corrective turn ends the
+request where it stands, naming the attempts left unspent. Every attempt is
+on the slice's turn ledger, with the reply and the working tree's digest,
+under the same session continuity rules as any other turn; the attempt
+inside the request is recorded as `fix_attempt` beside the slice-wide
+`attempt`. None of this consumes block 3's budget, and a scope breach
+inside a fix turn is what #419 made it everywhere else: a correctable
+rejection, spending one attempt of this budget.
+
+A request that ends without a passing turn - exhausted or stopped early -
 stops the run with `CAPACITY_EXHAUSTED` and `blocked`: the implementer
 could not repair the finding under review, and that is a human call, not a
 new escalation - the escalation ladder is spent by definition once block 3
-succeeded.
+succeeded. One failed validation is not that call, though. #406 lost a run
+to a fix turn that listed two files its diff never touched, the cheapest
+diagnostic there is and one a block 3 turn is simply corrected on.
+
+A fix turn is judged by the whole gate tier rather than by its own diff, so
+it inherits every test in it. A gate failure whose culprits are all test
+files this slice's diff does not touch, on a tier the ledger shows already
+passed for this slice in this run, is rerun once before it is judged, and
+the rerun is narrated with what failed, that the slice does not touch it,
+and when the tier last passed. A second failure is a verdict and spends an
+attempt like any other. A failure naming anything the diff touches, an
+unlocated failure, and a tier with no recorded earlier pass are never
+rerun. #420 lost a run to `src/routes/sync.e2e.ts`, which its slice never
+touched and which had passed in the same run twenty minutes earlier.
 
 After the fixes, the driver merges the new frozen commits into the
 integration branch (the superseded commits remain ancestors), pushes, and
@@ -919,8 +1005,9 @@ what it could read:
 
 - **Located, and a slice of this run owns the file.** The culprits become
   findings (category `ci`, the blaming log lines as `required_fix`) and the
-  owning slices each take a CI fix turn through the same machinery a review
-  fix uses: the same role, session and worktree, the full block 3
+  owning slices each take a CI fix request through the same machinery a
+  review fix uses, its budget, repetition rule, ledger and flake rerun
+  included: the same role, session and worktree, the full block 3
   re-validation - acceptance still passes unmodified, scope, no gate files
   - a new driver-made freeze commit, the join re-merged and pushed. At most
     two such rounds, counted in `delivery.ci_fix_rounds`, a budget of its own
@@ -1148,7 +1235,7 @@ lock, loads `runs/story-<n>.json`, and decides where the flow continues:
 | a PR number, and GitHub says it is merged       | block 5, on that merge commit; a deploy recorded live is not repeated                                         |
 | a PR number, and it is neither open nor merged  | nowhere: `RUN_STATE_CONFLICT`, reset                                                                          |
 | a slice with no accepted assignment             | block 2, on the failing tests block 1 pushed; every slice must be unlaunched                                  |
-| any slice not `succeeded`                       | block 3, after each such slice is reconciled (next table)                                                     |
+| any slice not `succeeded`                       | block 3, after each such slice is reconciled (next table) - or block 4, when every such slice is `fixing`     |
 | every slice `succeeded`, terminal `IMPLEMENTED` | block 4; a retained integration branch and PR are reused at their recorded head, and a `merge` verdict stands |
 | every slice `succeeded`, any other terminal     | block 3's report, then block 4                                                                                |
 
@@ -1165,7 +1252,8 @@ re-derive:
 | completed and marked `"repeated": true`                        | refused (`RUN_STATE_CONFLICT`): the verdict is a function of bytes that have not changed, so re-validating could only reach the same diagnostic and stop on it again; reset                              |
 | completed without a reply (launch failed, reply malformed)     | voided                                                                                                                                                                                                   |
 | already voided by an earlier resume                            | back to the launch                                                                                                                                                                                       |
-| a review fix, or state `fixing`/`escalating`                   | refused (`RUN_STATE_CONFLICT`): reset                                                                                                                                                                    |
+| a fix turn (kind `review_fix`), or state `fixing`              | the same four rules above, but back to `fixing`: block 4 finishes the fix request, re-judging a retained reply or relaunching a voided turn under the same `fix_attempt`                                 |
+| state `escalating` (interrupted between two roles)             | refused (`RUN_STATE_CONFLICT`): reset                                                                                                                                                                    |
 
 Voiding keeps the ledger entry (status `completed`, result `void`, the reason
 in `why`), decrements `attempts` by one, and returns the slice to `assigned`

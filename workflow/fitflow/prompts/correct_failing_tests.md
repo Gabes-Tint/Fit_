@@ -1,16 +1,17 @@
-# Mechanic: correct rejected acceptance tests
+# $role_capitalized: correct rejected acceptance tests
 
-Continue in the same session, branch, and worktree for slice #$slice_number:
-$slice_title.
-$objection
+You are the $role_name, correcting the acceptance tests of slice
+#$slice_number: $slice_title, on the branch and worktree you were given.
+$objection$siblings
 The Python driver rejected the tests after attempt $attempt with this concrete
 diagnostic:
 
 $diagnostic
 
 Fix only the acceptance tests and their test-only branch state. Do not
-implement product behavior. Make the smallest correction needed for the
-driver’s diagnostic, then $push_line.
+implement product behavior. Make the smallest correction that answers the
+driver’s diagnostic and, when an objection is quoted above, the whole of what
+that objection is about - not only its last sentence. Then $push_line.
 Import and exercise the product boundary; never define a local stand-in for
 the missing product function or class inside the test.
 If a new domain module does not exist yet, dynamically import it inside the

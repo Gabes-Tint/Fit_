@@ -32,6 +32,7 @@ it, and only then does the UI loop launch. If the domain slice never
 freezes, the UI slice is never launched at all.
 """
 
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import PurePosixPath
@@ -658,37 +659,127 @@ def _repair_note(piece: SliceRecord) -> str:
 
 
 def review_fix_turn(record: RunRecord, piece: SliceRecord, diagnostic: str) -> None:
-    """One block 4 fix turn: the review findings as the diagnostic, the same
-    role, session and worktree, then the full block 3 validation and a new
-    driver-made freeze commit. This is the one sanctioned exit from
-    `succeeded`; the turn is recorded with kind `review_fix` and does not
-    consume block 3's attempt budget - the review loop has its own."""
+    """One block 4 fix request: the review findings (or the red CI's log) as
+    the diagnostic, then up to `turns.BUDGET` turns in the same role, session
+    and worktree to satisfy it - each judged by the full block 3 validation,
+    each corrected from its own diagnostic, and the one that passes sealed
+    with a new driver-made freeze commit.
+
+    This is the one sanctioned exit from `succeeded`; the turns are recorded
+    with kind `review_fix` and do not consume block 3's attempt budget - the
+    fix request has its own, the same size and with the same repetition rule
+    (#428): a rejection identical to the previous attempt's ends the request
+    where it stands, because the agent has already been told that and the
+    verdict did not move. Exhaustion, early or not, is CAPACITY_EXHAUSTED and
+    `blocked`: block 3's escalation ladder is spent by definition once the
+    slice succeeded, so what is left is a human call."""
+    with record.transition():
+        piece.diagnostics.append(diagnostic)
+        record.save()
+    _fix_attempts(record, piece, 1)
+
+
+def resume_review_fix(record: RunRecord, piece: SliceRecord) -> None:
+    """Continue a fix request a stopped run left unfinished. A turn that
+    ended with a reply is judged again on the bytes it left - the same
+    re-derivation block 3's resume makes, and no new agent call; a turn the
+    driver never saw end has been voided already and is relaunched under the
+    same attempt of the same budget."""
+    last = piece.turns[-1]
+    attempt = int(last.get("fix_attempt", 1))
+    if last["result"] == "void" or last.get("reply") is None:
+        _fix_attempts(record, piece, attempt)
+        return
+    narrate.line(
+        f"♻️  #{piece.number} ({piece.layer}) re-validating its review fix attempt "
+        f"{attempt} from its retained reply, without a new agent call"
+    )
+    if _settle_fix(record, piece, attempt):
+        return
+    _fix_attempts(record, piece, attempt + 1)
+
+
+def _fix_attempts(record: RunRecord, piece: SliceRecord, first: int) -> None:
+    for attempt in range(first, turns.BUDGET + 1):
+        _launch_fix_turn(record, piece, attempt)
+        if _settle_fix(record, piece, attempt):
+            return
+    raise AssertionError("unreachable: the last attempt settles or raises")
+
+
+def _launch_fix_turn(record: RunRecord, piece: SliceRecord, attempt: int) -> None:
+    """One fix turn, launched and recorded. The reply and the working tree's
+    digest are persisted with it, exactly as a block 3 turn's are, so a run
+    that dies between this turn and its verdict can have that verdict
+    re-derived instead of paying for the turn twice."""
     _pre_turn_barrier(record, piece)
     with record.transition():
         piece.move("fixing")
-        piece.diagnostics.append(diagnostic)
         piece.attempts += 1
-        attempt = piece.attempts
-        identity = record.begin_turn(piece, piece.role, attempt, "review_fix")
+        identity = record.begin_turn(piece, piece.role, piece.attempts, "review_fix")
+        piece.turns[-1]["fix_attempt"] = attempt
         record.save()
-    narrate.line(f"🔧 {piece.role.capitalize()} #{piece.number} ({piece.layer}) review fix")
-    reply, session = _launch_turn(record, piece, identity, "correct_implementation", attempt)
+    narrate.line(
+        f"🔧 {piece.role.capitalize()} #{piece.number} ({piece.layer}) review fix "
+        f"attempt {attempt}/{turns.BUDGET}"
+    )
+    reply, session = _launch_turn(record, piece, identity, "correct_implementation", piece.attempts)
     with record.transition():
-        record.end_turn(piece, identity, "ok", reply["summary"], session)
+        digest = worktrees.working_tree_digest(worktrees.slice_worktree_path(piece.slug))
+        record.end_turn(piece, identity, "ok", reply["summary"], session, reply, digest)
+
+
+def _settle_fix(record: RunRecord, piece: SliceRecord, attempt: int) -> bool:
+    """Judge one completed fix turn. True once the slice is frozen again,
+    False when another corrective turn is owed, and raises when the request
+    is spent."""
     try:
-        rejection = _validate_turn(record, piece, reply, frozen_ok=True)
+        rejection = _validate_turn(record, piece, piece.turns[-1]["reply"], fix_turn=True)
     except FlowFailure as failure:
         _settle_as_failed(record, piece, failure.why)
         raise
-    if rejection is not None:
-        _settle_as_failed(record, piece, rejection.diagnostic)
-        raise FlowFailure(
-            Outcome.CAPACITY_EXHAUSTED,
-            f"{piece.slug}: the review fix turn failed validation: {rejection.diagnostic}",
-            record.story_number,
-            add_blocked=True,
+    if rejection is None:
+        _freeze(record, piece)
+        return True
+    repeated = attempt < turns.BUDGET and same_diagnostic(
+        _previous_diagnostic(piece, piece.turns[-1]["attempt"]), rejection.diagnostic
+    )
+    _record_diagnostic(record, piece, rejection.diagnostic, repeated)
+    narrate.headed(
+        f"🩺 #{piece.number} ({piece.layer}) review fix diagnostic: ", rejection.diagnostic
+    )
+    if attempt < turns.BUDGET and not repeated:
+        narrate.line(
+            f"🔁 {piece.role.capitalize()} #{piece.number} ({piece.layer}) correcting its "
+            f"review fix after attempt {attempt}"
         )
-    _freeze(record, piece)
+        return False
+    _end_of_fix_budget(record, piece, rejection, attempt, repeated)
+    return False
+
+
+def _end_of_fix_budget(
+    record: RunRecord, piece: SliceRecord, rejection: _Rejection, attempt: int, repeated: bool
+) -> None:
+    """The fix request is done: its attempts ran out, or the diagnostic came
+    back identical and the rest would only reproduce it. Either way the run
+    stops where it always did - CAPACITY_EXHAUSTED and `blocked`, because
+    block 3's escalation ladder is spent once the slice succeeded. A scope
+    breach ends it the same way every other rejection does: correctable
+    while the budget lasts (#419), and no more than that."""
+    head = (
+        f"🛑 #{piece.number} ({piece.layer}) review fix stopped early: attempt {attempt} "
+        f"failed exactly as attempt {attempt - 1} — "
+        if repeated
+        else f"🛑 #{piece.number} ({piece.layer}) review fix exhausted {turns.BUDGET} attempts — "
+    )
+    narrate.headed(head, rejection.diagnostic)
+    note = (
+        turns.unspent_attempts(attempt) if repeated else f"spent all {turns.BUDGET} of its attempts"
+    )
+    why = f"{piece.slug}: the review fix turn failed validation: {rejection.diagnostic} ({note})"
+    _settle_as_failed(record, piece, why)
+    raise FlowFailure(Outcome.CAPACITY_EXHAUSTED, why, record.story_number, add_blocked=True)
 
 
 def _escalate_or_stop(
@@ -765,14 +856,19 @@ def _escalate_or_stop(
 
 
 def _validate_turn(
-    record: RunRecord, piece: SliceRecord, reply: dict, frozen_ok: bool = False
+    record: RunRecord, piece: SliceRecord, reply: dict, fix_turn: bool = False
 ) -> _Rejection | None:
     """The driver's own independent check of one implementation turn:
     acceptance bytes, scope, the acceptance run and the gates, all on the
     actual diff, and only then the reply's own account of it. Returns the
     rejection to correct from; tooling failures and the one contract
     violation no correction may undo - a changed acceptance test - raise at
-    once and never consume a correction."""
+    once and never consume a correction.
+
+    `fix_turn` says this is one of block 4's fix turns rather than a block 3
+    implementation turn: its worktree is legitimately at the driver's freeze
+    commit, and its gate failures are eligible for the one flake rerun
+    `_judge_gates` describes."""
     with record.transition():
         piece.move("validating")
         record.save()
@@ -781,7 +877,7 @@ def _validate_turn(
     with narrate.grouped():
         narrate.fields([("Reported files", ", ".join(reply["changed_files"]))])
     path = worktrees.slice_worktree_path(piece.slug)
-    changed = _check_worktree_state(record, piece, path, frozen_ok=frozen_ok)
+    changed = _check_worktree_state(record, piece, path, frozen_ok=fix_turn)
     if not changed:
         phantom = ", ".join(sorted(set(reply["changed_files"])))
         return _Rejection(f"no changes were made in the worktree; phantom {phantom}")
@@ -792,11 +888,16 @@ def _validate_turn(
     out_of_reach = _check_scope(piece, changed)
     if out_of_reach is not None:
         return out_of_reach
-    return _validate_behavior(record, piece, path, reply, changed)
+    return _validate_behavior(record, piece, path, reply, changed, fix_turn)
 
 
 def _validate_behavior(
-    record: RunRecord, piece: SliceRecord, path, reply: dict, changed: list[str]
+    record: RunRecord,
+    piece: SliceRecord,
+    path,
+    reply: dict,
+    changed: list[str],
+    fix_turn: bool = False,
 ) -> _Rejection | None:
     """The acceptance run, the turn gates and the reply's account of the
     diff, in that order: every verdict taken on the real tree outranks what
@@ -809,7 +910,7 @@ def _validate_behavior(
             )
         _check_acceptance_is_sound(record, piece, verdict)
         return _Rejection(verdict.why)
-    gate_failure = _run_turn_gates(record, piece, path, changed)
+    gate_failure = _judge_gates(record, piece, path, changed, fix_turn)
     if gate_failure is not None:
         _check_gate_blames_the_implementation(record, piece, gate_failure)
         return _Rejection(_gate_rejection(piece, gate_failure))
@@ -821,6 +922,74 @@ def _validate_behavior(
         "no gate files ✔"
     )
     return None
+
+
+def _judge_gates(
+    record: RunRecord, piece: SliceRecord, path, changed: list[str], fix_turn: bool
+) -> "gates.GateFailure | None":
+    """The gates' verdict on this turn, and the one rerun a block 4 fix turn
+    earns when the verdict is not plausibly about its work.
+
+    A fix turn is judged by the whole tier, not by its own diff, so it
+    inherits every test in it - including ones this slice never touched and
+    which passed for this very slice earlier in this run. A failure confined
+    to those is the flake's case (#420 lost a run to `src/routes/sync.e2e.ts`
+    twenty minutes after the same tier passed for the same slice), and a
+    flake is answered by running it again, once. A second failure is a
+    verdict and goes to the fix request's budget like any other. A failure
+    naming anything the diff touches is never rerun - that one is about the
+    work."""
+    failure = _run_turn_gates(record, piece, path, changed)
+    if failure is None:
+        _record_gate_pass(record, piece)
+        return None
+    if not fix_turn or not _untouched_flake(piece, changed, failure):
+        return failure
+    narrate.line(
+        f"🔁 {_failed_step(piece, failure)} failed in {', '.join(sorted(failure.culprits))}, "
+        f"which this slice does not touch and which passed at "
+        f"{piece.gate_passes[_gate_name(piece)]} — rerunning once"
+    )
+    failure = _run_turn_gates(record, piece, path, changed)
+    if failure is None:
+        _record_gate_pass(record, piece)
+        narrate.line(f"✅ {_gate_name(piece)} passed on the rerun: the first run was a flake")
+    return failure
+
+
+def _untouched_flake(piece: SliceRecord, changed: list[str], failure: "gates.GateFailure") -> bool:
+    """Whether this gate failure is entirely about test files the slice's
+    diff does not touch and which the same gate already passed on for this
+    slice in this run. Conservative in every direction: an unlocated failure
+    concludes nothing, one culprit outside the tests or inside the diff
+    disqualifies the whole failure, and with no recorded earlier pass there
+    is no evidence this tier was ever green here."""
+    if not failure.located or not failure.culprits:
+        return False
+    if not piece.gate_passes.get(_gate_name(piece)):
+        return False
+    return all(
+        acceptance.is_test_file(piece.layer, name)
+        and acceptance.matching_path(name, changed) is None
+        for name in failure.culprits
+    )
+
+
+def _record_gate_pass(record: RunRecord, piece: SliceRecord) -> None:
+    """When this slice's gates last passed: the evidence `_untouched_flake`
+    reads, and the time the narration quotes back."""
+    with record.transition():
+        piece.gate_passes[_gate_name(piece)] = time.strftime("%H:%M")
+        record.save()
+
+
+def _gate_name(piece: SliceRecord) -> str:
+    return "the driver's gates" if piece.layer == "workflow" else "verify:changed"
+
+
+def _failed_step(piece: SliceRecord, failure: "gates.GateFailure") -> str:
+    """The failed steps by name, or the gate itself when it runs as one."""
+    return ", ".join(sorted(failure.steps)) or _gate_name(piece)
 
 
 def _run_turn_gates(
