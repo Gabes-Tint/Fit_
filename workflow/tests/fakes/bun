@@ -14,10 +14,11 @@ A failing file's report carries the test title and the error message the
 driver classifies, taken from `test_messages[file]` when a scenario scripts
 one and from the outcome's own default otherwise.
 
-`run verify:changed` and `scripts/quality/gate.ts verify:fast --only ...`
-write the report, the per-step logs and (for `duplicates`) the jscpd report
-a real gate run leaves behind, so the driver reads its diagnostics out of
-the same files it reads in the repository."""
+`run verify:changed` and `scripts/quality/gate.ts verify:fast` (with
+`--only ...` for block 1's content steps, and as the whole tier for a
+lightened domain attempt) write the report, the per-step logs and (for
+`duplicates`) the jscpd report a real gate run leaves behind, so the driver
+reads its diagnostics out of the same files it reads in the repository."""
 
 import hashlib
 import json
@@ -561,15 +562,22 @@ def cmd_verify_changed():
 
 
 def cmd_static_gate(argv):
-    """Scripted `gate.ts verify:fast --only <steps>`, block 1's content
-    steps over the failing-test branch: outcome from
-    `gate_outcomes["verify:fast"]`, defaulting to pass. "fail" writes the
-    same report, logs and jscpd report a real failure leaves."""
-    outcome, world = _scripted_outcome("verify:fast")
+    """Scripted `gate.ts verify:fast`, in its two callers' shapes.
+
+    With `--only <steps>` it is block 1's content steps over the
+    failing-test branch: outcome from `gate_outcomes["verify:fast"]`.
+    Without it, it is the whole tier - the lightened tier a domain slice's
+    attempts are judged by while `TEMP_LIGHT_DOMAIN_VALIDATION` is on -
+    and its outcome is `gate_outcomes["light"]`, so a scenario can script
+    the two independently. Both default to pass, both write the one report
+    `gate.ts verify:fast` really writes, and "fail" leaves the same logs
+    and jscpd report a real failure leaves."""
+    key = "verify:fast" if "--only" in argv else "light"
+    outcome, world = _scripted_outcome(key)
     if outcome == "tool_error":
         print("gate.ts crashed before writing its report", file=sys.stderr)
         return 97
-    failed = [] if outcome == "pass" else _failed_steps(world, "verify:fast", ["duplicates"])
+    failed = [] if outcome == "pass" else _failed_steps(world, key, ["duplicates"])
     _gate_report(Path.cwd(), world, "verify:fast", failed)
     if failed:
         print(f"Failed steps: {', '.join(failed)}", file=sys.stderr)
