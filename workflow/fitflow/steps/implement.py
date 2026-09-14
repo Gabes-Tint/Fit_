@@ -56,6 +56,8 @@ from fitflow.runstate import RunRecord, SliceRecord, retained_inputs
 from fitflow.steps import objection
 
 _SUCCESSOR = {"mechanic": "builder", "builder": "solver"}
+#: How many rerun-then-solo flake cycles one slice may spend in one run.
+_FLAKE_CYCLES = 2
 # The gates the agent is judged by: the quality policy, the CI workflows and
 # the script folders that implement them stay out of reach of an
 # implementation turn - and only those folders. `scripts/` also holds
@@ -888,16 +890,11 @@ def _validate_turn(
     out_of_reach = _check_scope(piece, changed)
     if out_of_reach is not None:
         return out_of_reach
-    return _validate_behavior(record, piece, path, reply, changed, fix_turn)
+    return _validate_behavior(record, piece, path, reply, changed)
 
 
 def _validate_behavior(
-    record: RunRecord,
-    piece: SliceRecord,
-    path,
-    reply: dict,
-    changed: list[str],
-    fix_turn: bool = False,
+    record: RunRecord, piece: SliceRecord, path, reply: dict, changed: list[str]
 ) -> _Rejection | None:
     """The acceptance run, the turn gates and the reply's account of the
     diff, in that order: every verdict taken on the real tree outranks what
@@ -910,7 +907,7 @@ def _validate_behavior(
             )
         _check_acceptance_is_sound(record, piece, verdict)
         return _Rejection(verdict.why)
-    gate_failure = _judge_gates(record, piece, path, changed, fix_turn)
+    gate_failure = _judge_gates(record, piece, path, changed)
     if gate_failure is not None:
         _check_gate_blames_the_implementation(record, piece, gate_failure)
         return _Rejection(_gate_rejection(piece, gate_failure))
@@ -925,59 +922,148 @@ def _validate_behavior(
 
 
 def _judge_gates(
-    record: RunRecord, piece: SliceRecord, path, changed: list[str], fix_turn: bool
+    record: RunRecord, piece: SliceRecord, path, changed: list[str]
 ) -> "gates.GateFailure | None":
-    """The gates' verdict on this turn, and the one rerun a block 4 fix turn
-    earns when the verdict is not plausibly about its work.
+    """The gates' verdict on this turn, and the rerun-then-solo cycle a
+    failure earns when it is not plausibly about this turn's work.
 
-    A fix turn is judged by the whole tier, not by its own diff, so it
-    inherits every test in it - including ones this slice never touched and
-    which passed for this very slice earlier in this run. A failure confined
-    to those is the flake's case (#420 lost a run to `src/routes/sync.e2e.ts`
-    twenty minutes after the same tier passed for the same slice), and a
-    flake is answered by running it again, once. A second failure is a
-    verdict and goes to the fix request's budget like any other. A failure
-    naming anything the diff touches is never rerun - that one is about the
-    work."""
+    Every turn is judged by the whole tier rather than by its own diff, so
+    it inherits every test in it - including files this slice never touched.
+    A failure confined to those is the flake's case (#420 lost a run to
+    `src/routes/sync.e2e.ts`, which its slice never touched, which passes
+    alone, and which CI was green on), and it is answered by running the
+    tier again once and then, if it fails the same way, by running those
+    files alone. A solo pass is a local flake: it is recorded, narrated and
+    let through, and CI remains the judge. A solo failure is a real failure
+    and counts. A failure naming anything the diff touches is never rerun -
+    that one is about the work."""
     failure = _run_turn_gates(record, piece, path, changed)
     if failure is None:
         _record_gate_pass(record, piece)
         return None
-    if not fix_turn or not _untouched_flake(piece, changed, failure):
+    if not _untouched_flake(piece, path, changed, failure):
         return failure
+    if piece.flake_cycles >= _FLAKE_CYCLES:
+        narrate.line(
+            f"🛑 {_failed_step(piece, failure)} failed again in files this slice does not "
+            f"touch, but #{piece.number} ({piece.layer}) has spent its {_FLAKE_CYCLES} flake "
+            "reruns this run — the failure counts"
+        )
+        return failure
+    return _rerun_then_solo(record, piece, path, changed, failure)
+
+
+def _rerun_then_solo(
+    record: RunRecord, piece: SliceRecord, path, changed: list[str], failure: "gates.GateFailure"
+) -> "gates.GateFailure | None":
+    """One flake cycle: the tier again, and - when it fails the same way -
+    the blamed files alone. Both halves are spent together and counted as
+    one, so a slice gets at most `_FLAKE_CYCLES` of them in a run."""
     narrate.line(
-        f"🔁 {_failed_step(piece, failure)} failed in {', '.join(sorted(failure.culprits))}, "
-        f"which this slice does not touch and which passed at "
-        f"{piece.gate_passes[_gate_name(piece)]} — rerunning once"
+        f"🔁 {_failed_step(piece, failure)} failed in {', '.join(sorted(failure.blamed_files))}, "
+        f"which this slice does not touch{_last_pass(piece)} — rerunning once"
     )
-    failure = _run_turn_gates(record, piece, path, changed)
-    if failure is None:
+    with record.transition():
+        piece.flake_cycles += 1
+        record.save()
+    again = _run_turn_gates(record, piece, path, changed)
+    if again is None:
         _record_gate_pass(record, piece)
         narrate.line(f"✅ {_gate_name(piece)} passed on the rerun: the first run was a flake")
-    return failure
+        return None
+    if again.blamed_files != failure.blamed_files or not _untouched_flake(
+        piece, path, changed, again
+    ):
+        return again
+    return _solo_run(record, piece, path, again)
 
 
-def _untouched_flake(piece: SliceRecord, changed: list[str], failure: "gates.GateFailure") -> bool:
-    """Whether this gate failure is entirely about test files the slice's
-    diff does not touch and which the same gate already passed on for this
-    slice in this run. Conservative in every direction: an unlocated failure
-    concludes nothing, one culprit outside the tests or inside the diff
-    disqualifies the whole failure, and with no recorded earlier pass there
-    is no evidence this tier was ever green here."""
-    if not failure.located or not failure.culprits:
+def _solo_run(
+    record: RunRecord, piece: SliceRecord, path, failure: "gates.GateFailure"
+) -> "gates.GateFailure | None":
+    """The blamed files run on their own, once. A pass is the flake's
+    signature - the file fails inside the whole suite and passes outside it
+    - and the tier is treated as passed for this turn. A failure is a real
+    failure and goes to the budget. A run that produced no verdict at all
+    concludes nothing, and the original failure stands."""
+    files = sorted(failure.blamed_files)
+    report = acceptance.run_and_report(path, files, failure.project)
+    if not report.ok:
+        narrate.line(f"❔ {', '.join(files)} could not be run alone ({report.why}) — it counts")
+        return failure
+    if any(status.failed for status in report.statuses):
+        narrate.line(f"❌ {', '.join(files)} fails alone too — the failure is this turn's")
+        return failure
+    _record_flakes(record, piece, failure, files)
+    narrate.line(
+        f"🔁 {', '.join(files)} fails in the full suite and passes alone — a local flake "
+        "in a file this slice does not touch; CI judges it"
+    )
+    return None
+
+
+def _record_flakes(
+    record: RunRecord, piece: SliceRecord, failure: "gates.GateFailure", files: list[str]
+) -> None:
+    """What the driver waved through, on the slice: one entry per blamed
+    file, with the test the gate named, the step that failed and the time.
+    Block 4 puts them in front of Gabriel."""
+    when = time.strftime("%H:%M")
+    step = _failed_step(piece, failure)
+    titles = {test.file: test.title for test in failure.tests}
+    with record.transition():
+        piece.flakes.extend(
+            {"file": name, "test": titles.get(name, ""), "step": step, "when": when}
+            for name in files
+        )
+        record.save()
+
+
+def _untouched_flake(
+    piece: SliceRecord, path, changed: list[str], failure: "gates.GateFailure"
+) -> bool:
+    """Whether this gate failure is entirely about test files that are no
+    part of this slice: not its own retained acceptance tests, and nothing
+    its diff touches. Conservative in every direction: a failure whose
+    steps did not all name what they blame concludes nothing, and one
+    culprit outside the tests, inside the diff or among the slice's own
+    tests disqualifies the whole failure - the acceptance tests are what
+    this turn is judged against, so a failure in them is about the work
+    however far from the diff they sit. No earlier pass is required -
+    #420's record predated the ledger that held them, so an old record
+    could never have earned a rerun, and a fresh one earns one only after
+    a pass in the same run, which is exactly when the evidence is least
+    needed."""
+    if not failure.blamed:
         return False
-    if not piece.gate_passes.get(_gate_name(piece)):
-        return False
+    touched = _touched(piece, path, changed)
     return all(
         acceptance.is_test_file(piece.layer, name)
-        and acceptance.matching_path(name, changed) is None
-        for name in failure.culprits
+        and acceptance.owning_test(name, piece.test_files) is None
+        and acceptance.matching_path(name, touched) is None
+        for name in failure.blamed_files
     )
+
+
+def _touched(piece: SliceRecord, path, changed: list[str]) -> list[str]:
+    """Every file this slice's diff reaches: what the turn's own validation
+    already read out of it, plus whatever the working tree still holds
+    uncommitted. A file the turn edited without committing is touched by
+    this slice however the diff is taken."""
+    return [*changed, *worktrees.changed_since(path, piece.failing_sha)]
+
+
+def _last_pass(piece: SliceRecord) -> str:
+    """When this tier last passed for this slice, for the narration. It is
+    evidence the rerun is worth making, never the condition for making
+    one: a slice with no recorded pass is rerun just the same."""
+    when = piece.gate_passes.get(_gate_name(piece))
+    return f" and which passed at {when}" if when else ""
 
 
 def _record_gate_pass(record: RunRecord, piece: SliceRecord) -> None:
-    """When this slice's gates last passed: the evidence `_untouched_flake`
-    reads, and the time the narration quotes back."""
+    """When this slice's gates last passed: the time `_last_pass` quotes
+    back when a rerun is narrated."""
     with record.transition():
         piece.gate_passes[_gate_name(piece)] = time.strftime("%H:%M")
         record.save()

@@ -34,6 +34,10 @@ from fitflow.failure_reason import Failure
 
 TEST_FILE = re.compile(r"(\.spec\.ts|\.test\.ts|\.svelte\.spec\.ts|\.e2e\.ts)$")
 
+#: The playwright project every acceptance run asks for unless a caller
+#: names another: the repository's own mobile-first browser.
+_PLAYWRIGHT_PROJECT = "mobile-chrome"
+
 #: The workflow layer's test side. Everything under it is test-side by
 #: construction - the driver's flow tests are a fake world plus a `go.py`
 #: run, so a new scenario needs its `given_*` helper in `conftest.py` and
@@ -164,15 +168,20 @@ class Report:
         return [f"{status.file} {status.described()}" for status in self.statuses]
 
 
-def run_and_report(worktree: Path, test_files: list[str]) -> Report:
+def run_and_report(worktree: Path, test_files: list[str], project: str = "") -> Report:
     """One acceptance run over `test_files`, reported test by test rather
-    than judged file by file."""
+    than judged file by file.
+
+    `project` names the playwright project to run under - the browser a
+    gate failure said it saw the failure in - and is ignored by the other
+    runners, which have no such thing. Empty asks for the driver's own
+    default, which is the one the acceptance runs always used."""
     collected: list[TestStatus] = []
     for runner in ("vitest", "playwright", "pytest"):
         files = [f for f in test_files if _runner(f) == runner]
         if not files:
             continue
-        report = _REPORTERS[runner](worktree, files)
+        report = _report_of(runner, worktree, files, project)
         if report is None:
             return Report(False, f"{runner} produced no parsable report for {', '.join(files)}")
         for f in files:
@@ -558,11 +567,27 @@ def _vitest_report(worktree: Path, files: list[str]) -> dict | None:
     return _run_report(worktree, ["bun", "x", "vitest", "run", "--reporter=json", *files])
 
 
-def _playwright_report(worktree: Path, files: list[str]) -> dict | None:
+def _playwright_report(worktree: Path, files: list[str], project: str = "") -> dict | None:
     return _run_report(
         worktree,
-        ["bun", "x", "playwright", "test", *files, "--project=mobile-chrome", "--reporter=json"],
+        [
+            "bun",
+            "x",
+            "playwright",
+            "test",
+            *files,
+            f"--project={project or _PLAYWRIGHT_PROJECT}",
+            "--reporter=json",
+        ],
     )
+
+
+def _report_of(runner: str, worktree: Path, files: list[str], project: str):
+    """One runner's raw report. Only playwright takes a project, so only
+    playwright is asked for one."""
+    if runner == "playwright":
+        return _playwright_report(worktree, files, project)
+    return _REPORTERS[runner](worktree, files)
 
 
 def _run_report(worktree: Path, command: list[str]) -> dict | None:
