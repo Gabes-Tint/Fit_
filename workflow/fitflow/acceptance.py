@@ -262,6 +262,29 @@ def owning_test(name: str, test_files: list[str]) -> str | None:
     return matching_path(name, test_files)
 
 
+#: A test as its own source spells it: `it("...")`, `test('...')` or a
+#: chained sibling of either (`it.each`, `test.skip`), with the title in
+#: the quotes. A Python test is a name rather than a string, one
+#: `def test_*` per test.
+_TS_TEST_BLOCK = re.compile(r"""\b(?:it|test)(?:\.\w+)*\s*\(\s*(['"`])(.*?)\1""", re.DOTALL)
+_PY_TEST_BLOCK = re.compile(r"^\s*def (test_\w+)", re.MULTILINE)
+
+
+def test_titles(path: str, source: str) -> list[str]:
+    """Every test a test file declares, read from its own source, in the
+    spelling an objection uses on the right of `<file>::<title>`.
+
+    The runner's report is the authority on what a file contains, and this
+    is not it: a title built at runtime, or spelled across a concatenation,
+    is invisible here. It is enough for the one question a repair asks -
+    which of the tests that were in this file before are still in it - and
+    a file it reads no test from is judged whole rather than test by test
+    (steps/failing_tests._removed_tests)."""
+    if path.endswith(".py"):
+        return _PY_TEST_BLOCK.findall(source)
+    return [title for _, title in _TS_TEST_BLOCK.findall(source)]
+
+
 def _is_e2e(path: str) -> bool:
     return path.endswith(".e2e.ts") or path.endswith(".e2e.js")
 

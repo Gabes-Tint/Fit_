@@ -445,41 +445,114 @@ def validate_repaired_tests(
     test_files: list[str],
     test_kind: str,
     story_number: int,
-) -> dict[str, int]:
+    named: list[str],
+    objected_to: list[str],
+) -> tuple[list[str], dict[str, int]]:
     """Block 1's own verdict on a set of acceptance tests it repaired after
     an implementer's verified objection (steps/objection.py), taken in the
     driver-owned repair worktree: the same content, kind, gate and failure
-    checks a first writing faces. Returns the type debt the repaired tests
-    carry, which replaces the rejected set's: the tests block 3 is now
-    judged against are these, and `tests_type_debt` is how block 3 tells
-    "the implementation has not provided the signature yet" from "block 1
-    accepted a broken test".
+    checks a first writing faces. Returns the acceptance set the repair
+    leaves behind and the type debt that set carries, which replaces the
+    rejected set's: the tests block 3 is now judged against are these, and
+    `tests_type_debt` is how block 3 tells "the implementation has not
+    provided the signature yet" from "block 1 accepted a broken test".
 
-    Two things differ, and only two. The diff is measured against the
-    slice's failing-test base rather than `origin/main`, because a dependent
-    UI slice's base already carries its domain sibling and none of that is
-    this repair's doing; and nothing is pushed, because the repair branch is
-    the driver's own - it merges the commit into the slice's branch and
-    pushes that."""
+    `test_files` is the whole slice's acceptance set - the frozen files and
+    whatever the reply named, not the reply's list alone - because a repair
+    answers one objection and the other files keep judging the slice. It is
+    `named` that says which of them the repair claims to have touched, and
+    `objected_to` which tests it was allowed to touch at all.
+
+    Two things differ from a first writing, and only two. The diff is
+    measured against the slice's failing-test base rather than
+    `origin/main`, because a dependent UI slice's base already carries its
+    domain sibling and none of that is this repair's doing; and nothing is
+    pushed, because the repair branch is the driver's own - it merges the
+    commit into the slice's branch and pushes that."""
     if not worktrees.is_clean(path):
         raise FlowFailure(
             Outcome.TESTS_NOT_PUSHED, f"tree not clean on repair branch {slug}", story_number
         )
-    if not test_files:
+    if not named:
         raise FlowFailure(Outcome.TESTS_NOT_PUSHED, "mechanic reported no test files", story_number)
-    _check_repaired_files_exist(slug, path, test_files, story_number)
+    _check_repaired_files_exist(slug, path, named, story_number)
+    _check_the_repair_kept_the_unnamed_tests(
+        slug, path, base, test_files, objected_to, story_number
+    )
+    kept = [test_file for test_file in test_files if (path / test_file).exists()]
     changed = worktrees.changed_between(path, base)
-    _check_the_repair_touched_the_tests(slug, changed, test_files, story_number)
+    _check_the_repair_touched_the_tests(slug, changed, named, story_number)
     _check_every_changed_file_is_a_test(slug, layer, changed, story_number)
-    _check_files_match_test_kind(slug, changed, test_files, test_kind, story_number)
-    _check_test_quality(slug, path, test_files, story_number)
-    debt = _judged(_branch_checks(layer, story_number, path, test_files, changed), story_number)
+    _check_files_match_test_kind(slug, changed, kept, test_kind, story_number)
+    _check_test_quality(slug, path, kept, story_number)
+    debt = _judged(_branch_checks(layer, story_number, path, kept, changed), story_number)
     narrate.line(
         f"🔍 Verify #{story_number} repair: tree clean ✔ · only tests ✔ · "
         + _branch_gate_summary(layer, changed, placement=False)
         + f" · {_ACCEPTANCE} ✔"
     )
-    return debt
+    return kept, debt
+
+
+def _check_the_repair_kept_the_unnamed_tests(
+    slug: str,
+    path: Path,
+    base: str,
+    test_files: list[str],
+    objected_to: list[str],
+    story_number: int,
+) -> None:
+    """A repair answers an objection; it does not shrink the slice.
+
+    The objection names what it rejects as a whole file or as
+    `<file>::<title>`, and that naming is the repair's whole licence: it may
+    rewrite or delete what was named and nothing else. #422 run 4 is why
+    the rule is checked rather than only written in the brief - told that
+    the type errors in an acceptance file it had not touched were "outside
+    the acceptance tests", the mechanic deleted that file's describe block,
+    five acceptance criteria with it, and the tests then passed with no
+    implementation at all.
+
+    The granularity is the file's own source: a deleted file is refused
+    outright, and a file whose source still reads as tests is compared
+    title by title against the same file at the slice's failing-test base.
+    A title a runner builds rather than spells is invisible to that reading
+    (acceptance.test_titles), so a file no title could be read from is
+    judged whole - deleted or emptied of every `it`/`test` block - and its
+    surviving tests are taken on trust."""
+    whole_files = [item for item in objected_to if "::" not in item]
+    for test_file in test_files:
+        if acceptance.owning_test(test_file, whole_files) is not None:
+            continue
+        removed = _removed_tests(path, base, test_file, objected_to)
+        if removed:
+            raise FlowFailure(
+                Outcome.TESTS_INVALID,
+                f"the repair on {slug} removed acceptance tests the objection did not "
+                f"name: {', '.join(removed)}; the objection names what may be rewritten "
+                f"or dropped, and every other test of this slice still judges it",
+                story_number,
+            )
+
+
+def _removed_tests(path: Path, base: str, test_file: str, objected_to: list[str]) -> list[str]:
+    """Which tests of one acceptance file the repair took away without
+    being asked to, named as the objection would have named them: the file
+    itself when it is gone, and `<file>::<title>` for every title that was
+    there at `base` and is not there now."""
+    before = worktrees.content_at(path, base, test_file)
+    if before is None:
+        return []
+    if not (path / test_file).exists():
+        return [test_file]
+    was = acceptance.test_titles(test_file, before)
+    now = set(acceptance.test_titles(test_file, (path / test_file).read_text()))
+    named = {
+        item.split("::", 1)[1]
+        for item in objected_to
+        if "::" in item and acceptance.matching_path(item.split("::", 1)[0], [test_file])
+    }
+    return [f"{test_file}::{title}" for title in was if title not in now and title not in named]
 
 
 def _check_repaired_files_exist(slug: str, path, test_files: list[str], story_number: int) -> None:
@@ -582,7 +655,7 @@ def _lane_verdict(
             (f"{lane} ✗{count}",),
             FlowFailure(
                 Outcome.TESTS_INVALID,
-                _why_not_the_missing_api(failure, test_files, tolerated),
+                _why_not_the_missing_api(failure, test_files, tolerated, noun),
                 story_number,
             ),
         )
@@ -609,10 +682,20 @@ def _missing_api_debt(reading, test_files: list[str], tolerated) -> dict[str, in
     return debt or None
 
 
-def _why_not_the_missing_api(failure: gates.LaneFailure, test_files: list[str], tolerated) -> str:
-    """The lane's own diagnostic, and - when the driver read the output in
-    full - which part of it is the mechanic's to fix: the errors outside
-    the acceptance tests, or the rules no implementation will answer."""
+def _why_not_the_missing_api(
+    failure: gates.LaneFailure, test_files: list[str], tolerated, noun: str
+) -> str:
+    """Why the driver rejected the branch, and then the lane's own
+    diagnostic: which part of the output is the mechanic's to fix - the
+    errors outside the acceptance tests, or the rules no implementation
+    will answer.
+
+    The driver's sentence comes first because the first line of a
+    `FlowFailure` is its headline, in the log and in the next turn's brief.
+    It used to come last, after the checker's own truncated output, and
+    #422 run 4 is what the mechanic then read: a headline ending
+    `/src/lib/domain/workout")'."` and no sign of the reason until eleven
+    lines further down."""
     if not failure.reading.complete:
         return failure.diagnostic
     outside = sorted(
@@ -624,15 +707,15 @@ def _why_not_the_missing_api(failure: gates.LaneFailure, test_files: list[str], 
     )
     if outside:
         return (
-            f"{failure.diagnostic}\nthese errors are outside the acceptance tests, "
-            f"where this branch may not change anything: {', '.join(outside)}"
+            f"{noun} outside the acceptance tests, where this branch may not change "
+            f"anything: {', '.join(outside)}\n{failure.diagnostic}"
         )
     rejected = sorted(
         {error.described() for error in failure.reading.errors if not tolerated(error)}
     )
     return (
-        f"{failure.diagnostic}\nthe implementation will not make these go away, "
-        f"so fix them here: {'; '.join(rejected[:3])}"
+        f"{noun} the implementation will not make go away, so fix them here: "
+        f"{'; '.join(rejected[:3])}\n{failure.diagnostic}"
     )
 
 
