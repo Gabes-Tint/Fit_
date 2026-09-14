@@ -569,29 +569,35 @@ export class TendStore {
 		return workout;
 	}
 
-	// Returns the live object, not a copy: a rebuild would give every set a new identity on each tick.
-	private get liveExercise(): Workout['exercises'][number] | null {
+	/**
+	 * The exercise an in-session action works on: the one named by `index` when
+	 * given, and the workout's current exercise otherwise. An index out of range
+	 * is nothing, so the action does nothing.
+	 *
+	 * Returns the live object, not a copy: a rebuild would give every set a new identity on each tick.
+	 */
+	private liveExercise(index?: number): Workout['exercises'][number] | null {
 		const workout = this.state.activeWorkout;
 		if (!workout) return null;
-		return workout.exercises[workout.exerciseIndex] ?? null;
+		return workout.exercises[index ?? workout.exerciseIndex] ?? null;
 	}
 
-	toggleSet(index: number) {
-		const set = this.liveExercise?.sets[index];
+	toggleSet(index: number, exerciseIndex?: number) {
+		const set = this.liveExercise(exerciseIndex)?.sets[index];
 		if (!set) return;
 		set.done = !set.done;
 		this.persistSoon();
 	}
 
-	bumpSet(index: number, field: 'reps' | 'load', direction: number) {
-		const set = this.liveExercise?.sets[index];
+	bumpSet(index: number, field: 'reps' | 'load', direction: number, exerciseIndex?: number) {
+		const set = this.liveExercise(exerciseIndex)?.sets[index];
 		if (!set) return;
 		set[field] = this.stepped(field, set[field], direction);
 		this.persistSoon();
 	}
 
-	addSet() {
-		const exercise = this.liveExercise;
+	addSet(exerciseIndex?: number) {
+		const exercise = this.liveExercise(exerciseIndex);
 		if (!exercise) return;
 		// Only reps and load carry over; the pushed set below always starts undone.
 		const last: Pick<WorkoutSet, 'reps' | 'load'> = exercise.sets.at(-1) ?? { reps: 10, load: 0 };
@@ -599,16 +605,16 @@ export class TendStore {
 		this.persist();
 	}
 
-	noteExercise(note: string) {
-		const exercise = this.liveExercise;
+	noteExercise(note: string, exerciseIndex?: number) {
+		const exercise = this.liveExercise(exerciseIndex);
 		if (!exercise) return;
 		exercise.note = note;
 		this.persistSoon();
 	}
 
-	swapExercise(name: string) {
+	swapExercise(name: string, exerciseIndex?: number) {
 		const replacement = exercisesFromLibrary([name])[0];
-		const exercise = this.liveExercise;
+		const exercise = this.liveExercise(exerciseIndex);
 		if (!replacement || !exercise) return;
 		exercise.name = replacement.name;
 		exercise.group = replacement.group;
