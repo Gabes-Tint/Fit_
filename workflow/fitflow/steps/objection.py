@@ -584,6 +584,19 @@ def _judged_set(piece: SliceRecord, named: list[str]) -> list[str]:
     return list(dict.fromkeys(piece.test_files + named))
 
 
+#: What the prompt's diagnostic slot says when the objection is the whole
+#: diagnostic. The template asks "the driver rejected the tests with this
+#: concrete diagnostic", and on a repair's first turn that diagnostic is the
+#: objection `_objection_section` has already quoted in full - so #337 run 6
+#: sent the solver the same wall of text twice. It is quoted once now, and
+#: the slot says where it is.
+_THE_OBJECTION_ITSELF = (
+    "The objection quoted above is the whole of it: the driver verified that objection "
+    "and rejected nothing else about these tests. Do not wait for another diagnostic - "
+    "repair what the objection is about."
+)
+
+
 def _talk(
     piece: SliceRecord, slug: str, path: Path, diagnostic: str, role: str
 ) -> tuple[dict, str]:
@@ -603,7 +616,7 @@ def _talk(
         brief=piece.brief,
         acceptance="\n".join(f"- {item}" for item in piece.acceptance),
         attempt=str(piece.attempts),
-        diagnostic=diagnostic,
+        diagnostic=_diagnostic_slot(piece, diagnostic),
         objection=_objection_section(piece, role),
         push_line=(
             f"commit the corrected tests on `{slug}` and do not push: this is the "
@@ -611,6 +624,17 @@ def _talk(
             "slice's branch itself"
         ),
     )
+
+
+def _diagnostic_slot(piece: SliceRecord, diagnostic: str) -> str:
+    """The prompt's diagnostic, said once. A repair's first turn is given
+    the objection itself as its diagnostic, and the objection section above
+    it in the same prompt renders exactly those bytes; every later turn is
+    given block 1's own verdict on the last repair, which is nowhere else
+    in the prompt."""
+    if diagnostic.strip() == _rendered(piece.objections[-1]).strip():
+        return _THE_OBJECTION_ITSELF
+    return diagnostic
 
 
 def _objection_section(piece: SliceRecord, role: str) -> str:
@@ -648,18 +672,36 @@ def _history(piece: SliceRecord, role: str) -> str:
     if piece.test_repairs == 0:
         return ""
     earlier = "\n\n".join(_rendered(item) for item in piece.objections[:-1])
-    replies = "\n".join(
-        f"- repair {item['repair']} turn {item['turn']} ({item.get('role', 'mechanic')}): "
-        f"{item['why'] or item['result']}"
-        for item in piece.test_repair_turns
-    )
     return (
         f"\n\nThis is repair {piece.test_repairs + 1} of {MAX_REPAIRS}. Block 1 already "
         f"repaired these tests {piece.test_repairs} time(s) and the objection came back, so "
         f"this repair is yours: you are the {role} that implements this slice, and you have "
         f"seen what the tests ask for. Do not repeat the last repair's answer - read the "
         f"whole history below and repair what the objections are actually about.\n\n"
-        f"Earlier objections:\n\n{earlier}\n\nWhat the repairs replied:\n{replies}"
+        f"Earlier objections:\n\n{earlier}\n\nWhat the repairs replied:\n{_replies(piece)}"
+    )
+
+
+def _replies(piece: SliceRecord) -> str:
+    """What each repair turn answered - once per turn, and nothing for the
+    turn that has not happened yet.
+
+    The ledger holds more than one entry per turn on purpose: a relaunched
+    repair appends its own beside the dead one's, and `_begin_repair_turn`
+    puts the turn being launched on it before the agent is asked anything.
+    #337 run 6 read all of them into the prompt, so the solver was handed
+    the same two repairs twice in two different wordings and an empty line
+    for the turn it was about to take. The last entry for a turn is the one
+    that says what that turn did."""
+    latest: dict[tuple[int, int], dict] = {}
+    for item in piece.test_repair_turns:
+        if item["status"] == "running" or not (item["why"] or item["result"]):
+            continue
+        latest[(item["repair"], item["turn"])] = item
+    return "\n".join(
+        f"- repair {item['repair']} turn {item['turn']} ({item.get('role', 'mechanic')}): "
+        f"{item['why'] or item['result']}"
+        for item in latest.values()
     )
 
 

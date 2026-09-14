@@ -22,6 +22,7 @@ WHY = "test 1 wants the apple first and tests 2-4 want the candy first"
 FIRST = "a row carries its brand"
 SECOND = "a row without a brand says so"
 WORK = {"src/lib/rows.ts": "export const brand = true;\n"}
+SECOND_WHY = "the repair moved the same problem"
 
 
 def _given_planned_story(
@@ -657,7 +658,7 @@ def _given_two_objections(world, number: int) -> str:
         test_files=[REPAIRED],
         delete=[TEST],
     )
-    world.agent_objects(slug, "builder", tests=[REPAIRED], why="the repair moved the same problem")
+    world.agent_objects(slug, "builder", tests=[REPAIRED], why=SECOND_WHY)
     world.agent_repairs(
         f"{slug}-tests-2",
         "builder",
@@ -703,6 +704,101 @@ def test_the_ledger_records_which_role_made_each_repair(world):
     assert [turn["role"] for turn in piece["test_repair_turns"]] == ["mechanic", "builder"]
     assert [turn["repair"] for turn in piece["test_repair_turns"]] == [1, 2]
     assert piece["test_repairs"] == 2 and piece["state"] == "succeeded"
+
+
+# --- the repair prompt says each thing once ------------------------------------
+
+
+def test_the_repair_prompt_quotes_the_objection_once(world):
+    """The prompt's diagnostic slot used to carry the objection verbatim
+    beside the objection section that already quoted it, so a repair brief
+    opened with the same wall of text twice (#337 run 6)."""
+    slug = _given_planned_story(world, 478, ["fail", "fail"])
+    world.scripted_test_outcome(REPAIRED, ["fail", "pass"])
+    world.agent_objects(slug, "mechanic", tests=[TEST], why=WHY)
+    _repair(world, slug)
+    world.agent_implements(
+        slug,
+        "mechanic",
+        files={"src/lib/rows.ts": "export const brand = true;\n"},
+        changed_files=["src/lib/rows.ts"],
+    )
+
+    result = run_flow(world, 478)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    prompt = _talks(world, "mechanic", f"{slug}-tests-1")[0]["prompt"]
+    assert prompt.count(WHY) == 1
+    assert prompt.count("drop the first test") == 1
+    assert "The objection quoted above is the whole of it" in prompt
+
+
+def test_the_second_repair_is_told_the_history_once_and_not_the_turn_it_is_taking(world):
+    """#337 run 6's repair 2 brief. A repair relaunched by a resume appends
+    its own turns beside the dead run's, and the turn being launched is on
+    the ledger before the agent is asked anything; all of it went into the
+    prompt, so the solver was handed the same two repairs twice in two
+    wordings and an empty line for its own turn."""
+    slug = _given_planned_story(world, 479, ["fail", "fail"], signals=builder_signals())
+    world.scripted_test_outcome(REPAIRED, ["fail", "fail", "fail", "pass"])
+    world.agent_objects(slug, "builder", tests=[TEST], why=WHY)
+    # repair 1 turn 1 drags a production file along and is refused; turn 2
+    # dies before it replies, which stops the run with the repair unmade
+    world.mechanic_repairs(
+        f"{slug}-tests-1",
+        files={REPAIRED: "// repaired\n", "src/lib/rows.ts": "export const sneak = 1;\n"},
+        test_files=[REPAIRED],
+        delete=[TEST],
+        why="the first answer, which block 1 refused",
+    )
+    world.mechanic_fails(f"{slug}-tests-1", "the repair turn died")
+
+    stopped = run_flow(world, 479)
+
+    assert stopped.returncode == 21, stopped.stdout + stopped.stderr
+    # the resumed run makes repair 1 over again, from turn 1, and the
+    # objection comes back anyway
+    world.mechanic_repairs(
+        f"{slug}-tests-1",
+        files={REPAIRED: "// repaired again\n"},
+        test_files=[REPAIRED],
+        delete=[TEST],
+        why="the second answer, which block 1 accepted",
+    )
+    world.agent_objects(slug, "builder", tests=[REPAIRED], why=SECOND_WHY)
+    world.agent_repairs(
+        f"{slug}-tests-2",
+        "builder",
+        files={REPAIRED: "// repaired by the builder\n"},
+        test_files=[REPAIRED],
+    )
+    world.agent_implements(slug, "builder", files=WORK, changed_files=list(WORK))
+    world.reviewer_answers(479, "merge")
+
+    result = run_flow(world, 479, "--resume")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    piece = world.run_record(479)["slices"]["domain"]
+    # both runs' repair turns are on the ledger, twice for repair 1 turn 1
+    assert [(turn["repair"], turn["turn"]) for turn in piece["test_repair_turns"]] == [
+        (1, 1),
+        (1, 2),
+        (1, 1),
+        (2, 1),
+    ]
+
+    prompt = _talks(world, "builder", f"{slug}-tests-2")[0]["prompt"]
+    # one line per repair turn, carrying what that turn ended up saying
+    assert prompt.count("- repair 1 turn 1 (mechanic):") == 1
+    assert "the first answer, which block 1 refused" not in prompt
+    assert "- repair 1 turn 1 (mechanic): the second answer, which block 1 accepted" in prompt
+    # and nothing about the turn the builder is being asked to take now
+    assert "- repair 2 turn 1" not in prompt
+    # each objection is quoted once: the earlier one under its heading, the
+    # one being repaired in the objection section, and neither again as the
+    # driver's diagnostic
+    assert prompt.count(WHY) == 1
+    assert prompt.count(SECOND_WHY) == 1
 
 
 # --- an objection beside finished work -----------------------------------------
