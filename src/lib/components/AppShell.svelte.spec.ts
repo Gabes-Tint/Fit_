@@ -202,6 +202,16 @@ describe('AppShell, on the sign-in form itself', () => {
 	});
 });
 
+describe('AppShell, on the component harness (#398)', () => {
+	it('mounts the component bare, with no sign-in redirect and no menu', async () => {
+		at('/dev/component-harness?component=LogRow');
+		await render(AppShellHarness, { props: { body: 'Harnessed component' } });
+		await expect.element(page.getByText('Harnessed component')).toBeInTheDocument();
+		expect(goto).not.toHaveBeenCalled();
+		expect(page.getByRole('button', { name: 'Open menu' }).elements()).toHaveLength(0);
+	});
+});
+
 /**
  * Close the drawer from the floating toggle.
  *

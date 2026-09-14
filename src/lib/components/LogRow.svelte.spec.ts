@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import { logFromFood } from '$lib/domain/log-entry';
+import type { LogItem } from '$lib/domain/types';
 import { tend } from '$lib/state/tend.svelte';
 import LogRow from './LogRow.svelte';
 
@@ -29,7 +30,7 @@ describe('LogRow', () => {
 		await expect.element(page.getByText(item().name)).toBeInTheDocument();
 	});
 
-	it('names the brand of a branded entry, beside its source badge (#337)', async () => {
+	it('names the brand of a branded entry (#337)', async () => {
 		// The entry that opened #337: a journal row saying "GREEN APPLE" and
 		// "BRAND PUBLISHED" and nothing that told a person it was hard candy.
 		const entry = { ...item(), name: 'GREEN APPLE', brand: 'CLAEYS' };
@@ -37,12 +38,27 @@ describe('LogRow', () => {
 		await expect.element(page.getByText('CLAEYS')).toBeInTheDocument();
 	});
 
-	it('says no brand at all for an entry logged from a generic food', async () => {
-		const entry = item();
-		expect(entry.brand).toBeUndefined();
+	/** The name, the brand when there is one, and the portion, as the row renders them. */
+	function lines(entry: LogItem) {
+		const at = (text: string) => page.getByText(text, { exact: true }).element();
+		return { name: at(entry.name), portion: at(`2 × ${entry.servingLabel}`), at };
+	}
+
+	it('stacks the brand and then the portion under the name (#397)', async () => {
+		const entry = { ...item(), brand: 'Farm Boy' };
 		await render(LogRow, { props: { item: entry, open: false, step: 0.5, ontoggle: vi.fn() } });
-		await expect.element(page.getByText(entry.name)).toBeInTheDocument();
-		expect(document.body.textContent).not.toContain('CLAEYS');
+		const { name, portion, at } = lines(entry);
+		const brand = at('Farm Boy');
+		expect(brand.parentElement).toBe(name.nextElementSibling);
+		expect(brand.nextElementSibling).toBe(portion);
+	});
+
+	it('puts the portion straight under the name when there is no brand (#397)', async () => {
+		const entry = item();
+		await render(LogRow, { props: { item: entry, open: false, step: 0.5, ontoggle: vi.fn() } });
+		const { name, portion } = lines(entry);
+		expect(portion.parentElement).toBe(name.nextElementSibling);
+		expect(portion.parentElement?.children).toHaveLength(1);
 	});
 
 	it('shows the servings against the serving label', async () => {
@@ -105,14 +121,10 @@ describe('LogRow', () => {
 		await expect.element(page.getByText(String(entry.kcal))).toBeInTheDocument();
 	});
 
-	it('shows a provenance badge for a catalog-backed entry', async () => {
-		await render(LogRow, { props: { item: item(), open: false, step: 0.5, ontoggle: vi.fn() } });
-		expect(document.querySelector('[title]')).not.toBeNull();
-	});
-
-	it('shows no provenance badge for a custom entry', async () => {
-		const custom = { ...item(), provenance: undefined };
-		await render(LogRow, { props: { item: custom, open: false, step: 0.5, ontoggle: vi.fn() } });
+	it('shows no provenance badge, even for a catalog-backed entry (#397)', async () => {
+		const entry = item();
+		expect(entry.provenance).toBeDefined();
+		await render(LogRow, { props: { item: entry, open: false, step: 0.5, ontoggle: vi.fn() } });
 		expect(document.querySelector('[title]')).toBeNull();
 	});
 
