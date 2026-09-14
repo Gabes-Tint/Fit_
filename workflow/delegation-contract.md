@@ -375,6 +375,44 @@ request is opened, CI runs, and then the merge is withheld. The driver never
 merges its own code, so the run ends `NEEDS_GABRIEL` (exit 11) with the PR
 open and every worktree in place.
 
+## Temporary: a domain slice's attempts run a lighter tier
+
+Enabled 2026-09-14 on Gabriel's instruction to ship faster, and meant to be
+taken out again: `fitflow.gates.TEMP_LIGHT_DOMAIN_VALIDATION`.
+
+A slice is validated on every attempt, and for a `domain` slice most of what
+`verify:changed` sizes is bought for the UI - the layer may not touch
+`src/routes/`, `src/lib/components/` or `src/lib/ui/` at all. While the
+constant is `True`:
+
+- every attempt of a `domain` slice is judged by the repository's own
+  `verify:fast` tier (`bun scripts/quality/gate.ts verify:fast`) instead of
+  `verify:changed`: every static step the `verify:changed` plan carries,
+  plus the server unit suite that covers `src/lib/domain/**`;
+- the full `verify:changed` runs once on the accepted attempt, before the
+  driver freezes the slice, so nothing is committed on less proof than
+  before. A failure there is an ordinary gate rejection of that attempt,
+  with the ordinary diagnostic and the ordinary rerun a test this slice does
+  not touch earns;
+- a `ui` slice, a `workflow` slice and every block 4 fix turn on a `ui`
+  slice are untouched.
+
+The log says so once per slice: `⚡ #<n> (domain) validating on verify:fast,
+without the e2e suite (temporary); the full tier runs at freeze`.
+
+Two things this does not claim. `verify:changed` is
+`scripts/quality/verify-changed.ts`, not a `gate.ts` tier, and it takes no
+step selection - only `--base`, `--all-browsers` and `--dry-run` - so "the
+same tier minus its e2e step" cannot be asked for without changing a gate
+file. And a domain diff plans no e2e step in the first place: `e2e: full
+suite` is planned by a changed `.svelte` under `src/lib/components/` and the
+per-route e2e files by `src/routes/**`, both outside a domain slice's reach.
+What the lightening actually saves per attempt is the diff-sized spec runs,
+the mutation lane and the `build` / `check:bundle` pair.
+
+Setting the constant to `False` puts every slice back on `verify:changed` for
+every attempt and leaves nothing else to undo.
+
 ## The component harness
 
 A UI slice's acceptance tests are only `*.e2e.ts`, so a component no page

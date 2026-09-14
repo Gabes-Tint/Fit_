@@ -1066,9 +1066,7 @@ def _rerun_then_solo(
     again = _run_turn_gates(record, piece, path, changed, full)
     if again is None:
         _record_gate_pass(record, piece, full)
-        narrate.line(
-            f"✅ {_gate_name(piece, full)} passed on the rerun: the first run was a flake"
-        )
+        narrate.line(f"✅ {_gate_name(piece, full)} passed on the rerun: the first run was a flake")
         return None
     if again.blamed_files != failure.blamed_files or not _untouched_flake(
         piece, path, changed, again
