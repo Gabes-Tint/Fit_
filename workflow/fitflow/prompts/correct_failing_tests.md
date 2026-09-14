@@ -29,9 +29,12 @@ implementation gate will run over these same bytes when nobody can change
 them any more: `duplicates` (copy-paste detection, ratchet 0 - extract a
 repeated setup or assertion block into a helper rather than pasting it into
 a second test), `format:check` (run `bunx prettier --write` over the files
-you wrote) and `check:suppressions`. When the diagnostic above names a
-clone, it gives both halves as `file:startLine-endLine`: read those exact
-line ranges before you change anything.
+you wrote), `check:suppressions` and `spellcheck` (cspell over the
+repository - you cannot add a word to `cspell.json` from here, so spell it
+right). When the diagnostic above names a clone, it gives both halves as
+`file:startLine-endLine`: read those exact line ranges before you change
+anything; when it names an unknown word, it gives the file, line and column
+it sits at.
 
 The tests must fail because the requested behavior is missing, not because of
 syntax, imports, or test-runner errors: each one fails on an expectation the
