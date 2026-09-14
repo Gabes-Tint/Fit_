@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from fitflow import narrate, settings
@@ -21,7 +22,7 @@ FIELDS = "number,title,body,labels,state,assignees"
 TRANSIENT_SIGNATURES = (
     r"something went wrong while executing your query",
     r"http[ /]?5\d\d",
-    r"\b50[234]\b",
+    r"(?:status|http)\s*50[234]",
     r"timed?\s?out",
     r"connection reset",
     r"could not resolve host",
@@ -34,7 +35,13 @@ def is_transient(message: str) -> bool:
     """Whether a `gh` failure's own text looks like a passing external
     blip rather than a real problem - shared with `agents.py` so an aarmy
     backend error carrying the same wording gets the same one retry."""
-    return bool(_TRANSIENT_PATTERN.search(message))
+    return transient_signature(message) is not None
+
+
+def transient_signature(message: str) -> str | None:
+    """The text a transient signature matched in `message`, or None."""
+    match = _TRANSIENT_PATTERN.search(message)
+    return match.group(0) if match else None
 
 
 def _retry_narration(subcommand: str, message: str) -> None:
@@ -65,19 +72,40 @@ def _failure_text(result: subprocess.CompletedProcess) -> str:
     return result.stderr.strip() or result.stdout.strip()
 
 
+def _succeeded(result: subprocess.CompletedProcess) -> bool:
+    return result.returncode == 0
+
+
+def _retry_once(
+    attempt: Callable[[], subprocess.CompletedProcess],
+    label: str,
+    before_retry: Callable[[], subprocess.CompletedProcess | None] | None = None,
+    answered: Callable[[subprocess.CompletedProcess], bool] = _succeeded,
+) -> subprocess.CompletedProcess:
+    """Run `attempt`; when its result is not an answer and its failure text
+    is transient, narrate, sleep `settings.TRANSIENT_RETRY_SECONDS` and run
+    it once more. `before_retry` is the idempotency check: a result it
+    returns stands in for the retry. Any other failure comes back as is."""
+    result = attempt()
+    if answered(result):
+        return result
+    message = _failure_text(result)
+    if not is_transient(message):
+        return result
+    _retry_narration(label, message)
+    time.sleep(settings.TRANSIENT_RETRY_SECONDS)
+    if before_retry is not None:
+        settled = before_retry()
+        if settled is not None:
+            return settled
+    return attempt()
+
+
 def _run(*args: str) -> str:
     """Run one `gh` subcommand, retrying once after
     `settings.TRANSIENT_RETRY_SECONDS` when the first attempt fails with a
     transient signature. Any other failure raises immediately."""
-    result = _gh(*args)
-    if result.returncode == 0:
-        return result.stdout
-    message = _failure_text(result)
-    if not is_transient(message):
-        raise RuntimeError(f"gh {' '.join(args)} failed: {message}")
-    _retry_narration(args[0] if args else "", message)
-    time.sleep(settings.TRANSIENT_RETRY_SECONDS)
-    result = _gh(*args)
+    result = _retry_once(lambda: _gh(*args), args[0] if args else "")
     if result.returncode == 0:
         return result.stdout
     raise RuntimeError(f"gh {' '.join(args)} failed: {_failure_text(result)}")
@@ -106,16 +134,9 @@ def _api_pages(endpoint: str) -> list[dict]:
     """Fetch every REST page. `--slurp` makes the output one JSON array of
     pages so pagination boundaries cannot affect context ordering. Retries
     once on a transient failure, same policy as `_run`."""
-    result = _api(endpoint)
+    result = _retry_once(lambda: _api(endpoint), f"api {endpoint}")
     if result.returncode != 0:
-        message = _failure_text(result)
-        if not is_transient(message):
-            raise RuntimeError(f"gh api {endpoint} failed: {message}")
-        _retry_narration(f"api {endpoint}", message)
-        time.sleep(settings.TRANSIENT_RETRY_SECONDS)
-        result = _api(endpoint)
-        if result.returncode != 0:
-            raise RuntimeError(f"gh api {endpoint} failed: {_failure_text(result)}")
+        raise RuntimeError(f"gh api {endpoint} failed: {_failure_text(result)}")
     return [item for page in json.loads(result.stdout) for item in page]
 
 
@@ -226,18 +247,14 @@ def create_pr(title: str, body: str, head: str) -> int:
     the first attempt actually created the PR (the 5xx could have arrived
     after GitHub's write) - so the retry never opens a duplicate."""
     args = ("pr", "create", "--title", title, "--body", body, "--head", head)
-    result = _gh(*args)
-    if result.returncode == 0:
-        return int(result.stdout.strip().rsplit("/", 1)[-1])
-    message = _failure_text(result)
-    if not is_transient(message):
-        raise RuntimeError(f"gh {' '.join(args)} failed: {message}")
-    _retry_narration("pr create", message)
-    time.sleep(settings.TRANSIENT_RETRY_SECONDS)
-    existing = _pr_number_for_head(head)
-    if existing is not None:
-        return existing
-    result = _gh(*args)
+
+    def already_open() -> subprocess.CompletedProcess | None:
+        existing = _pr_number_for_head(head)
+        if existing is None:
+            return None
+        return subprocess.CompletedProcess(args, 0, f"{existing}\n", "")
+
+    result = _retry_once(lambda: _gh(*args), "pr create", already_open)
     if result.returncode == 0:
         return int(result.stdout.strip().rsplit("/", 1)[-1])
     raise RuntimeError(f"gh {' '.join(args)} failed: {_failure_text(result)}")
@@ -278,13 +295,11 @@ def pr_checks(number: int) -> list[Check]:
     verdict. Exit 1 before CI has registered any check ("no checks
     reported") is also normal moments after a PR opens; the caller polls.
     Any other exit is a real gh failure, retried once if transient."""
-    result = _pr_checks_once(number)
-    if result.returncode not in (0, 1, 8):
-        message = _failure_text(result)
-        if is_transient(message):
-            _retry_narration("pr checks", message)
-            time.sleep(settings.TRANSIENT_RETRY_SECONDS)
-            result = _pr_checks_once(number)
+    result = _retry_once(
+        lambda: _pr_checks_once(number),
+        "pr checks",
+        answered=lambda r: r.returncode in (0, 1, 8),
+    )
     if result.returncode in (0, 1, 8):
         if result.returncode == 1 and not result.stdout.strip():
             # "no checks reported on the '<branch>' branch": CI has not
@@ -354,17 +369,13 @@ def merge_pr(number: int) -> None:
     the PR already merged - the queue can accept the merge and then answer
     the CLI's own request with a 5xx."""
     args = ("pr", "merge", str(number))
-    result = _gh(*args)
-    if result.returncode == 0:
-        return
-    message = _failure_text(result)
-    if not is_transient(message):
-        raise RuntimeError(f"gh {' '.join(args)} failed: {message}")
-    _retry_narration("pr merge", message)
-    time.sleep(settings.TRANSIENT_RETRY_SECONDS)
-    if view_pr(number).state == "MERGED":
-        return
-    result = _gh(*args)
+
+    def already_merged() -> subprocess.CompletedProcess | None:
+        if view_pr(number).state != "MERGED":
+            return None
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    result = _retry_once(lambda: _gh(*args), "pr merge", already_merged)
     if result.returncode == 0:
         return
     raise RuntimeError(f"gh {' '.join(args)} failed: {_failure_text(result)}")
