@@ -237,6 +237,37 @@ inside an acceptance file, because it is indistinguishable from the new
 parameter a story adds. It is still caught, by the runtime verdict that
 sees it throw, and by block 3's gates below.
 
+### Tests that already pass on the base
+
+"Fails as intended" is asked of the set, and one failing test answers it for
+the whole file: that is what makes a set of four acceptance tests of which
+three already pass a legal freeze. #337 run 6 froze exactly that - three
+brand-on-rows tests had passed since #341 and #347 landed, and the fourth
+was the slice's actual work - and nothing said so.
+
+So the acceptance run's per-test statuses are read at every freeze, the
+first one and the one after a repair, and whatever passed is named on the
+log and in the issue comment:
+
+```text
+⚠️ 2 of 4 acceptance tests already pass on the base: src/routes/rows.e2e.ts::a row
+carries its brand, src/routes/rows.e2e.ts::a brandless row says so — they guard
+existing behavior and are not this slice's work
+```
+
+It is a line, not a gate: nothing stops, nothing is rejected, and the tests
+stay in the acceptance set, because a test that guards behavior the
+repository already has is worth keeping and worth running. What it buys is
+that the freeze no longer looks like four criteria when it is one, on the
+issue where Gabriel reads it and in the log where the implementer does.
+
+Block 1's own prompt says the same thing from the other end: a test that
+passes on the base is a regression guard, not an acceptance criterion, and a
+criterion that is already met on `main` is said so in `why_they_fail` rather
+than dressed up as a failing test. A slice whose every criterion already
+passes is a reasoned refusal ([A mechanic that refuses](#a-mechanic-that-refuses)),
+not one invented failing test carrying a set of green ones.
+
 ### A mechanic that refuses
 
 A block 1 reply with an empty `test_files` and a stated `why_they_fail` is
@@ -942,6 +973,19 @@ way and leaves the slice in `tests_rejected`, because that is what it is -
 `--resume` relaunches the repair, from a fresh repair worktree, rather than
 sending the implementer back at tests nobody fixed.
 
+**A repair whose budget is spent is terminal.** A repair block 1 was refused
+on both of its turns never re-freezes, so `test_repairs` does not move: the
+relaunched repair would carry the same number, ask for the same branch name
+and send the same brief at the same tests, which is what #337 run 6 did.
+The spent repair is recorded instead (`test_repair_spent`), and a `--resume`
+stops on it with `RUN_STATE_CONFLICT` (exit 30) naming the repair and saying
+what is left: repair the acceptance tests by hand, or `--reset` and run the
+story again. A repair that stopped for anything else - an agent that died, a
+tool that failed, the driver killed mid-turn - is not that: no verdict on the
+tests was reached, and the resume relaunches it as before, removing the
+worktree and branch the stopped repair left standing and remaking both from
+the slice's failing-test base (`worktrees.create_repair_worktree`).
+
 ### Objecting beside finished work
 
 On #421 the builder objected three times, was right three times, and had the
@@ -1522,19 +1566,20 @@ These are the only transitions out of `failed`, and they exist because
 `failed` records the driver's own judgement, which a fixed driver may
 re-derive:
 
-| the slice's last turn                                          | reconciliation                                                                                                                                                                                           |
-| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| no turn at all (the launch barrier failed)                     | `assigned`; the loop launches attempt 1                                                                                                                                                                  |
-| status `running` (the driver died mid-turn)                    | refused (`EXECUTION_HELD`) while an `aarmy talk` for that team and role still runs on this machine; otherwise voided                                                                                     |
-| completed with a valid reply (validation stopped or never ran) | the working tree's digest must equal the one recorded when the turn ended, else `RUN_STATE_CONFLICT`; then `running` with its verdict pending, and block 3 re-validates that reply without an agent call |
-| completed with a `diagnostic` for the attempt the role is on   | back to `correcting` and relaunched rather than re-judged: that verdict is the driver's own and the bytes have not moved. The next attempt, or one grace attempt when the budget is spent (#337 run 4)   |
-| completed and marked `"repeated": true`                        | refused (`RUN_STATE_CONFLICT`): the verdict is a function of bytes that have not changed, so re-validating could only reach the same diagnostic and stop on it again; reset                              |
-| completed without a reply (launch failed, reply malformed)     | voided                                                                                                                                                                                                   |
-| already voided by an earlier resume                            | back to the launch                                                                                                                                                                                       |
-| a fix turn (kind `review_fix`), or state `fixing`              | the same four rules above, but back to `fixing`: block 4 finishes the fix request, re-judging a retained reply with no verdict yet, or relaunching a voided turn under the same `fix_attempt`            |
-| a fix turn already recorded `failed`                           | back to `fixing` and relaunched rather than re-judged: that verdict is on the ledger and the bytes have not moved. The next `fix_attempt`, or one grace attempt when the budget is spent (#420 run 3)    |
-| state `escalating` (interrupted between two roles)             | refused (`RUN_STATE_CONFLICT`): reset                                                                                                                                                                    |
-| state `tests_rejected` (block 1 is repairing the tests)        | stays parked; an unfinished repair turn is voided and block 3 relaunches the repair from a fresh repair worktree, with the role block 1 ended on (`tests_role`) rather than the mechanic                 |
+| the slice's last turn                                                                       | reconciliation                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| no turn at all (the launch barrier failed)                                                  | `assigned`; the loop launches attempt 1                                                                                                                                                                  |
+| status `running` (the driver died mid-turn)                                                 | refused (`EXECUTION_HELD`) while an `aarmy talk` for that team and role still runs on this machine; otherwise voided                                                                                     |
+| completed with a valid reply (validation stopped or never ran)                              | the working tree's digest must equal the one recorded when the turn ended, else `RUN_STATE_CONFLICT`; then `running` with its verdict pending, and block 3 re-validates that reply without an agent call |
+| completed with a `diagnostic` for the attempt the role is on                                | back to `correcting` and relaunched rather than re-judged: that verdict is the driver's own and the bytes have not moved. The next attempt, or one grace attempt when the budget is spent (#337 run 4)   |
+| completed and marked `"repeated": true`                                                     | refused (`RUN_STATE_CONFLICT`): the verdict is a function of bytes that have not changed, so re-validating could only reach the same diagnostic and stop on it again; reset                              |
+| completed without a reply (launch failed, reply malformed)                                  | voided                                                                                                                                                                                                   |
+| already voided by an earlier resume                                                         | back to the launch                                                                                                                                                                                       |
+| a fix turn (kind `review_fix`), or state `fixing`                                           | the same four rules above, but back to `fixing`: block 4 finishes the fix request, re-judging a retained reply with no verdict yet, or relaunching a voided turn under the same `fix_attempt`            |
+| a fix turn already recorded `failed`                                                        | back to `fixing` and relaunched rather than re-judged: that verdict is on the ledger and the bytes have not moved. The next `fix_attempt`, or one grace attempt when the budget is spent (#420 run 3)    |
+| state `escalating` (interrupted between two roles)                                          | refused (`RUN_STATE_CONFLICT`): reset                                                                                                                                                                    |
+| state `tests_rejected` (block 1 is repairing the tests)                                     | stays parked; an unfinished repair turn is voided and block 3 relaunches the repair from a fresh repair worktree, with the role block 1 ended on (`tests_role`) rather than the mechanic                 |
+| state `tests_rejected`, and that repair's two turns were both refused (`test_repair_spent`) | refused (`RUN_STATE_CONFLICT`): the same repair at the same tests could only be refused again; repair them by hand, or reset                                                                             |
 
 A `failed` entry is the driver's verdict on the work only when a diagnostic
 sits beside it. A validation that died on an external tool failure records
