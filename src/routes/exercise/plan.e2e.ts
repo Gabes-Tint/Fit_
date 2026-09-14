@@ -12,6 +12,16 @@ async function openPlan(page: Page) {
 	await expect(page.getByRole('button', { name: /^Mon / })).toBeVisible();
 }
 
+const EXTRA_ROUTINES = ['Push', 'Pull', 'Legs'];
+
+/** A distinct routine built from the Exercise page, so a day can hold several. */
+async function buildRoutineNamed(page: Page, name: string) {
+	await page.getByRole('button', { name: 'New routine' }).click();
+	await page.getByRole('textbox', { name: 'Routine name' }).fill(name);
+	await page.getByRole('link', { name: 'Save' }).click();
+	await expect(page.getByRole('heading', { name: 'Exercise', level: 1 })).toBeVisible();
+}
+
 async function setupSundaySept13WithRoutine(page: Page, baseURL: string) {
 	const SUNDAY_SEPT_13 = new Date('2026-09-13T09:00:00');
 	await page.clock.setFixedTime(SUNDAY_SEPT_13);
@@ -93,24 +103,27 @@ test.describe('week planner "Today" label', () => {
 		await page.clock.setFixedTime(WEDNESDAY_SEPT_30);
 		await openExerciseTabEmpty(page, baseURL ?? '');
 		await pickFullBodyTemplate(page);
-
+		for (const name of EXTRA_ROUTINES) await buildRoutineNamed(page, name);
 		await openPlan(page);
 
-		// Plan Full body on today (Wed 30) four times
 		const todayButton = page.getByRole('button', { name: /^Today, Wed 30/ });
-		for (let i = 0; i < 4; i++) {
-			await todayButton.click();
-			await expect(page.getByRole('dialog')).toBeVisible();
-			await page
-				.getByRole('dialog')
-				.getByRole('button', { name: /Full body/ })
-				.click();
-			await expect(page.getByRole('dialog')).toBeHidden();
+		await todayButton.click();
+		const dialog = page.getByRole('dialog');
+		for (const name of ['Full body', ...EXTRA_ROUTINES]) {
+			const option = dialog.getByRole('button', { name });
+			await option.click();
+			await expect(option).toHaveAttribute('aria-pressed', 'true');
 		}
+		await dialog.getByRole('button', { name: 'Close' }).click();
+		await expect(dialog).toBeHidden();
 
 		await atNarrowPhone(page);
-		const chipsInRow = todayButton.locator('[class*="chip"]');
-		await expect(chipsInRow).toHaveCount(4);
+		await expect(todayButton).toHaveAccessibleName(
+			'Today, Wed 30, Full body, then Push, then Pull, then Legs'
+		);
+		for (const name of ['Full body', ...EXTRA_ROUTINES]) {
+			await expect(todayButton).toContainText(name);
+		}
 		await expectFitsViewport(page, todayButton);
 	});
 });
