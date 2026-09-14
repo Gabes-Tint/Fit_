@@ -2485,3 +2485,72 @@ def test_the_solver_running_out_is_where_block_1_stops(world):
     assert [len(_talks(world, role)) for role in ("mechanic", "builder", "solver")] == [2, 2, 2]
     # block 2 never ran: the run stopped inside block 1
     assert "🎯 #251" not in result.stdout
+
+
+# --- shared test setup lives in a tests/ helper (issue #337) ---------------------
+
+
+def test_block_1_may_lift_shared_setup_into_a_tests_helper(world):
+    """Run 5 of #337: the e2e file block 1 wrote repeated the setup of two
+    other `*.e2e.ts` files, `duplicates` rejected it, and the repair that
+    answered the gate the only way it can be answered - extracting the
+    shared lines into `tests/e2e-support.ts`, where the suite already keeps
+    its helpers - came back as "non-test file changed". A file under
+    `tests/` that is not itself a test is test-side now, and the branch
+    carrying one is accepted."""
+    _given_single_ui_slice(world, 252, "Shared setup in a helper")
+    slug = "story-252-ui"
+    test_file = "src/routes/food-brand.e2e.ts"
+    support = "tests/e2e-support.ts"
+    world.mechanic_writes(
+        slug,
+        files={
+            test_file: "// the brand row, asserted through the shared setup\n",
+            support: "export function openPlan() {}\n",
+        },
+        test_files=[test_file],
+    )
+    world.scripted_test_outcome(test_file, ["fail", "pass"])
+    world.planner_answers_delegate(252, [delegate_slice(252, "ui", mechanic_signals())])
+    world.agent_implements(
+        slug,
+        "mechanic",
+        files={"src/routes/food-brand/+page.svelte": "<p>brand</p>\n"},
+        changed_files=["src/routes/food-brand/+page.svelte"],
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "non-test file changed" not in result.stdout
+    assert "only tests ✔" in result.stdout
+    assert "🏁 Implemented #252" in result.stdout
+    # the helper is ordinary branch content: the frozen acceptance set block
+    # 3 must leave byte-identical is the e2e file alone
+    assert world.run_record(252)["slices"]["ui"]["test_files"] == [test_file]
+
+
+def test_a_product_file_beside_a_tests_helper_is_still_refused(world):
+    """Test support widened what block 1 may carry; it widened it to
+    nothing else. The branch below carries a helper and a product module,
+    and the rejection is about the module."""
+    _given_single_ui_slice(world, 253, "A helper and a product file")
+    slug = "story-253-ui"
+    test_file = "src/routes/plan-order.e2e.ts"
+    world.mechanic_writes(
+        slug,
+        files={
+            test_file: "// failing\n",
+            "tests/e2e-support.ts": "export function openPlan() {}\n",
+            "src/lib/x.ts": "export const x = 1;\n",
+        },
+        test_files=[test_file],
+    )
+    world.mechanic_replies(slug, [test_file])
+    _ladder_repeats(lambda role, index: world.mechanic_replies(slug, [test_file], role=role))
+
+    result = run_flow(world)
+
+    assert result.returncode == 23, result.stdout + result.stderr
+    assert f"non-test file changed on {slug}: src/lib/x.ts" in result.stdout
+    assert f"non-test file changed on {slug}: tests/e2e-support.ts" not in result.stdout

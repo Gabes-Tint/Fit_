@@ -855,3 +855,37 @@ def test_resume_relaunches_the_repair_with_the_role_block_1_ended_on(world):
     assert len(_talks(world, "builder", f"{slug}-tests-1")) == 2
     assert _talks(world, "mechanic", f"{slug}-tests-1") == []
     assert world.run_record(471)["slices"]["domain"]["test_files"] == [REPAIRED]
+
+
+# --- a repair may put shared setup in a tests/ helper (issue #337) --------------
+
+
+def test_a_block_1_repair_may_extract_shared_setup_into_a_tests_helper(world):
+    """The path #337 run 5 actually took: the objection came back, the
+    repair answered it by moving the setup the acceptance files repeat into
+    `tests/e2e-support.ts`, and the driver refused the turn as a non-test
+    file. The repair is accepted now, and the helper stays out of the
+    acceptance set the implementer is judged against."""
+    support = "tests/e2e-support.ts"
+    slug = _given_planned_story(world, 481, ["fail", "fail"])
+    world.scripted_test_outcome(REPAIRED, ["fail", "pass"])
+    world.agent_objects(slug, "mechanic", tests=[TEST], why=WHY)
+    world.mechanic_repairs(
+        f"{slug}-tests-1",
+        files={
+            REPAIRED: "// repaired: the setup now comes from the helper\n",
+            support: "// setup\n",
+        },
+        test_files=[REPAIRED],
+        delete=[TEST],
+    )
+    world.agent_implements(slug, "mechanic", files=WORK, changed_files=list(WORK))
+
+    result = run_flow(world, 481)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "non-test file changed" not in result.stdout
+    assert "🔒 #481 (domain) tests re-frozen at" in result.stdout
+    piece = world.run_record(481)["slices"]["domain"]
+    assert piece["state"] == "succeeded"
+    assert piece["test_files"] == [REPAIRED]
