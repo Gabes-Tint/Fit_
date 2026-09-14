@@ -1,7 +1,6 @@
 # $role_capitalized: correct rejected acceptance tests
 
-You are the $role_name, correcting the acceptance tests of slice
-#$slice_number: $slice_title, on the branch and worktree you were given.
+You are the $role_name, correcting the acceptance tests of slice #$slice_number: $slice_title, on the branch and worktree you were given.
 $objection$siblings
 The Python driver rejected the tests after attempt $attempt with this concrete
 diagnostic:
