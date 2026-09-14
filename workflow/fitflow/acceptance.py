@@ -129,12 +129,19 @@ class Verdict:
     """One runner check: whether it passed, the diagnostic when it did not,
     whether that diagnostic is agent-repairable, and every failed test the
     report named - carried on a passing verdict too, because block 1 accepts
-    tests only after judging why they failed."""
+    tests only after judging why they failed.
+
+    `statuses` is the same run read test by test rather than file by file.
+    A file is failing as intended as soon as one of its tests fails, so the
+    verdict alone cannot say that three of its four tests passed on the base
+    - and block 1 freezes such a set without a word (#337 run 6, where three
+    of four acceptance tests had passed since #341 landed)."""
 
     ok: bool
     why: str = ""
     repairable: bool = False
     failures: tuple[Failure, ...] = ()
+    statuses: tuple["TestStatus", ...] = ()
 
     @property
     def defects(self) -> list[Failure]:
@@ -308,9 +315,20 @@ def owning_test(name: str, test_files: list[str]) -> str | None:
 
 #: A test as its own source spells it: `it("...")`, `test('...')` or a
 #: chained sibling of either (`it.each`, `test.skip`), with the title in
-#: the quotes. A Python test is a name rather than a string, one
-#: `def test_*` per test.
-_TS_TEST_BLOCK = re.compile(r"""\b(?:it|test)(?:\.\w+)*\s*\(\s*(['"`])(.*?)\1""", re.DOTALL)
+#: the quotes.
+#:
+#: `describe` is not one of those siblings. `test.describe("...")` names a
+#: block of tests and is no test itself, and reading its title as one is
+#: how #337 run 6 stopped: a repair renamed a describe block, the driver
+#: read the old name as a test the repair had deleted, and refused a
+#: correction that had removed nothing. The lookahead is what keeps
+#: `test.describe(...)` and `test.describe.serial(...)` out while
+#: `it.skip`, `test.only` and `test.fixme` stay in; a bare `describe(...)`
+#: never matched at all, because the name starts with neither `it` nor
+#: `test`.
+_TS_TEST_BLOCK = re.compile(
+    r"""\b(?:it|test)(?:\.(?!describe\b)\w+)*\s*\(\s*(['"`])(.*?)\1""", re.DOTALL
+)
 _PY_TEST_BLOCK = re.compile(r"^\s*def (test_\w+)", re.MULTILINE)
 
 
@@ -372,15 +390,17 @@ def _run_each(worktree: Path, test_files: list[str], checks: dict) -> Verdict:
     """One invocation per runner the slice's test files need, in a fixed
     order so the same set of files always produces the same first verdict."""
     failures: list[Failure] = []
+    statuses: list[TestStatus] = []
     for runner in ("vitest", "playwright", "pytest"):
         files = [f for f in test_files if _runner(f) == runner]
         if not files:
             continue
         verdict = checks[runner](worktree, files)
         failures.extend(verdict.failures)
+        statuses.extend(verdict.statuses)
         if not verdict.ok:
-            return Verdict(False, verdict.why, verdict.repairable, tuple(failures))
-    return Verdict(True, failures=tuple(failures))
+            return Verdict(False, verdict.why, verdict.repairable, tuple(failures), tuple(statuses))
+    return Verdict(True, failures=tuple(failures), statuses=tuple(statuses))
 
 
 def _parse_json(stdout: str) -> dict | None:
@@ -464,14 +484,15 @@ def _check_vitest(worktree: Path, files: list[str]) -> Verdict:
     if report is None:
         return Verdict(False, f"vitest produced no parsable JSON report for {', '.join(files)}")
     entries = report.get("testResults", [])
+    statuses = _statuses_of("vitest", report, files)
     failures: list[Failure] = []
     for f in files:
         entry = next((e for e in entries if str(e.get("name", "")).endswith(f)), None)
         failures.extend(_vitest_failures(entry, f))
         diagnostic = _check_vitest_entry(entry, entries, f)
         if diagnostic:
-            return Verdict(False, diagnostic, True, tuple(failures))
-    return Verdict(True, failures=tuple(failures))
+            return Verdict(False, diagnostic, True, tuple(failures), statuses)
+    return Verdict(True, failures=tuple(failures), statuses=statuses)
 
 
 def _check_vitest_entry(entry: dict | None, entries: list[dict], filename: str) -> str | None:
@@ -535,14 +556,15 @@ def _check_playwright(worktree: Path, files: list[str]) -> Verdict:
     if report is None:
         return Verdict(False, f"playwright produced no parsable JSON report for {', '.join(files)}")
     specs = list(_flatten_specs(report.get("suites", [])))
+    statuses = _statuses_of("playwright", report, files)
     failures: list[Failure] = []
     for f in files:
         matching = [spec for spec in specs if str(spec.get("file", "")).endswith(f)]
         failures.extend(_playwright_failures(matching, report, f))
         diagnostic = _check_playwright_specs(matching, specs, f)
         if diagnostic:
-            return Verdict(False, diagnostic, True, tuple(failures))
-    return Verdict(True, failures=tuple(failures))
+            return Verdict(False, diagnostic, True, tuple(failures), statuses)
+    return Verdict(True, failures=tuple(failures), statuses=statuses)
 
 
 def _check_playwright_specs(matching: list[dict], specs: list[dict], filename: str) -> str | None:
@@ -837,14 +859,15 @@ def _check_pytest(worktree: Path, files: list[str]) -> Verdict:
     collection = _collection_error(entries)
     if collection:
         return Verdict(False, collection, True)
+    statuses = _statuses_of("pytest", entries, files)
     failures: list[Failure] = []
     for f in files:
         matching = [entry for entry in entries if _same_file(entry["file"], f)]
         failures.extend(_pytest_failures(matching, f))
         diagnostic = _check_pytest_entries(matching, f)
         if diagnostic:
-            return Verdict(False, diagnostic, True, tuple(failures))
-    return Verdict(True, failures=tuple(failures))
+            return Verdict(False, diagnostic, True, tuple(failures), statuses)
+    return Verdict(True, failures=tuple(failures), statuses=statuses)
 
 
 def _check_pytest_passing(worktree: Path, files: list[str]) -> Verdict:
@@ -969,3 +992,17 @@ _STATUSES = {
     "playwright": _playwright_test_statuses,
     "pytest": _pytest_test_statuses,
 }
+
+
+def _statuses_of(runner: str, report, files: list[str]) -> tuple[TestStatus, ...]:
+    """One runner's report, read test by test - from the same invocation the
+    verdict was judged from, never a second run of the tests."""
+    return tuple(status for f in files for status in _STATUSES[runner](report, f))
+
+
+def already_passing(verdict: Verdict) -> list[str]:
+    """Which of the tests this run saw passed, named as an objection names
+    them. On a run block 1 accepted as failing they are the tests that pass
+    on the base: real tests, and worth having, but regression guards rather
+    than this slice's own acceptance criteria."""
+    return [status.name for status in verdict.statuses if status.passed]

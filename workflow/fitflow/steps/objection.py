@@ -441,8 +441,8 @@ def repair(record: RunRecord, piece: SliceRecord) -> None:
     audit.worktree_created(slug)
     narrate.line(f"🌿 Worktree {slug} · branch {slug} at {piece.failing_sha[:12]}")
     agents.ensure_fresh_team(slug, path, piece.number)
-    test_files, why, debt = _repair_loop(record, piece, slug, path, role)
-    _refreeze(record, piece, path, test_files, why, debt)
+    test_files, why, debt, passing_note = _repair_loop(record, piece, slug, path, role)
+    _refreeze(record, piece, path, test_files, why, debt, passing_note)
     worktrees.remove_slice_worktree(path)
     worktrees.delete_local_branch(slug)
     agents.delete_team(slug)
@@ -477,7 +477,7 @@ def _repair_headline(piece: SliceRecord, number: int, role: str) -> str:
 
 def _repair_loop(
     record: RunRecord, piece: SliceRecord, slug: str, path: Path, role: str
-) -> tuple[list[str], str, dict[str, int]]:
+) -> tuple[list[str], str, dict[str, int], str]:
     """The repair's own bounded budget, independent of the implementer's: a
     block 1 verdict the mechanic can repair becomes the next turn's
     diagnostic, and the last turn's stops the run. An agent or tool failure
@@ -499,6 +499,7 @@ def _repair_loop(
             if failure.outcome not in failing_tests.REPAIRABLE_OUTCOMES:
                 raise _repair_stopped(record, piece, failure.outcome, failure.why) from failure
             if turn == REPAIR_TURNS:
+                _mark_repair_spent(record, piece)
                 raise _repair_stopped(
                     record,
                     piece,
@@ -513,6 +514,18 @@ def _repair_loop(
     raise AssertionError("unreachable: the loop always returns or raises")
 
 
+def _mark_repair_spent(record: RunRecord, piece: SliceRecord) -> None:
+    """Block 1 spent both turns of this repair and the tests came out of it
+    still rejected. `test_repairs` never moves for such a repair - only a
+    re-freeze bumps it - so nothing else on the record says the budget went:
+    a `--resume` read the counter, named the branch `<slug>-tests-<n>` again
+    and relaunched the very repair that had just been refused twice. The
+    number is kept instead, and the resume stops on it (#337 run 6)."""
+    with record.transition():
+        piece.test_repair_spent = piece.test_repairs + 1
+        record.save()
+
+
 def _repair_turn(
     record: RunRecord,
     piece: SliceRecord,
@@ -521,7 +534,7 @@ def _repair_turn(
     turn: int,
     diagnostic: str,
     role: str,
-) -> tuple[list[str], str, dict[str, int]]:
+) -> tuple[list[str], str, dict[str, int], str]:
     entry = _begin_repair_turn(record, piece, slug, turn, role)
     try:
         reply, session = _talk(piece, slug, path, diagnostic, role)
@@ -540,7 +553,7 @@ def _repair_turn(
                 ("Why they fail", reply["why_they_fail"]),
             ]
         )
-    kept, debt = failing_tests.validate_repaired_tests(
+    kept, debt, passing_note = failing_tests.validate_repaired_tests(
         slug,
         path,
         piece.failing_sha,
@@ -551,7 +564,7 @@ def _repair_turn(
         named,
         list(piece.objections[-1]["tests"]),
     )
-    return kept, reply["why_they_fail"], debt
+    return kept, reply["why_they_fail"], debt, passing_note
 
 
 def _judged_set(piece: SliceRecord, named: list[str]) -> list[str]:
@@ -569,6 +582,19 @@ def _judged_set(piece: SliceRecord, named: list[str]) -> list[str]:
     repair did not touch, because every one of them still judges the
     slice."""
     return list(dict.fromkeys(piece.test_files + named))
+
+
+#: What the prompt's diagnostic slot says when the objection is the whole
+#: diagnostic. The template asks "the driver rejected the tests with this
+#: concrete diagnostic", and on a repair's first turn that diagnostic is the
+#: objection `_objection_section` has already quoted in full - so #337 run 6
+#: sent the solver the same wall of text twice. It is quoted once now, and
+#: the slot says where it is.
+_THE_OBJECTION_ITSELF = (
+    "The objection quoted above is the whole of it: the driver verified that objection "
+    "and rejected nothing else about these tests. Do not wait for another diagnostic - "
+    "repair what the objection is about."
+)
 
 
 def _talk(
@@ -590,7 +616,7 @@ def _talk(
         brief=piece.brief,
         acceptance="\n".join(f"- {item}" for item in piece.acceptance),
         attempt=str(piece.attempts),
-        diagnostic=diagnostic,
+        diagnostic=_diagnostic_slot(piece, diagnostic),
         objection=_objection_section(piece, role),
         push_line=(
             f"commit the corrected tests on `{slug}` and do not push: this is the "
@@ -598,6 +624,17 @@ def _talk(
             "slice's branch itself"
         ),
     )
+
+
+def _diagnostic_slot(piece: SliceRecord, diagnostic: str) -> str:
+    """The prompt's diagnostic, said once. A repair's first turn is given
+    the objection itself as its diagnostic, and the objection section above
+    it in the same prompt renders exactly those bytes; every later turn is
+    given block 1's own verdict on the last repair, which is nowhere else
+    in the prompt."""
+    if diagnostic.strip() == _rendered(piece.objections[-1]).strip():
+        return _THE_OBJECTION_ITSELF
+    return diagnostic
 
 
 def _objection_section(piece: SliceRecord, role: str) -> str:
@@ -635,18 +672,36 @@ def _history(piece: SliceRecord, role: str) -> str:
     if piece.test_repairs == 0:
         return ""
     earlier = "\n\n".join(_rendered(item) for item in piece.objections[:-1])
-    replies = "\n".join(
-        f"- repair {item['repair']} turn {item['turn']} ({item.get('role', 'mechanic')}): "
-        f"{item['why'] or item['result']}"
-        for item in piece.test_repair_turns
-    )
     return (
         f"\n\nThis is repair {piece.test_repairs + 1} of {MAX_REPAIRS}. Block 1 already "
         f"repaired these tests {piece.test_repairs} time(s) and the objection came back, so "
         f"this repair is yours: you are the {role} that implements this slice, and you have "
         f"seen what the tests ask for. Do not repeat the last repair's answer - read the "
         f"whole history below and repair what the objections are actually about.\n\n"
-        f"Earlier objections:\n\n{earlier}\n\nWhat the repairs replied:\n{replies}"
+        f"Earlier objections:\n\n{earlier}\n\nWhat the repairs replied:\n{_replies(piece)}"
+    )
+
+
+def _replies(piece: SliceRecord) -> str:
+    """What each repair turn answered - once per turn, and nothing for the
+    turn that has not happened yet.
+
+    The ledger holds more than one entry per turn on purpose: a relaunched
+    repair appends its own beside the dead one's, and `_begin_repair_turn`
+    puts the turn being launched on it before the agent is asked anything.
+    #337 run 6 read all of them into the prompt, so the solver was handed
+    the same two repairs twice in two different wordings and an empty line
+    for the turn it was about to take. The last entry for a turn is the one
+    that says what that turn did."""
+    latest: dict[tuple[int, int], dict] = {}
+    for item in piece.test_repair_turns:
+        if item["status"] == "running" or not (item["why"] or item["result"]):
+            continue
+        latest[(item["repair"], item["turn"])] = item
+    return "\n".join(
+        f"- repair {item['repair']} turn {item['turn']} ({item.get('role', 'mechanic')}): "
+        f"{item['why'] or item['result']}"
+        for item in latest.values()
     )
 
 
@@ -699,6 +754,7 @@ def _refreeze(
     test_files: list[str],
     why: str,
     debt: dict[str, int],
+    passing_note: str = "",
 ) -> None:
     """The repaired tests become this slice's inputs: merged into the slice
     branch beside the implementer's uncommitted work, pushed, and recorded.
@@ -737,7 +793,7 @@ def _refreeze(
         record.save()
     narrate.line(f"🔒 #{piece.number} ({piece.layer}) tests re-frozen at {repair_sha[:12]}")
     narrate.line(f"⇪ Pushed {piece.branch} at {merged[:12]}")
-    _comment(record, piece, repair_sha, test_files, why)
+    _comment(record, piece, repair_sha, test_files, why, passing_note)
 
 
 def _kept_note(piece: SliceRecord, slice_path: Path, test_files: list[str]) -> str:
@@ -789,14 +845,20 @@ def _merge_repair(record: RunRecord, piece: SliceRecord, slice_path: Path, sha: 
 
 
 def _comment(
-    record: RunRecord, piece: SliceRecord, repair_sha: str, test_files: list[str], why: str
+    record: RunRecord,
+    piece: SliceRecord,
+    repair_sha: str,
+    test_files: list[str],
+    why: str,
+    passing_note: str = "",
 ) -> None:
     entry = piece.objections[-1]
+    already = f"\n\n{passing_note}" if passing_note else ""
     body = (
         f"Acceptance tests repaired for #{piece.number} ({piece.layer}) after the "
         f"{entry['role']}'s objection ({entry['kind']}), repair {piece.test_repairs}"
         f"/{MAX_REPAIRS}.\nCommit: {repair_sha}\nTest files: {', '.join(test_files)}\n\n"
-        f"Why they fail: {why}\n\n{_rendered(entry)}"
+        f"Why they fail: {why}{already}\n\n{_rendered(entry)}"
     )
     narrate.comment_posted(record.story_number, body)
     github.comment(record.story_number, body)

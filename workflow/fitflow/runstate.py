@@ -277,6 +277,12 @@ class SliceRecord:
     test_repairs: int = 0
     test_repair_turns: list[dict] = field(default_factory=list)
     test_repair_note: str = ""
+    # The repair whose whole turn budget block 1 spent without repairing
+    # anything (0 when there is none). It is the one repair a `--resume`
+    # does not relaunch: the turns are on the ledger, the tests have not
+    # moved, and launching the same repair again could only reach the same
+    # refusal - so the call is a human's (steps/resume._reopen_test_repair).
+    test_repair_spent: int = 0
     frozen_commit: str = ""
     implementation_sha: str = ""
 
