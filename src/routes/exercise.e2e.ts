@@ -67,8 +67,8 @@ test.describe('once a routine is in the rotation', () => {
 		await page.getByRole('button', { name: 'Start Full body' }).click();
 		await expect(page.getByRole('heading', { name: 'Squat', level: 1 })).toBeVisible();
 
-		await page.getByRole('button', { name: 'Set 1 done' }).click();
-		await expect(page.getByRole('button', { name: 'Set 1 done' })).toHaveAttribute(
+		await page.getByRole('button', { name: 'Set 1 done' }).first().click();
+		await expect(page.getByRole('button', { name: 'Set 1 done' }).first()).toHaveAttribute(
 			'aria-pressed',
 			'true'
 		);
@@ -81,9 +81,9 @@ test.describe('once a routine is in the rotation', () => {
 
 	test('keeps a session running across a reload', async ({ page }) => {
 		await page.getByRole('button', { name: 'Start Full body' }).click();
-		await page.getByRole('button', { name: 'Set 1 done' }).click();
+		await page.getByRole('button', { name: 'Set 1 done' }).first().click();
 		await page.reload();
-		await expect(page.getByRole('button', { name: 'Set 1 done' })).toHaveAttribute(
+		await expect(page.getByRole('button', { name: 'Set 1 done' }).first()).toHaveAttribute(
 			'aria-pressed',
 			'true'
 		);
@@ -127,7 +127,7 @@ test.describe('once a routine is in the rotation', () => {
 	test('has no detectable accessibility violations mid-session', async ({ page }) => {
 		await page.getByRole('button', { name: 'Start Full body' }).click();
 		await expect(page.getByRole('heading', { name: 'Squat', level: 1 })).toBeVisible();
-		await page.getByRole('button', { name: 'Set 1 done' }).click();
+		await page.getByRole('button', { name: 'Set 1 done' }).first().click();
 		expect(await axeViolations(page)).toEqual([]);
 	});
 
@@ -166,7 +166,7 @@ test.describe('once a routine is in the rotation', () => {
 
 	test('has no detectable accessibility violations reading progress back', async ({ page }) => {
 		await page.getByRole('button', { name: 'Start Full body' }).click();
-		await page.getByRole('button', { name: 'Set 1 done' }).click();
+		await page.getByRole('button', { name: 'Set 1 done' }).first().click();
 		await page.getByRole('button', { name: 'Finish' }).click();
 		await expect(page.getByText('Session done', { exact: true })).toBeVisible();
 		expect(await axeViolations(page)).toEqual([]);
@@ -232,7 +232,7 @@ test.describe('a session where nothing was ticked', () => {
 
 		// One set ticked later the same screen counts it — a rule at work, not a dead card.
 		await page.getByRole('button', { name: 'Start Full body' }).click();
-		await page.getByRole('button', { name: 'Set 1 done' }).click();
+		await page.getByRole('button', { name: 'Set 1 done' }).first().click();
 		await page.getByRole('button', { name: 'Finish' }).click();
 		await page.getByRole('link', { name: 'Done', exact: true }).click();
 		await expect(page.getByText(/1 session done this week already/)).toBeVisible();

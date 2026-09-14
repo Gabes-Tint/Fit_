@@ -17,7 +17,7 @@
 		back: '/exercise' | '/exercise/plan';
 		backLabel?: string;
 		title: string;
-		action?: Snippet;
+		action?: Snippet | undefined;
 	} = $props();
 
 	const href = $derived(resolve(back));

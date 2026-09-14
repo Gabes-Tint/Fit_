@@ -1,4 +1,4 @@
-import type { Routine, Workout, WorkoutExercise, WorkoutSet } from '$lib/domain/types';
+import type { Routine, Workout, WorkoutSet } from '$lib/domain/types';
 
 /**
  * Open a routine into the workout that will record it. Sets are written out up
@@ -63,8 +63,23 @@ export function elapsedSeconds(workout: Workout, now: number): number {
 	return Math.max(0, Math.floor((end - workout.startedAt) / 1000));
 }
 
-export function currentExercise(workout: Workout): WorkoutExercise | undefined {
-	return workout.exercises[workout.exerciseIndex];
+/**
+ * Where the session goes next: the first undone set of the first exercise, in
+ * routine order, that still has one. `null` once every set is done.
+ */
+export function nextUndoneSet(
+	workout: Workout
+): { exerciseIndex: number; setIndex: number } | null {
+	for (const [exerciseIndex, exercise] of workout.exercises.entries()) {
+		const setIndex = exercise.sets.findIndex((s) => !s.done);
+		if (setIndex !== -1) return { exerciseIndex, setIndex };
+	}
+	return null;
+}
+
+/** Sets ticked and sets there are, across the whole session. */
+export function setCounts(workout: Workout): { done: number; total: number } {
+	return { done: workoutSetsDone(workout), total: workoutSetsPlanned(workout) };
 }
 
 /** m:ss, for the rest timer, where an hour is never in play. */

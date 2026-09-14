@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Routine, Workout, WorkoutExercise, WorkoutSet } from './types';
 import {
-	currentExercise,
 	elapsedSeconds,
 	formatClock,
 	formatDuration,
@@ -145,17 +144,6 @@ describe('the session clock', () => {
 	});
 });
 
-describe('the exercise on screen', () => {
-	it('is the one the index points at', () => {
-		const w = workout([exercise('Bench Press', []), exercise('Pull-up', [])], { exerciseIndex: 1 });
-		expect(currentExercise(w)?.name).toBe('Pull-up');
-	});
-
-	it('is nothing when the index has run off the end', () => {
-		expect(currentExercise(workout([], { exerciseIndex: 3 }))).toBeUndefined();
-	});
-});
-
 describe('formatting a clock', () => {
 	it('pads the seconds so the digits do not jump', () => {
 		expect(formatClock(65)).toBe('1:05');
@@ -241,5 +229,87 @@ describe('what this movement went at last time', () => {
 		const history = [earlier, later];
 		lastPerformance(history, 'Bench Press');
 		expect(history).toEqual([earlier, later]);
+	});
+});
+
+describe('nextUndoneSet', () => {
+	it('returns the first undone set of the first exercise that has one', async () => {
+		const w = workout([
+			exercise('Squat', [set(60, 8, true), set(60, 8, true), set(60, 8, false)]),
+			exercise('Bench Press', [set(45, 8, true), set(45, 8, false), set(45, 8, false)]),
+			exercise('Seated Row', [set(45, 10, true), set(45, 10, true), set(45, 10, true)])
+		]);
+		const mod = await import('./workout');
+		expect(mod.nextUndoneSet).toBeDefined();
+		expect(mod.nextUndoneSet(w)).toEqual({ exerciseIndex: 0, setIndex: 2 });
+	});
+
+	it('returns null when every set is done', async () => {
+		const w = workout([
+			exercise('Squat', [set(60, 8, true), set(60, 8, true), set(60, 8, true)]),
+			exercise('Bench Press', [set(45, 8, true), set(45, 8, true), set(45, 8, true)]),
+			exercise('Seated Row', [set(45, 10, true), set(45, 10, true), set(45, 10, true)])
+		]);
+		const mod = await import('./workout');
+		expect(mod.nextUndoneSet).toBeDefined();
+		expect(mod.nextUndoneSet(w)).toBeNull();
+	});
+
+	it('finds the first undone set in routine order', async () => {
+		const w = workout([
+			exercise('Squat', [set(60, 8, true), set(60, 8, true), set(60, 8, true)]),
+			exercise('Bench Press', [set(45, 8, false), set(45, 8, true), set(45, 8, true)]),
+			exercise('Seated Row', [set(45, 10, false), set(45, 10, false), set(45, 10, true)])
+		]);
+		const mod = await import('./workout');
+		expect(mod.nextUndoneSet).toBeDefined();
+		expect(mod.nextUndoneSet(w)).toEqual({ exerciseIndex: 1, setIndex: 0 });
+	});
+
+	it('returns null for an empty workout', async () => {
+		const w = workout([]);
+		const mod = await import('./workout');
+		expect(mod.nextUndoneSet).toBeDefined();
+		expect(mod.nextUndoneSet(w)).toBeNull();
+	});
+});
+
+describe('setCounts', () => {
+	it('returns done and total sets counted across all exercises', async () => {
+		const w = workout([
+			exercise('Squat', [set(60, 8, true), set(60, 8, true), set(60, 8, false)]),
+			exercise('Bench Press', [set(45, 8, true), set(45, 8, false), set(45, 8, false)]),
+			exercise('Seated Row', [set(45, 10, true), set(45, 10, true), set(45, 10, true)])
+		]);
+		const mod = await import('./workout');
+		expect(mod.setCounts).toBeDefined();
+		expect(mod.setCounts(w)).toEqual({ done: 6, total: 9 });
+	});
+
+	it('counts nothing for an empty workout', async () => {
+		const w = workout([]);
+		const mod = await import('./workout');
+		expect(mod.setCounts).toBeDefined();
+		expect(mod.setCounts(w)).toEqual({ done: 0, total: 0 });
+	});
+
+	it('counts zero done sets when nothing is ticked', async () => {
+		const w = workout([
+			exercise('Squat', [set(60, 8, false), set(60, 8, false), set(60, 8, false)]),
+			exercise('Bench Press', [set(45, 8, false), set(45, 8, false)])
+		]);
+		const mod = await import('./workout');
+		expect(mod.setCounts).toBeDefined();
+		expect(mod.setCounts(w)).toEqual({ done: 0, total: 5 });
+	});
+
+	it('counts all sets done when every one is ticked', async () => {
+		const w = workout([
+			exercise('Squat', [set(60, 8, true), set(60, 8, true), set(60, 8, true)]),
+			exercise('Bench Press', [set(45, 8, true), set(45, 8, true)])
+		]);
+		const mod = await import('./workout');
+		expect(mod.setCounts).toBeDefined();
+		expect(mod.setCounts(w)).toEqual({ done: 5, total: 5 });
 	});
 });
