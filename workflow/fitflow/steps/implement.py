@@ -916,6 +916,10 @@ def _validate_turn(
     with narrate.grouped():
         narrate.fields([("Reported files", ", ".join(reply["changed_files"]))])
     path = worktrees.slice_worktree_path(piece.slug)
+    if fix_turn:
+        no_op = _changed_nothing(piece, path)
+        if no_op is not None:
+            return _Rejection(no_op)
     changed = _check_worktree_state(
         record, piece, path, frozen_ok=fix_turn, base=_diff_base(piece, fix_turn)
     )
@@ -1332,6 +1336,28 @@ def _diff_base(piece: SliceRecord, fix_turn: bool) -> str:
     return piece.failing_sha
 
 
+def _changed_nothing(piece: SliceRecord, path) -> str | None:
+    """A fix turn's own first question, asked before any gate runs: did this
+    turn change anything at all? The answer is the tree against the freeze
+    commit the request started from - dirty, or a HEAD past it - and not the
+    accumulated diff `_diff_base` measures, which by design still carries
+    everything block 3 committed (#451) and so says "changed" of a turn that
+    typed nothing (#422 run 5: a 42-second reply, a clean tree, and the
+    driver freezing it again).
+
+    Returns the diagnostic when nothing moved, None when something did. An
+    unreadable status counts as changed: `is_clean` says clean only when git
+    said so, and a rejection is not something to invent out of silence."""
+    if not worktrees.is_clean(path):
+        return None
+    if worktrees.local_head(path) != piece.frozen_commit:
+        return None
+    return (
+        "the fix turn changed nothing: the working tree and HEAD match the frozen commit "
+        f"{piece.frozen_commit}"
+    )
+
+
 def _check_worktree_state(
     record: RunRecord, piece: SliceRecord, path, frozen_ok: bool = False, base: str = ""
 ) -> list[str] | None:
@@ -1504,17 +1530,34 @@ def _check_acceptance_unchanged(
 
 def _freeze(record: RunRecord, piece: SliceRecord) -> None:
     """Driver-controlled local commit, then the slice is frozen: never
-    rerun while its sibling corrects or escalates."""
-    sha = worktrees.commit_all(
-        worktrees.slice_worktree_path(piece.slug),
-        f"feat: implement {piece.layer} slice for #{piece.number}",
-    )
+    rerun while its sibling corrects or escalates.
+
+    A clean worktree already sitting on this slice's frozen commit has
+    nothing to commit and keeps the sha it has: there is no second commit to
+    make, and asking git for one is how #422 run 5 ended - `git commit`
+    exiting 1 on an empty tree, under a pre-commit hook's passing output.
+    A fix turn cannot reach here that way any more (`_changed_nothing`
+    rejects it first); this keeps any later caller from it too."""
+    path = worktrees.slice_worktree_path(piece.slug)
+    if _already_frozen(piece, path):
+        sha = piece.frozen_commit
+    else:
+        sha = worktrees.commit_all(path, f"feat: implement {piece.layer} slice for #{piece.number}")
     with record.transition():
         piece.implementation_sha = sha
         piece.frozen_commit = sha
         piece.move("succeeded")
         record.save()
     narrate.line(f"🔒 #{piece.number} ({piece.layer}) frozen at {sha[:12]}")
+
+
+def _already_frozen(piece: SliceRecord, path) -> bool:
+    """The worktree is clean and its HEAD is this slice's frozen commit, so
+    there is nothing left for a freeze to commit. False before the first
+    freeze, where `frozen_commit` is empty and no HEAD can equal it."""
+    return bool(piece.frozen_commit) and (
+        worktrees.local_head(path) == piece.frozen_commit and worktrees.is_clean(path)
+    )
 
 
 def _verify_frozen(record: RunRecord) -> None:

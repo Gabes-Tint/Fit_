@@ -21,12 +21,29 @@ class ReadError(RuntimeError):
     caller here treats absence as a fact worth acting on."""
 
 
+def _both_streams(result: subprocess.CompletedProcess) -> str:
+    """Everything the command said, stderr first and stdout after it, each
+    labelled. Either stream can carry the reason and the other the noise:
+    `git commit` writes "nothing to commit" to stdout while a pre-commit
+    hook fills stderr with its own passing output, so a message that keeps
+    whichever stream it finds first shows the hook and hides the reason
+    (#422 run 5 died with exactly that diagnostic)."""
+    parts = [
+        f"{name}: {text.strip()}"
+        for name, text in (("stderr", result.stderr), ("stdout", result.stdout))
+        if text and text.strip()
+    ]
+    return "\n\n".join(parts) or "no output"
+
+
+def _failed(cmd: list[str], cwd: Path, result: subprocess.CompletedProcess) -> str:
+    return f"{' '.join(cmd)} (in {cwd}) failed: {_both_streams(result)}"
+
+
 def _run_checked(cmd: list[str], cwd: Path) -> str:
     result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
     if result.returncode != 0:
-        raise RuntimeError(
-            f"{' '.join(cmd)} (in {cwd}) failed: {result.stderr.strip() or result.stdout.strip()}"
-        )
+        raise RuntimeError(_failed(cmd, cwd, result))
     return result.stdout
 
 
@@ -231,10 +248,17 @@ def content_at(worktree: Path, ref: str, path: str) -> str | None:
 
 
 def commit_all(worktree: Path, message: str) -> str:
-    """Driver-controlled local commit of the whole working tree; returns
-    the new HEAD sha. Implementation agents never commit or push."""
+    """Driver-controlled local commit of the whole working tree; returns the
+    new HEAD sha - or the head it already had when git found nothing to
+    commit. A tree with no change in it is already at the commit the caller
+    asked for, and `git commit` exiting 1 over that is not a failure of the
+    driver's (#422 run 5 turned it into one). Implementation agents never
+    commit or push."""
     _run_checked(["git", "add", "-A"], cwd=worktree)
-    _run_checked(["git", "commit", "-m", message], cwd=worktree)
+    commit = ["git", "commit", "-m", message]
+    result = subprocess.run(commit, cwd=worktree, capture_output=True, text=True)
+    if result.returncode != 0 and "nothing to commit" not in _both_streams(result):
+        raise RuntimeError(_failed(commit, worktree, result))
     return local_head(worktree)
 
 

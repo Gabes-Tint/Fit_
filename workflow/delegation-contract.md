@@ -628,7 +628,8 @@ mismatch beside a failing gate or a breached boundary is never reached:
 that turn is rejected on the failure it must answer, and any real-diff
 verdict - scope, layer boundary, acceptance bytes, gates - takes precedence
 over the report. A turn that changed nothing at all remains a repairable
-diagnostic. That diff is the complete delta of the branch and worktree
+diagnostic - for a fix turn, the one the paragraph on the fix loop names,
+taken from the freeze commit rather than from this diff. That diff is the complete delta of the branch and worktree
 against the retained failing-test commit - committed, uncommitted and
 untracked alike, because a fix turn edits tracked files and never commits
 (#420) - recomputed at every validation: an out-of-reach gate, threshold,
@@ -1144,6 +1145,27 @@ inside the request is recorded as `fix_attempt` beside the slice-wide
 resume judges the reply against the commit the agent wrote it against. None of this consumes block 3's budget, and a scope breach
 inside a fix turn is what #419 made it everywhere else: a correctable
 rejection, spending one attempt of this budget.
+
+A fix turn must change something. Before any gate runs, the driver asks the
+worktree whether this turn moved it off the freeze commit the request
+started from: a clean working tree whose HEAD is still that commit means the
+turn typed nothing, whatever its reply says about the diff, and that is an
+ordinary rejected attempt - one of the three, with the diagnostic `the fix
+turn changed nothing: the working tree and HEAD match the frozen commit
+<sha>` carried into the next attempt's brief. The question is asked of the
+freeze commit and not of the `diff_base` above: that base is the whole
+accumulated diff from the failing-test commit, block 3's frozen work
+included, which is exactly right for reading what the diff touches and
+useless for asking whether this turn touched anything. #422 run 5 lost a run
+to the difference - a 42-second fix turn that changed nothing, whose
+reported files matched block 3's diff, accepted and then frozen a second
+time. The check comes first so a turn that did nothing never costs a gate
+run.
+
+Delivery never commits a clean tree. A freeze whose worktree is clean and
+already sits on the slice's frozen commit keeps that sha and makes no second
+commit, and a commit git refuses for having nothing to commit returns the
+head the worktree already had rather than failing the run.
 
 A request that ends without a passing turn - exhausted or stopped early -
 stops the run with `CAPACITY_EXHAUSTED` and `blocked`: the implementer
