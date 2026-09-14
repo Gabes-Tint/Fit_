@@ -57,7 +57,6 @@ def _talks(world, role: str, team: str) -> list[dict]:
 def _given_planned_story(
     world,
     number: int,
-    outcomes: list,
 ) -> str:
     """Block 1 setup: failing tests written, validated and pushed."""
     world.given_story(number, title="Rows show the brand", labels=["story"])
@@ -85,7 +84,6 @@ def _given_planned_story(
     )
     slug = f"story-{number}-domain"
     world.mechanic_writes(slug, files={TEST: "// failing\n"}, test_files=[TEST])
-    world.scripted_test_outcome(TEST, outcomes)
     world.planner_answers_delegate(number, [delegate_slice(number, "domain", builder_signals())])
     return slug
 
@@ -99,7 +97,9 @@ def test_a_verified_fix_turn_objection_goes_to_block_1_and_the_repaired_tests_le
     """A fix turn whose reply carries a verified objection does not spend a
     fix attempt. The log narrates repair, the tests are re-frozen, the fix
     request continues, and the run ends normally."""
-    slug = _given_planned_story(world, 500, ["fail", "pass"])
+    slug = _given_planned_story(world, 500)
+    world.scripted_test_outcome(TEST, ["fail", "pass", "fail"])
+    world.scripted_test_outcome(REPAIRED, ["fail", "pass"])
     world.agent_implements(
         slug,
         "builder",
@@ -118,8 +118,6 @@ def test_a_verified_fix_turn_objection_goes_to_block_1_and_the_repaired_tests_le
             }
         ],
     )
-    world.scripted_test_outcome(TEST, ["fail", "fail"])
-    world.scripted_test_outcome(REPAIRED, ["fail", "pass"])
     world.agent_objects(slug, "builder", tests=[TEST], why=WHY)
     world.mechanic_repairs(
         f"{slug}-tests-1",
@@ -141,7 +139,7 @@ def test_a_verified_fix_turn_objection_goes_to_block_1_and_the_repaired_tests_le
     assert f"🙅 #500 (domain) builder rejects the tests: tests_contradict — {WHY}" in result.stdout
     assert "🩹 Repairing #500 (domain) tests in block 1 (repair 1/2)" in result.stdout
     assert "🔒 #500 (domain) tests re-frozen at" in result.stdout
-    assert "🕵️  Review round" in result.stdout
+    assert "🕵️ Review round" in result.stdout
 
     state = world.run_record(500)
     piece = state["slices"]["domain"]
@@ -153,7 +151,9 @@ def test_a_verified_fix_turn_objection_goes_to_block_1_and_the_repaired_tests_le
     fix_turns = [turn for turn in piece["turns"] if turn["kind"] == "review_fix"]
     assert len(fix_turns) == 1
     assert fix_turns[0]["result"] == "objected"
-    assert fix_turns[0]["attempt"] == 1
+    assert fix_turns[0]["fix_attempt"] == 1
+    objection = piece["objections"][0]
+    assert objection["attempt"] == fix_turns[0]["attempt"]
     # the slice stays in fixing, not moving to assigned or resetting attempts
     assert piece["state"] == "succeeded"
 
@@ -161,7 +161,9 @@ def test_a_verified_fix_turn_objection_goes_to_block_1_and_the_repaired_tests_le
 def test_a_fix_turn_objection_recorded_on_the_objections_ledger(world):
     """The objection on the slice's objections ledger shows role, attempt,
     and the turn marked objected, and test_repairs is incremented."""
-    slug = _given_planned_story(world, 501, ["fail", "pass"])
+    slug = _given_planned_story(world, 501)
+    world.scripted_test_outcome(TEST, ["fail", "pass", "fail"])
+    world.scripted_test_outcome(REPAIRED, ["fail", "pass"])
     world.agent_implements(
         slug,
         "builder",
@@ -180,8 +182,6 @@ def test_a_fix_turn_objection_recorded_on_the_objections_ledger(world):
             }
         ],
     )
-    world.scripted_test_outcome(TEST, ["fail", "fail"])
-    world.scripted_test_outcome(REPAIRED, ["fail", "pass"])
     world.agent_objects(slug, "builder", tests=[TEST], why=WHY)
     world.mechanic_repairs(
         f"{slug}-tests-1",
@@ -205,18 +205,17 @@ def test_a_fix_turn_objection_recorded_on_the_objections_ledger(world):
     objection = piece["objections"][0]
     assert objection["kind"] == "tests_contradict"
     assert objection["role"] == "builder"
-    assert objection["attempt"] == 1
+    fix_turns = [turn for turn in piece["turns"] if turn["kind"] == "review_fix"]
+    assert objection["attempt"] == fix_turns[0]["attempt"]
     assert piece["test_repairs"] == 1
 
 
 def test_a_partial_fix_turn_objection_is_accepted_when_other_tests_pass(world):
     """A partial objection beside the fix turn's committed work is accepted
     when every test it does not name already passes on that tree."""
-    slug = _given_planned_story(
-        world,
-        502,
-        ["fail", {FIRST: "pass", SECOND: "fail"}],
-    )
+    slug = _given_planned_story(world, 502)
+    world.scripted_test_outcome(TEST, ["fail", "pass", {FIRST: "pass", SECOND: "fail"}])
+    world.scripted_test_outcome(REPAIRED, ["fail", "pass"])
     world.agent_implements(
         slug,
         "builder",
@@ -235,13 +234,13 @@ def test_a_partial_fix_turn_objection_is_accepted_when_other_tests_pass(world):
             }
         ],
     )
-    world.scripted_test_outcome(TEST, ["fail", {FIRST: "pass", SECOND: "fail"}])
-    world.scripted_test_outcome(REPAIRED, ["fail", "pass"])
     world.agent_objects(
         slug,
         "builder",
         tests=[f"{TEST}::{SECOND}"],
         why="the fix contradicts this one test",
+        files=WORK,
+        changed_files=list(WORK),
     )
     world.mechanic_repairs(
         f"{slug}-tests-1", files={REPAIRED: "// repaired\n"}, test_files=[REPAIRED]
@@ -272,7 +271,8 @@ def test_a_partial_fix_turn_objection_is_accepted_when_other_tests_pass(world):
 def test_a_fix_turn_objection_to_a_test_that_passes_is_refused(world):
     """A fix-turn objection to a test that already passes on the frozen
     commit is refused and costs the fix attempt."""
-    slug = _given_planned_story(world, 503, ["fail", "pass"])
+    slug = _given_planned_story(world, 503)
+    world.scripted_test_outcome(TEST, ["fail", "pass", "pass"])
     world.agent_implements(
         slug,
         "builder",
@@ -291,7 +291,6 @@ def test_a_fix_turn_objection_to_a_test_that_passes_is_refused(world):
             }
         ],
     )
-    world.scripted_test_outcome(TEST, ["pass", "pass"])
     world.agent_objects(slug, "builder", tests=[TEST], why=WHY)
     world.agent_implements(
         slug,
@@ -299,6 +298,7 @@ def test_a_fix_turn_objection_to_a_test_that_passes_is_refused(world):
         files={"src/lib/rows.ts": "export const brand = true;\n"},
         changed_files=["src/lib/rows.ts"],
     )
+    world.reviewer_answers(503, "merge")
 
     result = run_flow(world, 503)
 
@@ -310,17 +310,14 @@ def test_a_fix_turn_objection_to_a_test_that_passes_is_refused(world):
     # the refused objection cost the fix attempt
     fix_turns = [turn for turn in piece["turns"] if turn["kind"] == "review_fix"]
     assert len(fix_turns) == 1
-    assert fix_turns[0]["attempt"] == 1
+    assert fix_turns[0]["fix_attempt"] == 1
 
 
 def test_a_fix_turn_objection_naming_every_test_is_refused(world):
     """A fix-turn objection naming every acceptance test beside committed
     work is refused as partial objection semantics do not apply."""
-    slug = _given_planned_story(
-        world,
-        504,
-        [{FIRST: "fail", SECOND: "fail"}],
-    )
+    slug = _given_planned_story(world, 504)
+    world.scripted_test_outcome(TEST, ["fail", "pass", {FIRST: "fail", SECOND: "fail"}, "pass"])
     world.agent_implements(
         slug,
         "builder",
@@ -339,14 +336,21 @@ def test_a_fix_turn_objection_naming_every_test_is_refused(world):
             }
         ],
     )
-    world.scripted_test_outcome(TEST, [{FIRST: "fail", SECOND: "fail"}])
-    world.agent_objects(slug, "builder", tests=[TEST], why=WHY)
+    world.agent_objects(
+        slug,
+        "builder",
+        tests=[TEST],
+        why=WHY,
+        files=WORK,
+        changed_files=list(WORK),
+    )
     world.agent_implements(
         slug,
         "builder",
         files={"src/lib/rows.ts": "export const brand = true;\n"},
         changed_files=["src/lib/rows.ts"],
     )
+    world.reviewer_answers(504, "merge")
 
     result = run_flow(world, 504)
 
@@ -363,7 +367,9 @@ def test_a_fix_turn_objection_naming_every_test_is_refused(world):
 def test_a_third_fix_turn_objection_stops_as_tests_invalid(world):
     """A third verified objection after two repairs stops with exit 31
     (TESTS_INVALID), naming every objection."""
-    slug = _given_planned_story(world, 505, ["fail", "fail"])
+    slug = _given_planned_story(world, 505)
+    world.scripted_test_outcome(TEST, ["fail", "pass", "fail"])
+    world.scripted_test_outcome(REPAIRED, ["fail", "fail", "fail", "fail", "fail", "fail"])
     world.agent_implements(
         slug,
         "builder",
@@ -382,8 +388,6 @@ def test_a_third_fix_turn_objection_stops_as_tests_invalid(world):
             }
         ],
     )
-    world.scripted_test_outcome(TEST, ["fail", "fail"])
-    world.scripted_test_outcome(REPAIRED, ["fail", "fail", "fail", "fail"])
     for repair in (1, 2):
         world.agent_objects(slug, "builder", tests=[TEST if repair == 1 else REPAIRED], why=WHY)
         world.mechanic_repairs(
@@ -392,7 +396,6 @@ def test_a_third_fix_turn_objection_stops_as_tests_invalid(world):
             test_files=[REPAIRED],
             delete=[TEST] if repair == 1 else None,
         )
-        world.scripted_test_outcome(REPAIRED, ["fail", "fail"])
     # the third objection
     world.agent_objects(slug, "builder", tests=[REPAIRED], why="still contradictory")
 
@@ -407,7 +410,9 @@ def test_a_third_fix_turn_objection_stops_as_tests_invalid(world):
 def test_the_new_frozen_commit_is_ancestor_of_integration_branch(world):
     """After the repair the new frozen commit is an ancestor of the
     integration branch, and the log shows a further review round."""
-    slug = _given_planned_story(world, 506, ["fail", "pass"])
+    slug = _given_planned_story(world, 506)
+    world.scripted_test_outcome(TEST, ["fail", "pass", "fail"])
+    world.scripted_test_outcome(REPAIRED, ["fail", "pass"])
     world.agent_implements(
         slug,
         "builder",
@@ -426,8 +431,6 @@ def test_the_new_frozen_commit_is_ancestor_of_integration_branch(world):
             }
         ],
     )
-    world.scripted_test_outcome(TEST, ["fail", "fail"])
-    world.scripted_test_outcome(REPAIRED, ["fail", "pass"])
     world.agent_objects(slug, "builder", tests=[TEST], why=WHY)
     world.mechanic_repairs(
         f"{slug}-tests-1",
@@ -447,6 +450,6 @@ def test_the_new_frozen_commit_is_ancestor_of_integration_branch(world):
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "🔒 #506 (domain) tests re-frozen at" in result.stdout
-    assert "🕵️  Review round" in result.stdout
+    assert "🕵️ Review round" in result.stdout
     piece = world.run_record(506)["slices"]["domain"]
     assert piece["state"] == "succeeded"
