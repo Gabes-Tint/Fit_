@@ -52,7 +52,7 @@ from fitflow import (
 )
 from fitflow.diagnostics import same_diagnostic
 from fitflow.outcome import FlowFailure, Outcome
-from fitflow.runstate import RunRecord, SliceRecord, retained_inputs
+from fitflow.runstate import RunRecord, SliceRecord, judged_failed, retained_inputs
 from fitflow.steps import objection
 
 _SUCCESSOR = {"mechanic": "builder", "builder": "solver"}
@@ -693,14 +693,22 @@ def review_fix_turn(record: RunRecord, piece: SliceRecord, diagnostic: str) -> N
 
 def resume_review_fix(record: RunRecord, piece: SliceRecord) -> None:
     """Continue a fix request a stopped run left unfinished. A turn that
-    ended with a reply is judged again on the bytes it left - the same
-    re-derivation block 3's resume makes, and no new agent call; a turn the
-    driver never saw end has been voided already and is relaunched under the
-    same attempt of the same budget."""
+    ended with a reply and no verdict is judged again on the bytes it left
+    - the same re-derivation block 3's resume makes, and no new agent call;
+    a turn the driver never saw end has been voided already and is
+    relaunched under the same attempt of the same budget.
+
+    A turn already carrying a verdict - rejected on its merits, not
+    interrupted by a failing tool - is neither: that verdict is on the
+    ledger, and re-deriving it on the same bytes could only reach it again.
+    That turn is relaunched, one attempt further on."""
     last = piece.turns[-1]
     attempt = int(last.get("fix_attempt", 1))
     if last["result"] == "void" or last.get("reply") is None:
         _fix_attempts(record, piece, attempt)
+        return
+    if judged_failed(last):
+        _relaunch_failed_fix(record, piece, attempt)
         return
     narrate.line(
         f"♻️  #{piece.number} ({piece.layer}) re-validating its review fix attempt "
@@ -709,6 +717,24 @@ def resume_review_fix(record: RunRecord, piece: SliceRecord) -> None:
     if _settle_fix(record, piece, attempt):
         return
     _fix_attempts(record, piece, attempt + 1)
+
+
+def _relaunch_failed_fix(record: RunRecord, piece: SliceRecord, attempt: int) -> None:
+    """The retained turn was judged and rejected, so the request continues
+    at the next attempt. When the budget has none left the request still
+    gets exactly one: the run was resumed because the driver was fixed, and
+    the verdict that spent the last attempt was the driver's own (#420 run
+    3 rejected a correct reply on a diff it had read wrong). One grace
+    attempt, and the ordinary exhaustion if it fails too."""
+    if attempt < turns.BUDGET:
+        _fix_attempts(record, piece, attempt + 1)
+        return
+    narrate.line(
+        f"♻️  #{piece.number} ({piece.layer}) has spent its {turns.BUDGET} fix attempts: "
+        "granting one grace attempt after a driver-side rejection"
+    )
+    _launch_fix_turn(record, piece, attempt + 1)
+    _settle_fix(record, piece, attempt + 1)
 
 
 def _fix_attempts(record: RunRecord, piece: SliceRecord, first: int) -> None:
@@ -730,10 +756,11 @@ def _launch_fix_turn(record: RunRecord, piece: SliceRecord, attempt: int) -> Non
         piece.attempts += 1
         identity = record.begin_turn(piece, piece.role, piece.attempts, "review_fix")
         piece.turns[-1]["fix_attempt"] = attempt
+        piece.turns[-1]["diff_base"] = piece.failing_sha
         record.save()
+    scale = f"{attempt}/{turns.BUDGET}" if attempt <= turns.BUDGET else f"{attempt} (grace)"
     narrate.line(
-        f"🔧 {piece.role.capitalize()} #{piece.number} ({piece.layer}) review fix "
-        f"attempt {attempt}/{turns.BUDGET}"
+        f"🔧 {piece.role.capitalize()} #{piece.number} ({piece.layer}) review fix attempt {scale}"
     )
     reply, session = _launch_turn(record, piece, identity, "correct_implementation", piece.attempts)
     with record.transition():
@@ -889,7 +916,9 @@ def _validate_turn(
     with narrate.grouped():
         narrate.fields([("Reported files", ", ".join(reply["changed_files"]))])
     path = worktrees.slice_worktree_path(piece.slug)
-    changed = _check_worktree_state(record, piece, path, frozen_ok=fix_turn)
+    changed = _check_worktree_state(
+        record, piece, path, frozen_ok=fix_turn, base=_diff_base(piece, fix_turn)
+    )
     if not changed:
         phantom = ", ".join(sorted(set(reply["changed_files"])))
         return _Rejection(f"no changes were made in the worktree; phantom {phantom}")
@@ -921,9 +950,7 @@ def _validate_behavior(
     if gate_failure is not None:
         _check_gate_blames_the_implementation(record, piece, gate_failure)
         return _Rejection(_gate_rejection(piece, gate_failure))
-    mismatch = _report_mismatch(reply["changed_files"], changed)
-    if mismatch is not None:
-        return _Rejection(mismatch)
+    _correct_report(record, piece, reply, changed)
     narrate.line(
         f"🔍 Verify #{piece.number}: scope ✔ · acceptance pass ✔ · branch identity ✔ · "
         "no gate files ✔"
@@ -1294,8 +1321,19 @@ def _check_acceptance_is_sound(record: RunRecord, piece: SliceRecord, verdict) -
     )
 
 
+def _diff_base(piece: SliceRecord, fix_turn: bool) -> str:
+    """The commit this turn's diff is measured from. A fix turn records its
+    own base when it launches, so a resume days later judges the reply
+    against the same commit the agent wrote it against, whatever has moved
+    on the slice since; every other turn is measured from the failing-test
+    commit it started on."""
+    if fix_turn and piece.turns:
+        return piece.turns[-1].get("diff_base") or piece.failing_sha
+    return piece.failing_sha
+
+
 def _check_worktree_state(
-    record: RunRecord, piece: SliceRecord, path, frozen_ok: bool = False
+    record: RunRecord, piece: SliceRecord, path, frozen_ok: bool = False, base: str = ""
 ) -> list[str] | None:
     head = worktrees.local_head(path)
     # A review fix turn runs after the driver's freeze commit, so its HEAD
@@ -1306,10 +1344,11 @@ def _check_worktree_state(
         )
     if worktrees.remote_head(piece.slug) != piece.failing_sha:
         raise _contract(record, piece, "branch was pushed; implementation agents never push")
-    if head == piece.failing_sha:
-        changed = worktrees.changed_since(path, piece.failing_sha)
+    ref = base or piece.failing_sha
+    if head == ref:
+        changed = worktrees.changed_since(path, ref)
     else:
-        changed = worktrees.changed_between(path, piece.failing_sha)
+        changed = worktrees.changed_between(path, ref)
     return changed or None
 
 
@@ -1341,25 +1380,46 @@ def _check_reply_structure(record: RunRecord, piece: SliceRecord, reply: object)
         raise _contract(record, piece, "summary must be a non-empty string")
 
 
+def _correct_report(record: RunRecord, piece: SliceRecord, reply: dict, changed: list[str]) -> None:
+    """The reply's account of the diff, put right from the diff itself.
+
+    Nothing the driver trusts comes from the report: scope, the layer
+    boundary, acceptance immutability and the gates have all just run on
+    the real diff and passed on it. So once they are green a divergent list
+    is bookkeeping and nothing else - the diff is the truth, the record
+    takes it, and the turn keeps the attempt it would otherwise have spent
+    being told something the driver already knows. #420 run 3 ended a whole
+    run on one, on a list that was right and a diff the driver had read
+    wrong. A mismatch beside a failing gate never reaches here: that turn is
+    rejected on the gate, which is what it must answer."""
+    mismatch = _report_mismatch(reply["changed_files"], changed)
+    if mismatch is None:
+        return
+    with record.transition():
+        reply["changed_files"] = list(changed)
+        retained = piece.turns[-1].get("reply") if piece.turns else None
+        if isinstance(retained, dict):
+            retained["changed_files"] = list(changed)
+        if piece.turns:
+            piece.turns[-1]["reported_files_corrected"] = mismatch
+        record.save()
+    narrate.headed(
+        f"📝 #{piece.number} ({piece.layer}) reported files corrected from the diff: ", mismatch
+    )
+
+
 def _report_mismatch(reported: list[str], changed: list[str]) -> str | None:
-    """The reply must describe exactly the actual diff. Nothing the driver
-    trusts comes from the report - scope, the layer boundary, acceptance
-    immutability and the gates all run on the real diff - so a divergence
-    is an honest defect in the ledger the same agent repairs in one turn,
-    not tampering. Returns the diagnostic, or None when they agree."""
+    """How the reply's list diverges from the actual diff, or None when
+    they agree: the paths the diff touched and the reply left out, and the
+    paths the reply named and the diff never touched."""
     if set(reported) == set(changed):
         return None
     unreported = sorted(set(changed) - set(reported))
     phantom = sorted(set(reported) - set(changed))
-    sides = [
+    return "; ".join(
         f"{name} {', '.join(paths)}"
         for name, paths in (("unreported", unreported), ("phantom", phantom))
         if paths
-    ]
-    return (
-        "reported files do not match the actual diff: "
-        + "; ".join(sides)
-        + " — list every path the diff touches, including deleted and renamed files"
     )
 
 

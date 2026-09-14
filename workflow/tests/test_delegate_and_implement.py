@@ -816,10 +816,11 @@ def test_a_domain_slice_may_implement_driver_files(world):
     assert result.returncode == 11, result.stdout + result.stderr
 
 
-def test_a_phantom_reported_file_is_corrected_not_a_breach(world):
+def test_a_phantom_reported_file_is_corrected_from_the_diff(world):
     """Nothing the driver trusts comes from the report, so a list naming a
-    path the diff never touched is a repairable diagnostic the same role
-    fixes in its next turn."""
+    path the diff never touched costs the turn nothing: scope, acceptance
+    and the gates have all just passed on the real diff, and that diff
+    replaces the list on the record."""
     _given_planned_story(world, 442)
     _delegate_mechanic(world, 442)
     world.agent_implements(
@@ -829,54 +830,44 @@ def test_a_phantom_reported_file_is_corrected_not_a_breach(world):
         changed_files=["src/lib/delegate.ts", "src/lib/never-touched.ts"],
         summary="reported a file I never wrote",
     )
-    world.agent_implements(
-        "story-442-domain",
-        "mechanic",
-        files={},
-        changed_files=["src/lib/delegate.ts"],
-        summary="corrected the file list",
-    )
 
     result = run_flow(world)
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "reported files do not match the actual diff" in result.stdout
+    assert "reported files corrected from the diff" in result.stdout
     assert "phantom src/lib/never-touched.ts" in result.stdout
     # with nothing unreported, the message names only the phantom side (#382)
     assert "unreported" not in result.stdout
-    assert "correcting after attempt 1" in result.stdout
+    assert "correcting after attempt 1" not in result.stdout
     assert "🔒 #442 (domain) frozen at" in result.stdout
+    turn = world.run_record(442)["slices"]["domain"]["turns"][-1]
+    assert turn["reply"]["changed_files"] == ["src/lib/delegate.ts"]
+    assert turn["reported_files_corrected"] == "phantom src/lib/never-touched.ts"
 
 
-def test_a_misreported_list_consumes_one_attempt_and_escalates(world):
-    """The mismatch is an ordinary repairable diagnostic: three of them at
-    one role exhaust it and escalate a rung, exactly like a failing gate."""
+def test_a_misreported_list_spends_no_attempt_at_all(world):
+    """It used to be an ordinary repairable diagnostic, and three of them
+    at one role escalated it (#496). A list that is wrong on both sides is
+    still only a list: the turn that carries it passes, and the role keeps
+    every attempt for the work."""
     _given_planned_story(world, 496)
     _delegate_mechanic(world, 496)
-    for _ in range(3):  # mechanic burns its three attempts on the same omission
-        world.agent_implements(
-            "story-496-domain",
-            "mechanic",
-            files={"src/lib/delegate.ts": "export const delegate = true;\n"},
-            changed_files=["src/lib/never-touched.ts"],
-            summary="still the wrong list",
-        )
     world.agent_implements(
         "story-496-domain",
-        "builder",
-        files={},
-        changed_files=["src/lib/delegate.ts"],
-        summary="reported what the diff actually touches",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = true;\n"},
+        changed_files=["src/lib/never-touched.ts"],
+        summary="the wrong list on both sides",
     )
 
     result = run_flow(world)
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "unreported src/lib/delegate.ts; phantom src/lib/never-touched.ts" in result.stdout
-    assert "⏫ #496 (domain) escalating mechanic → builder (revision 1, attempts reset)" in (
-        result.stdout
-    )
+    assert "⏫" not in result.stdout
     assert "🔒 #496 (domain) frozen at" in result.stdout
+    turns = world.run_record(496)["slices"]["domain"]["turns"]
+    assert [turn["attempt"] for turn in turns] == [1]
 
 
 def test_a_forbidden_file_outranks_a_wrong_list_in_the_diagnostic(world):
@@ -1286,10 +1277,11 @@ def test_a_ui_slice_changing_a_domain_test_is_a_layer_boundary_stop(world):
     assert "wrong-kind" not in result.stdout
 
 
-def test_an_omitted_deletion_is_corrected_not_a_breach(world):
+def test_an_omitted_deletion_is_corrected_from_the_diff(world):
     """The deleted path run 5 of issue #399 lost a whole run to: the diff
-    touches it, the reply forgot it, and the diagnostic says so plainly
-    enough for the next turn to fix only the list."""
+    touches it and the reply forgot it. The driver reads deletions off the
+    diff itself, so it puts the path back on the list and says so, rather
+    than asking a turn for it."""
     stale = "src/lib/stale.spec.ts"
     (world.repo / "src" / "lib").mkdir(parents=True, exist_ok=True)
     (world.repo / stale).write_text("// stale spec\n")
@@ -1314,26 +1306,19 @@ def test_an_omitted_deletion_is_corrected_not_a_breach(world):
             "push": False,
         },
     )
-    world.agent_implements(
-        "story-467-domain",
-        "mechanic",
-        files={},
-        changed_files=["src/lib/delegate.ts", stale],
-        summary="reported the deletion too",
-    )
 
     result = run_flow(world)
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert f"unreported {stale}" in result.stdout
-    assert "including deleted and renamed files" in result.stdout
+    assert f"reported files corrected from the diff: unreported {stale}" in result.stdout
     # with nothing phantom, the message names only the unreported side (#382)
     assert "phantom" not in result.stdout
-    assert "correcting after attempt 1" in result.stdout
+    assert "correcting after attempt 1" not in result.stdout
     assert "🔒 #467 (domain) frozen at" in result.stdout
     state = json.loads((world.home / "runs" / "story-467.json").read_text())
-    sessions = {turn["session"] for turn in state["slices"]["domain"]["turns"]}
-    assert sessions == {"story-467-domain/mechanic"}
+    turns = state["slices"]["domain"]["turns"]
+    assert {turn["session"] for turn in turns} == {"story-467-domain/mechanic"}
+    assert sorted(turns[-1]["reply"]["changed_files"]) == ["src/lib/delegate.ts", stale]
 
 
 def test_a_previous_runs_state_file_blocks_a_new_run(world):
