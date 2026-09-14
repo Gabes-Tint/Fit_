@@ -29,9 +29,11 @@ describe('LogRow', () => {
 		await expect.element(page.getByText(item().name)).toBeInTheDocument();
 	});
 
-	it('names the brand of a branded entry, beside its source badge (#337)', async () => {
+	it('names the brand of a branded entry on its own line (#337)', async () => {
 		// The entry that opened #337: a journal row saying "GREEN APPLE" and
 		// "BRAND PUBLISHED" and nothing that told a person it was hard candy.
+		// Now the brand appears on its own line, answering the critical question
+		// without competing for width with a source badge.
 		const entry = { ...item(), name: 'GREEN APPLE', brand: 'CLAEYS' };
 		await render(LogRow, { props: { item: entry, open: false, step: 0.5, ontoggle: vi.fn() } });
 		await expect.element(page.getByText('CLAEYS')).toBeInTheDocument();
@@ -103,17 +105,6 @@ describe('LogRow', () => {
 		const entry = item();
 		await render(LogRow, { props: { item: entry, open: false, step: 0.5, ontoggle: vi.fn() } });
 		await expect.element(page.getByText(String(entry.kcal))).toBeInTheDocument();
-	});
-
-	it('shows a provenance badge for a catalog-backed entry', async () => {
-		await render(LogRow, { props: { item: item(), open: false, step: 0.5, ontoggle: vi.fn() } });
-		expect(document.querySelector('[title]')).not.toBeNull();
-	});
-
-	it('shows no provenance badge for a custom entry', async () => {
-		const custom = { ...item(), provenance: undefined };
-		await render(LogRow, { props: { item: custom, open: false, step: 0.5, ontoggle: vi.fn() } });
-		expect(document.querySelector('[title]')).toBeNull();
 	});
 
 	it('keeps the editing controls hidden while collapsed', async () => {
