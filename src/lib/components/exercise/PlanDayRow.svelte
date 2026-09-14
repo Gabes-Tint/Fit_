@@ -39,7 +39,7 @@
 		sessions[0]?.tone.tint ?? 'bg-card'
 	)}
 >
-	<span class={cn('w-24 shrink-0 text-[15px]', isToday ? 'font-semibold' : 'font-medium')}>
+	<span class={cn('min-w-24 shrink-0 text-[15px]', isToday ? 'font-semibold' : 'font-medium')}>
 		{label}
 	</span>
 	<span class="flex min-w-0 flex-1 flex-wrap justify-end gap-1.5" aria-hidden="true">

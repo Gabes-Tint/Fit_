@@ -64,12 +64,12 @@ async function planScreenWithLongRoutines(page: Page, baseURL: string) {
 	await page.getByRole('button', { name: /Back & Arms/ }).click();
 	await expect(page.getByRole('heading', { name: 'Exercise', level: 1 })).toBeVisible();
 	await page.getByRole('link', { name: 'Plan', exact: true }).click();
-	await expect(page.getByRole('button', { name: /^Mon / })).toBeVisible();
+	await expect(page.getByRole('button', { name: /^(Today, )?Mon / })).toBeVisible();
 }
 
 /** Puts the two longest-named routines on the week's Monday, in that order. */
 async function fillMondayWithTwo(page: Page) {
-	await page.getByRole('button', { name: /^Mon / }).click();
+	await page.getByRole('button', { name: /^(Today, )?Mon / }).click();
 	await page.getByRole('button', { name: /Chest & Shoulders/ }).click();
 	await page.getByRole('button', { name: /Back & Arms/ }).click();
 }
@@ -758,7 +758,7 @@ test.describe('at 360px', () => {
 		await page.getByRole('button', { name: 'Close' }).click();
 
 		// The row that carries both names, which is the one that can spill.
-		const row = page.getByRole('button', { name: /^Mon .*, then / });
+		const row = page.getByRole('button', { name: /^(Today, )?Mon .*, then / });
 		await expect(row).toBeVisible();
 		await expectFitsViewport(page, row);
 	});
