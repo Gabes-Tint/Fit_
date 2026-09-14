@@ -7,6 +7,7 @@ its log, the retained record and the fake world.
 """
 
 from conftest import (
+    builder_signals,
     delegate_slice,
     mechanic_signals,
     run_flow,
@@ -14,12 +15,25 @@ from conftest import (
 
 TEST = "src/lib/rows.spec.ts"
 REPAIRED = "src/lib/rows-repaired.spec.ts"
+SIBLING = "src/lib/brands.spec.ts"
 WHY = "test 1 wants the apple first and tests 2-4 want the candy first"
+FIRST = "a row carries its brand"
+SECOND = "a row without a brand says so"
+WORK = {"src/lib/rows.ts": "export const brand = true;\n"}
 
 
-def _given_planned_story(world, number: int, outcomes: list[str]) -> str:
+def _given_planned_story(
+    world,
+    number: int,
+    outcomes: list,
+    signals: dict | None = None,
+    titles: list[str] | None = None,
+    extra: dict[str, str] | None = None,
+) -> str:
     """Block 1 for a one-slice story: failing tests written, validated and
-    pushed, and the slice delegated to a mechanic."""
+    pushed, and the slice delegated to an implementer. `signals` chooses
+    which role that is, `titles` how many tests the acceptance file reports,
+    and `extra` writes further test files beside it."""
     world.given_story(number, title="Rows show the brand", labels=["story"])
     world.planner_answers_whose_call(
         number,
@@ -44,9 +58,11 @@ def _given_planned_story(world, number: int, outcomes: list[str]) -> str:
         ],
     )
     slug = f"story-{number}-domain"
-    world.mechanic_writes(slug, files={TEST: "// failing\n"}, test_files=[TEST])
-    world.scripted_test_outcome(TEST, outcomes)
-    world.planner_answers_delegate(number, [delegate_slice(number, "domain", mechanic_signals())])
+    world.mechanic_writes(slug, files={TEST: "// failing\n", **(extra or {})}, test_files=[TEST])
+    world.scripted_test_outcome(TEST, outcomes, titles=titles)
+    world.planner_answers_delegate(
+        number, [delegate_slice(number, "domain", signals or mechanic_signals())]
+    )
     return slug
 
 
@@ -406,3 +422,274 @@ def test_resume_voids_a_repair_turn_that_died_and_relaunches_it(world):
     piece = world.run_record(470)["slices"]["domain"]
     assert piece["state"] == "succeeded"
     assert [turn["result"] for turn in piece["test_repair_turns"]] == ["void", "ok"]
+
+
+# --- the second repair goes to the role that objected --------------------------
+
+
+def _given_two_objections(world, number: int) -> str:
+    """A builder slice whose first repair is objected to as well: the
+    mechanic repairs once, the builder repairs the second time, and the
+    repaired tests then pass."""
+    slug = _given_planned_story(world, number, ["fail", "fail"], signals=builder_signals())
+    world.scripted_test_outcome(REPAIRED, ["fail", "fail", "fail", "pass"])
+    world.agent_objects(slug, "builder", tests=[TEST], why=WHY)
+    world.mechanic_repairs(
+        f"{slug}-tests-1",
+        files={REPAIRED: "// repaired once\n"},
+        test_files=[REPAIRED],
+        delete=[TEST],
+    )
+    world.agent_objects(slug, "builder", tests=[REPAIRED], why="the repair moved the same problem")
+    world.agent_repairs(
+        f"{slug}-tests-2",
+        "builder",
+        files={REPAIRED: "// repaired by the builder\n"},
+        test_files=[REPAIRED],
+    )
+    world.agent_implements(slug, "builder", files=WORK, changed_files=list(WORK))
+    world.reviewer_answers(number, "merge")
+    return slug
+
+
+def test_the_second_repair_is_talked_to_the_role_that_objected(world):
+    slug = _given_two_objections(world, 471)
+
+    result = run_flow(world, 471)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "🩹 Repairing #471 (domain) tests in block 1 (repair 1/2)" in result.stdout
+    assert (
+        "🩹 Repairing #471 (domain) tests in block 1 (repair 2/2, builder — "
+        "the mechanic's repair was objected to again)" in result.stdout
+    )
+    assert "🔧 Builder #471 (domain) test repair turn 1/2" in result.stdout
+    # the mechanic wrote the tests and made the first repair; the second is
+    # the builder's, on its own repair team, and no mechanic was asked
+    assert len(_talks(world, "mechanic", f"{slug}-tests-1")) == 1
+    assert len(_talks(world, "builder", f"{slug}-tests-2")) == 1
+    assert _talks(world, "mechanic", f"{slug}-tests-2") == []
+    # and it is briefed on everything that came before it
+    prompt = _talks(world, "builder", f"{slug}-tests-2")[0]["prompt"]
+    assert "This is repair 2 of 2" in prompt
+    assert "Earlier objections:" in prompt and WHY in prompt
+    assert "What the repairs replied:" in prompt
+
+
+def test_the_ledger_records_which_role_made_each_repair(world):
+    _given_two_objections(world, 472)
+
+    result = run_flow(world, 472)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    piece = world.run_record(472)["slices"]["domain"]
+    assert [turn["role"] for turn in piece["test_repair_turns"]] == ["mechanic", "builder"]
+    assert [turn["repair"] for turn in piece["test_repair_turns"]] == [1, 2]
+    assert piece["test_repairs"] == 2 and piece["state"] == "succeeded"
+
+
+# --- an objection beside finished work -----------------------------------------
+
+
+def _given_partial_story(world, number: int, outcomes: list) -> str:
+    """One acceptance file with two tests, and a builder that implements one
+    of them and objects to the other."""
+    return _given_planned_story(
+        world, number, outcomes, signals=builder_signals(), titles=[FIRST, SECOND]
+    )
+
+
+def test_a_partial_objection_beside_finished_work_is_accepted_when_the_rest_passes(world):
+    slug = _given_partial_story(
+        world, 473, ["fail", {FIRST: "pass", SECOND: "fail"}, "fail", "pass"]
+    )
+    world.agent_objects(
+        slug,
+        "builder",
+        tests=[f"{TEST}::{SECOND}"],
+        why="no row can say it has no brand while the fixture gives every row one",
+        files=WORK,
+        changed_files=list(WORK),
+    )
+    # the repair corrects that one test in place, beside the work
+    world.mechanic_repairs(f"{slug}-tests-1", files={TEST: "// repaired\n"}, test_files=[TEST])
+    world.agent_implements(slug, "builder", files=WORK, changed_files=list(WORK))
+    world.reviewer_answers(473, "merge")
+
+    result = run_flow(world, 473)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (
+        "🧩 #473 (domain) partial objection: the other 1 acceptance test(s) pass beside it, "
+        "and the builder's work stays in the worktree (src/lib/rows.ts)" in result.stdout
+    )
+    piece = world.run_record(473)["slices"]["domain"]
+    assert piece["state"] == "succeeded" and piece["test_repairs"] == 1
+    assert piece["objections"][0]["tests"] == [f"{TEST}::{SECOND}"]
+    assert piece["objections"][0]["work"] == ["src/lib/rows.ts"]
+    # the repairer is told the work is there and must be repaired around
+    repair_prompt = _talks(world, "mechanic", f"{slug}-tests-1")[0]["prompt"]
+    assert "left its work in the slice's worktree (src/lib/rows.ts)" in repair_prompt
+    assert (
+        f'{TEST} "{SECOND}" → failed an expectation: AssertionError: expected undefined to be 42'
+        in repair_prompt
+    )
+
+
+def test_the_implementers_work_survives_the_repair_and_the_next_brief_says_so(world):
+    slug = _given_partial_story(
+        world, 474, ["fail", {FIRST: "pass", SECOND: "fail"}, "fail", "pass"]
+    )
+    world.agent_objects(
+        slug,
+        "builder",
+        tests=[f"{TEST}::{SECOND}"],
+        why="no row can say it has no brand while the fixture gives every row one",
+        files=WORK,
+        changed_files=list(WORK),
+    )
+    world.mechanic_repairs(f"{slug}-tests-1", files={TEST: "// repaired\n"}, test_files=[TEST])
+    world.agent_implements(slug, "builder", files=WORK, changed_files=list(WORK))
+    world.reviewer_answers(474, "merge")
+
+    result = run_flow(world, 474)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    brief = _talks(world, "builder", slug)[1]["prompt"]
+    assert "Your own work was kept exactly as you left it (src/lib/rows.ts)" in brief
+    assert f"the repair changed only {TEST}::{SECOND}" in brief
+    assert "every other acceptance test of this slice passed on your tree" in brief
+
+
+def test_a_partial_objection_is_refused_when_a_test_it_did_not_name_still_fails(world):
+    slug = _given_partial_story(world, 475, ["fail", {FIRST: "fail", SECOND: "fail"}, "pass"])
+    world.agent_objects(
+        slug,
+        "builder",
+        tests=[f"{TEST}::{SECOND}"],
+        why="no row can say it has no brand while the fixture gives every row one",
+        files=WORK,
+        changed_files=list(WORK),
+    )
+    world.agent_implements(slug, "builder", files=WORK, changed_files=list(WORK))
+    world.reviewer_answers(475, "merge")
+
+    result = run_flow(world, 475)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (
+        f"{TEST}::{FIRST} does not pass on your working tree, and an objection beside "
+        "work is only accepted when every test you did not name already passes" in result.stdout
+    )
+    assert "🩹 Repairing" not in result.stdout
+    piece = world.run_record(475)["slices"]["domain"]
+    assert piece["objections"] == [] and piece["test_repairs"] == 0
+    # the refused objection cost the attempt, as any unverifiable one does
+    assert [turn["attempt"] for turn in piece["turns"]] == [1, 2]
+
+
+def test_an_objection_beside_work_that_names_every_test_is_refused(world):
+    slug = _given_partial_story(world, 476, ["fail", {FIRST: "fail", SECOND: "fail"}, "pass"])
+    world.agent_objects(
+        slug, "builder", tests=[TEST], why=WHY, files=WORK, changed_files=list(WORK)
+    )
+    world.agent_implements(slug, "builder", files=WORK, changed_files=list(WORK))
+    world.reviewer_answers(476, "merge")
+
+    result = run_flow(world, 476)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (
+        "this objection names every acceptance test of the slice, and your tree carries "
+        "work (src/lib/rows.ts): name the tests that cannot pass" in result.stdout
+    )
+    assert "🩹 Repairing" not in result.stdout
+    assert world.run_record(476)["slices"]["domain"]["objections"] == []
+
+
+# --- the objection is verified test by test ------------------------------------
+
+
+def test_a_whole_file_objection_is_refused_when_every_test_in_it_passes(world):
+    slug = _given_partial_story(world, 477, ["fail", {FIRST: "pass", SECOND: "pass"}, "pass"])
+    world.agent_objects(slug, "builder", tests=[TEST], why=WHY)
+    world.agent_implements(slug, "builder", files=WORK, changed_files=list(WORK))
+    world.reviewer_answers(477, "merge")
+
+    result = run_flow(world, 477)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "already pass on this working tree" in result.stdout
+    # per test, not per file: the refusal says what the runner said of each
+    assert f'"{FIRST}" → passed' in result.stdout
+    assert f'"{SECOND}" → passed' in result.stdout
+    assert "🩹 Repairing" not in result.stdout
+
+
+def test_an_objection_naming_a_test_that_passes_is_refused_naming_it(world):
+    slug = _given_partial_story(world, 478, ["fail", {FIRST: "pass", SECOND: "fail"}, "pass"])
+    world.agent_objects(slug, "builder", tests=[f"{TEST}::{FIRST}", f"{TEST}::{SECOND}"], why=WHY)
+    world.agent_implements(slug, "builder", files=WORK, changed_files=list(WORK))
+    world.reviewer_answers(478, "merge")
+
+    result = run_flow(world, 478)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (
+        f"{TEST}::{FIRST} already passes on this working tree, so there is nothing for "
+        "block 1 to repair there" in result.stdout
+    )
+    assert "🩹 Repairing" not in result.stdout
+    assert world.run_record(478)["slices"]["domain"]["objections"] == []
+
+
+def test_the_repair_brief_says_how_each_named_test_failed(world):
+    slug = _given_partial_story(
+        world, 479, ["fail", {FIRST: "pass", SECOND: "fail_defect"}, "fail", "pass"]
+    )
+    world.agent_objects(
+        slug,
+        "builder",
+        tests=[f"{TEST}::{SECOND}"],
+        why="the empty state is unreachable while the fixture seeds a row",
+    )
+    world.mechanic_repairs(f"{slug}-tests-1", files={TEST: "// repaired\n"}, test_files=[TEST])
+    world.agent_implements(slug, "builder", files=WORK, changed_files=list(WORK))
+    world.reviewer_answers(479, "merge")
+
+    result = run_flow(world, 479)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair_prompt = _talks(world, "mechanic", f"{slug}-tests-1")[0]["prompt"]
+    assert "How each of them failed on the implementer's tree:" in repair_prompt
+    # a test that throws is not the same defect as one whose assertion bit,
+    # and the repairer is told which this was
+    assert (
+        f'{TEST} "{SECOND}" → threw: TypeError: locator.boundingBox is not a function'
+        in repair_prompt
+    )
+
+
+# --- the repair brief carries the repository's conventions ---------------------
+
+
+def test_the_repair_brief_lists_the_sibling_tests_of_the_same_kind(world):
+    slug = _given_planned_story(
+        world,
+        480,
+        ["fail", "fail"],
+        extra={SIBLING: "describe('brand rows', () => {});\n"},
+    )
+    world.scripted_test_outcome(REPAIRED, ["fail", "pass"])
+    world.agent_objects(slug, "mechanic", tests=[TEST], why=WHY)
+    _repair(world, slug)
+    world.agent_implements(slug, "mechanic", files=WORK, changed_files=list(WORK))
+
+    result = run_flow(world, 480)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    repair_prompt = _talks(world, "mechanic", f"{slug}-tests-1")[0]["prompt"]
+    assert "These are the repository's own tests of this kind, nearest first" in repair_prompt
+    assert f'- `{SIBLING}` — first test: "brand rows"' in repair_prompt
+    # the file under repair is not its own sibling
+    assert f"- `{TEST}`" not in repair_prompt

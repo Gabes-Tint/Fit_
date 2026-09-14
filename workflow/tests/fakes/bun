@@ -2,7 +2,8 @@
 """Fake `bun`: `run worktree:new <slug>` does a real `git worktree add`;
 `x vitest run ...` / `x playwright test ...` emit a JSON report (the same
 shape the real reporters use) built from a scripted outcome per file:
-"fail" (good - no implementation yet), "timed_out" (also good - an
+"fail" (good - no implementation yet) - or an object mapping each test
+title in the file to its own outcome - "timed_out" (also good - an
 expectation waiting for UI that does not exist yet, which playwright
 reports as `timedOut` rather than `failed`), "fail_defect" (the test itself
 throws, so it can never pass), "pass" (bad), "skipped" (the tests never
@@ -153,6 +154,16 @@ def _titles(world, file):
     return world.get("test_titles", {}).get(file) or [_TITLE]
 
 
+def _per_title(world, file, outcome):
+    """(title, outcome) for every test this file reports. An outcome that is
+    a mapping gives each named test its own result, which is how a scenario
+    scripts the shape #421 hit: one test of a file failing while the rest of
+    the file passes."""
+    if isinstance(outcome, dict):
+        return list(outcome.items())
+    return [(title, outcome) for title in _titles(world, file)]
+
+
 def _vitest_status(outcome):
     """vitest's own JSON reporter has no timed-out status: it records a
     test that ran out of time as an ordinary failed assertion, and a
@@ -173,35 +184,54 @@ def _playwright_status(outcome):
     return "failed" if outcome in _FAILING else "passed"
 
 
+def _vitest_assertion(world, f, title, outcome):
+    status = _vitest_status(outcome)
+    _, message, location = _failure(world, f, outcome)
+    stack = f"{message}\n    at {location}:12:30" if location else message
+    return {
+        "title": title,
+        "fullName": title,
+        "status": status,
+        "failureMessages": [stack] if status == "failed" else [],
+    }
+
+
 def _vitest_report(files, outcomes, world):
     entries = []
     for f in files:
         outcome = outcomes.get(f, "fail")
         if outcome == "not_found":
             continue
-        status = _vitest_status(outcome)
-        _, message, location = _failure(world, f, outcome)
-        stack = f"{message}\n    at {location}:12:30" if location else message
         assertions = (
             []
             if outcome == "import_error"
             else [
-                {
-                    "title": title,
-                    "fullName": title,
-                    "status": status,
-                    "failureMessages": [stack] if status == "failed" else [],
-                }
-                for title in _titles(world, f)
+                _vitest_assertion(world, f, title, each)
+                for title, each in _per_title(world, f, outcome)
             ]
         )
         # a file whose every test was skipped is still a passing file to
         # vitest: only the assertions say nothing ran
-        entry_status = "failed" if status == "failed" else "passed"
+        failed = any(entry["status"] == "failed" for entry in assertions)
         entries.append(
-            {"name": f"/worktree/{f}", "status": entry_status, "assertionResults": assertions}
+            {
+                "name": f"/worktree/{f}",
+                "status": "failed" if failed else "passed",
+                "assertionResults": assertions,
+            }
         )
     return {"testResults": entries}
+
+
+def _playwright_result(world, f, outcome):
+    status = _playwright_status(outcome)
+    _, message, location = _failure(world, f, outcome)
+    result = {"status": status}
+    if status not in {"passed", "skipped"}:
+        result["error"] = {"message": message}
+        if location:
+            result["error"]["location"] = {"file": location, "line": 12, "column": 30}
+    return result
 
 
 def _playwright_report(files, outcomes, world):
@@ -210,18 +240,15 @@ def _playwright_report(files, outcomes, world):
         outcome = outcomes.get(f, "fail")
         if outcome == "not_found":
             continue
-        status = _playwright_status(outcome)
-        _, message, location = _failure(world, f, outcome)
-        result = {"status": status}
-        if status not in {"passed", "skipped"}:
-            result["error"] = {"message": message}
-            if location:
-                result["error"]["location"] = {"file": location, "line": 12, "column": 30}
         suites.append(
             {
                 "specs": [
-                    {"title": title, "file": f, "tests": [{"results": [dict(result)]}]}
-                    for title in _titles(world, f)
+                    {
+                        "title": title,
+                        "file": f,
+                        "tests": [{"results": [_playwright_result(world, f, each)]}],
+                    }
+                    for title, each in _per_title(world, f, outcome)
                 ]
             }
         )
