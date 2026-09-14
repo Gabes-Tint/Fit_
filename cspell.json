@@ -99,6 +99,7 @@
 		"noexec",
 		"nodeid",
 		"nologin",
+		"noqa",
 		"nosuid",
 		"notused",
 		"nums",

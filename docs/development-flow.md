@@ -299,7 +299,8 @@ flowchart TD
 - Block 1 validates the failing-test branch as the immutable input it
   becomes: the repository's change-scoped lint, its type lane and the
   repository gate's content steps (`duplicates`, `format:check`,
-  `check:suppressions`) all run while the mechanic still owns the file. The
+  `check:suppressions`, `spellcheck`) all run while the mechanic still owns
+  the file. The
   type lane and the lint lane make one exception for a story that
   introduces a new function, method, prop or export, because its failing
   tests must name that API before it exists: the type diagnostics that say

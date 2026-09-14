@@ -101,8 +101,11 @@ Rules:
   can change them any more: `duplicates` (copy-paste detection, ratchet 0 -
   extract a repeated setup or assertion block into a helper instead of
   pasting it into a second test), `format:check` (run
-  `bunx prettier --write` over the files you wrote) and `check:suppressions`
-  (the suppression ratchet the rule above already forbids).
+  `bunx prettier --write` over the files you wrote), `check:suppressions`
+  (the suppression ratchet the rule above already forbids) and `spellcheck`
+  (cspell over the repository: every word in a test title, a comment or an
+  identifier must be one it knows - you cannot add to `cspell.json` from
+  here, so spell it right).
 - If a new domain module does not exist yet, dynamically import it inside the
   assertion and call the expected export in the promise chain. This makes the
   assertion fail both while the module is absent and while its behavior is

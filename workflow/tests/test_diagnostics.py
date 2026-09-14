@@ -38,6 +38,45 @@ def test_a_diagnostic_differing_only_in_the_worktree_path_is_the_same_diagnostic
     )
 
 
+def test_a_diagnostic_differing_only_in_svelte_checks_epoch_stamps_is_the_same_diagnostic() -> None:
+    assert same_diagnostic(
+        '1789348161683 ERROR "SessionExercise.svelte" 35:8 "Expected 2 arguments, but got 1."',
+        '1789348914909 ERROR "SessionExercise.svelte" 35:8 "Expected 2 arguments, but got 1."',
+    )
+
+
+def test_a_diagnostic_differing_only_in_a_vitest_duration_is_the_same_diagnostic() -> None:
+    assert same_diagnostic(
+        "Duration  25.84s (transform 0ms, setup 0ms, import 15.42s)",
+        "Duration  24.01s (transform 0ms, setup 0ms, import 15.93s)",
+    )
+
+
+def test_a_diagnostic_differing_only_in_the_time_a_run_started_is_the_same_diagnostic() -> None:
+    assert same_diagnostic("Start at  21:09:33", "Start at  21:22:06")
+
+
+def test_a_diagnostic_differing_only_in_the_cspell_cache_count_is_the_same_diagnostic() -> None:
+    assert same_diagnostic(
+        "CSpell: Files checked: 749, Issues found: 2 in 1 file.",
+        "CSpell: Files checked: 749 (748 from cache), Issues found: 2 in 1 file.",
+    )
+
+
+def test_a_cspell_run_that_found_more_issues_is_a_different_diagnostic() -> None:
+    assert not same_diagnostic(
+        "CSpell: Files checked: 749 (748 from cache), Issues found: 2 in 1 file.",
+        "CSpell: Files checked: 749 (748 from cache), Issues found: 3 in 2 files.",
+    )
+
+
+def test_a_diagnostic_naming_a_different_line_of_the_same_file_is_a_different_diagnostic() -> None:
+    assert not same_diagnostic(
+        '1789348161683 ERROR "SessionExercise.svelte" 35:8 "Expected 2 arguments, but got 1."',
+        '1789348161683 ERROR "SessionExercise.svelte" 106:13 "Expected 4 arguments, but got 3."',
+    )
+
+
 def test_a_diagnostic_naming_a_different_file_is_a_different_diagnostic() -> None:
     assert not same_diagnostic(
         "non-test file changed on story-406-domain: workflow/tests/test_agents_retries.py",

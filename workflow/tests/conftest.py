@@ -305,8 +305,29 @@ reviewer:
         """One block 1 test-repair turn, in the driver's own repair worktree:
         the mechanic commits and never pushes - the driver merges the repair
         into the slice branch itself."""
+        self.agent_repairs(
+            slug, "mechanic", files=files, test_files=test_files, why=why, delete=delete
+        )
+
+    def agent_repairs(
+        self,
+        slug: str,
+        role: str,
+        files: dict[str, str],
+        test_files: list[str],
+        why: str = "the repaired tests still wait for the behavior",
+        delete: list[str] | None = None,
+    ) -> None:
+        """The same turn by whichever role the driver sent it to: a second
+        repair goes to the role that objected, not to the mechanic."""
         self.mechanic_writes(
-            slug, files=files, test_files=test_files, why=why, push=False, delete=delete
+            slug,
+            files=files,
+            test_files=test_files,
+            why=why,
+            push=False,
+            delete=delete,
+            role=role,
         )
 
     def agent_fails(
@@ -343,9 +364,10 @@ reviewer:
         commit: bool = True,
         delete: list[str] | None = None,
         rendezvous: str | None = None,
+        role: str = "mechanic",
     ) -> None:
         self._queue_turn(
-            f"{slug}/mechanic",
+            f"{slug}/{role}",
             {"test_files": test_files, "why_they_fail": why},
             effects={
                 "files": files,
@@ -540,14 +562,16 @@ reviewer:
     def scripted_test_outcome(
         self,
         file: str,
-        outcome: str | list[str],
+        outcome: str | dict[str, str] | list[str | dict[str, str]],
         message: str | None = None,
         location: str | None = None,
         titles: list[str] | None = None,
     ) -> None:
         """Outcome: fail, timed_out, fail_defect, pass, skipped,
         import_error, not_found, or tool_error. A list is consumed one value
-        per runner invocation. `message` and `location` are the error a
+        per runner invocation, and a value may be a mapping of test title to
+        outcome, which is how one test of a file fails while the rest of the
+        file passes. `message` and `location` are the error a
         `fail_defect` invocation reports and the file it says threw it; a
         plain `fail` always reports an ordinary failed expectation and a
         `timed_out` one the message playwright writes when an expectation
@@ -641,7 +665,8 @@ reviewer:
         """Scripted results for `npm run <script>` and `bun run
         test:mutation:<lane>`: pass, fail, or tool_error. A list is
         consumed one value per invocation. `verify:fast` scripts block 1's
-        content steps over the failing-test branch."""
+        content steps over the failing-test branch - `duplicates`,
+        `format:check`, `check:suppressions` and `spellcheck` together."""
         self._load()
         self.world.setdefault("gate_outcomes", {}).update(outcomes)
         self._save()
@@ -654,17 +679,23 @@ reviewer:
         self.world.setdefault("gate_failed_steps", {})[tier] = list(steps)
         self._save()
 
-    def given_duplicate_clone(self, first: str, second: str) -> None:
+    def given_duplicate_clone(
+        self, first: str, second: str, then: tuple[str, str] | None = None
+    ) -> None:
         """The two halves jscpd reports when `duplicates` fails: lines
         40-49 of `first` against lines 90-99 of `second`, in jscpd's own
-        scan-root-relative spelling."""
+        scan-root-relative spelling. `then` is the pair the next failing run
+        reports instead, for a scenario where the implementer took its own
+        half out and only block 1's is left."""
         self._load()
         self.world["clone_locations"] = [first, second]
+        if then is not None:
+            self.world["clone_pairs"] = [[first, second], list(then)]
         self._save()
 
     def given_gate_failure_file(self, file: str) -> None:
-        """The file a failing `format:check`, `check:suppressions` or
-        `lint` step names in its output."""
+        """The file a failing `format:check`, `check:suppressions`,
+        `spellcheck` or `lint` step names in its output."""
         self._load()
         self.world["gate_failure_file"] = file
         self._save()

@@ -43,19 +43,36 @@ report - not merely the failed step's name. When every file a failed step
 blames is one of the retained acceptance tests, the turn cannot repair it
 at all (those bytes are immutable) and the run stops at once as
 `TESTS_INVALID`, naming block 1 and the file, instead of spending three
-corrections and an escalation on it; a failure naming any other file, or
-one whose files the driver cannot extract, stays an ordinary repairable
-diagnostic. A crash, missing, stale or
+corrections and an escalation on it. A mixed failure - some acceptance
+files, some the implementer's own - stays repairable, and the diagnostic
+says which of the blamed files are block 1's and that the run will stop as
+`TESTS_INVALID` once they are all that is left failing; the turn after the
+implementer's half goes green is where that happens. A failure blaming no
+acceptance test, or one whose files the driver cannot extract, is an
+ordinary repairable diagnostic. Blamed files the slice's layer forbids are
+grouped under a heading of their own - the gate sizes its steps from the
+tree, so it blames files the scope check would reject the turn for
+touching, and #422's domain slice was handed six type errors in two UI
+components and then rejected on scope for fixing them. A crash, missing, stale or
 inconsistent gate report stops at once. A turn may also reject the
-acceptance tests instead of implementing against them: the driver verifies
-the objection itself - the files it names are this slice's own retained
-tests, they still fail on that working tree, and the tree carries no commit
+acceptance tests instead of implementing against them, naming a whole test
+file or one test inside it as `<file>::<test title>`: the driver verifies the
+objection itself - the files it names are this slice's own retained tests,
+every test it names still fails on that working tree (one acceptance run over
+the slice's whole set, judged test by test), and the tree carries no commit
 and nothing outside the slice - and a verified one sends the tests back to
-block 1's writer in a repair worktree of the driver's own, under block 1's
+block 1 in a repair worktree of the driver's own, under block 1's
 usual validation, then merges the repaired commit into the slice branch
 beside the implementer's accumulated work, pushes it and re-freezes it. The
 slice then runs again with a fresh attempt counter against the repaired
-tests. An objection the driver cannot verify is an ordinary failed attempt;
+tests. An implementer may object beside finished work: when its tree carries
+an implementation, the objection must name a strict subset of the slice's
+tests and every test it does not name must already pass there, and its work
+then stays in the worktree while the tests it named are repaired around it -
+which is how six of seven tests get delivered instead of none (#421). The
+first repair is the mechanic that wrote the tests; a second is made by the
+role that objected, with every objection and repair so far in its brief.
+An objection the driver cannot verify is an ordinary failed attempt;
 at most two repairs per slice, and a verified objection after those stops as
 `TESTS_INVALID` with every objection in the comment. The scope check puts the gates the
 agent is judged by out of reach - anything under `quality/`, `.github/`,
@@ -183,11 +200,12 @@ story say why and how many attempts went unspent:
 🛑 Mechanic #406 stopped early: attempt 2 failed exactly as attempt 1 — TESTS_NOT_PUSHED: …
 ```
 
-A second rejection that differs in substance - a different file, test or
-count - is ordinary progress and the third attempt is still taken. Shas,
-durations, timestamps and worktree paths are normalized away before the two
-are compared, so a diagnostic that only moved with the clock still counts
-as the same one.
+A second rejection that differs in substance - a different file, test, line
+or count - is ordinary progress and the third attempt is still taken. Shas,
+durations, timestamps, `svelte-check`'s epoch-millisecond stamps, cspell's
+`(748 from cache)` and worktree paths are normalized away before the two are
+compared, so a diagnostic that only moved with the clock still counts as the
+same one.
 
 Vitest acceptance specs may define ordinary test helpers, but a spec with no
 product import is rejected when it defines a callable locally and asserts that
@@ -205,11 +223,13 @@ validates them in block 1 as what they will be: the branch must pass the
 repository's change-scoped lint (`bun run lint:changed`, repairable by the
 mechanic until the diagnostic is clean), its type lane (`bun run check`) and
 the repository gate's own content steps
-(`bun scripts/quality/gate.ts verify:fast --only duplicates,format:check,check:suppressions`) -
+(`bun scripts/quality/gate.ts verify:fast --only duplicates,format:check,check:suppressions,spellcheck`) -
 the steps block 3 will run over these same bytes once nobody can change
 them, so a ten-line clone inside an acceptance test is caught while the
 mechanic still owns the file rather than failing six implementation
-attempts (#397),
+attempts (#397), and a misspelled test title while the mechanic can still
+retype it rather than as a word block 3's solver may neither correct nor
+add to the dictionary (#422),
 and acceptance tests carry no lint suppression at all (`eslint-disable`,
 `@ts-ignore`, `@ts-expect-error` are rejected). A playwright spec must exercise a component through the
 repository-owned harness route `/dev/component-harness` (see
@@ -436,13 +456,23 @@ pass, the driver verifies that and sends them back to block 1's writer:
 
 ```text
 📦 Validating #1001 (ui) objection to the tests
-🧪 src/routes/rows.e2e.ts → still failing here, as the objection says ✔
-🙅 #1001 (ui) solver rejects the tests: tests_contradict — test 1 wants the apple first…
+🧪 src/routes/rows.e2e.ts::the fourth chip → still failing here, as the objection says ✔
+   "the fourth chip" → timed out waiting for an expectation: Test timeout of 30000ms exceeded.
+🧩 #1001 (ui) partial objection: the other 6 acceptance test(s) pass beside it, and the solver's work stays in the worktree (src/routes/rows/+page.svelte)
+🙅 #1001 (ui) solver rejects the tests: tests_wrong — only one template exists, so four chips…
 🩹 Repairing #1001 (ui) tests in block 1 (repair 1/2)
 🔧 Mechanic #1001 (ui) test repair turn 1/2
 🔒 #1001 (ui) tests re-frozen at 3f1a90c…
 ⇪ Pushed story-1001-ui at c70b114…
 🔧 Solver #1001 (ui) attempt 1/3
+```
+
+A second objection to the repaired tests is repaired by the role that made
+it, not by the mechanic again:
+
+```text
+🩹 Repairing #1001 (ui) tests in block 1 (repair 2/2, solver — the mechanic's repair was objected to again)
+🔧 Solver #1001 (ui) test repair turn 1/2
 ```
 
 Block 4 narrates what CI said before it decides what to do about it. A red
@@ -454,8 +484,23 @@ that names nothing the driver can act on gets the one counted rerun:
    │ ERROR: Coverage for lines (0%) does not meet global threshold (80%) for src/lib/LogRow.ts
 🛠 CI fix round 1/2 on PR #418: src/lib/LogRow.ts
 🛠 Findings routed to slices: ui
+🔧 Builder #1001 (ui) review fix attempt 1/3
 ⇪ Pushed fixes; integration head 9c4d1b0…
 🟢 CI green on PR #418 (7 checks)
+```
+
+A fix turn is judged as strictly as an implementation turn and corrected
+the same way: it has the same three attempts, carries its own diagnostic
+into the next one, and stops early when that diagnostic comes back
+unchanged. A gate failure inside a test file the slice never touched, on a
+gate that already passed for that slice in this run, is run again once
+before it counts:
+
+```text
+🔧 Builder #1001 (ui) review fix attempt 1/3
+🔁 test:e2e failed in src/routes/sync.e2e.ts, which this slice does not touch and which passed at 18:42 — rerunning once
+✅ verify:changed passed on the rerun: the first run was a flake
+🔒 #1001 (ui) frozen at 3f1a90c…
 ```
 
 `🛑` marks a planned stop (for example, the call is Gabriel's, the slice
@@ -562,25 +607,26 @@ repository root: `bun run lint:docs` and `bun run spellcheck`.
 
 ### Where things are
 
-| path                      | what                                                        |
-| ------------------------- | ----------------------------------------------------------- |
-| `go.py`                   | the flow, box by box                                        |
-| `delegation-contract.md`  | the block 2/3 gates, the delivery gates and the ship gates  |
-| `agents.yaml`             | all four roles' backend, model and effort                   |
-| `fitflow/agent_config.py` | strict, source-relative YAML loading and validation         |
-| `fitflow/selection.py`    | the nine signals and the role precedence table              |
-| `fitflow/assignment.py`   | the assignment envelope's strict validation                 |
-| `fitflow/runstate.py`     | the story lock and the persisted per-slice state machines   |
-| `fitflow/steps/`          | one module per box of the diagram                           |
-| `fitflow/steps/resume.py` | `--resume`: reconcile the record with the worktrees it left |
-| `fitflow/steps/reset.py`  | `--reset`: undo what a run created, archive its record      |
-| `fitflow/github.py`       | the only code that runs `gh`                                |
-| `fitflow/agents.py`       | the only code that runs `aarmy`                             |
-| `fitflow/worktrees.py`    | the only code that runs `git` and `bun run worktree:new`    |
-| `fitflow/acceptance.py`   | runs acceptance tests and reads their report (failing/pass) |
-| `fitflow/prompts/`        | what each agent is told                                     |
-| `fitflow/schemas/`        | the shape each agent must answer in                         |
-| `fitflow/settings.py`     | repository, label, timeout and path settings                |
+| path                      | what                                                                |
+| ------------------------- | ------------------------------------------------------------------- |
+| `go.py`                   | the flow, box by box                                                |
+| `delegation-contract.md`  | the block 2/3 gates, the delivery gates and the ship gates          |
+| `agents.yaml`             | all four roles' backend, model and effort                           |
+| `fitflow/agent_config.py` | strict, source-relative YAML loading and validation                 |
+| `fitflow/selection.py`    | the nine signals and the role precedence table                      |
+| `fitflow/assignment.py`   | the assignment envelope's strict validation                         |
+| `fitflow/runstate.py`     | the story lock and the persisted per-slice state machines           |
+| `fitflow/steps/`          | one module per box of the diagram                                   |
+| `fitflow/steps/resume.py` | `--resume`: reconcile the record with the worktrees it left         |
+| `fitflow/steps/reset.py`  | `--reset`: undo what a run created, archive its record              |
+| `fitflow/github.py`       | the only code that runs `gh`                                        |
+| `fitflow/agents.py`       | the only code that runs `aarmy`                                     |
+| `fitflow/worktrees.py`    | the only code that runs `git` and `bun run worktree:new`            |
+| `fitflow/acceptance.py`   | runs acceptance tests and reads their report, per file and per test |
+| `fitflow/siblings.py`     | the inventory of the repository's own tests a repair is shown       |
+| `fitflow/prompts/`        | what each agent is told                                             |
+| `fitflow/schemas/`        | the shape each agent must answer in                                 |
+| `fitflow/settings.py`     | repository, label, timeout and path settings                        |
 
 Every document under `fitflow/schemas/` has to be in codex's strict
 structured-outputs dialect, because `aarmy` refuses anything else before the
@@ -646,22 +692,22 @@ Defined in `fitflow/outcome.py`. Every stop and failure is also a comment on
 the story; blocks 2-3 terminal failures additionally label the story
 `blocked`.
 
-| code | name                 | meaning                                                                                                                                                                                                                                                                                       |
-| ---- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | PLANNED              | the whole flow ran (aliases IMPLEMENTED, DELIVERED, SHIPPED); also `--reset` done (RESET)                                                                                                                                                                                                     |
-| 2    | (usage)              | bad arguments, a bad `agents.yaml`, or a missing deploy target for `FIT_FLOW_SHIP_TO`                                                                                                                                                                                                         |
-| 10   | NOTHING_TO_PICK      | no open story is free to pick                                                                                                                                                                                                                                                                 |
-| 11   | NEEDS_GABRIEL        | the call is Gabriel's, or a slice needs clarification: labelled, assigned, question posted; also a PR that changes the driver, left open for his merge                                                                                                                                        |
-| 20   | CANNOT_PICK          | the named issue does not exist, is closed, is not a story, or is held; with `--resume`, also no retained run, a human hold, or a run already shipped                                                                                                                                          |
-| 21   | AGENT_FAILED         | an agent turn failed or never gave a reply that fits its schema                                                                                                                                                                                                                               |
-| 22   | AGENT_BROKE_CONTRACT | slices break the rules, an agent weakened an acceptance test or committed, an identity mismatch, or an out-of-reach path left there through the whole correction budget                                                                                                                       |
-| 23   | TESTS_NOT_PUSHED     | the mechanic's work is not committed, pushed, or tests only                                                                                                                                                                                                                                   |
-| 24   | TESTS_DO_NOT_FAIL    | a test file passed, only skipped its tests, or never ran                                                                                                                                                                                                                                      |
-| 25   | WORKTREE_EXISTS      | the slice's worktree or branch already exists                                                                                                                                                                                                                                                 |
-| 26   | TOOL_FAILED          | `gh`, `git` or `bun` failed unexpectedly, or a reply could not be parsed                                                                                                                                                                                                                      |
-| 27   | PLAN_REJECTED        | the delegation contract was rejected (bad signals, no evidence, dependent slices); replan                                                                                                                                                                                                     |
-| 28   | CAPACITY_EXHAUSTED   | a slice's solver spent its budget (three attempts, or two that failed identically), review did not converge, or CI stayed red after 2 CI fix rounds (or after the one rerun, when its log named nothing the driver could act on); everything preserved                                        |
-| 29   | EXECUTION_HELD       | another `go.py` run already owns this story's lock; with `--resume`, a turn is still running here                                                                                                                                                                                             |
-| 30   | RUN_STATE_CONFLICT   | an earlier run left its retained state behind: `--resume` continues it, `--reset` archives it; with `--resume`, the record and the worktrees disagree (bytes changed, a review fix was interrupted, the PR is closed)                                                                         |
-| 31   | TESTS_INVALID        | the acceptance tests fail their own gate: lint, types, a suppression, a test that throws, a test in the wrong folder, or a red CI that blames nothing but a retained test; also an implementer's verified objection that showed they cannot all pass together, which block 1 could not repair |
-| 32   | DEPLOY_FAILED        | a deploy or its smoke check failed after the merge: labelled `needs-gabriel`, never rolled back                                                                                                                                                                                               |
+| code | name                 | meaning                                                                                                                                                                                                                                                                                                                   |
+| ---- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | PLANNED              | the whole flow ran (aliases IMPLEMENTED, DELIVERED, SHIPPED); also `--reset` done (RESET)                                                                                                                                                                                                                                 |
+| 2    | (usage)              | bad arguments, a bad `agents.yaml`, or a missing deploy target for `FIT_FLOW_SHIP_TO`                                                                                                                                                                                                                                     |
+| 10   | NOTHING_TO_PICK      | no open story is free to pick                                                                                                                                                                                                                                                                                             |
+| 11   | NEEDS_GABRIEL        | the call is Gabriel's, or a slice needs clarification: labelled, assigned, question posted; also a PR that changes the driver, left open for his merge                                                                                                                                                                    |
+| 20   | CANNOT_PICK          | the named issue does not exist, is closed, is not a story, or is held; with `--resume`, also no retained run, a human hold, or a run already shipped                                                                                                                                                                      |
+| 21   | AGENT_FAILED         | an agent turn failed or never gave a reply that fits its schema                                                                                                                                                                                                                                                           |
+| 22   | AGENT_BROKE_CONTRACT | slices break the rules, an agent weakened an acceptance test or committed, an identity mismatch, or an out-of-reach path left there through the whole correction budget                                                                                                                                                   |
+| 23   | TESTS_NOT_PUSHED     | the mechanic's work is not committed, pushed, or tests only                                                                                                                                                                                                                                                               |
+| 24   | TESTS_DO_NOT_FAIL    | a test file passed, only skipped its tests, or never ran                                                                                                                                                                                                                                                                  |
+| 25   | WORKTREE_EXISTS      | the slice's worktree or branch already exists                                                                                                                                                                                                                                                                             |
+| 26   | TOOL_FAILED          | `gh`, `git` or `bun` failed unexpectedly, or a reply could not be parsed                                                                                                                                                                                                                                                  |
+| 27   | PLAN_REJECTED        | the delegation contract was rejected (bad signals, no evidence, dependent slices); replan                                                                                                                                                                                                                                 |
+| 28   | CAPACITY_EXHAUSTED   | a slice's solver spent its budget (three attempts, or two that failed identically), a block 4 fix request spent the same budget the same two ways, review did not converge, or CI stayed red after 2 CI fix rounds (or after the one rerun, when its log named nothing the driver could act on); everything preserved     |
+| 29   | EXECUTION_HELD       | another `go.py` run already owns this story's lock; with `--resume`, a turn is still running here                                                                                                                                                                                                                         |
+| 30   | RUN_STATE_CONFLICT   | an earlier run left its retained state behind: `--resume` continues it, `--reset` archives it; with `--resume`, the record and the worktrees disagree (bytes changed since the turn ended, a slice interrupted between two roles, the PR is closed)                                                                       |
+| 31   | TESTS_INVALID        | the acceptance tests fail their own gate: lint, types, a suppression, a test that throws, a test in the wrong folder, or a red CI that blames nothing but a retained test; also a verified objection that still stands after two repairs - the mechanic's, then the objecting role's - or a repair block 1 could not make |
+| 32   | DEPLOY_FAILED        | a deploy or its smoke check failed after the merge: labelled `needs-gabriel`, never rolled back                                                                                                                                                                                                                           |

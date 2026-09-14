@@ -13,25 +13,38 @@ channel for the objection, spent the whole budget and misfiled the stop as
 CAPACITY_EXHAUSTED.
 
 So a reply may now carry an `objection`: the kind, the acceptance tests it
-names, why no honest change in this slice's layer can make them pass
-together, and the repair it proposes. The driver never takes that on trust.
-It checks that the named files really are this slice's retained acceptance
-tests, that the acceptance run on the turn's own working tree still fails on
-at least one of them, that the tree carries no commit and nothing outside
-this slice's reach, and that the objection says something. A malformed or
-unverifiable objection is an ordinary failed attempt and costs the turn's
-place in the budget; a verified one costs only the turn.
+names - a whole file, or one test as `<file>::<test title>` - why no honest
+change in this slice's layer can make them pass together, and the repair it
+proposes. The driver never takes that on trust. It checks that the named
+files really are this slice's retained acceptance tests, that the acceptance
+run on the turn's own working tree still fails on every named test (a whole
+file needs one failing test in it), that the tree carries no commit and
+nothing outside this slice's reach, and that the objection says something. A
+malformed or unverifiable objection is an ordinary failed attempt and costs
+the turn's place in the budget; a verified one costs only the turn.
+
+An objection may stand beside finished work, and #421 is why: the builder
+objected three times, was right three times, and had the one-line
+implementation in its tree the whole way - six of the seven tests would have
+passed with it, and the driver had no shape for "these two are wrong, the
+rest are done". When the tree carries work, the objection must name a strict
+subset of the slice's tests and every test it does not name must already
+pass there; the work then stays exactly where it is while the tests it named
+are repaired around it, and the next turn is told so.
 
 A verified objection parks the slice in `tests_rejected` and sends the tests
-back to block 1's writer as a correction turn, in a repair worktree of the
-driver's own based on the slice's failing-test base, under block 1's usual
+back to block 1 as a correction turn, in a repair worktree of the driver's
+own based on the slice's failing-test base, under block 1's usual
 validation: test files only, the right kind, the repository's gates, and a
-failure on an expectation rather than a throw. The repaired commit is merged
-into the slice branch - which still holds the implementer's uncommitted work
-- pushed, and re-frozen: `tests_sha` becomes the repair commit and
-`failing_sha` the merge. The slice then returns to `assigned` with the same
-role, revision, assignment, session and worktree and a fresh attempt
-counter, because the tests it is judged by are new inputs.
+failure on an expectation rather than a throw. The first repair is the
+mechanic that wrote the tests; a second goes to the role that objected,
+because a mechanic repairing exactly what it was told, and no more, is what
+did not end the loop on #421. The repaired commit is merged into the slice
+branch - which still holds the implementer's uncommitted work - pushed, and
+re-frozen: `tests_sha` becomes the repair commit and `failing_sha` the
+merge. The slice then returns to `assigned` with the same role, revision,
+assignment, session and worktree and a fresh attempt counter, because the
+tests it is judged by are new inputs.
 
 At most two repairs per slice. A third verified objection stops the run as
 TESTS_INVALID with every objection in the message, because at that point the
@@ -39,9 +52,10 @@ acceptance tests, not the implementer, are what this run cannot get past.
 """
 
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 
-from fitflow import acceptance, agents, audit, github, narrate, worktrees
+from fitflow import acceptance, agents, audit, github, narrate, siblings, worktrees
 from fitflow.outcome import FlowFailure, Outcome
 from fitflow.runstate import RunRecord, SliceRecord
 from fitflow.steps import failing_tests
@@ -55,6 +69,19 @@ MAX_REPAIRS = 2
 REPAIR_TURNS = 2
 
 ScopeBreach = Callable[[SliceRecord, list[str]], str | None]
+
+
+@dataclass(frozen=True)
+class _Checked:
+    """What the verification found: the first condition that failed, or -
+    when the objection stands - how each named test failed and the work the
+    implementer left in the tree beside it. Both are recorded on the
+    objection: the failures brief the repairer, and the work is what the
+    implementer is told was kept."""
+
+    refusal: str | None = None
+    failures: tuple[str, ...] = ()
+    work: tuple[str, ...] = field(default=())
 
 
 class Objected(Exception):  # noqa: N818 - a control-flow word, not an error
@@ -75,17 +102,28 @@ def brief() -> str:
             f"and cannot be observed from this one (`{KINDS[1]}`), or they are simply "
             f"wrong about the product (`{KINDS[2]}`).",
             "",
-            "It is never a way to skip work, and the driver checks it: the files you "
-            "name must be this slice's own acceptance tests, they must still fail on "
-            "your working tree, and that tree must carry no commit and nothing outside "
-            "this slice. An objection that fails any of those is an ordinary rejected "
-            "attempt and costs you one of your three.",
+            "Name a whole acceptance test file, or one test inside it as "
+            "`<file>::<test title>`. Name only the tests that cannot pass: an objection "
+            "is not about the file it sits in.",
             "",
-            "A verified objection sends the tests back to the mechanic who wrote them, "
-            "with your reason and your proposed fix, and you get a fresh set of "
-            "attempts against the repaired tests. Say what is wrong precisely enough "
-            "for someone else to repair it, and gaming the tests is never the answer: "
-            "when your objection stands, say so and object.",
+            "You may object beside finished work. When your worktree carries an "
+            "implementation, the objection must name a strict subset of this slice's "
+            "tests, every test you do not name must already pass on your tree, and your "
+            "work stays exactly where it is while block 1 repairs the tests you named. "
+            "That is how six of seven tests get delivered instead of none.",
+            "",
+            "It is never a way to skip work, and the driver checks it: the tests you "
+            "name must be this slice's own acceptance tests, each one must still fail on "
+            "your working tree (a whole file must have at least one failing test), and "
+            "that tree must carry no commit and nothing outside this slice. An objection "
+            "that fails any of those is an ordinary rejected attempt and costs you one of "
+            "your three.",
+            "",
+            "A verified objection sends the tests back to block 1, with your reason and "
+            "your proposed fix, and you get a fresh set of attempts against the repaired "
+            "tests. Say what is wrong precisely enough for someone else to repair it, and "
+            "gaming the tests is never the answer: when your objection stands, say so and "
+            "object.",
         ]
     )
 
@@ -113,34 +151,34 @@ def consider(
         piece.move("validating")
         record.save()
     narrate.line(f"📦 Validating #{piece.number} ({piece.layer}) objection to the tests")
-    refusal = _refusal(record, piece, raw, scope_breach)
-    if refusal is not None:
+    checked = _verify(record, piece, raw, scope_breach)
+    if checked.refusal is not None:
         return (
-            f"your objection to the acceptance tests was refused: {refusal}. "
+            f"your objection to the acceptance tests was refused: {checked.refusal}. "
             "Object only when the driver can verify it; otherwise implement the slice."
         )
-    _accept(record, piece, raw)
+    _accept(record, piece, raw, checked)
     raise Objected
 
 
-def _refusal(
+def _verify(
     record: RunRecord, piece: SliceRecord, raw: object, scope_breach: ScopeBreach
-) -> str | None:
-    """The first verification condition that fails, or None when the
-    objection stands. Ordered cheapest first: the reply's own shape, then
+) -> _Checked:
+    """The first verification condition that fails, or what the accepted
+    objection carries. Ordered cheapest first: the reply's own shape, then
     what it names, then the worktree, and only then the test run."""
     path = worktrees.slice_worktree_path(piece.slug)
-    checks = (
-        lambda: _malformed(raw),
-        lambda: _not_this_slice(piece, raw),
-        lambda: _tree_refusal(piece, path, scope_breach),
-        lambda: _already_passing(record, piece, path, raw),
-    )
-    for check in checks:
-        refusal = check()
-        if refusal is not None:
-            return refusal
-    return None
+    shape = _malformed(raw) or _not_this_slice(piece, raw)
+    if shape is not None:
+        return _Checked(shape)
+    head = _moved_head(piece, path)
+    if head is not None:
+        return _Checked(head)
+    work = worktrees.changed_since(path, piece.failing_sha)
+    breach = _out_of_scope(piece, work, scope_breach)
+    if breach is not None:
+        return _Checked(breach)
+    return _verify_on_the_tree(record, piece, path, raw, work)
 
 
 def _malformed(raw: object) -> str | None:
@@ -173,10 +211,17 @@ def _is_text(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+def _file_of(named: str) -> str:
+    """The acceptance test file one named item is about: the whole path, or
+    the left half of a `file::test title`."""
+    return named.split("::", 1)[0]
+
+
 def _not_this_slice(piece: SliceRecord, raw: dict) -> str | None:
     """Only this slice's own retained acceptance tests can be sent back to
-    block 1: anything else is a file the objection has no standing over."""
-    stranger = sorted(set(raw["tests"]) - set(piece.test_files))
+    block 1: anything else is a file the objection has no standing over. A
+    named test is judged by the file it names."""
+    stranger = sorted({_file_of(item) for item in raw["tests"]} - set(piece.test_files))
     if not stranger:
         return None
     return (
@@ -185,43 +230,142 @@ def _not_this_slice(piece: SliceRecord, raw: dict) -> str | None:
     )
 
 
-def _tree_refusal(piece: SliceRecord, path: Path, scope_breach: ScopeBreach) -> str | None:
+def _moved_head(piece: SliceRecord, path: Path) -> str | None:
     """An objection is judged on the turn's own working tree, so that tree
-    must still be one the slice owns: no commit of the agent's own, and
-    nothing left outside this slice's reach."""
+    must still carry no commit of the agent's own."""
     head = worktrees.local_head(path)
-    if head != piece.failing_sha:
-        return (
-            f"local HEAD moved to {head[:7]} — an objection is judged on the turn's own "
-            "working tree, and implementation agents never commit"
-        )
-    breach = scope_breach(piece, worktrees.changed_since(path, piece.failing_sha))
-    if breach is not None:
-        return (
-            f"{breach} — put those paths back before objecting: an objection is about the "
-            "tests, not a place to leave work outside this slice"
-        )
-    return None
+    if head == piece.failing_sha:
+        return None
+    return (
+        f"local HEAD moved to {head[:7]} — an objection is judged on the turn's own "
+        "working tree, and implementation agents never commit"
+    )
 
 
-def _already_passing(record: RunRecord, piece: SliceRecord, path: Path, raw: dict) -> str | None:
-    """The objection's own premise, re-taken by the driver: the tests it
-    names must still fail here. A runner that could not report at all is a
-    tooling failure, never a verdict on the objection."""
+def _out_of_scope(piece: SliceRecord, work: list[str], scope_breach: ScopeBreach) -> str | None:
+    """Work left in the tree beside an objection is allowed - that is how a
+    partial objection delivers - but only inside this slice's own reach."""
+    breach = scope_breach(piece, work)
+    if breach is None:
+        return None
+    return (
+        f"{breach} — put those paths back before objecting: an objection is about the "
+        "tests, not a place to leave work outside this slice"
+    )
+
+
+def _verify_on_the_tree(
+    record: RunRecord, piece: SliceRecord, path: Path, raw: dict, work: list[str]
+) -> _Checked:
+    """The objection's own premise, re-taken by the driver test by test: the
+    tests it names must still fail here, and - when the implementer left work
+    in the tree - every test it does not name must already pass, so the
+    repair can happen beside an implementation rather than instead of one.
+
+    One acceptance run over the whole slice's test files answers both. A
+    runner that could not report at all is a tooling failure, never a
+    verdict on the objection."""
+    report = acceptance.run_and_report(path, piece.test_files)
+    if not report.ok:
+        raise FlowFailure(Outcome.TOOL_FAILED, report.why, record.story_number, add_blocked=True)
     named = list(raw["tests"])
-    verdict = acceptance.run_and_check_passing(path, named)
-    if verdict.ok:
-        return (
-            f"{', '.join(named)} already pass on this working tree, so there is nothing "
-            "for block 1 to repair"
-        )
-    if not verdict.repairable:
-        raise FlowFailure(Outcome.TOOL_FAILED, verdict.why, record.story_number, add_blocked=True)
-    narrate.line(f"🧪 {', '.join(named)} → still failing here, as the objection says ✔")
+    refusal = _unknown_tests(named, report) or _not_failing(named, report)
+    if refusal is None and work:
+        refusal = _not_partial(named, report, work)
+    if refusal is not None:
+        return _Checked(refusal)
+    _narrate_verified(piece, named, report, work)
+    return _Checked(None, tuple(_failures_of(named, report)), tuple(work))
+
+
+def _unknown_tests(named: list[str], report: acceptance.Report) -> str | None:
+    unknown = [item for item in named if not report.named(item)]
+    if not unknown:
+        return None
+    return (
+        f"{', '.join(unknown)} names no test the acceptance run reported; it reported:\n"
+        + "\n".join(report.described())
+    )
+
+
+def _not_failing(named: list[str], report: acceptance.Report) -> str | None:
+    """Every named test must fail; a whole file must have at least one
+    failing test in it. The refusal names which one did not, with the status
+    the runner gave it, because "the objection is wrong" is not a
+    diagnostic anyone can act on."""
+    for item in named:
+        statuses = report.named(item)
+        passing = [status for status in statuses if not status.failed]
+        if "::" in item and passing:
+            return (
+                f"{item} already passes on this working tree, so there is nothing for "
+                f"block 1 to repair there: {passing[0].described()}"
+            )
+        if "::" not in item and len(passing) == len(statuses):
+            listed = "\n".join(status.described() for status in statuses)
+            return (
+                f"{item} already pass on this working tree, so there is nothing for "
+                f"block 1 to repair:\n{listed}"
+            )
     return None
 
 
-def _accept(record: RunRecord, piece: SliceRecord, raw: dict) -> None:
+def _not_partial(named: list[str], report: acceptance.Report, work: list[str]) -> str | None:
+    """An objection beside work in the tree is a claim about part of the
+    slice: these tests cannot pass, the rest already do. Both halves are
+    checked here - a strict subset, and the rest green - because the
+    implementer's work is about to be kept and judged by the tests nobody
+    repaired."""
+    rest = _rest(named, report)
+    if not rest:
+        return (
+            f"this objection names every acceptance test of the slice, and your tree "
+            f"carries work ({', '.join(work)}): name the tests that cannot pass, as "
+            "`<file>::<test title>`, or put your work back and object to the whole set"
+        )
+    failing = [status for status in rest if not status.passed]
+    if failing:
+        listed = "\n".join(status.described() for status in failing)
+        return (
+            f"{failing[0].name} does not pass on your working tree, and an objection "
+            "beside work is only accepted when every test you did not name already "
+            f"passes:\n{listed}"
+        )
+    return None
+
+
+def _rest(named: list[str], report: acceptance.Report) -> list[acceptance.TestStatus]:
+    """Every test of the slice the objection does not name."""
+    objected = {status.name for item in named for status in report.named(item)}
+    return [status for status in report.statuses if status.name not in objected]
+
+
+def _narrate_verified(
+    piece: SliceRecord, named: list[str], report: acceptance.Report, work: list[str]
+) -> None:
+    with narrate.grouped():
+        narrate.line(f"🧪 {', '.join(named)} → still failing here, as the objection says ✔")
+        narrate.block([status.described() for item in named for status in report.named(item)])
+    rest = _rest(named, report)
+    if work and rest:
+        narrate.line(
+            f"🧩 #{piece.number} ({piece.layer}) partial objection: the other "
+            f"{len(rest)} acceptance test(s) pass beside it, and the {piece.role}'s work "
+            f"stays in the worktree ({', '.join(work)})"
+        )
+
+
+def _failures_of(named: list[str], report: acceptance.Report) -> list[str]:
+    """How each named test failed, for the agent that has to repair it."""
+    return [
+        f"{status.file} {status.described()}"
+        for item in named
+        for status in report.named(item)
+        if status.failed
+    ]
+
+
+def _accept(record: RunRecord, piece: SliceRecord, raw: dict, checked: _Checked) -> None:
     entry = {
         "kind": raw["kind"],
         "tests": list(raw["tests"]),
@@ -230,6 +374,9 @@ def _accept(record: RunRecord, piece: SliceRecord, raw: dict) -> None:
         "proposed_fix": raw.get("proposed_fix") or "",
         "role": piece.role,
         "attempt": piece.attempts,
+        # how each named test failed, and the work kept beside the objection
+        "failures": list(checked.failures),
+        "work": list(checked.work),
     }
     _check_repair_budget(record, piece, entry)
     with record.transition():
@@ -264,9 +411,12 @@ def _check_repair_budget(record: RunRecord, piece: SliceRecord, entry: dict) -> 
 
 def _rendered(entry: dict) -> str:
     fix = entry.get("proposed_fix") or "(none proposed)"
+    failures = entry.get("failures") or []
+    how = "\nHow each of them failed on the implementer's tree:\n" + "\n".join(failures)
     return (
         f"Objection ({entry['kind']}) from the {entry['role']} at attempt {entry['attempt']} "
         f"about {', '.join(entry['tests'])}:\n{entry['why']}\nProposed fix: {fix}"
+        f"{how if failures else ''}"
     )
 
 
@@ -284,24 +434,47 @@ def repair(record: RunRecord, piece: SliceRecord) -> None:
     from the base, not from what the dead repair left - and removed once the
     repair lands; a repair that fails keeps it standing for audit."""
     number = piece.test_repairs + 1
-    narrate.line(
-        f"🩹 Repairing #{piece.number} ({piece.layer}) tests in block 1 "
-        f"(repair {number}/{MAX_REPAIRS})"
-    )
+    role = repair_role(piece)
+    narrate.line(_repair_headline(piece, number, role))
     slug = f"{piece.slug}-tests-{number}"
     path = worktrees.create_repair_worktree(slug, piece.failing_sha)
     audit.worktree_created(slug)
     narrate.line(f"🌿 Worktree {slug} · branch {slug} at {piece.failing_sha[:12]}")
     agents.ensure_fresh_team(slug, path, piece.number)
-    test_files, why, debt = _repair_loop(record, piece, slug, path)
+    test_files, why, debt = _repair_loop(record, piece, slug, path, role)
     _refreeze(record, piece, path, test_files, why, debt)
     worktrees.remove_slice_worktree(path)
     worktrees.delete_local_branch(slug)
     agents.delete_team(slug)
 
 
+def repair_role(piece: SliceRecord) -> str:
+    """Who repairs the tests. The first repair goes back to the mechanic
+    that wrote them: it knows what it meant, and most objections are a
+    detail it can put right. The second goes to the role that objected -
+    the builder or solver whose own tree already holds the implementation
+    those tests are wrong about - because the first repair answered the
+    objection it was given and was objected to again, and a mechanic that
+    fixes exactly what it is told, and no more, is precisely what did not
+    work (#421). Nothing else changes: the same repair worktree, the same
+    brief, the same two turns, the same validation."""
+    if piece.test_repairs == 0 or not piece.objections:
+        return "mechanic"
+    return piece.objections[-1]["role"]
+
+
+def _repair_headline(piece: SliceRecord, number: int, role: str) -> str:
+    head = (
+        f"🩹 Repairing #{piece.number} ({piece.layer}) tests in block 1 "
+        f"(repair {number}/{MAX_REPAIRS}"
+    )
+    if number == 1:
+        return f"{head})"
+    return f"{head}, {role} — the mechanic's repair was objected to again)"
+
+
 def _repair_loop(
-    record: RunRecord, piece: SliceRecord, slug: str, path: Path
+    record: RunRecord, piece: SliceRecord, slug: str, path: Path, role: str
 ) -> tuple[list[str], str, dict[str, int]]:
     """The repair's own bounded budget, independent of the implementer's: a
     block 1 verdict the mechanic can repair becomes the next turn's
@@ -315,10 +488,11 @@ def _repair_loop(
     diagnostic = _rendered(piece.objections[-1])
     for turn in range(1, REPAIR_TURNS + 1):
         narrate.line(
-            f"🔧 Mechanic #{piece.number} ({piece.layer}) test repair turn {turn}/{REPAIR_TURNS}"
+            f"🔧 {role.capitalize()} #{piece.number} ({piece.layer}) test repair turn "
+            f"{turn}/{REPAIR_TURNS}"
         )
         try:
-            return _repair_turn(record, piece, slug, path, turn, diagnostic)
+            return _repair_turn(record, piece, slug, path, turn, diagnostic, role)
         except FlowFailure as failure:
             if failure.outcome not in failing_tests.REPAIRABLE_OUTCOMES:
                 raise _repair_stopped(record, piece, failure.outcome, failure.why) from failure
@@ -338,11 +512,17 @@ def _repair_loop(
 
 
 def _repair_turn(
-    record: RunRecord, piece: SliceRecord, slug: str, path: Path, turn: int, diagnostic: str
+    record: RunRecord,
+    piece: SliceRecord,
+    slug: str,
+    path: Path,
+    turn: int,
+    diagnostic: str,
+    role: str,
 ) -> tuple[list[str], str, dict[str, int]]:
-    entry = _begin_repair_turn(record, piece, slug, turn)
+    entry = _begin_repair_turn(record, piece, slug, turn, role)
     try:
-        reply, session = _talk(piece, slug, diagnostic)
+        reply, session = _talk(piece, slug, path, diagnostic, role)
     except FlowFailure as failure:
         _end_repair_turn(record, piece, entry, "failed", failure.why)
         raise
@@ -368,13 +548,18 @@ def _repair_turn(
     return test_files, reply["why_they_fail"], debt
 
 
-def _talk(piece: SliceRecord, slug: str, diagnostic: str) -> tuple[dict, str]:
+def _talk(
+    piece: SliceRecord, slug: str, path: Path, diagnostic: str, role: str
+) -> tuple[dict, str]:
     return agents.talk(
         slug,
-        "mechanic",
+        role,
         "correct_failing_tests",
         "failing_tests",
         attribute_failures_to=piece.number,
+        role_name=role,
+        role_capitalized=role.capitalize(),
+        siblings=siblings.section(path, piece.test_kind, piece.test_files),
         slice_number=piece.number,
         slice_title=piece.title,
         branch=slug,
@@ -383,7 +568,7 @@ def _talk(piece: SliceRecord, slug: str, diagnostic: str) -> tuple[dict, str]:
         acceptance="\n".join(f"- {item}" for item in piece.acceptance),
         attempt=str(piece.attempts),
         diagnostic=diagnostic,
-        objection=_objection_section(piece),
+        objection=_objection_section(piece, role),
         push_line=(
             f"commit the corrected tests on `{slug}` and do not push: this is the "
             "driver's own repair branch, and the driver merges your commit into the "
@@ -392,7 +577,7 @@ def _talk(piece: SliceRecord, slug: str, diagnostic: str) -> tuple[dict, str]:
     )
 
 
-def _objection_section(piece: SliceRecord) -> str:
+def _objection_section(piece: SliceRecord, role: str) -> str:
     entry = piece.objections[-1]
     return (
         f"\nThe {entry['role']} implementing this slice rejected these acceptance tests, and "
@@ -401,11 +586,50 @@ def _objection_section(piece: SliceRecord) -> str:
         f"implementation inside this slice's own layer can make them pass together. You may "
         f"drop or restate a test whose behavior belongs to another layer, and you may change "
         f"how a test selects what it asserts on; you may not weaken them into tests that "
-        f"pass with no implementation at all.\n\n{_rendered(entry)}\n"
+        f"pass with no implementation at all."
+        f"{_kept_work(entry)}{_history(piece, role)}\n\n{_rendered(entry)}\n"
     )
 
 
-def _begin_repair_turn(record: RunRecord, piece: SliceRecord, slug: str, turn: int) -> dict:
+def _kept_work(entry: dict) -> str:
+    """A partial objection is repaired beside an implementation that is
+    already in the slice's worktree, and the repair must not be written as
+    though nothing had been built."""
+    work = entry.get("work") or []
+    if not work:
+        return ""
+    return (
+        f" The implementer left its work in the slice's worktree ({', '.join(work)}) and it "
+        f"is kept: every acceptance test it did not name passes on that tree, so repair only "
+        f"the tests named below and leave the others as they are."
+    )
+
+
+def _history(piece: SliceRecord, role: str) -> str:
+    """What the second repair is told that the first was not: every
+    objection so far, what each repair replied, and that this one is being
+    made by the role that objected rather than by the mechanic."""
+    if piece.test_repairs == 0:
+        return ""
+    earlier = "\n\n".join(_rendered(item) for item in piece.objections[:-1])
+    replies = "\n".join(
+        f"- repair {item['repair']} turn {item['turn']} ({item.get('role', 'mechanic')}): "
+        f"{item['why'] or item['result']}"
+        for item in piece.test_repair_turns
+    )
+    return (
+        f"\n\nThis is repair {piece.test_repairs + 1} of {MAX_REPAIRS}. Block 1 already "
+        f"repaired these tests {piece.test_repairs} time(s) and the objection came back, so "
+        f"this repair is yours: you are the {role} that implements this slice, and you have "
+        f"seen what the tests ask for. Do not repeat the last repair's answer - read the "
+        f"whole history below and repair what the objections are actually about.\n\n"
+        f"Earlier objections:\n\n{earlier}\n\nWhat the repairs replied:\n{replies}"
+    )
+
+
+def _begin_repair_turn(
+    record: RunRecord, piece: SliceRecord, slug: str, turn: int, role: str
+) -> dict:
     """Repair turns keep their own ledger: `turns` is the implementation
     ledger the session, attempt and resume checks read, and a block 1 turn
     on another team and another session has no business in it."""
@@ -414,6 +638,7 @@ def _begin_repair_turn(record: RunRecord, piece: SliceRecord, slug: str, turn: i
         "repair": piece.test_repairs + 1,
         "turn": turn,
         "team": slug,
+        "role": role,
         "status": "running",
         "result": "",
         "why": "",
@@ -462,13 +687,14 @@ def _refreeze(
     that no longer judge this slice."""
     repair_sha = worktrees.local_head(path)
     slice_path = worktrees.slice_worktree_path(piece.slug)
+    kept = _kept_note(piece, slice_path, test_files)
     _merge_repair(record, piece, slice_path, repair_sha)
     merged = worktrees.local_head(slice_path)
     worktrees.push_branch(slice_path, piece.branch)
     note = (
         f"The acceptance tests you rejected were repaired in block 1 and re-frozen at "
         f"{repair_sha[:12]}. They are now {', '.join(test_files)}, and they fail because: "
-        f"{why} Read them again before you change anything: your attempts start over "
+        f"{why}{kept} Read them again before you change anything: your attempts start over "
         f"against these tests, and your accumulated work is still in the worktree."
     )
     with record.transition():
@@ -485,6 +711,32 @@ def _refreeze(
     narrate.line(f"🔒 #{piece.number} ({piece.layer}) tests re-frozen at {repair_sha[:12]}")
     narrate.line(f"⇪ Pushed {piece.branch} at {merged[:12]}")
     _comment(record, piece, repair_sha, test_files, why)
+
+
+def _kept_note(piece: SliceRecord, slice_path: Path, test_files: list[str]) -> str:
+    """What the implementer is told about its own work. A partial objection
+    was accepted precisely because the rest of the slice already passed, so
+    the next turn must know that what it built is still there and what was
+    repaired around it - otherwise the obvious reading of "the tests were
+    repaired" is "start again"."""
+    work = worktrees.changed_since(slice_path, piece.failing_sha)
+    if not work:
+        return ""
+    repaired = _repaired_names(piece.objections[-1], test_files)
+    return (
+        f" Your own work was kept exactly as you left it ({', '.join(work)}); the repair "
+        f"changed only {repaired}, and every other acceptance test of this slice passed on "
+        f"your tree when you objected."
+    )
+
+
+def _repaired_names(entry: dict, test_files: list[str]) -> str:
+    """Which tests the repair was about, named the way the implementer named
+    them - but only while the file it named still judges this slice: a file
+    the repair replaced outright is gone, and naming it would send the next
+    turn looking for it."""
+    named = [item for item in entry["tests"] if _file_of(item) in test_files]
+    return ", ".join(named) if named else "the tests you rejected"
 
 
 def _merge_repair(record: RunRecord, piece: SliceRecord, slice_path: Path, sha: str) -> None:
