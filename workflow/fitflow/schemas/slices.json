@@ -14,7 +14,14 @@
 			"items": {
 				"type": "object",
 				"additionalProperties": false,
-				"required": ["layer", "title", "brief", "acceptance", "test_kind"],
+				"required": [
+					"layer",
+					"title",
+					"brief",
+					"acceptance",
+					"test_kind",
+					"ui_called_exports"
+				],
 				"properties": {
 					"layer": {
 						"type": "string",
@@ -24,7 +31,12 @@
 					"title": { "type": "string" },
 					"brief": { "type": "string" },
 					"acceptance": { "type": "array", "items": { "type": "string" } },
-					"test_kind": { "type": "string", "enum": ["vitest", "playwright", "pytest"] }
+					"test_kind": { "type": "string", "enum": ["vitest", "playwright", "pytest"] },
+					"ui_called_exports": {
+						"type": "array",
+						"items": { "type": "string" },
+						"description": "Exported names this slice changes that files under src/routes/, src/lib/components/ or src/lib/ui/ call. Only a domain slice ever lists any; every other slice sends an empty array."
+					}
 				}
 			}
 		}

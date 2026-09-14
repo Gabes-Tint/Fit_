@@ -311,19 +311,36 @@ def _decide(record: RunRecord, story, proposals: list[dict]) -> None:
         piece.move("assigned")
         piece.assignments.append(envelope)
         narrate.line(f"🎯 #{piece.number} ({piece.layer}) → {decision.role} · {decision.reason}")
-        if piece.depends_on:
-            narrate.line(
-                f"⛓️ #{piece.number} ({piece.layer}) depends on the "
-                f"{piece.depends_on} slice and runs after it"
-            )
+        _narrate_dependency(record, piece, proposal)
     record.save()
+
+
+def _narrate_dependency(record: RunRecord, piece: SliceRecord, proposal: dict) -> None:
+    if not piece.depends_on:
+        return
+    narrate.line(
+        f"⛓️ #{piece.number} ({piece.layer}) depends on the "
+        f"{piece.depends_on} slice and runs after it"
+    )
+    if not proposal["needs_sibling"]:
+        exports = ", ".join(record.slices["domain"].ui_called_exports)
+        narrate.line(f"   │ it adopts the additive API of {exports}")
 
 
 def _dependency(record: RunRecord, proposal: dict) -> str:
     """The sibling this slice waits for. Only the accepted shape survives
     `_validate_dependencies`: the UI slice of a two-slice story waiting for
-    its domain sibling."""
-    if proposal["needs_sibling"] and proposal["layer"] == "ui" and "domain" in record.slices:
+    its domain sibling.
+
+    An additive domain slice makes that dependency the driver's decision
+    rather than the planner's. Block 1 briefed it to leave the old call
+    shape working and gave the call sites to the ui slice; adopting them
+    means editing files the domain slice just changed, so the ui slice has
+    to run on a tree that already carries it, whatever the planner answered
+    about its acceptance tests."""
+    if proposal["layer"] != "ui" or "domain" not in record.slices:
+        return ""
+    if proposal["needs_sibling"] or record.slices["domain"].ui_called_exports:
         return "domain"
     return ""
 
