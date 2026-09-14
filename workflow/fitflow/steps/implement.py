@@ -834,6 +834,25 @@ def _run_turn_gates(
     return gates.run_turn_gates(path, record.story_number)
 
 
+@dataclass(frozen=True)
+class _Blame:
+    """Who a located gate failure blames. `acceptance` is the retained
+    acceptance tests among its culprits, whose bytes no implementation turn
+    may change; `others` is every other file it named, which is the
+    implementer's share of the same failure."""
+
+    acceptance: list[str]
+    others: list[str]
+
+
+def _blame(failure: gates.GateFailure, test_files: list[str]) -> _Blame:
+    owners = {name: acceptance.owning_test(name, test_files) for name in failure.culprits}
+    return _Blame(
+        sorted({test for test in owners.values() if test is not None}),
+        sorted(name for name, test in owners.items() if test is None),
+    )
+
+
 def _check_gate_blames_the_implementation(
     record: RunRecord, piece: SliceRecord, failure: gates.GateFailure
 ) -> None:
@@ -844,21 +863,32 @@ def _check_gate_blames_the_implementation(
     attempts and an escalation on an impossible correction - which is
     exactly what a ten-line clone inside an acceptance test cost on #397.
 
-    Conservative by construction: a failure the driver could not locate, or
-    one that names any other file, stays an ordinary repairable
-    diagnostic. So does the one failure inside the acceptance tests that an
-    implementation turn can answer - see `_owed_signatures`."""
+    A mixed failure - some acceptance files, some the implementer's own -
+    is still repairable, because the implementer's half is real work. It is
+    told which half is not its own (`_gate_rejection`) and fixes the rest;
+    the turn after that reaches this check with only the acceptance files
+    blaming, and stops here. #422's solver spent its whole budget on a
+    verdict that was one unknown word in a file it could not edit beside
+    type errors it could have fixed, and was told the difference by
+    nothing.
+
+    Conservative by construction: a failure the driver could not locate
+    concludes nothing. Neither does the one failure inside the acceptance
+    tests that an implementation turn can answer - see
+    `_owed_signatures`."""
     if not failure.located:
         return
-    blamed = _acceptance_culprits(failure.culprits, piece.test_files)
-    if blamed is None or _owed_signatures(piece, failure, blamed):
+    blame = _blame(failure, piece.test_files)
+    if not blame.acceptance or blame.others:
+        return
+    if _owed_signatures(piece, failure, blame.acceptance):
         return
     raise FlowFailure(
         Outcome.TESTS_INVALID,
         f"{piece.slug}: block 1 accepted an acceptance test the repository gate rejects - "
-        f"the failure is confined to {', '.join(blamed)}, whose bytes an implementation turn "
-        f"may not change: {failure.diagnostic}; repair the test in block 1 and run the story "
-        "again",
+        f"the failure is confined to {', '.join(blame.acceptance)}, whose bytes an "
+        f"implementation turn may not change: {failure.diagnostic}; repair the test in "
+        "block 1 and run the story again",
         record.story_number,
         add_blocked=True,
     )
@@ -889,30 +919,87 @@ def _owed_signatures(piece: SliceRecord, failure: gates.GateFailure, blamed: lis
 
 
 def _gate_rejection(piece: SliceRecord, failure: gates.GateFailure) -> str:
-    """The diagnostic a repairable gate failure corrects from. An unpaid
-    signature debt gets the tsc/eslint lines with the one thing the
-    implementer has to understand about them said first."""
-    blamed = _acceptance_culprits(failure.culprits, piece.test_files) if failure.located else None
-    if blamed is None or not _owed_signatures(piece, failure, blamed):
-        return failure.diagnostic
-    return (
-        f"the type and lint lanes still fail inside {', '.join(blamed)}: the acceptance tests "
-        "call signatures the implementation does not provide yet. Add or widen them in the "
-        "product code - the test bytes are immutable and correct. "
-        f"{failure.diagnostic}"
+    """The diagnostic a repairable gate failure corrects from: the gate's
+    own output, and around it the two things an implementer cannot read off
+    it - which of the blamed files are not its to repair, and which are not
+    its to touch. An unpaid signature debt gets the tsc/eslint lines with
+    the one thing the implementer has to understand about them said
+    first."""
+    blame = _blame(failure, piece.test_files) if failure.located else _Blame([], [])
+    return "\n".join(
+        part
+        for part in (
+            _unpaid_signature_debt(piece, failure, blame),
+            failure.diagnostic,
+            _block_one_share(piece, failure, blame),
+            _outside_this_layer(piece, failure),
+        )
+        if part
     )
 
 
-def _acceptance_culprits(culprits, test_files: list[str]) -> list[str] | None:
-    """The acceptance tests a gate failure blames, or None the moment it
-    blames anything else."""
-    blamed = []
-    for name in sorted(culprits):
-        test = acceptance.owning_test(name, test_files)
-        if test is None:
-            return None
-        blamed.append(test)
-    return sorted(set(blamed)) or None
+def _unpaid_signature_debt(piece: SliceRecord, failure: gates.GateFailure, blame: _Blame) -> str:
+    """Said first when the whole failure is block 1's recorded type debt
+    coming back unpaid: the fix is in the product code and the test bytes
+    are right."""
+    if blame.others or not blame.acceptance:
+        return ""
+    if not _owed_signatures(piece, failure, blame.acceptance):
+        return ""
+    return (
+        f"the type and lint lanes still fail inside {', '.join(blame.acceptance)}: the "
+        "acceptance tests call signatures the implementation does not provide yet. Add or "
+        "widen them in the product code - the test bytes are immutable and correct."
+    )
+
+
+def _block_one_share(piece: SliceRecord, failure: gates.GateFailure, blame: _Blame) -> str:
+    """Which part of a mixed failure belongs to block 1. Without it the
+    implementer reads one verdict and cannot tell the half it can fix from
+    the half whose bytes are frozen, so it either rewrites a test it may not
+    touch or exhausts its budget trying (#422)."""
+    if not blame.others:
+        return ""
+    theirs = [name for name in blame.acceptance if not _owed_signatures(piece, failure, [name])]
+    if not theirs:
+        return ""
+    return (
+        f"these are block 1's acceptance tests, not yours - their bytes are immutable and no "
+        f"turn of yours may repair them: {', '.join(theirs)}. Fix everything else the gate "
+        "named; if they are all that is left failing, the driver stops the run as "
+        "TESTS_INVALID and block 1 repairs them."
+    )
+
+
+def _outside_this_layer(piece: SliceRecord, failure: gates.GateFailure) -> str:
+    """The blamed files this slice's layer forbids, gathered under one
+    heading with the gate's own lines about them.
+
+    The gate sizes its steps from the tree, not from the slice, so it
+    routinely blames a file the scope check would reject the turn for
+    touching: #422's domain slice was handed six svelte-check errors in two
+    UI files, told nothing about them, and then rejected on scope for the
+    turn that went and fixed them - two contradictory instructions across
+    two turns. This decides nothing new; `scope_breach` still says what is
+    out of reach, and this only reads the same rule over the culprits the
+    gate produced."""
+    outside = sorted(
+        name for name in failure.culprits if layers.rejects_for_layer(piece.layer, name) is not None
+    )
+    if not outside:
+        return ""
+    blamed = [
+        line.strip()
+        for line in failure.diagnostic.splitlines()
+        if any(name in line for name in outside)
+    ]
+    return "\n".join(
+        [
+            f"these files are outside your layer ({piece.layer}) - do not edit them; if the "
+            "failure is theirs, say so in your summary and keep your own files green:",
+            *(f"  {line}" for line in blamed or outside),
+        ]
+    )
 
 
 def _check_acceptance_is_sound(record: RunRecord, piece: SliceRecord, verdict) -> None:

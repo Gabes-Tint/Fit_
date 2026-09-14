@@ -1776,13 +1776,13 @@ def test_acceptance_tests_that_clone_themselves_are_rejected_in_block_1(world):
     result = run_flow(world)
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "TESTS_INVALID: duplicates, format:check, check:suppressions failed steps" in (
+    assert "TESTS_INVALID: duplicates, format:check, check:suppressions, spellcheck failed steps" in (
         result.stdout
     )
     # the diagnostic says where the clone is, not merely that there is one
     assert "lib/cloned.spec.ts:40-49 ↔ lib/cloned.spec.ts:90-99 (10 lines)" in result.stdout
     assert "🔁 Mechanic #220 retrying after attempt 1" in result.stdout
-    assert "🧪 Gates: duplicates, format:check, check:suppressions ✔" in result.stdout
+    assert "🧪 Gates: duplicates, format:check, check:suppressions, spellcheck ✔" in result.stdout
     assert "Implemented #220" in result.stdout
     # the mechanic was told exactly where to look
     correction = _mechanic_talks(world)[1]["prompt"]

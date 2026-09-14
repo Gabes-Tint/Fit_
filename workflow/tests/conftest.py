@@ -641,7 +641,8 @@ reviewer:
         """Scripted results for `npm run <script>` and `bun run
         test:mutation:<lane>`: pass, fail, or tool_error. A list is
         consumed one value per invocation. `verify:fast` scripts block 1's
-        content steps over the failing-test branch."""
+        content steps over the failing-test branch - `duplicates`,
+        `format:check`, `check:suppressions` and `spellcheck` together."""
         self._load()
         self.world.setdefault("gate_outcomes", {}).update(outcomes)
         self._save()
@@ -654,17 +655,23 @@ reviewer:
         self.world.setdefault("gate_failed_steps", {})[tier] = list(steps)
         self._save()
 
-    def given_duplicate_clone(self, first: str, second: str) -> None:
+    def given_duplicate_clone(
+        self, first: str, second: str, then: tuple[str, str] | None = None
+    ) -> None:
         """The two halves jscpd reports when `duplicates` fails: lines
         40-49 of `first` against lines 90-99 of `second`, in jscpd's own
-        scan-root-relative spelling."""
+        scan-root-relative spelling. `then` is the pair the next failing run
+        reports instead, for a scenario where the implementer took its own
+        half out and only block 1's is left."""
         self._load()
         self.world["clone_locations"] = [first, second]
+        if then is not None:
+            self.world["clone_pairs"] = [[first, second], list(then)]
         self._save()
 
     def given_gate_failure_file(self, file: str) -> None:
-        """The file a failing `format:check`, `check:suppressions` or
-        `lint` step names in its output."""
+        """The file a failing `format:check`, `check:suppressions`,
+        `spellcheck` or `lint` step names in its output."""
         self._load()
         self.world["gate_failure_file"] = file
         self._save()

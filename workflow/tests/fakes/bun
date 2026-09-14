@@ -367,11 +367,32 @@ _STEP_DETAIL = {
     "check:suppressions": "Suppressions: 3 total, 1 unjustified, baseline 0.\n  {file}:7  eslint  eslint-disable-next-line\n\nUnjustified suppressions rose from 0 to 1.",
     "lint": "{file}\n  5:10  error  Unsafe call of an `any` typed value  @typescript-eslint/no-unsafe-call\nESLint: 1 errors, 0 warnings across 1 files.",
     "check": '1789326030386 START "/worktree"\n1789326030396 ERROR "{file}" 14:22 "Property \'toggleSet\' does not exist on type \'WorkoutStore\'."\n1789326030396 COMPLETED 1423 FILES 1 ERRORS 0 WARNINGS 1 FILES_WITH_PROBLEMS',
+    "spellcheck": "$ cspell --no-progress --cache --cache-location reports/quality/cache/cspell .\n{file}:2277:6 - Unknown word (untogles)\nCSpell: Files checked: 749, Issues found: 1 in 1 file.\nerror: script \"spellcheck\" exited with code 1",
 }
 
 
 def _clone_pair(world):
+    """The two halves `duplicates` reports. A scenario that scripts more
+    than one pair gets one per invocation, the last sticky: an implementer
+    that removed its own half of a clone leaves a different clone behind,
+    not the same one."""
+    if world.get("clone_pairs"):
+        return _next_clone_pair()
     pair = world.get("clone_locations") or [_DEFAULT_CLONE, _DEFAULT_CLONE]
+    return pair[0], pair[1]
+
+
+def _next_clone_pair():
+    """One consumption of `clone_pairs`, under the same lock every other
+    scripted sequence is popped under."""
+    import fcntl
+
+    with (world_dir() / "world.lock").open("w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        world = load()
+        pairs = world["clone_pairs"]
+        pair = pairs.pop(0) if len(pairs) > 1 else pairs[0]
+        save(world)
     return pair[0], pair[1]
 
 

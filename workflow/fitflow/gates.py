@@ -14,10 +14,14 @@ the repo's.
 block 1: acceptance tests become immutable implementation inputs, so they
 must pass their own change-scoped lint, the repository's type lane and the
 repository gate's content steps (`duplicates`, `format:check`,
-`check:suppressions`) before the branch is accepted, and the mechanic gets
-the diagnostic. Those three steps judge bytes rather than behavior, so they
-give the same verdict in block 1 as they will in block 3 - where the test
-file is immutable and nobody is allowed to repair it (#397).
+`check:suppressions`, `spellcheck`) before the branch is accepted, and the
+mechanic gets the diagnostic. Those four steps judge bytes rather than
+behavior, so they give the same verdict in block 1 as they will in block 3
+- where the test file is immutable and nobody is allowed to repair it
+(#397). `spellcheck` joined them after #422: a mechanic wrote
+`it('untogles a set ...')`, block 1 never looked, and the solver met an
+unknown word in a file it was forbidden to edit - and a dictionary,
+`cspell.json`, that only a workflow slice may touch.
 
 The two lanes return a `LaneFailure`, which carries the same output parsed
 error by error (`fitflow.lanes`) beside the diagnostic. Block 1 needs that
@@ -67,7 +71,7 @@ _JSCPD_REPORT = Path("reports") / "quality" / "duplication" / "jscpd-report.json
 #: on the same, by then immutable, bytes. `verify:changed` runs the whole
 #: tier including the tests that must still fail here, so block 1 selects
 #: these three through the gate's own `--only`.
-FAILING_BRANCH_STEPS = ("duplicates", "format:check", "check:suppressions")
+FAILING_BRANCH_STEPS = ("duplicates", "format:check", "check:suppressions", "spellcheck")
 _FAILING_BRANCH_ARGV = [
     "bun",
     "scripts/quality/gate.ts",
@@ -80,12 +84,18 @@ _DETAIL_LINES = 12
 _DETAIL_CHARS = 1200
 _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
+#: cspell's own issue line: the file, the position, then the word it did
+#: not know. Both the repository's `spellcheck` step and a workflow slice's
+#: markdown pass print it.
+_CSPELL_ISSUE = re.compile(r"^([\w./@+-]+):\d+:\d+ - ")
+
 #: How each step names the files it blames. A step that is not here, or
 #: whose output names nothing, leaves the failure unlocated: the driver then
 #: draws no conclusion about who owns it.
 _CULPRIT_PATTERNS = {
     "format:check": re.compile(r"^\[warn\]\s+(\S+)\s*$"),
     "check:suppressions": re.compile(r"^\s+(\S+):\d+\s"),
+    "spellcheck": _CSPELL_ISSUE,
     "lint": re.compile(r"^([\w./@+-]+\.(?:ts|js|mjs|cjs|svelte|json|md|css|html))\s*$"),
     "lint:changed": re.compile(r"^([\w./@+-]+\.(?:ts|js|mjs|cjs|svelte|json|md|css|html))\s*$"),
 }
@@ -485,7 +495,6 @@ _RUFF = ["uv", "run", "--project", "workflow", "ruff"]
 _RUFF_ARROW = re.compile(r"^\s*-->\s+([\w./@+-]+\.py):\d+:\d+\s*$")
 _RUFF_INLINE = re.compile(r"^([\w./@+-]+\.py):\d+:\d+:\s")
 _PRETTIER_WARN = _CULPRIT_PATTERNS["format:check"]
-_CSPELL_ISSUE = re.compile(r"^([\w./@+-]+):\d+:\d+ - ")
 
 #: Where a workflow slice's prose lives. The markdown pair runs only over
 #: the files the turn actually changed, the way `lint:changed` does.
