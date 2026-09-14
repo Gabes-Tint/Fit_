@@ -9,6 +9,7 @@ import subprocess
 import time
 
 from conftest import (
+    builder_signals,
     delegate_slice,
     mechanic_signals,
     run_flow,
@@ -683,3 +684,83 @@ def test_resume_after_a_red_ci_the_driver_can_read_takes_a_ci_fix_round(world):
     assert record["delivery"]["ci_fix_rounds"] == 1
     # the spent rerun stays spent; the fix rounds are their own budget
     assert record["delivery"]["rerun_used"] is True
+
+
+# --- resume: block 4's fix turns ------------------------------------------------
+
+_FIX_FINDING = [
+    {
+        "file": "src/lib/delegate.ts",
+        "line": 1,
+        "category": "correctness",
+        "required_fix": "the constant must be a number",
+    }
+]
+FIXED = {"src/lib/delegate.ts": "export const delegate = 2;\n"}
+
+
+def _given_a_fix_verdict(world, number: int) -> None:
+    """A reviewed run that reached block 4 and was asked for one fix."""
+    _given_planned_story(world, number)
+    world.planner_answers_delegate(number, [delegate_slice(number, "domain", builder_signals())])
+    world.agent_implements(
+        f"story-{number}-domain", "builder", files=IMPLEMENTATION, changed_files=CHANGED
+    )
+    world.reviewer_answers(number, "fix", _FIX_FINDING)
+
+
+def test_resume_relaunches_a_review_fix_turn_that_never_replied(world):
+    """#406 run 4's record, once the fix turn is a bounded request: the turn
+    left no reply, so it is voided and relaunched under the same attempt -
+    not a reset."""
+    _given_a_fix_verdict(world, 630)
+    world.agent_fails("story-630-domain", "builder", "provider unavailable")
+    first = run_flow(world, 630)
+    assert first.returncode == 21, first.stdout + first.stderr
+    record = world.run_record(630)["slices"]["domain"]
+    assert record["turns"][-1]["kind"] == "review_fix"
+    assert record["state"] == "failed"
+
+    world.agent_implements("story-630-domain", "builder", files=FIXED, changed_files=CHANGED)
+    world.reviewer_answers(630, "merge")
+
+    result = run_flow(world, 630, "--resume")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "A block 4 fix was interrupted: continuing at block 4" in result.stdout
+    assert "stopped in a review fix: fix attempt 1 left no reply" in result.stdout
+    assert "review fix attempt 1/3" in result.stdout
+    assert world.pull(500)["state"] == "MERGED"
+    turns = [
+        turn
+        for turn in world.run_record(630)["slices"]["domain"]["turns"]
+        if turn["kind"] == "review_fix"
+    ]
+    assert [turn["result"] for turn in turns] == ["void", "ok"]
+    assert [turn["fix_attempt"] for turn in turns] == [1, 1]
+
+
+def test_resume_re_judges_a_review_fix_turn_from_its_retained_reply(world):
+    """The fix turn replied and the driver died judging it. The reply and
+    the tree digest are on the ledger, so the verdict is re-derived on the
+    same bytes - no second agent call for that turn."""
+    _given_a_fix_verdict(world, 631)
+    world.agent_implements("story-631-domain", "builder", files=FIXED, changed_files=CHANGED)
+    # the acceptance runner dies while the fix turn is being judged: an
+    # external failure, after the turn's reply and digest are on the ledger
+    world.scripted_test_outcome("src/lib/delegate.spec.ts", ["fail", "pass", "tool_error"])
+    first = run_flow(world, 631)
+    assert first.returncode == 26, first.stdout + first.stderr
+    assert len(_talks(world, "builder", "story-631-domain")) == 2
+
+    world.scripted_test_outcome("src/lib/delegate.spec.ts", "pass")
+    world.reviewer_answers(631, "merge")
+
+    result = run_flow(world, 631, "--resume")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "re-validating its review fix attempt 1 from its retained reply" in result.stdout
+    assert "🔧 Builder #631 (domain) review fix" not in result.stdout
+    assert len(_talks(world, "builder", "story-631-domain")) == 2
+    assert world.pull(500)["state"] == "MERGED"
+    assert world.run_record(631)["slices"]["domain"]["state"] == "succeeded"

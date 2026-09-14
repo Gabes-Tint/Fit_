@@ -762,9 +762,11 @@ def _end_of_fix_budget(
     record: RunRecord, piece: SliceRecord, rejection: _Rejection, attempt: int, repeated: bool
 ) -> None:
     """The fix request is done: its attempts ran out, or the diagnostic came
-    back identical and the rest would only reproduce it. A scope breach ends
-    it the same way any other rejection does - #419 gave a breach its
-    corrections here too, and they are spent."""
+    back identical and the rest would only reproduce it. Either way the run
+    stops where it always did - CAPACITY_EXHAUSTED and `blocked`, because
+    block 3's escalation ladder is spent once the slice succeeded. A scope
+    breach ends it the same way every other rejection does: correctable
+    while the budget lasts (#419), and no more than that."""
     head = (
         f"🛑 #{piece.number} ({piece.layer}) review fix stopped early: attempt {attempt} "
         f"failed exactly as attempt {attempt - 1} — "

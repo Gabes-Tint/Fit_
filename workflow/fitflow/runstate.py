@@ -152,7 +152,10 @@ _TRANSITIONS: dict[str, frozenset[str]] = {
     "escalating": frozenset({"assigned", "failed"}),
     "tests_rejected": frozenset({"assigned", "failed"}),
     "succeeded": frozenset({"fixing"}),
-    "fixing": frozenset({"validating", "failed"}),
+    # "fixing" -> "fixing" is a resumed request re-confirming the state it
+    # was already in before it relaunches its voided turn, the same no-op
+    # block 2's delegation makes on "assigned".
+    "fixing": frozenset({"fixing", "validating", "failed"}),
     "failed": frozenset(),
 }
 
