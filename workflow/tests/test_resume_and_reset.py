@@ -6,12 +6,15 @@ codes, logs, the retained record and the fake-world state.
 
 import fcntl
 import subprocess
+import time
 
 from conftest import (
     delegate_slice,
     mechanic_signals,
     run_flow,
 )
+
+from fitflow import agents
 
 IMPLEMENTATION = {"src/lib/delegate.ts": "export const delegate = true;\n"}
 CHANGED = ["src/lib/delegate.ts"]
@@ -196,6 +199,19 @@ def test_resume_voids_a_turn_the_driver_never_saw_end(world):
     assert world.run_record(602)["terminal"] == "SHIPPED"
 
 
+def _await_the_fake_turn(team: str, role: str) -> None:
+    """Hold until the fake turn is in the process table the driver reads.
+    `Popen` returns when the fork happens, not when bash has exec'd itself
+    into the renamed `sleep`; a resume started inside that window scans a
+    table the turn is not in yet and relaunches beside it, which is the
+    opposite of what this test is about."""
+    deadline = time.monotonic() + 5
+    while not agents.turn_in_flight(team, role):
+        if time.monotonic() > deadline:
+            raise AssertionError(f"the fake {role} turn for {team} never reached the process table")
+        time.sleep(0.01)
+
+
 def test_resume_never_relaunches_beside_a_turn_still_running(world):
     _stopped_by_an_agent_failure(world, 603)
 
@@ -208,11 +224,14 @@ def test_resume_never_relaunches_beside_a_turn_still_running(world):
         ["bash", "-c", 'exec -a "aarmy talk mechanic --team story-603-domain" sleep 60']
     )
     try:
+        _await_the_fake_turn("story-603-domain", "mechanic")
         result = run_flow(world, 603, "--resume")
+        outlived_the_resume = orphan.poll() is None
     finally:
         orphan.kill()
         orphan.wait()
 
+    assert outlived_the_resume, "the fake turn ended before the driver looked for it"
     assert result.returncode == 29, result.stdout + result.stderr
     assert "a mechanic turn is still running on this machine" in result.stdout
     assert len(_talks(world, "mechanic", "story-603-domain")) == 2  # nothing relaunched
