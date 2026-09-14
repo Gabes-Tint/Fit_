@@ -13,6 +13,7 @@ from conftest import (
     delegate_slice,
     mechanic_signals,
     run_flow,
+    solver_signals,
 )
 
 from fitflow import agents
@@ -362,6 +363,136 @@ def test_resume_refuses_a_worktree_that_changed_since_the_turn_ended(world):
     assert result.returncode == 30, result.stdout + result.stderr
     assert "worktree changed since mechanic attempt 1 ended" in result.stdout
     assert len(_talks(world, "mechanic", "story-604-domain")) == 2
+
+
+def _stopped_by_an_exhausted_solver(world, number: int) -> str:
+    """#337 run 4's own record: the slice was delegated straight to the
+    solver, so there is no rung left to escalate to, and its three attempts
+    fail on two different things - the acceptance run, then the turn gate,
+    then the acceptance run again - so no rejection repeats its predecessor
+    and the budget is spent to the last attempt. The slice lands in
+    `failed`, its attempts counted, with the last attempt's diagnostic on
+    its turn and that turn's own result still "ok"."""
+    test_file = _given_planned_story(world, number)
+    world.planner_answers_delegate(number, [delegate_slice(number, "domain", solver_signals())])
+    world.scripted_test_outcome(test_file, ["fail", "fail", "pass", "fail"])
+    world.given_gate_outcomes(**{"verify:changed": ["fail"]})
+    for _ in range(3):
+        world.agent_implements(
+            f"story-{number}-domain", "solver", files=IMPLEMENTATION, changed_files=CHANGED
+        )
+    first = run_flow(world, number)
+    assert first.returncode == 28, first.stdout + first.stderr
+    assert "solver exhausted its 3 attempts" in first.stdout
+    piece = world.run_record(number)["slices"]["domain"]
+    assert (piece["state"], piece["attempts"]) == ("failed", 3)
+    assert (piece["turns"][-1]["attempt"], piece["turns"][-1]["result"]) == (3, "ok")
+    assert piece["turns"][-1]["diagnostic"]
+    return test_file
+
+
+def _implements_the_fix(world, number: int, test_file: str) -> None:
+    """The turn a resumed run relaunches, and a world its work passes in.
+    A solver's slice is never mechanical, so block 4 asks its reviewer."""
+    world.scripted_test_outcome(test_file, "pass")
+    world.given_gate_outcomes(**{"verify:changed": "pass"})
+    world.reviewer_answers(number, "merge")
+    world.agent_implements(
+        f"story-{number}-domain",
+        "solver",
+        files={"src/lib/delegate.ts": "export const delegate = 2;\n"},
+        changed_files=CHANGED,
+        summary="the diagnostic is repaired",
+    )
+
+
+def test_resume_relaunches_an_implementation_turn_the_driver_already_judged(world):
+    """#337 run 4: the ui slice had spent its whole budget, and the resume
+    re-validated the retained attempt 3 on the same bytes - reaching the
+    diagnostic the stopped run had already recorded and ending
+    CAPACITY_EXHAUSTED with no agent turn in the entire run. A verdict on
+    the ledger is answered by another turn instead, and the budget the
+    driver's own rejection spent buys exactly one grace attempt, which
+    carries that diagnostic as any correction does."""
+    test_file = _stopped_by_an_exhausted_solver(world, 614)
+    judged = world.run_record(614)["slices"]["domain"]["turns"][-1]["diagnostic"]
+    _implements_the_fix(world, 614, test_file)
+
+    result = run_flow(world, 614, "--resume")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "solver attempt 3 was judged failed; it will be relaunched, not re-judged" in (
+        result.stdout
+    )
+    assert "has spent its 3 attempts: granting one grace attempt" in result.stdout
+    assert "Solver #614 (domain) attempt 4 (grace)" in result.stdout
+    assert "re-validating solver attempt" not in result.stdout
+    assert judged in _talks(world, "solver", "story-614-domain")[-1]["prompt"]
+    assert "🔒 #614 (domain) frozen at" in result.stdout
+    piece = world.run_record(614)["slices"]["domain"]
+    assert piece["grace_granted"] is True
+    assert [turn["attempt"] for turn in piece["turns"]] == [1, 2, 3, 4]
+
+
+def test_resume_relaunches_a_judged_attempt_at_the_next_one_of_its_budget(world):
+    """A judged attempt with budget left is relaunched at the next attempt
+    of that budget and granted nothing: the grace attempt is only for a
+    budget the driver's own rejection spent. The record is the one a driver
+    killed between attempt 2's verdict and attempt 3's launch - the same
+    verdict, one attempt earlier, on a worktree the dropped attempt left
+    byte for byte as its predecessor did."""
+    test_file = _stopped_by_an_exhausted_solver(world, 615)
+
+    def killed_before_the_last_attempt(state):
+        piece = state["slices"]["domain"]
+        piece["turns"] = piece["turns"][:-1]
+        piece["diagnostics"] = piece["diagnostics"][:-1]
+        piece["attempts"] = 2
+        piece["state"] = "correcting"
+        state["terminal"] = ""
+
+    world.rewrite_run_record(615, killed_before_the_last_attempt)
+    _implements_the_fix(world, 615, test_file)
+
+    result = run_flow(world, 615, "--resume")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "solver attempt 2 was judged failed; it will be relaunched, not re-judged" in (
+        result.stdout
+    )
+    assert "grace attempt" not in result.stdout
+    assert "Solver #615 (domain) attempt 3/3" in result.stdout
+    piece = world.run_record(615)["slices"]["domain"]
+    assert piece["grace_granted"] is False
+    assert [turn["attempt"] for turn in piece["turns"]] == [1, 2, 3]
+
+
+def test_a_second_resume_grants_no_second_grace_attempt(world):
+    """The grace attempt is one per slice, not one per resume: it exists
+    because the driver was fixed between the two runs, and once it has been
+    granted and rejected the solver's budget is spent for good. The second
+    resume stops at RUN_STATE_CONFLICT rather than buying another turn -
+    what is left is Gabriel's call, and the record says why."""
+    test_file = _stopped_by_an_exhausted_solver(world, 616)
+    world.scripted_test_outcome(test_file, "fail")
+    world.agent_implements(
+        "story-616-domain", "solver", files=IMPLEMENTATION, changed_files=CHANGED
+    )
+
+    granted = run_flow(world, 616, "--resume")
+
+    assert granted.returncode == 28, granted.stdout + granted.stderr
+    assert "granting one grace attempt" in granted.stdout
+    piece = world.run_record(616)["slices"]["domain"]
+    assert (piece["state"], piece["attempts"], piece["grace_granted"]) == ("failed", 4, True)
+
+    again = run_flow(world, 616, "--resume")
+
+    assert again.returncode == 30, again.stdout + again.stderr
+    assert "spent its 3 solver attempts and the one grace attempt past them" in again.stdout
+    assert "granting one grace attempt" not in again.stdout
+    # the three the stopped run spent and the grace attempt: nothing new was asked
+    assert len(_talks(world, "solver", "story-616-domain")) == 4
 
 
 def test_resume_keeps_a_frozen_sibling_and_continues_only_the_other(world):

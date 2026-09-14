@@ -164,9 +164,10 @@ _TRANSITIONS: dict[str, frozenset[str]] = {
 # saw end is voided, so the slice returns to the launch it was about to
 # make (assigned before attempt 1, correcting after); a turn that ended
 # with a valid reply is "running" again with its verdict pending, and
-# block 3 re-derives that verdict without another agent call. `failed`
-# reopens the same way: it records the driver's own judgement, which a
-# fixed driver is allowed to re-derive.
+# block 3 re-derives that verdict without another agent call - unless the
+# driver already reached one, which is answered by another turn instead.
+# `failed` reopens the same way: it records the driver's own judgement,
+# which a fixed driver is allowed to re-derive or to relaunch against.
 # `tests_rejected` reopens as itself: the repair the stopped run was making
 # is block 1's work, not a turn of this slice's own loop, so the slice stays
 # parked and block 3 relaunches the repair from the top - voiding a repair
@@ -177,7 +178,11 @@ _TRANSITIONS: dict[str, frozenset[str]] = {
 _RESUME_TRANSITIONS: dict[str, frozenset[str]] = {
     "assigned": frozenset({"assigned"}),
     "running": frozenset({"assigned", "correcting", "running"}),
-    "validating": frozenset({"running", "fixing"}),
+    # "validating" -> "correcting" is the one turn judged between the two:
+    # its diagnostic is recorded while the slice is still validating, so a
+    # driver killed in that window reopens at the correction that verdict
+    # had already earned.
+    "validating": frozenset({"running", "correcting", "fixing"}),
     "correcting": frozenset({"correcting"}),
     "fixing": frozenset({"fixing"}),
     "tests_rejected": frozenset({"tests_rejected"}),
@@ -238,6 +243,11 @@ class SliceRecord:
     revision: int = 0
     attempts: int = 0
     state: str = "assigned"
+    # Whether a resume has already granted this slice the one attempt past
+    # `turns.BUDGET` that a rejection the driver itself reached earns
+    # (steps/resume.py). It is granted once: a second resume finds the mark
+    # and stops rather than buying the slice another turn.
+    grace_granted: bool = False
     diagnostics: list[str] = field(default_factory=list)
     assignments: list[dict] = field(default_factory=list)
     turns: list[dict] = field(default_factory=list)
@@ -475,6 +485,17 @@ def judged_failed(turn: dict) -> bool:
     verdict on unchanged bytes is not re-derived, it is answered by another
     turn."""
     return turn.get("result") == "failed" and bool(turn.get("diagnostic"))
+
+
+def judged_rejected(turn: dict) -> bool:
+    """Whether the driver already reached a verdict on this implementation
+    turn. Block 3 settles the slice rather than the turn - an exhausted
+    budget leaves the turn's own `result` "ok" and moves the slice to
+    `failed` - so the recorded `diagnostic` is what says a verdict was
+    reached, and it is the same text the next turn is corrected from. A
+    validation that died on an external tool failure records no diagnostic
+    and has judged nothing."""
+    return bool(turn.get("diagnostic"))
 
 
 def _matches(entry: dict, identity: dict) -> bool:

@@ -2,18 +2,22 @@
 behind, and say where the flow continues.
 
 A resumed run replays nothing: every slice goes back to the point its last
-turn actually reached. A turn that ended with a valid reply has its
-verdict re-derived from that reply and the worktree it left - the same
-bytes, proven by the digest recorded when the turn ended, and no new agent
-call - so a run stopped by a driver defect continues once the driver is
-fixed. The exception is a turn the loop stopped early on because its
-diagnostic repeated verbatim: on an unchanged tree that re-derivation
-could only reach the same diagnostic, so the run stays stopped and says
-so. A turn the driver never saw end, or one that failed before it
-produced a reply, is voided and relaunched under the same attempt number:
-counters are not reset, the ledger keeps the voided entry, and a turn
-still running on this machine is never relaunched beside. A slice with no
-accepted assignment sends the run back to block 2.
+turn actually reached. A turn that ended with a valid reply and no verdict
+has that verdict re-derived from the reply and the worktree it left - the
+same bytes, proven by the digest recorded when the turn ended, and no new
+agent call - so a run stopped by a driver defect continues once the driver
+is fixed. A turn the driver already judged is the opposite case: its
+diagnostic is on the ledger, and re-deriving it on bytes that have not
+moved could only reach it again, so block 3 relaunches the implementer one
+attempt further on - with one grace attempt when the budget is spent,
+because the verdict that spent it was the driver's own. A turn the loop
+stopped early on because its diagnostic repeated verbatim is neither
+re-judged nor relaunched: the run stays stopped and says so. A turn the
+driver never saw end, or one that failed before it produced a reply, is
+voided and relaunched under the same attempt number: counters are not
+reset, the ledger keeps the voided entry, and a turn still running on this
+machine is never relaunched beside. A slice with no accepted assignment
+sends the run back to block 2.
 
 A slice interrupted inside one of block 4's fix turns is reconciled the
 same way, and goes back to `fixing`: the run continues in block 4, where
@@ -30,9 +34,9 @@ its own: it stays parked, its unfinished repair turn is voided like any
 other, and block 3 relaunches the repair from a fresh repair worktree.
 """
 
-from fitflow import agents, audit, github, narrate, settings, worktrees
+from fitflow import agents, audit, github, narrate, settings, turns, worktrees
 from fitflow.outcome import FlowFailure, Outcome
-from fitflow.runstate import RunRecord, SliceRecord, judged_failed
+from fitflow.runstate import RunRecord, SliceRecord, judged_failed, judged_rejected
 from fitflow.steps import objection
 
 # Where a resumed run continues, in flow order.
@@ -146,6 +150,8 @@ def _reconcile_turn(record: RunRecord, piece: SliceRecord, last: dict) -> None:
         _void(record, piece, last, "the driver stopped while the turn was running")
     elif last["result"] == "void":
         _back_to_launch(record, piece, "its voided attempt")
+    elif _already_judged(piece, last):
+        _reopen_judged(record, piece, last)
     elif last.get("reply") is not None:
         _reopen_for_validation(record, piece, last)
     else:
@@ -232,6 +238,73 @@ def _require_not_in_flight(record: RunRecord, piece: SliceRecord) -> None:
         )
 
 
+def _already_judged(piece: SliceRecord, last: dict) -> bool:
+    """Whether the driver's own verdict on this turn is already recorded:
+    a diagnostic against the attempt the slice's current role is on. A turn
+    of a role the slice has since escalated past is not that - the
+    escalation reset the counters and the slice stands at the new role's
+    launch, not at this turn's."""
+    return (
+        judged_rejected(last)
+        and (last["role"], last["revision"]) == (piece.role, piece.revision)
+        and last["attempt"] == piece.attempts
+    )
+
+
+def _reopen_judged(record: RunRecord, piece: SliceRecord, last: dict) -> None:
+    """A turn the driver already judged is answered by another turn, never
+    re-judged: the verdict sits on the ledger beside the diagnostic the
+    next turn is corrected from, and the bytes have not moved, so
+    re-deriving it could only reach it again. #337 run 4 spent an entire
+    resume doing exactly that - re-validating the attempt the stopped run
+    had already rejected, and stopping on the same diagnostic without one
+    agent turn in it.
+
+    A budget with nothing left still buys exactly one grace attempt, as a
+    block 4 fix request's does: the run is being resumed because the driver
+    was fixed, and the verdict that spent the last attempt was the driver's
+    own. It is granted once, and recorded, so a second resume stops
+    instead."""
+    _require_worktree_unmoved(record, piece, last)
+    _require_not_stopped_for_repetition(record, piece, last)
+    attempt = last["attempt"]
+    spent = attempt >= turns.BUDGET
+    if spent:
+        _require_grace_unspent(record, piece)
+    narrate.line(
+        f"♻️  #{piece.number} ({piece.layer}) {piece.role} attempt {attempt} was judged "
+        f"failed; it will be relaunched, not re-judged"
+    )
+    if spent:
+        _grant_grace(record, piece)
+    with record.transition():
+        piece.resume_to("correcting")
+        record.save()
+
+
+def _require_grace_unspent(record: RunRecord, piece: SliceRecord) -> None:
+    """The grace attempt is one, not one per resume: a slice that has
+    already had it and failed again is exhausted, and the call is a
+    human's."""
+    if piece.grace_granted:
+        raise _conflict(
+            record,
+            piece,
+            f"has spent its {turns.BUDGET} {piece.role} attempts and the one grace attempt "
+            f"past them",
+        )
+
+
+def _grant_grace(record: RunRecord, piece: SliceRecord) -> None:
+    with record.transition():
+        piece.grace_granted = True
+        record.save()
+    narrate.line(
+        f"♻️  #{piece.number} ({piece.layer}) has spent its {turns.BUDGET} attempts: "
+        "granting one grace attempt after a driver-side rejection"
+    )
+
+
 def _reopen_for_validation(record: RunRecord, piece: SliceRecord, last: dict) -> None:
     """A turn that ended with a valid reply is judged again, on the bytes
     it left; bytes that moved since are not that turn's work."""
@@ -245,6 +318,15 @@ def _require_can_be_rejudged(record: RunRecord, piece: SliceRecord, last: dict) 
     """What a retained reply must satisfy before its verdict is re-derived:
     the worktree still there, its bytes exactly the ones the turn left, and
     a verdict that is not already known to repeat."""
+    _require_worktree_unmoved(record, piece, last)
+    _require_not_stopped_for_repetition(record, piece, last)
+
+
+def _require_worktree_unmoved(record: RunRecord, piece: SliceRecord, last: dict) -> None:
+    """The worktree the turn left, still there and still holding exactly
+    the bytes it left. A tree edited by hand since is not what the record
+    describes - neither the work a retained reply is judged on nor the
+    accumulated work a relaunch continues from."""
     path = worktrees.slice_worktree_path(piece.slug)
     if not path.exists():
         raise _conflict(record, piece, "worktree is missing")
@@ -256,7 +338,6 @@ def _require_can_be_rejudged(record: RunRecord, piece: SliceRecord, last: dict) 
             f"worktree changed since {piece.role} attempt {last['attempt']} ended; "
             "audit it, then reset",
         )
-    _require_not_stopped_for_repetition(record, piece, last)
 
 
 def _require_not_stopped_for_repetition(record: RunRecord, piece: SliceRecord, last: dict) -> None:
