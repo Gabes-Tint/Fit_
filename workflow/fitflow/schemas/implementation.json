@@ -1,7 +1,7 @@
 {
 	"type": "object",
 	"additionalProperties": false,
-	"required": ["changed_files", "summary"],
+	"required": ["changed_files", "summary", "objection"],
 	"properties": {
 		"changed_files": {
 			"type": "array",
@@ -9,9 +9,9 @@
 		},
 		"summary": { "type": "string" },
 		"objection": {
-			"type": "object",
+			"type": ["object", "null"],
 			"additionalProperties": false,
-			"required": ["kind", "tests", "why"],
+			"required": ["kind", "tests", "why", "proposed_fix"],
 			"properties": {
 				"kind": {
 					"enum": ["tests_contradict", "tests_out_of_layer", "tests_wrong"]
@@ -22,7 +22,7 @@
 					"items": { "type": "string" }
 				},
 				"why": { "type": "string" },
-				"proposed_fix": { "type": "string" }
+				"proposed_fix": { "type": ["string", "null"] }
 			}
 		}
 	}

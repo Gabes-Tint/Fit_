@@ -545,6 +545,16 @@ repository root: `bun run lint:docs` and `bun run spellcheck`.
 | `fitflow/schemas/`        | the shape each agent must answer in                         |
 | `fitflow/settings.py`     | repository, label, timeout and path settings                |
 
+Every document under `fitflow/schemas/` has to be in codex's strict
+structured-outputs dialect, because `aarmy` refuses anything else before the
+turn runs: `"additionalProperties": false` on every object, and every
+property listed in `required`. A field is made optional by a nullable type -
+`"type": ["object", "null"]` - never by leaving it out of `required`, which
+is why an implementation reply always carries an `objection` and sends
+`null` when it has none. `tests/test_strict_schema.py` checks every schema
+against that rule, and the fake `aarmy` refuses a lax one exactly as the real
+backend does.
+
 ### Seeded agent configuration
 
 The validated entries in `agents.yaml` are passed explicitly as flags on every

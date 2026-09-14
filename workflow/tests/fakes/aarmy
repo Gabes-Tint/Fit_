@@ -13,6 +13,14 @@ import time
 import fcntl
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from strict_schema import first_violation  # noqa: E402
+
+
+# What the real `aarmy` exits with when it will not load the schema at all.
+SCHEMA_REFUSED = 2
+
 
 def world_dir():
     return Path(os.environ["FAKE_WORLD"])
@@ -56,9 +64,30 @@ def cmd_delete(argv):
     return 0
 
 
+def check_schema(argv):
+    """The real backend loads `--schema` before the turn and refuses a
+    document outside codex's strict subset, exiting non-zero with the file
+    named. The fake enforces the same rule, on the same shared check, so a
+    lax schema fails the suite instead of the next real run (#430 shipped
+    one that every fake turn accepted and every real block 3 launch
+    rejected)."""
+    path = opt(argv, "--schema")
+    if path is None:
+        return None
+    absolute = Path(path).resolve()
+    broken = first_violation(json.loads(absolute.read_text()))
+    if broken is None:
+        return None
+    print(f"{absolute}: {broken}", file=sys.stderr)
+    return SCHEMA_REFUSED
+
+
 def cmd_talk(argv):
     role = argv[1]
     team = opt(argv, "--team")
+    refused = check_schema(argv)
+    if refused is not None:
+        return refused
     if "-p" in argv:
         prompt_text = opt(argv, "-p")
     else:

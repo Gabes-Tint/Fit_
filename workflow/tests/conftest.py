@@ -253,10 +253,11 @@ reviewer:
         """One implementation turn: the agent writes files into the worktree
         but never commits or pushes - the driver owns commits. `delete`
         removes paths instead of writing them, which is how a corrective
-        turn puts back a file it was told it may not touch."""
+        turn puts back a file it was told it may not touch. `objection` is
+        null, as the schema requires of a reply that has none."""
         self._queue_turn(
             f"{slug}/{role}",
-            {"changed_files": changed_files, "summary": summary},
+            {"changed_files": changed_files, "summary": summary, "objection": None},
             effects={"files": files, "delete": delete or [], "commit": commit, "push": push},
             rendezvous=rendezvous,
             session=session,
@@ -269,7 +270,7 @@ reviewer:
         tests: list[str],
         kind: str = "tests_contradict",
         why: str = "the tests contradict each other: no row order satisfies all of them",
-        proposed_fix: str = "drop the first test; its ranking belongs to the domain slice",
+        proposed_fix: str | None = "drop the first test; its ranking belongs to the domain slice",
         summary: str = "I changed nothing: no honest change can make those tests pass together",
         files: dict[str, str] | None = None,
         changed_files: list[str] | None = None,

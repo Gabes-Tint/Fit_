@@ -608,14 +608,22 @@ concrete repairs, refused to game the locators, and the run spent its whole
 budget and stopped as `CAPACITY_EXHAUSTED` - a verdict about the implementer
 for a defect in the tests.
 
-An implementation reply may therefore carry an optional `objection`:
+An implementation reply therefore always carries an `objection`, which is
+`null` when the implementer has none and otherwise an object:
 
 | field          | meaning                                                                 |
 | -------------- | ----------------------------------------------------------------------- |
 | `kind`         | `tests_contradict`, `tests_out_of_layer` or `tests_wrong`               |
 | `tests`        | the acceptance test files it is about, from this slice's retained list  |
 | `why`          | why no honest change inside this slice's layer makes them pass together |
-| `proposed_fix` | optional: the repair the implementer proposes                           |
+| `proposed_fix` | the repair the implementer proposes, or `null` when it proposes none    |
+
+The field is required rather than optional because `aarmy` only loads a
+schema in codex's strict structured-outputs dialect, where every property of
+an object is listed in `required`; a nullable type is how a field is made
+optional in meaning. `"objection": null` and an absent key mean the same
+thing to the driver, and so do a `proposed_fix` that is absent, `null` or
+empty.
 
 `changed_files` may be empty when an objection is present, and only then.
 

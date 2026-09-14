@@ -99,7 +99,13 @@ def consider(
     """The single call block 3's `_settle` makes before it judges a turn the
     ordinary way. None when the reply carries no objection; the diagnostic
     to correct from when it carries one the driver refuses; and `Objected`
-    - not a return - when the objection verifies."""
+    - not a return - when the objection verifies.
+
+    `"objection": null` is how a reply says it has none: the schema lists
+    every property in `required` because aarmy's strict subset demands it
+    (agents-army-2 orchestrator/schema.py), so the key is always there and
+    null carries the meaning a missing key used to. A key that is absent
+    anyway means the same thing."""
     raw = reply.get("objection")
     if raw is None:
         return None
@@ -138,6 +144,9 @@ def _refusal(
 
 
 def _malformed(raw: object) -> str | None:
+    """`raw` is never None here - `consider` reads that as "no objection" -
+    so anything that is not a well-formed object is a refusal. `proposed_fix`
+    may be absent, null or empty: all three mean no fix was proposed."""
     if not isinstance(raw, dict) or not _REQUIRED <= set(raw) <= _FIELDS:
         return (
             "objection must be an object with kind, tests and why, and at most a "
@@ -217,7 +226,8 @@ def _accept(record: RunRecord, piece: SliceRecord, raw: dict) -> None:
         "kind": raw["kind"],
         "tests": list(raw["tests"]),
         "why": raw["why"],
-        "proposed_fix": raw.get("proposed_fix", ""),
+        # null and "" are both "no proposed fix"; the ledger keeps one shape.
+        "proposed_fix": raw.get("proposed_fix") or "",
         "role": piece.role,
         "attempt": piece.attempts,
     }
