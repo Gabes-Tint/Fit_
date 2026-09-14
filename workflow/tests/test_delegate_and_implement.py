@@ -2179,6 +2179,133 @@ def test_a_failing_step_the_driver_cannot_locate_stays_repairable(world):
     assert "correcting after attempt 1" in result.stdout
 
 
+# --- a failure the turn only half owns (issue #422) ----------------------------
+
+
+_NOT_YOURS = "these are block 1's acceptance tests, not yours"
+
+
+def test_a_mixed_gate_failure_names_block_ones_share_and_stays_repairable(world):
+    """A clone with one half in the acceptance test and one in a product
+    file is half the implementer's work. It repairs its half, and the same
+    diagnostic says the other half is not its to touch - #422's solver was
+    handed a spelling error inside a frozen test file beside type errors it
+    could have fixed, and was told nothing about the difference."""
+    test_file = _given_planned_story(world, 476)
+    _delegate_mechanic(world, 476)
+    world.given_gate_outcomes(**{"verify:changed": ["fail", "pass"]})
+    world.given_failed_gate_steps("verify:changed", "duplicates")
+    world.given_duplicate_clone("lib/delegate.spec.ts", "lib/delegate.ts")
+    _implement(
+        world,
+        "story-476-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = true;\n"},
+    )
+    _implement(
+        world,
+        "story-476-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = 2;\n"},
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "block 1 accepted an acceptance test" not in result.stdout
+    assert _NOT_YOURS in result.stdout
+    assert f"may repair them: {test_file}" in result.stdout
+    # the gate's own account of the clone is still there in full
+    assert "lib/delegate.spec.ts:40-49 ↔ lib/delegate.ts:90-99 (10 lines)" in result.stdout
+    correction = _talks(world, "mechanic", "story-476-domain")[2]["prompt"]
+    assert _NOT_YOURS in correction
+    assert "correcting after attempt 1" in result.stdout
+    assert "🔒 #476 (domain) frozen at" in result.stdout
+
+
+def test_a_mixed_gate_failure_stops_as_tests_invalid_once_only_block_ones_half_is_left(world):
+    """The implementer took its half of the clone out and the acceptance
+    test's half is all that still fails. That is the confined failure the
+    run stops on - reached in two turns, not by exhausting the budget on
+    bytes nobody in block 3 may change."""
+    test_file = _given_planned_story(world, 477)
+    _delegate_mechanic(world, 477)
+    world.given_gate_outcomes(**{"verify:changed": "fail"})
+    world.given_failed_gate_steps("verify:changed", "duplicates")
+    world.given_duplicate_clone(
+        "lib/delegate.spec.ts",
+        "lib/delegate.ts",
+        then=("lib/delegate.spec.ts", "lib/delegate.spec.ts"),
+    )
+    _implement(
+        world,
+        "story-477-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = true;\n"},
+    )
+    _implement(
+        world,
+        "story-477-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = 2;\n"},
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 31, result.stdout + result.stderr
+    assert "TESTS_INVALID (exit 31)" in result.stdout
+    assert _NOT_YOURS in result.stdout
+    assert "block 1 accepted an acceptance test the repository gate rejects" in result.stdout
+    assert f"the failure is confined to {test_file}" in result.stdout
+    # one correction, then the stop: no third attempt, no escalation
+    assert "correcting after attempt 1" in result.stdout
+    assert len(_talks(world, "mechanic", "story-477-domain")) == 3  # block 1 + two block 3 turns
+    assert "escalating" not in result.stdout
+    assert "blocked" in world.issue(477)["labels"]
+
+
+def test_a_gate_culprit_outside_the_slices_layer_is_headed_as_off_limits(world):
+    """`verify:changed` sizes its steps from the tree, so a domain slice's
+    gate can fail inside a UI component the slice may not touch. #422's
+    solver was handed six such errors with nothing to distinguish them,
+    edited the components, fixed the gate - and was rejected on scope for
+    the turn that did it."""
+    _given_planned_story(world, 478)
+    _delegate_mechanic(world, 478)
+    component = "src/lib/components/exercise/SessionExercise.svelte"
+    world.given_gate_outcomes(**{"verify:changed": ["fail", "pass"]})
+    world.given_failed_gate_steps("verify:changed", "check")
+    world.given_gate_failure_file(component)
+    _implement(
+        world,
+        "story-478-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = true;\n"},
+    )
+    _implement(
+        world,
+        "story-478-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = 2;\n"},
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    heading = "these files are outside your layer (domain) - do not edit them"
+    assert heading in result.stdout
+    assert "if the failure is theirs, say so in your summary" in result.stdout
+    correction = _talks(world, "mechanic", "story-478-domain")[2]["prompt"]
+    assert heading in correction
+    # the gate's own line about the file is repeated under the heading
+    assert correction.count("Property 'toggleSet' does not exist") == 2
+    # naming them changes no verdict: the turn is the ordinary correction
+    # it was, and the scope rule is untouched
+    assert "outside this slice's reach" not in result.stdout
+    assert "correcting after attempt 1" in result.stdout
+    assert "🔒 #478 (domain) frozen at" in result.stdout
+
+
 def test_a_timed_out_acceptance_test_means_the_implementation_is_not_done_yet(world):
     """Block 3 reads the same statuses as block 1: a `toBeVisible` that
     times out is the implementation still missing, not a pass."""

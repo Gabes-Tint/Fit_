@@ -1848,6 +1848,49 @@ def test_unformatted_acceptance_tests_are_rejected_in_block_1(world):
     assert "Implemented #222" in result.stdout
 
 
+def test_misspelled_acceptance_tests_are_rejected_in_block_1(world):
+    """A typo in a test file is an ordinary block 1 correction while the
+    mechanic still owns the bytes. #422's mechanic wrote `it('untogles a
+    set ...')`, block 1 ran no spell check, and block 3's solver met an
+    unknown word in a file it may not edit and a dictionary only a workflow
+    slice may add to: three attempts, then CAPACITY_EXHAUSTED."""
+    _given_single_domain_slice(world, 223, "Acceptance tests cspell accepts")
+    slug = "story-223-domain"
+    test_file = "src/lib/untoggle.spec.ts"
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// attempt 1: untogles a set\n"},
+        test_files=[test_file],
+    )
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// corrective attempt: untoggles a set\n"},
+        test_files=[test_file],
+    )
+    world.given_gate_outcomes(**{"verify:fast": ["fail", "pass"]})
+    world.given_failed_gate_steps("verify:fast", "spellcheck")
+    world.given_gate_failure_file(test_file)
+    world.scripted_test_outcome(test_file, ["fail", "pass"])
+    world.planner_answers_delegate(223, [delegate_slice(223, "domain", mechanic_signals())])
+    world.agent_implements(
+        slug,
+        "mechanic",
+        files={"src/lib/untoggle.ts": "export const untoggle = true;\n"},
+        changed_files=["src/lib/untoggle.ts"],
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "failed steps: spellcheck" in result.stdout
+    assert f"{test_file}:2277:6 - Unknown word (untogles)" in result.stdout
+    assert "🔁 Mechanic #223 retrying after attempt 1" in result.stdout
+    assert "Implemented #223" in result.stdout
+    # the mechanic was told the word, not merely that a step failed
+    correction = _mechanic_talks(world)[1]["prompt"]
+    assert "Unknown word (untogles)" in correction
+
+
 def test_a_misplaced_e2e_file_is_sent_back_to_the_mechanic_with_the_expected_folder(world):
     """#397: block 1 accepted `src/lib/components/LogRow.e2e.ts`, the
     coverage lane counted it as source that no unit test loads, and CI was
