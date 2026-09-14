@@ -433,14 +433,36 @@ Python:
 - `uv run --project workflow ruff check workflow`
 - `uv run --project workflow ruff format --check workflow`
 - `bun x prettier --check <changed markdown>`
-- `bun x cspell --no-progress <changed markdown>`
+- `bun x cspell --no-progress <changed files cspell reads>`
+- `uv run --project workflow pytest -q --rootdir . workflow/tests`, in block 3
+  (writing its cache to the ignored `workflow/.pytest_cache`, so the gate leaves
+  nothing behind in the tree it judges)
 
-The markdown pair runs only over the changed `.md` files under `workflow/` and
-`docs/`, so a turn that changed no prose does not run it. Each of the four
-names the files and lines it rejects, so the failure comes back located and
-block 3's `TESTS_INVALID` rule works unchanged: a gate failure confined to the
-retained acceptance tests stops the run instead of spending an implementer's
-corrections on bytes it may not change.
+Prettier runs only over the changed `.md` files under `workflow/` and `docs/`,
+so a turn that changed no prose does not run it. cspell runs over every
+changed file the repository's own `spellcheck` step reads, Python included:
+that step walks the whole tree, so an unknown word in a new `.py` file fails
+CI's static job, and until #462 the driver ran cspell over markdown alone and
+never saw it.
+
+The layer's whole pytest suite is the last of them, and it runs in block 3
+only. CI's "Workflow driver" job runs it, so a branch that is red in it cannot
+merge; run #462 froze, pushed and "fixed" a slice whose acceptance tests
+passed while two other tests of the suite did not, because the driver's gates
+were ruff and nothing else. Block 1 cannot run it: its branch is the
+acceptance tests alone, failing on purpose, so the whole suite over it would
+reject every branch block 1 exists to accept - there the acceptance run is the
+test run. The gate names the directory and pins the rootdir at the repository
+root, because pytest prints node ids relative to the rootdir and the driver
+blames repository-relative paths.
+
+Each of them names the files and lines it rejects, so the failure comes back
+located and block 3's `TESTS_INVALID` rule works unchanged: a gate failure
+confined to the retained acceptance tests stops the run instead of spending an
+implementer's corrections on bytes it may not change. A suite failure in a
+test file the slice never touched takes the flake ladder like any other: the
+gates run again, then the blamed file runs alone, and only a file that fails
+alone too counts against the turn.
 
 Block 4 is unchanged and is the point of the layer's existence: the pull
 request is opened, CI runs, and then the merge is withheld. The driver never

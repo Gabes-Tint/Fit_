@@ -1160,9 +1160,11 @@ def _run_turn_gates(
 ) -> "gates.GateFailure | None":
     """The gates this turn is judged by. A workflow slice changes Python and
     prose, which `verify:changed` neither sizes nor runs, so the driver's own
-    gates stand in its place - the same four block 1 ran over the tests."""
+    gates stand in its place - the ones block 1 ran over the tests, plus the
+    layer's whole pytest suite, which only an implementation turn can pass
+    (`gates._workflow_steps`)."""
     if piece.layer == "workflow":
-        return gates.run_workflow_gates(path, record.story_number, changed)
+        return gates.run_workflow_gates(path, record.story_number, changed, suite=True)
     return gates.run_turn_gates(path, record.story_number)
 
 

@@ -40,8 +40,12 @@ success. No full local CI tier is implied.
 
 `run_workflow_gates` covers the third layer. A slice whose code is the
 driver itself changes Python and prose, which none of the bun lanes size or
-run, so ruff, ruff format and - over changed markdown - prettier and cspell
-take their place, in block 1 and in every block 3 turn alike.
+run, so ruff, ruff format, prettier over changed markdown, cspell over every
+changed file the repository's own `spellcheck` reads, and - in block 3 - the
+layer's whole pytest suite take their place. The suite is what CI's "Workflow
+driver" job runs and what #462 proved the driver never did: two of its tests
+were red for three turns, the gates only ever ran ruff, and the slice froze
+and shipped (`fitflow.layer_suite`).
 
 A judged failure carries the detail, not just the step names: the gate
 report points at each failed step's captured log, and `duplicates` also
@@ -58,7 +62,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from fitflow import lanes
+from fitflow import lanes, layer_suite
 from fitflow.outcome import FlowFailure, Outcome
 
 _CRASH_EXIT_CODE = 97
@@ -301,10 +305,17 @@ def run_turn_gates(worktree: Path, story_number: int) -> "GateFailure | None":
 
 
 def _launch(
-    argv: list[str], worktree: Path, story_number: int, label: str
+    argv: list[str],
+    worktree: Path,
+    story_number: int,
+    label: str,
+    env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
+    """`env` of None inherits the driver's own, which is what every gate but
+    the layer suite wants; that one is handed an environment with the run's
+    own settings taken out (`fitflow.layer_suite.env`)."""
     try:
-        return subprocess.run(argv, cwd=worktree, capture_output=True, text=True)
+        return subprocess.run(argv, cwd=worktree, capture_output=True, text=True, env=env)
     except OSError as error:
         raise FlowFailure(
             Outcome.TOOL_FAILED, f"{label} could not run: {error}", story_number
@@ -575,11 +586,13 @@ def _clone_files(clones: list[dict]) -> frozenset[str]:
 #
 # A workflow slice changes Python and prose, so `verify:changed`,
 # `lint:changed` and `check` have nothing to say about it: they size and run
-# the repository's TypeScript. These four run in their place, in both block 1
-# and block 3, and they are the same four CI's "Workflow driver" job runs
-# plus the repository's markdown pair. Each names the files and lines it
-# rejects, so the failure comes back located and block 3 can tell a gate that
-# blames only the acceptance tests from one that blames the implementation.
+# the repository's TypeScript. These run in their place, in both block 1 and
+# block 3, and together they are what CI judges such a branch by: the
+# "Workflow driver" job's ruff pair and pytest suite, plus the static job's
+# prettier and spellcheck over the files the turn changed. Each names the
+# files and lines it rejects, so the failure comes back located and block 3
+# can tell a gate that blames only the acceptance tests from one that blames
+# the implementation.
 
 _RUFF = ["uv", "run", "--project", "workflow", "ruff"]
 #: ruff points at a file with an arrow line under the rule; older releases
@@ -588,33 +601,62 @@ _RUFF_ARROW = re.compile(r"^\s*-->\s+([\w./@+-]+\.py):\d+:\d+\s*$")
 _RUFF_INLINE = re.compile(r"^([\w./@+-]+\.py):\d+:\d+:\s")
 _PRETTIER_WARN = _CULPRIT_PATTERNS["format:check"]
 
-#: Where a workflow slice's prose lives. The markdown pair runs only over
-#: the files the turn actually changed, the way `lint:changed` does.
+#: Where a workflow slice's prose lives. Prettier runs only over the
+#: files the turn actually changed, the way `lint:changed` does.
 _MARKDOWN_ROOTS = ("workflow/", "docs/")
+
+#: What the repository's `spellcheck` step reads. It walks the whole tree
+#: (`cspell .`), so a workflow slice's Python counts even though
+#: `cspell.json`'s `files` globs name no `.py`: #462's branch froze with two
+#: new Python files whose unknown word failed CI's static job, because the
+#: driver only ever spellchecked markdown. These are the suffixes cspell
+#: reads, over the files the turn changed.
+_SPELLCHECKED = (
+    ".js",
+    ".json",
+    ".jsonc",
+    ".md",
+    ".mjs",
+    ".py",
+    ".svelte",
+    ".toml",
+    ".ts",
+    ".yaml",
+    ".yml",
+)
+
+#: `cspell.json`'s `ignorePaths`, narrowed to the ones git tracks: the rest
+#: are build output and caches, which never appear in a turn's diff.
+_SPELL_IGNORED = ("android/", "data/", "quality/perf-plans.md", "workflow/.venv/")
 
 
 def run_workflow_gates(
-    worktree: Path, story_number: int, changed: list[str]
+    worktree: Path, story_number: int, changed: list[str], suite: bool = False
 ) -> "GateFailure | None":
     """Run the driver's own gates over a workflow slice's tree and return a
     repairable failure, or None when they pass.
 
+    `suite` adds the layer's whole pytest suite, which block 3 runs and
+    block 1 cannot (`_workflow_steps`).
+
     Exit 1 is the verdict; any other exit is an external tool failure that
     stops the run, never an implementation verdict - the same rule the bun
     gates follow."""
-    for label, argv, patterns in _workflow_steps(changed):
-        failure = _external_step(worktree, story_number, label, argv, patterns)
+    for step in _workflow_steps(changed, suite):
+        failure = _external_step(worktree, story_number, step)
         if failure is not None:
             return failure
-        narrate_gates(0, label)
+        narrate_gates(0, step.label)
     return None
 
 
-def workflow_gate_names(changed: list[str]) -> tuple[str, ...]:
-    """The gates a workflow turn actually runs, in order. The markdown pair
-    is scoped to the files the turn changed, so it is absent from a turn
-    that changed no prose - and the narration must not claim it ran."""
-    return tuple(label for label, _argv, _patterns in _workflow_steps(changed))
+def workflow_gate_names(changed: list[str], suite: bool = False) -> tuple[str, ...]:
+    """The gates a workflow turn actually runs, in order, so the narration
+    names every step that ran and claims none that did not. Prettier and
+    cspell are scoped to the files the turn changed, so they are absent from
+    a turn that changed none of theirs, and the suite runs only where
+    `suite` says it did."""
+    return tuple(step.label for step in _workflow_steps(changed, suite))
 
 
 def changed_markdown(changed: list[str]) -> list[str]:
@@ -623,30 +665,71 @@ def changed_markdown(changed: list[str]) -> list[str]:
     )
 
 
-def _workflow_steps(changed: list[str]) -> list[tuple[str, list[str], tuple[re.Pattern, ...]]]:
+def changed_spellchecked(changed: list[str]) -> list[str]:
+    """The files this turn changed that the repository's `spellcheck` reads."""
+    return sorted(
+        name
+        for name in changed
+        if name.endswith(_SPELLCHECKED) and not name.startswith(_SPELL_IGNORED)
+    )
+
+
+@dataclass(frozen=True)
+class _Step:
+    """One external gate step: what it runs, how it names the files it
+    blames, which end of its output those names are at, and the environment
+    it runs in - the driver's own when None."""
+
+    label: str
+    argv: list[str]
+    patterns: tuple[re.Pattern, ...]
+    #: ruff, prettier and cspell list their findings from the top and end
+    #: with a count; pytest ends with its short summary.
+    from_tail: bool = False
+    env: dict[str, str] | None = None
+
+
+def _workflow_steps(changed: list[str], suite: bool = False) -> list[_Step]:
+    """The steps a workflow turn is judged by, in order.
+
+    ruff, prettier and cspell judge bytes, so they give the same verdict in
+    block 1 as in block 3 and run in both. The layer's own suite runs in
+    block 3 only: block 1's branch is the acceptance tests alone, red on
+    purpose, so running the whole suite over it would reject every branch
+    block 1 exists to accept - there, the acceptance run is the test run."""
     steps = [
-        ("ruff check", [*_RUFF, "check", "workflow"], (_RUFF_ARROW, _RUFF_INLINE)),
-        ("ruff format", [*_RUFF, "format", "--check", "workflow"], (_RUFF_ARROW,)),
+        _Step("ruff check", [*_RUFF, "check", "workflow"], (_RUFF_ARROW, _RUFF_INLINE)),
+        _Step("ruff format", [*_RUFF, "format", "--check", "workflow"], (_RUFF_ARROW,)),
     ]
     markdown = changed_markdown(changed)
     if markdown:
         steps.append(
-            ("prettier", ["bun", "x", "prettier", "--check", *markdown], (_PRETTIER_WARN,))
+            _Step("prettier", ["bun", "x", "prettier", "--check", *markdown], (_PRETTIER_WARN,))
         )
+    spellchecked = changed_spellchecked(changed)
+    if spellchecked:
         steps.append(
-            ("cspell", ["bun", "x", "cspell", "--no-progress", *markdown], (_CSPELL_ISSUE,))
+            _Step(
+                "cspell",
+                ["bun", "x", "cspell", "--no-progress", *spellchecked],
+                (_CSPELL_ISSUE,),
+            )
+        )
+    if suite:
+        steps.append(
+            _Step(
+                layer_suite.LABEL,
+                layer_suite.ARGV,
+                layer_suite.PATTERNS,
+                from_tail=True,
+                env=layer_suite.env(),
+            )
         )
     return steps
 
 
-def _external_step(
-    worktree: Path,
-    story_number: int,
-    label: str,
-    argv: list[str],
-    patterns: tuple[re.Pattern, ...],
-) -> "GateFailure | None":
-    result = _launch(argv, worktree, story_number, label)
+def _external_step(worktree: Path, story_number: int, step: _Step) -> "GateFailure | None":
+    result = _launch(step.argv, worktree, story_number, step.label, env=step.env)
     output = "\n".join(
         stream.strip() for stream in (result.stdout, result.stderr) if stream.strip()
     )
@@ -655,14 +738,15 @@ def _external_step(
     if result.returncode != 1:
         raise FlowFailure(
             Outcome.TOOL_FAILED,
-            f"{label} crashed (exit {result.returncode}): {output[-800:]}",
+            f"{step.label} crashed (exit {result.returncode}): {output[-800:]}",
             story_number,
             add_blocked=True,
         )
-    culprits = _named_files(patterns, output)
-    detail = "\n".join(f"  {line}" for line in _head(output) or ["(the gate printed nothing)"])
+    culprits = _named_files(step.patterns, output)
+    found = _tail(output) if step.from_tail else _head(output)
+    detail = "\n".join(f"  {line}" for line in found or ["(the gate printed nothing)"])
     return GateFailure(
-        f"{label} failed:\n{detail}", culprits, bool(culprits), blamed=bool(culprits)
+        f"{step.label} failed:\n{detail}", culprits, bool(culprits), blamed=bool(culprits)
     )
 
 
