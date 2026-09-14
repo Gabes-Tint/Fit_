@@ -202,7 +202,7 @@ def run_changed_lint(worktree: Path, story_number: int) -> "LaneFailure | None":
         return None
     if result.returncode == 1:
         return LaneFailure(
-            f"lint:changed failed on the acceptance tests: {output[-800:]}",
+            f"lint:changed failed on the acceptance tests:\n{_output_tail(output)}",
             lanes.lint_errors(output),
         )
     raise FlowFailure(
@@ -229,7 +229,7 @@ def run_type_check(worktree: Path, story_number: int) -> "LaneFailure | None":
         return None
     if result.returncode == 1:
         return LaneFailure(
-            f"check found type errors in the acceptance tests: {output[-800:]}",
+            f"check found type errors in the acceptance tests:\n{_output_tail(output)}",
             lanes.type_errors(output),
         )
     raise FlowFailure(
@@ -242,6 +242,25 @@ def run_type_check(worktree: Path, story_number: int) -> "LaneFailure | None":
 
 def _both_streams(result: subprocess.CompletedProcess) -> str:
     return "\n".join(stream.strip() for stream in (result.stderr, result.stdout) if stream.strip())
+
+
+#: How much of a lane's own output a diagnostic carries. The end of it, not
+#: the start: a checker prints its errors last and its progress first.
+_TOOL_OUTPUT_BUDGET = 800
+
+
+def _output_tail(output: str, budget: int = _TOOL_OUTPUT_BUDGET) -> str:
+    """The last `budget` characters of a tool's output, cut back to a line
+    boundary. `output[-800:]` alone starts in the middle of whatever line
+    the budget landed in, and #422 run 4 is what that costs: the fragment
+    became the diagnostic's first line, the headline the log and the next
+    turn's brief both show was `/src/lib/domain/workout")'."`, and the
+    driver's own reason for rejecting the branch was nowhere near it."""
+    if len(output) <= budget:
+        return output
+    cut = output[-budget:]
+    _, newline, rest = cut.partition("\n")
+    return rest if newline else cut
 
 
 def run_failing_branch_steps(worktree: Path, story_number: int) -> "GateFailure | None":

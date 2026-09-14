@@ -1173,7 +1173,8 @@ def test_lint_broken_acceptance_tests_are_rejected_in_block_1_and_repaired(world
     result = run_flow(world)
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "TESTS_INVALID: lint:changed failed on the acceptance tests" in result.stdout
+    # the headline is the driver's own reason, not a fragment of eslint's output
+    assert "TESTS_INVALID: lint errors outside the acceptance tests" in result.stdout
     # the diagnostic carries both streams: eslint writes the error body to
     # stderr and its counting summary to stdout, and neither may be dropped
     assert "no-unsafe-call" in result.stdout
@@ -1580,13 +1581,67 @@ def test_a_type_error_outside_the_acceptance_tests_is_rejected_in_block_1_and_re
     result = run_flow(world)
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "TESTS_INVALID: check found type errors in the acceptance tests" in result.stdout
+    assert "TESTS_INVALID: type errors outside the acceptance tests" in result.stdout
+    assert "check found type errors in the acceptance tests" in result.stdout
     assert "not assignable to parameter of type 'Locator'" in result.stdout
     assert fixture + ":12:30" in result.stdout
-    assert "these errors are outside the acceptance tests" in result.stdout
     assert "Gates: check" in result.stdout
     assert "lint ✔ · types ✔" in result.stdout
     assert "Implemented #218" in result.stdout
+
+
+def test_the_rejection_headline_is_the_drivers_reason_and_the_output_starts_on_a_line(world):
+    """A lane diagnostic is read as a headline - in the log, and at the top
+    of the next turn's brief - so its first line has to be the driver's own
+    reason. #422 run 4's was `/src/lib/domain/workout")\'."`: the 800-character
+    budget landed in the middle of a message, the fragment became the first
+    line, and the reason sat eleven lines below it where the mechanic
+    answered something else entirely."""
+    _given_single_domain_slice(world, 220, "A long type-lane rejection")
+    slug = "story-220-domain"
+    test_file = "src/lib/long.spec.ts"
+    fixture = "tests/support/locators.ts"
+    for index in range(2):
+        world.mechanic_writes(
+            slug, files={test_file: f"// attempt {index}\n"}, test_files=[test_file]
+        )
+    world.given_gate_outcomes(check="fail")
+    # long enough that the driver's 800-character budget lands inside a line
+    world.given_type_errors_in(
+        [fixture] * 12,
+        ["TS2345"] * 12,
+        "Argument of type 'number' is not assignable to parameter of type 'Locator', "
+        "which is the type this shared helper has asked for since it was written",
+    )
+    _ladder_writes(world, slug, test_file)
+
+    result = run_flow(world)
+
+    assert result.returncode == 31, result.stdout + result.stderr
+    assert (
+        "🔁 Mechanic #220 retrying after attempt 1 — TESTS_INVALID: type errors outside "
+        f"the acceptance tests, where this branch may not change anything: {fixture}"
+    ) in result.stdout
+    # the checker's own output follows the reason, still 800 characters of it
+    block = _block_under(result.stdout, "retrying after attempt 1 — TESTS_INVALID")
+    assert block[0] == "check found type errors in the acceptance tests:"
+    # it was truncated, and every line of it that survived is a whole line
+    shown = [line for line in block if "error TS2345" in line]
+    assert 0 < len(shown) < 12
+    assert all(line.startswith(f"{fixture}(12,30): error TS2345:") for line in shown)
+
+
+def _block_under(stdout: str, headline: str) -> list[str]:
+    """The `   │ ` continuation block narrate.headed wrote under one
+    headline, without its prefix."""
+    lines = stdout.splitlines()
+    start = next(index for index, line in enumerate(lines) if headline in line)
+    block = []
+    for line in lines[start + 1 :]:
+        if not line.startswith("   │ "):
+            break
+        block.append(line.removeprefix("   │ "))
+    return block
 
 
 def test_acceptance_tests_that_never_type_check_the_same_way_stop_the_mechanic_early(world):
@@ -1614,7 +1669,7 @@ def test_acceptance_tests_that_never_type_check_the_same_way_stop_the_mechanic_e
     assert result.returncode == 31, result.stdout + result.stderr
     assert "TESTS_INVALID (exit 31)" in result.stdout
     assert "stopped early: attempt 2 failed exactly as attempt 1" in result.stdout
-    assert "the implementation will not make these go away" in result.stdout
+    assert "type errors the implementation will not make go away" in result.stdout
     assert "Stopped: TESTS_INVALID" in "\n".join(world.issue(219)["comments"])
 
 
@@ -1752,7 +1807,7 @@ def test_a_type_error_in_a_fixture_outside_the_acceptance_tests_is_still_rejecte
 
     assert result.returncode == 31, result.stdout + result.stderr
     assert "stopped early: attempt 2 failed exactly as attempt 1" in result.stdout
-    assert "these errors are outside the acceptance tests, where this branch " in result.stdout
+    assert "type errors outside the acceptance tests, where this branch " in result.stdout
     assert f"may not change anything: {fixture}" in result.stdout
 
 
@@ -1780,7 +1835,7 @@ def test_a_non_type_lint_rule_inside_the_acceptance_tests_is_still_rejected(worl
 
     assert result.returncode == 31, result.stdout + result.stderr
     assert "stopped early: attempt 2 failed exactly as attempt 1" in result.stdout
-    assert "the implementation will not make these go away" in result.stdout
+    assert "lint errors the implementation will not make go away" in result.stdout
     assert "no-console" in result.stdout
 
 

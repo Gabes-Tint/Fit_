@@ -30,12 +30,14 @@ def _given_planned_story(
     titles: list[str] | None = None,
     extra: dict[str, str] | None = None,
     writer: str = "mechanic",
+    reported: list[str] | None = None,
 ) -> str:
     """Block 1 for a one-slice story: failing tests written, validated and
     pushed, and the slice delegated to an implementer. `signals` chooses
     which role that is, `titles` how many tests the acceptance file reports,
-    `extra` writes further test files beside it, and `writer` is the rung
-    block 1's own ladder ended on."""
+    `extra` writes further test files beside it, `reported` is the whole
+    acceptance set block 1 freezes when that is more than the one file, and
+    `writer` is the rung block 1's own ladder ended on."""
     world.given_story(number, title="Rows show the brand", labels=["story"])
     world.planner_answers_whose_call(
         number,
@@ -68,7 +70,10 @@ def _given_planned_story(
                 slug, files={TEST: f"// mechanic attempt {attempt}\n"}, test_files=[TEST]
             )
     world.mechanic_writes(
-        slug, files={TEST: "// failing\n", **(extra or {})}, test_files=[TEST], role=writer
+        slug,
+        files={TEST: "// failing\n", **(extra or {})},
+        test_files=reported or [TEST],
+        role=writer,
     )
     world.scripted_test_outcome(TEST, outcomes, titles=titles)
     world.planner_answers_delegate(
@@ -88,6 +93,13 @@ def _repair(world, slug: str, repair: int = 1) -> str:
         delete=[TEST],
     )
     return repair_slug
+
+
+def _field(stdout: str, label: str) -> list[str]:
+    """What every `   │ Label: value` line of the log carried, without the
+    padding narrate.fields aligns the labels with."""
+    head = f"   │ {label}:"
+    return [line.split(":", 1)[1].strip() for line in stdout.splitlines() if line.startswith(head)]
 
 
 def _talks(world, role: str, team: str) -> list[dict]:
@@ -170,6 +182,105 @@ def test_the_next_turn_after_a_repair_is_briefed_on_the_repaired_tests(world):
     assert "rejected these acceptance tests" in repair_prompt
     assert WHY in repair_prompt
     assert "drop the first test" in repair_prompt
+
+
+# --- a repair judges the whole acceptance set ----------------------------------
+
+# One acceptance file the objection is not about, with two tests in it that
+# a repair may neither drop nor rename.
+SIBLING_TESTS = 'it("a brand is shown", () => {});\nit("a missing brand says so", () => {});\n'
+
+
+def test_a_repair_that_names_one_file_keeps_the_other_files_accepted_type_debt(world):
+    """#422 run 4. Slice #452 froze two acceptance files, the second of them
+    carrying the type errors block 1 had accepted as the story's missing API
+    showing through. The repair changed one line in the first and named only
+    that file; the reply's list replaced the frozen set, the second file
+    stopped being an acceptance file mid-repair, and its accepted debt came
+    back as "type errors outside the acceptance tests" - a rejection for the
+    one thing nobody had done."""
+    slug = _given_planned_story(
+        world,
+        470,
+        ["fail", "fail", "fail", "pass"],
+        extra={SIBLING: "// calls the new signature the story adds\n"},
+        reported=[TEST, SIBLING],
+    )
+    world.scripted_test_outcome(SIBLING, ["fail", "fail", "fail", "pass"])
+    # the type lane says what it says on every run: the new signature does
+    # not exist yet, and it is the sibling file that calls it
+    world.given_gate_outcomes(check="fail")
+    world.given_type_errors_in(
+        [SIBLING, SIBLING], ["TS2554", "TS2554"], "Expected 1 arguments, but got 2"
+    )
+    world.agent_objects(slug, "mechanic", tests=[TEST], why=WHY)
+    world.mechanic_repairs(f"{slug}-tests-1", files={TEST: "// repaired\n"}, test_files=[TEST])
+    world.agent_implements(
+        slug,
+        "mechanic",
+        files={"src/lib/rows.ts": "export const brand = true;\n"},
+        changed_files=["src/lib/rows.ts"],
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    # the repair named one file and was judged on both
+    assert _field(result.stdout, "Repaired") == [TEST]
+    assert _field(result.stdout, "Judged") == [f"{TEST}, {SIBLING}"]
+    assert "outside the acceptance tests" not in result.stdout
+    assert "🔒 #470 (domain) tests re-frozen at" in result.stdout
+
+    piece = world.run_record(470)["slices"]["domain"]
+    assert piece["state"] == "succeeded"
+    assert piece["test_files"] == [TEST, SIBLING]
+    assert piece["tests_type_debt"] == {SIBLING: 2}
+    assert piece["test_repairs"] == 1
+
+
+def test_a_repair_may_not_remove_tests_the_objection_did_not_name(world):
+    """What the same run did next. Told its type debt was outside the
+    acceptance tests, the mechanic deleted the describe block that carried
+    them - five acceptance criteria - and the rest of the file then passed
+    with no implementation at all. A repair may rewrite or delete what the
+    objection names, and nothing else."""
+    slug = _given_planned_story(
+        world,
+        471,
+        ["fail", "fail"],
+        extra={SIBLING: SIBLING_TESTS},
+        reported=[TEST, SIBLING],
+    )
+    world.scripted_test_outcome(SIBLING, "fail")
+    world.agent_objects(slug, "mechanic", tests=[TEST], why=WHY)
+    # turn 1 empties the file the objection never named
+    world.mechanic_repairs(
+        f"{slug}-tests-1",
+        files={TEST: "// repaired\n", SIBLING: "// nothing left here\n"},
+        test_files=[TEST, SIBLING],
+    )
+    # turn 2 deletes it outright
+    world.mechanic_repairs(
+        f"{slug}-tests-1",
+        files={TEST: "// repaired again\n"},
+        test_files=[TEST],
+        delete=[SIBLING],
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 31, result.stdout + result.stderr
+    assert (
+        f"removed acceptance tests the objection did not name: {SIBLING}::a brand is shown, "
+        f"{SIBLING}::a missing brand says so"
+    ) in result.stdout
+    assert f"removed acceptance tests the objection did not name: {SIBLING};" in result.stdout
+    # neither turn was accepted, so the slice keeps the tests it was frozen on
+    assert "tests re-frozen" not in result.stdout
+    piece = world.run_record(471)["slices"]["domain"]
+    assert piece["test_files"] == [TEST, SIBLING]
+    assert piece["test_repairs"] == 0
+    assert [turn["turn"] for turn in piece["test_repair_turns"]] == [1, 2]
 
 
 # --- objections the driver refuses ---------------------------------------------

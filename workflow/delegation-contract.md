@@ -836,7 +836,35 @@ Issue #421 is the reason: the mechanic repaired exactly what it was told, twice,
 the third objection was about something neither repair had been asked to see,
 while the role that objected had already read the product and the tests
 together. `MAX_REPAIRS` is still 2, and the repair ledger records which role
-made each one. The repaired set faces block 1's usual
+made each one.
+
+**What the repair is judged on.** The whole slice's acceptance set: the
+files it was frozen on, plus whatever the reply's `test_files` names, in
+that order and without duplicates. The reply's list used to replace the
+frozen set, and issue #422's run 4 is what that cost. Slice #452 froze two
+acceptance files, the second of them carrying the type errors block 1 had
+accepted as the story's missing API showing through (`tests_type_debt`);
+the repair changed one line in the first and named only that file, so the
+second stopped being an acceptance file mid-repair, its accepted debt was
+re-read as "type errors outside the acceptance tests, where this branch may
+not change anything", and the turn was rejected for the one thing nobody
+had done. Every acceptance file the repair did not touch still judges the
+slice, and the type-debt tolerance still covers it.
+
+The objection's naming is the repair's whole warrant: it may rewrite or
+delete the files and `<file>::<title>` tests the objection names, and
+nothing else. A repair that deletes another acceptance file, or removes
+from one every test the objection did not name, is refused as
+`TESTS_INVALID` with "repair removed acceptance tests the objection did not
+name: ...". Run 4 again: told its type debt was outside the acceptance
+tests, the mechanic deleted that file's describe block - five acceptance
+criteria - and the remainder then passed with no implementation at all
+(`TESTS_DO_NOT_FAIL`, exit 31). The comparison is the file's own source
+against the same file at the slice's failing-test base; a file no test
+title can be read from is judged whole - deleted, or emptied of every
+`it`/`test` block - rather than test by test.
+
+The repaired set faces block 1's usual
 validation - a clean tree, test files only, the requested test kind, the
 repository's lint, type and content gates, and a failure on an expectation
 rather than a throw (`_check_failures_are_expectations`) - measured against
@@ -847,9 +875,11 @@ the implementer's uncommitted work, and pushes it. `tests_sha` - and with it
 `acceptance_sha`, the bytes an implementation turn may not change - becomes
 the repair commit; `failing_sha`, the base every later check compares HEAD,
 origin and the diff against, becomes the merge; `test_files` becomes the
-repaired list; and `tests_type_debt` becomes the debt block 1 accepted on
-the repaired tests, because the rejected set's was recorded about files that
-no longer judge this slice. The slice returns to `assigned` with the same role, revision,
+judged union less whatever the objection named and the repair deleted, so a
+slice leaves a repair with the acceptance set it went in with plus the
+repair's own files; and `tests_type_debt` becomes the debt block 1 accepted
+on the repaired tests, because the rejected set's was recorded before the
+repair changed them. The slice returns to `assigned` with the same role, revision,
 assignment, session and worktree and `attempts` reset to zero: the tests it
 is judged by are new inputs, so the role gets its full budget against them,
 and its next initial turn is told the tests were repaired and how. When the

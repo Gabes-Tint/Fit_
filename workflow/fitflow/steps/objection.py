@@ -529,16 +529,18 @@ def _repair_turn(
         _end_repair_turn(record, piece, entry, "failed", failure.why)
         raise
     _end_repair_turn(record, piece, entry, "ok", reply["why_they_fail"], session)
-    test_files = list(reply["test_files"])
+    named = list(reply["test_files"])
+    test_files = _judged_set(piece, named)
     with narrate.grouped():
         narrate.line(f"📦 Test repair result #{piece.number} ({piece.layer})")
         narrate.fields(
             [
-                ("Test files", ", ".join(test_files) or "(none)"),
+                ("Repaired", ", ".join(named) or "(none)"),
+                ("Judged", ", ".join(test_files) or "(none)"),
                 ("Why they fail", reply["why_they_fail"]),
             ]
         )
-    debt = failing_tests.validate_repaired_tests(
+    kept, debt = failing_tests.validate_repaired_tests(
         slug,
         path,
         piece.failing_sha,
@@ -546,8 +548,27 @@ def _repair_turn(
         test_files,
         piece.test_kind,
         record.story_number,
+        named,
+        list(piece.objections[-1]["tests"]),
     )
-    return test_files, reply["why_they_fail"], debt
+    return kept, reply["why_they_fail"], debt
+
+
+def _judged_set(piece: SliceRecord, named: list[str]) -> list[str]:
+    """What the repair is judged on: this slice's whole acceptance set, in
+    the order it was frozen in, with anything the reply names appended.
+
+    The reply's own list used to replace it, and #422 run 4 is what that
+    cost. Slice #452 froze two acceptance files, one of them carrying the
+    type errors block 1 had accepted as the missing API showing through
+    (`tests_type_debt`); the repair changed one line in the other and named
+    only that file, so the second file stopped being an acceptance file
+    mid-repair, its accepted debt was re-read as "type errors outside the
+    acceptance tests", and the turn was rejected for the one thing nobody
+    had done. The tolerance has to keep covering every acceptance file the
+    repair did not touch, because every one of them still judges the
+    slice."""
+    return list(dict.fromkeys(piece.test_files + named))
 
 
 def _talk(
@@ -686,7 +707,11 @@ def _refreeze(
     every later check compares HEAD, origin and the diff against, becomes the
     merge; and `tests_type_debt` becomes the debt block 1 accepted on the
     repaired tests, because the rejected set's debt was recorded about files
-    that no longer judge this slice."""
+    that no longer judge this slice.
+
+    `test_files` is the judged union `_judged_set` built, less whatever the
+    objection named and the repair deleted, so a slice comes out of a repair
+    with the acceptance set it went in with plus the repair's own files."""
     repair_sha = worktrees.local_head(path)
     slice_path = worktrees.slice_worktree_path(piece.slug)
     kept = _kept_note(piece, slice_path, test_files)
