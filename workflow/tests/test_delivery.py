@@ -818,6 +818,51 @@ def test_a_fix_turn_records_the_commit_its_diff_is_measured_from(world):
     assert _fix_turns(world)[-1]["diff_base"] == piece["failing_sha"]
 
 
+def _fix_prompts(world, number: int = 1000) -> list[str]:
+    slug = f"story-{number}-domain"
+    return [
+        call["prompt"]
+        for call in world.calls()
+        if call.get("tool") == "aarmy"
+        and call.get("argv", [None, None])[0:2] == ["talk", "builder"]
+        and call["argv"][call["argv"].index("--team") + 1] == slug
+    ]
+
+
+def test_a_review_fix_turn_that_changes_nothing_is_a_rejected_attempt(world):
+    """#422 run 5: the fix turn replied in 42 seconds having typed nothing.
+    Its reported files still matched the diff the driver measures a fix turn
+    by - the accumulated one, which carries block 3's own frozen work (#451)
+    - so scope and acceptance passed, and the driver froze a clean tree and
+    died on the empty commit. A turn that left the worktree exactly as the
+    freeze commit left it changed nothing, and that is a rejected attempt
+    like any other: the next one is told so, and the gates never ran."""
+    _given_a_fix_verdict(world)
+    world.agent_implements(
+        "story-1000-domain",
+        "builder",
+        files={},
+        changed_files=["src/lib/delivered.ts"],
+        summary="the finding is wrong about this branch; I changed nothing",
+    )
+    _fix_turn_reporting(world, "2", ["src/lib/delivered.ts"])
+    world.reviewer_answers(1000, "merge")
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "the fix turn changed nothing: the working tree and HEAD match the frozen commit" in (
+        result.stdout
+    )
+    assert "correcting its review fix after attempt 1" in result.stdout
+    assert "review fix attempt 2/3" in result.stdout
+    assert _pr(world, 500)["state"] == "MERGED"
+    turns = _fix_turns(world)
+    assert [turn["fix_attempt"] for turn in turns] == [1, 2]
+    assert "changed nothing" in turns[0]["diagnostic"]
+    assert "changed nothing" in _fix_prompts(world)[-1]
+
+
 def test_a_review_fix_that_fails_the_same_way_twice_stops_early(world):
     """The #428 rule reaches the fix request: an identical diagnostic after
     a corrective turn ends it where it stands, with the unspent attempts

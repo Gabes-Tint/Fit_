@@ -824,6 +824,57 @@ def test_resume_relaunches_a_failed_fix_at_the_next_attempt_of_its_budget(world)
     assert world.pull(500)["state"] == "MERGED"
 
 
+def test_resume_rejects_a_retained_fix_turn_that_changed_nothing(world):
+    """#422 run 5's record: the fix turn replied `ok` having typed nothing,
+    the driver accepted it on the accumulated diff and then died freezing a
+    clean tree, leaving the slice in `validating` with that turn retained.
+    The re-judge is the same judgement block 4 makes live, so it reaches the
+    same verdict - the turn changed nothing - and the request continues at
+    attempt 2 instead of freezing the no-op a second time."""
+    _given_a_fix_verdict(world, 634)
+    world.agent_implements(
+        "story-634-domain",
+        "builder",
+        files={},
+        changed_files=CHANGED,
+        summary="the finding is wrong about this branch; I changed nothing",
+    )
+    world.agent_fails("story-634-domain", "builder", "provider unavailable")
+    first = run_flow(world, 634)
+    assert first.returncode == 21, first.stdout + first.stderr
+
+    def accepted_the_no_op_and_died_freezing_it(state):
+        """What run 5 persisted: the no-op fix turn as the last entry, with
+        no diagnostic beside it, and the slice still in `validating`."""
+        piece = state["slices"]["domain"]
+        piece["turns"] = piece["turns"][:-1]
+        piece["turns"][-1].pop("diagnostic", None)
+        piece["attempts"] = piece["turns"][-1]["attempt"]
+        piece["state"] = "validating"
+
+    world.rewrite_run_record(634, accepted_the_no_op_and_died_freezing_it)
+    retained = world.run_record(634)["slices"]["domain"]["turns"][-1]
+    assert (retained["kind"], retained["result"], retained["fix_attempt"]) == (
+        "review_fix",
+        "ok",
+        1,
+    )
+
+    world.agent_implements("story-634-domain", "builder", files=FIXED, changed_files=CHANGED)
+    world.reviewer_answers(634, "merge")
+
+    result = run_flow(world, 634, "--resume")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "re-validating its review fix attempt 1 from its retained reply" in result.stdout
+    assert "the fix turn changed nothing: the working tree and HEAD match the frozen commit" in (
+        result.stdout
+    )
+    assert "review fix attempt 2/3" in result.stdout
+    assert world.pull(500)["state"] == "MERGED"
+    assert [turn["fix_attempt"] for turn in _review_fixes(world, 634)] == [1, 2]
+
+
 def _review_fixes(world, number: int) -> list[dict]:
     return [
         turn

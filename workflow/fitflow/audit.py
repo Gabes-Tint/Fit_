@@ -43,8 +43,13 @@ def reset_instructions() -> str:
 
     for slug in _worktrees:
         path = worktrees.slice_worktree_path(slug)
-        state = worktrees.status_summary(path) if path.exists() else "missing"
-        lines.append(f"- `{slug}` worktree state: {state}")
+        if not path.exists():
+            # Nothing to audit and nothing to remove: asking for a
+            # `worktree:done --force` on a worktree the same line just
+            # called missing only reads as a driver that lost track of it.
+            lines.append(f"- `{slug}` worktree state: missing (nothing to clean up)")
+            continue
+        lines.append(f"- `{slug}` worktree state: {worktrees.status_summary(path)}")
         lines.append(
             f"- after auditing it, `bun run worktree:done {slug} --force` "
             f"and delete branch `{slug}`"

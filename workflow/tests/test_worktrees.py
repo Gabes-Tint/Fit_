@@ -1,7 +1,8 @@
 """What the driver reads off a worktree with `git`. The flow tests cover
 the rest of this module through go.py; these are the two file lists a turn
-is judged against, asked directly, because the difference between them is
-what a whole run of #420 was lost to.
+is judged against and the two shapes a failing command takes, asked
+directly, because the difference between them is what whole runs of #420
+and #422 were lost to.
 """
 
 import subprocess
@@ -80,3 +81,42 @@ def test_changed_since_still_reads_the_working_tree_alone(repo: Path) -> None:
     (repo / "added.ts").write_text("export const added = true;\n")
 
     assert sorted(worktrees.changed_since(repo, base)) == ["added.ts", "tracked.ts"]
+
+
+def test_commit_all_on_a_clean_tree_keeps_the_head_it_has(repo: Path) -> None:
+    """#422 run 5: the driver asked for a commit of a tree with nothing in
+    it, `git commit` exited 1 saying so, and the run died on it. Nothing to
+    commit means the worktree is already at the commit the caller wanted."""
+    head = _head(repo)
+
+    assert worktrees.commit_all(repo, "feat: nothing to do") == head
+    assert _head(repo) == head
+
+
+def test_commit_all_still_raises_when_the_commit_really_fails(repo: Path) -> None:
+    """Tolerating an empty commit is not tolerating a failed one: a hook
+    that refuses the commit still stops the driver, with its own words."""
+    hook = repo / ".git" / "hooks" / "pre-commit"
+    hook.write_text("#!/bin/sh\necho 'the hook refused it' >&2\nexit 1\n")
+    hook.chmod(0o755)
+    (repo / "tracked.ts").write_text("export const one = 2;\n")
+
+    with pytest.raises(RuntimeError) as failure:
+        worktrees.commit_all(repo, "feat: refused")
+
+    assert "the hook refused it" in str(failure.value)
+
+
+def test_a_failed_command_reports_both_streams(repo: Path) -> None:
+    """#422 run 5's diagnostic showed a pre-commit hook's passing output and
+    not git's own reason: the message kept whichever stream it found first.
+    Both are reported now, stderr first and stdout after it."""
+    with pytest.raises(RuntimeError) as failure:
+        worktrees._run_checked(
+            ["sh", "-c", "echo the reason; echo the noise >&2; exit 1"], cwd=repo
+        )
+
+    message = str(failure.value)
+    assert "stderr: the noise" in message
+    assert "stdout: the reason" in message
+    assert message.index("stderr:") < message.index("stdout:")
