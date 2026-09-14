@@ -359,10 +359,13 @@ def _run_slice(record: RunRecord, piece: SliceRecord) -> None:
 
     A resumed slice may arrive "running" with its last turn already
     completed: that turn's verdict is pending, and it is re-derived from
-    the reply and worktree the turn left - no new agent call. A resumed
-    slice may also arrive "tests_rejected", with block 1's repair of its
-    acceptance tests unfinished: that repair is relaunched before any turn
-    of this loop."""
+    the reply and worktree the turn left - no new agent call. One that
+    arrives "correcting" carries a verdict the driver already reached, and
+    the loop simply launches the next attempt against its diagnostic -
+    including the one attempt past the budget a resume grants when the
+    driver's own rejection spent it. A resumed slice may also arrive
+    "tests_rejected", with block 1's repair of its acceptance tests
+    unfinished: that repair is relaunched before any turn of this loop."""
     if piece.state == "tests_rejected":
         objection.repair(record, piece)
     if piece.state == "running":
@@ -520,10 +523,13 @@ def _to_correcting(record: RunRecord, piece: SliceRecord, attempt: int) -> None:
 
 
 def narrate_turn_start(piece: SliceRecord, attempt: int) -> None:
+    """An attempt past the budget is the one grace attempt a resume grants
+    after a rejection the driver itself reached (steps/resume.py), and it
+    is labelled as such rather than as an impossible 4/3."""
+    scale = f"{attempt}/{turns.BUDGET}" if attempt <= turns.BUDGET else f"{attempt} (grace)"
     with narrate.grouped():
         narrate.line(
-            f"🔧 {piece.role.capitalize()} #{piece.number} ({piece.layer}) "
-            f"attempt {attempt}/{turns.BUDGET}"
+            f"🔧 {piece.role.capitalize()} #{piece.number} ({piece.layer}) attempt {scale}"
         )
 
 
