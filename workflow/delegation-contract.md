@@ -1268,10 +1268,21 @@ flake rule below applies to all of them.
 
 After the fixes, the driver merges the new frozen commits into the
 integration branch (the superseded commits remain ancestors), pushes, and
-re-reviews. Two review rounds are budgeted; exhaustion stops with
-`CAPACITY_EXHAUSTED` and `blocked` - a defect the implementer cannot fix
-under review is a human call, routed to `needs-gabriel`, not a capability
-escalation.
+re-reviews. Two fix rounds are budgeted, and the loop always ends on a
+verdict rather than on a fix: every fix round is followed by a review, so
+there are up to three reviews and a run whose last round repaired the
+findings still merges. #462 run 1 lost a delivery to the difference - its
+round 2 fixes were verified, frozen and pushed, and the run stopped at
+once with `CAPACITY_EXHAUSTED` without any review looking at them.
+
+The review that follows the last fix round is the closing one. Its prompt
+says so: the budget is spent, nothing it asks for will be repaired, and
+the verdict is on the diff as it stands - `merge` lands the PR, `fix` is
+the human call. That is what keeps a closing round from spending a
+delivery on a nit, while a reviewer that keeps finding real defects still
+stops the run. Exhaustion stops with `CAPACITY_EXHAUSTED` and `blocked` -
+a defect the implementer cannot fix under review is a human call, routed
+to `needs-gabriel`, not a capability escalation.
 
 ### A test this slice does not touch, failing locally
 

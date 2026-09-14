@@ -212,7 +212,72 @@ def test_review_fix_round_refreezes_and_merges(world):
     assert any(turn["kind"] == "review_fix" for turn in piece["turns"])
 
 
+def test_the_last_fix_round_is_reviewed_and_merges(world):
+    """#462 run 1: the loop applied the last round's fixes, pushed them and
+    stopped without any review looking at them - a delivery lost to a run
+    that was converging. Every fix round is followed by a review, so the
+    second round's repair is judged and the PR lands."""
+    _given_planned_story(world, 1000)
+    _delegate(world, 1000, "domain", builder_signals())
+    _implement(
+        world, "story-1000-domain", "builder", {"src/lib/delivered.ts": "export const ok = 1;\n"}
+    )
+    world.reviewer_answers(1000, "fix", _FIX_FINDING)
+    _implement(
+        world, "story-1000-domain", "builder", {"src/lib/delivered.ts": "export const ok = 2;\n"}
+    )
+    world.reviewer_answers(1000, "fix", _FIX_FINDING)
+    _implement(
+        world, "story-1000-domain", "builder", {"src/lib/delivered.ts": "export const ok = 3;\n"}
+    )
+    world.reviewer_answers(1000, "merge")
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _aarmy_roles(world).count("reviewer") == 3
+    assert "🕵️ Review round 2/2" in result.stdout
+    assert "🕵️ Closing review after 2 fix round(s)" in result.stdout
+    assert "✅ Reviewer approved after 3 round(s)" in result.stdout
+    assert _pr(world, 500)["state"] == "MERGED"
+    state = json.loads((world.home / "runs" / "story-1000.json").read_text())
+    piece = state["slices"]["domain"]
+    assert piece["state"] == "succeeded"
+    assert len([turn for turn in piece["turns"] if turn["kind"] == "review_fix"]) == 2
+
+
+def test_the_closing_review_is_told_no_fix_will_follow_it(world):
+    """The closing round decides whether the PR lands or goes to a human,
+    so the reviewer is told that before it weighs anything: nothing it asks
+    for now is repaired."""
+    _given_planned_story(world, 1000)
+    _delegate(world, 1000, "domain", builder_signals())
+    _implement(
+        world, "story-1000-domain", "builder", {"src/lib/delivered.ts": "export const ok = 1;\n"}
+    )
+    world.reviewer_answers(1000, "fix", _FIX_FINDING)
+    _implement(
+        world, "story-1000-domain", "builder", {"src/lib/delivered.ts": "export const ok = 2;\n"}
+    )
+    world.reviewer_answers(1000, "fix", _FIX_FINDING)
+    _implement(
+        world, "story-1000-domain", "builder", {"src/lib/delivered.ts": "export const ok = 3;\n"}
+    )
+    world.reviewer_answers(1000, "merge")
+
+    result = run_flow(world, "1000")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.count("This is the closing review") == 1
+    assert "nothing you ask" in result.stdout
+    # the earlier rounds still get the fix note, and only that
+    assert result.stdout.count("Fixes were applied since the last review") == 2
+
+
 def test_reviewer_exhaustion_stops_and_needs_gabriel(world):
+    """A reviewer that still rejects the diff at the closing review stops
+    the run: the fix budget is spent, so the defect it names is Gabriel's
+    call and not another round."""
     _given_planned_story(world, 1000)
     _delegate(world, 1000, "domain", builder_signals())
     _implement(
@@ -234,15 +299,19 @@ def test_reviewer_exhaustion_stops_and_needs_gabriel(world):
     _implement(
         world, "story-1000-domain", "builder", {"src/lib/delivered.ts": "export const ok = 3;\n"}
     )
+    world.reviewer_answers(1000, "fix", finding)
 
     result = run_flow(world, "1000")
 
     assert result.returncode == 28, result.stdout + result.stderr
+    assert "review did not converge within 2 rounds" in result.stdout
+    assert _aarmy_roles(world).count("reviewer") == 3
     assert "needs-gabriel" in world.issue(1000)["labels"]
     assert "blocked" in world.issue(1000)["labels"]
     assert _pr(world, 500)["state"] == "OPEN"
     state = json.loads((world.home / "runs" / "story-1000.json").read_text())
     piece = state["slices"]["domain"]
+    # the closing review's own findings never become a third fix round
     fix_attempts = [turn["attempt"] for turn in piece["turns"] if turn["kind"] == "review_fix"]
     assert len(fix_attempts) == 2
     assert fix_attempts[0] != fix_attempts[1]

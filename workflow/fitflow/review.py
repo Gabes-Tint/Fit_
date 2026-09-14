@@ -62,7 +62,17 @@ def is_mechanical(record: RunRecord) -> bool:
 
 
 def max_rounds() -> int:
+    """How many fix rounds delivery budgets. Reviews are one more than
+    that: every fix round is followed by a review, and the last review is
+    the closing one."""
     return _MAX_REVIEW_ROUNDS
+
+
+def is_closing(fixes: int) -> bool:
+    """True when the review about to run is the closing one - `fixes` fix
+    rounds are already applied and the budget is spent, so this review's
+    verdict is the run's, with no fix round left to answer it."""
+    return fixes >= _MAX_REVIEW_ROUNDS
 
 
 def validate_reply(reply: object, diff_files: list[str]) -> tuple[str, list[Finding]]:
