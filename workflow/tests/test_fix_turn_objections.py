@@ -12,7 +12,6 @@ import subprocess
 from conftest import (
     builder_signals,
     delegate_slice,
-    mechanic_signals,
     run_flow,
 )
 
