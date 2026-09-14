@@ -171,7 +171,9 @@ def _talk_with_retry(
     message = result.stderr.strip() or result.stdout.strip()
     if not _is_retryable_talk_failure(message):
         return result
-    narrate.line(f"🔁 {role} backend error with no message, retrying once")
+    signature = github.transient_signature(message)
+    reason = "with no message" if signature is None else f"matching {signature!r}"
+    narrate.line(f"🔁 {role} backend error {reason}, retrying once")
     time.sleep(settings.TRANSIENT_RETRY_SECONDS)
     return _talk_once(team, role, agent, schema_name, prompt_text)
 
