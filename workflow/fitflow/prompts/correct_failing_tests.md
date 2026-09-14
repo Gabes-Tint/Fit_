@@ -31,8 +31,10 @@ and after the behavior exists.
 The test files must also pass the repository's own content gates, which the
 implementation gate will run over these same bytes when nobody can change
 them any more: `duplicates` (copy-paste detection, ratchet 0 - extract a
-repeated setup or assertion block into a helper rather than pasting it into
-a second test), `format:check` (run `bunx prettier --write` over the files
+repeated setup or assertion block into one of the repository's shared test
+helpers under `tests/`, such as `tests/e2e-support.ts`, rather than pasting
+it into a second test; that gate reads the `*.e2e.ts` files themselves, so
+shared setup has to live in a helper), `format:check` (run `bunx prettier --write` over the files
 you wrote), `check:suppressions` and `spellcheck` (cspell over the
 repository - you cannot add a word to `cspell.json` from here, so spell it
 right). When the diagnostic above names a clone, it gives both halves as
@@ -54,9 +56,13 @@ describes it: the type lane's complaints about it, and the
 they stay inside your test files, and the implementation is what makes them go
 away. Never hide them with `@ts-expect-error`, a cast to `any` or a stub.
 Change no production files,
-configuration, dependencies, gates, thresholds, snapshots, or lock files.
+configuration, dependencies, gates, thresholds, snapshots, or lock files. A
+shared test helper under `tests/` is not a production file: you may change
+one, and it stays out of `test_files` because no runner collects a test from
+it.
 Keep every changed test in the requested test kind: playwright means only
-`*.e2e.ts`; vitest means no `*.e2e.ts`.
+`*.e2e.ts`; vitest means no `*.e2e.ts`. The helpers are of no kind and the
+rule does not reach them.
 
 When the test kind is `pytest` the slice is a change to this flow's own
 driver, and the paragraphs above about eslint, the harness route, prettier

@@ -37,7 +37,13 @@ Fit_ test conventions:
   distinctive `harness: component not found` line your failing assertions
   use). Do not write route fixtures or production files; the only files on
   this branch are the test files listed below.
-- Test files only under `src/**`; nothing else on this branch.
+- Test files only under `src/**`, plus the repository's shared test helpers
+  under `tests/` (`tests/e2e-support.ts` and its neighbors); nothing else on
+  this branch. Shared setup belongs in those helpers, not pasted into a second
+  spec: the `duplicates` gate reads the `*.e2e.ts` files, so setup repeated
+  across two of them fails it. A helper you add or extend is ordinary branch
+  content - it is not an acceptance test, so do not list it in `test_files`,
+  and it must lint, type-check and format clean on its own today.
 - Write only the requested test kind: a playwright slice changes only `*.e2e.ts`;
   a vitest slice changes no `*.e2e.ts` files.
 
@@ -99,8 +105,8 @@ Rules:
 - The test files must also pass the repository's own content gates, because
   the implementation gate will run them over these same bytes when nobody
   can change them any more: `duplicates` (copy-paste detection, ratchet 0 -
-  extract a repeated setup or assertion block into a helper instead of
-  pasting it into a second test), `format:check` (run
+  extract a repeated setup or assertion block into a helper under `tests/`
+  instead of pasting it into a second test), `format:check` (run
   `bunx prettier --write` over the files you wrote), `check:suppressions`
   (the suppression ratchet the rule above already forbids) and `spellcheck`
   (cspell over the repository: every word in a test title, a comment or an
