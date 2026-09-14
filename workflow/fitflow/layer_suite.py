@@ -30,6 +30,12 @@ LABEL = "pytest"
 #: root that is an untracked directory carrying a README the repository's own
 #: `format:check` rejects - a gate that dirties the tree it judges. The one
 #: `workflow/` already ignores is named instead.
+#: `-n auto` runs the suite across one pytest-xdist worker per core: serial it
+#: takes about twelve minutes on a developer machine, parallel about a minute
+#: and a half, and a gate that slow on every block 3 turn and every block 4 fix
+#: turn is one nobody keeps. Distribution changes neither line the diagnostic
+#: reads: `-q` prints no `[gw0]` prefixes, so the `FAILED <file>::<test>` lines
+#: and the final count keep the shape the patterns below expect.
 ARGV = [
     "uv",
     "run",
@@ -37,6 +43,8 @@ ARGV = [
     "workflow",
     "pytest",
     "-q",
+    "-n",
+    "auto",
     "-o",
     "cache_dir=workflow/.pytest_cache",
     "--rootdir",

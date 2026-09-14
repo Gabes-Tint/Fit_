@@ -9,7 +9,8 @@ missing), "fail_defect" (the test throws, so it can never pass), "pass"
 whole run), "not_found" (pytest was handed a path that is not there) or
 "tool_error" (a run that judged nothing at all).
 
-`run --project workflow pytest -q -o cache_dir=... --rootdir . workflow/tests`
+`run --project workflow pytest -q -n auto -o cache_dir=... --rootdir .
+workflow/tests`
 - block 3's layer-suite gate, and only that exact argv - prints the short
 summary of a whole-suite run, from `gate_outcomes["pytest"]`.
 
@@ -160,6 +161,8 @@ def _tally(counts):
 SUITE_ARGV = [
     "pytest",
     "-q",
+    "-n",
+    "auto",
     "-o",
     "cache_dir=workflow/.pytest_cache",
     "--rootdir",
