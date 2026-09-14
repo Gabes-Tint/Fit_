@@ -45,5 +45,7 @@ accumulated diff including everything that was already rejected rather than
 only the paths touched in this correction, relative to the repo root) and
 summary (what you changed for this correction). The driver compares that
 list against `git status`, so a path you deleted counts exactly like one you
-wrote. Add the optional objection field (kind, tests, why, proposed_fix)
-only in the case above; with it, changed_files may be empty.
+wrote. Always send objection: set it to `null` unless the case above
+applies; when it does, make it an object with kind, tests, why and
+proposed_fix (`null` when you propose no repair), and then changed_files may
+be empty.

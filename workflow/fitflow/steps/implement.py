@@ -957,11 +957,14 @@ def _check_worktree_state(
 
 
 def _check_reply_structure(record: RunRecord, piece: SliceRecord, reply: object) -> None:
-    """The reply's shape, and only its shape. `objection` is optional and
-    its own contents are not judged here: a malformed objection is an
-    ordinary rejected attempt (steps/objection.py), never a stop, and a
-    reply that carries one may leave `changed_files` empty - rejecting the
-    tests is exactly the case where there is nothing honest to change."""
+    """The reply's shape, and only its shape. `objection` carries null when
+    the agent has none - the schema lists every property in `required`,
+    because aarmy's strict subset demands it - and an absent key means the
+    same thing. Its own contents are not judged here: a malformed objection
+    is an ordinary rejected attempt (steps/objection.py), never a stop, and
+    a reply that carries a real one may leave `changed_files` empty -
+    rejecting the tests is exactly the case where there is nothing honest to
+    change."""
     required = {"changed_files", "summary"}
     if not isinstance(reply, dict) or not required <= set(reply) <= required | {"objection"}:
         raise _contract(
@@ -975,7 +978,7 @@ def _check_reply_structure(record: RunRecord, piece: SliceRecord, reply: object)
         not isinstance(item, str) or not item.strip() for item in files
     ):
         raise _contract(record, piece, "changed_files must be an array of paths")
-    if not files and "objection" not in reply:
+    if not files and reply.get("objection") is None:
         raise _contract(record, piece, "changed_files must be a non-empty array of paths")
     if not isinstance(reply["summary"], str) or not reply["summary"].strip():
         raise _contract(record, piece, "summary must be a non-empty string")
