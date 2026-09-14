@@ -524,9 +524,13 @@ Each role receives one initial turn and at most two correction turns. Keep
 `attempt` as an integer `0..3` for the current role: zero before launch,
 incremented and persisted before each launch. Validation does not increment
 it. `escalations` begins at zero and increases only on a role change, to at
-most two. It equals assignment `revision`. Attempts reset to zero only on
-escalation. Thus a mechanic start allows at most nine implementation turns,
-a builder start six, and a solver start three, excluding block 1 turns.
+most two. It equals assignment `revision`. Attempts reset to zero on
+escalation, and on a landed block 1 repair of the acceptance tests
+(see [Rejecting the tests](#rejecting-the-tests)) - the only two events that
+replace what the role is being judged against. Thus a mechanic start allows
+at most nine implementation turns, a builder start six and a solver start
+three, tripled at most once more per repaired test set and excluding block 1
+turns.
 
 Three is a ceiling, not a quota. A correction is worth taking only when the
 agent can act on what it was told, and a diagnostic that comes back
@@ -543,17 +547,20 @@ file, test or count is a different rejection and its correction is worth
 the attempt. The stronger role always gets its own full budget: an
 escalated role's first attempt has no predecessor to repeat.
 
-| From             | Condition/action                                                                               | To           |
-| ---------------- | ---------------------------------------------------------------------------------------------- | ------------ |
-| `assigned`       | Launch gate passes; reserve attempt 1                                                          | `running`    |
-| `running`        | Worker ends normally with a valid reply                                                        | `validating` |
-| `validating`     | All independent checks pass at the recorded commit                                             | `succeeded`  |
-| `validating`     | Repairable failure differing from the previous attempt's, and attempt less than 3              | `correcting` |
-| `correcting`     | Same role, identity, session and worktree; reserve next attempt                                | `running`    |
-| `validating`     | Repairable failure at attempt 3, or one identical to the previous attempt's, role below solver | `escalating` |
-| `escalating`     | Immediate next role, matching frozen configuration, new revision and attempt zero              | `assigned`   |
-| `validating`     | Repairable failure at attempt 3, or one identical to the previous attempt's, on solver         | `failed`     |
-| Any active state | External failure, contract violation or required human decision                                | `failed`     |
+| From             | Condition/action                                                                               | To               |
+| ---------------- | ---------------------------------------------------------------------------------------------- | ---------------- |
+| `assigned`       | Launch gate passes; reserve attempt 1                                                          | `running`        |
+| `running`        | Worker ends normally with a valid reply                                                        | `validating`     |
+| `validating`     | All independent checks pass at the recorded commit                                             | `succeeded`      |
+| `validating`     | Repairable failure differing from the previous attempt's, and attempt less than 3              | `correcting`     |
+| `correcting`     | Same role, identity, session and worktree; reserve next attempt                                | `running`        |
+| `validating`     | Repairable failure at attempt 3, or one identical to the previous attempt's, role below solver | `escalating`     |
+| `escalating`     | Immediate next role, matching frozen configuration, new revision and attempt zero              | `assigned`       |
+| `validating`     | Repairable failure at attempt 3, or one identical to the previous attempt's, on solver         | `failed`         |
+| `validating`     | Verified objection to the acceptance tests, fewer than two repairs spent                       | `tests_rejected` |
+| `tests_rejected` | Block 1 repaired the tests, the driver re-froze them, attempts reset to zero                   | `assigned`       |
+| `tests_rejected` | The repaired tests do not merge into the slice's own branch                                    | `failed`         |
+| Any active state | External failure, contract violation or required human decision                                | `failed`         |
 
 Escalation preserves issue, team, branch, worktree, brief and accumulated
 implementation. The old role's worker must have ended. The next role uses its
@@ -578,10 +585,94 @@ reconciling each slice with the worktree it left; see
 [Resume and reset](#resume-and-reset). A completed turn with a reply resumes
 validation without another agent call, on the same bytes; a turn still
 running on the machine is never relaunched beside; a turn that died or never
-produced a reply is voided and relaunched under the same attempt number. An
+produced a reply is voided and relaunched under the same attempt number. A
+slice parked in `tests_rejected` stays parked, its unfinished repair turn is
+voided the same way, and block 3 relaunches block 1's repair from a fresh
+repair worktree. An
 assignment or correction with no reserved turn proceeds normally. Changed
 bytes, an interrupted review fix or an unreadable record stop and preserve
-the worktree. Nothing resets counters.
+the worktree. A resume resets no counter. The one thing that does is a
+landed block 1 repair of the acceptance tests, and only because the tests
+that counter was counting attempts against are gone (see
+[Rejecting the tests](#rejecting-the-tests)).
+
+## Rejecting the tests
+
+Block 1's acceptance tests are immutable inputs to implementation, and that
+is the point: an implementer may not weaken what judges it. Immutable is not
+the same as correct, though. On #337 one shared `beforeEach` faked the
+search endpoint as `[candy, apple]` and the four expectations over it then
+asked for the apple first, the candy first and the apple second; no honest
+application change passes all four. The solver said so three times, with two
+concrete repairs, refused to game the locators, and the run spent its whole
+budget and stopped as `CAPACITY_EXHAUSTED` - a verdict about the implementer
+for a defect in the tests.
+
+An implementation reply may therefore carry an optional `objection`:
+
+| field          | meaning                                                                 |
+| -------------- | ----------------------------------------------------------------------- |
+| `kind`         | `tests_contradict`, `tests_out_of_layer` or `tests_wrong`               |
+| `tests`        | the acceptance test files it is about, from this slice's retained list  |
+| `why`          | why no honest change inside this slice's layer makes them pass together |
+| `proposed_fix` | optional: the repair the implementer proposes                           |
+
+`changed_files` may be empty when an objection is present, and only then.
+
+The driver never takes an objection on trust. It verifies, in this order,
+that the objection is well formed and names a known kind; that every file it
+names is one of this slice's own retained acceptance tests; that the
+worktree carries no commit of the agent's own and nothing outside the
+slice's reach; and that the acceptance run on that same working tree still
+fails on at least one of the named files. A malformed or unverifiable
+objection is an ordinary failed attempt - the diagnostic names the condition
+that failed, and it costs one of the role's three attempts. An unreadable
+runner report is a tool failure, never a verdict on the objection.
+
+A verified objection moves the slice to `tests_rejected` with `objected` on
+the turn's ledger entry. It costs the turn, and nothing more: the attempt
+counter is reset when the repair lands.
+
+Block 1's writer then repairs the tests, as a correction turn in a
+driver-owned repair worktree branched from the slice's current failing-test
+base - so a dependent UI slice repairs against the tree that already carries
+its domain sibling. The turn carries the objection, its proposed fix, and
+the rule: repair the tests so an honest implementation inside this slice's
+own layer can make them pass together, never weaken them into tests that
+pass with no implementation. The repaired set faces block 1's usual
+validation - a clean tree, test files only, the requested test kind, the
+repository's lint, type and content gates, and a failure on an expectation
+rather than a throw (`_check_failures_are_expectations`) - measured against
+that base rather than `origin/main`, and nothing is pushed from there.
+
+The driver then merges the repair commit into the slice's own branch, beside
+the implementer's uncommitted work, and pushes it. `tests_sha` - and with it
+`acceptance_sha`, the bytes an implementation turn may not change - becomes
+the repair commit; `failing_sha`, the base every later check compares HEAD,
+origin and the diff against, becomes the merge; `test_files` becomes the
+repaired list; and `tests_type_debt` becomes the debt block 1 accepted on
+the repaired tests, because the rejected set's was recorded about files that
+no longer judge this slice. The slice returns to `assigned` with the same role, revision,
+assignment, session and worktree and `attempts` reset to zero: the tests it
+is judged by are new inputs, so the role gets its full budget against them,
+and its next initial turn is told the tests were repaired and how.
+
+Budgets: at most two repairs per slice (`test_repairs`), at most two
+mechanic turns per repair, kept in the slice's own `test_repair_turns`
+ledger rather than in `turns`, which stays the implementation ledger the
+session and attempt checks read. A verified objection after two repairs
+stops the run as `TESTS_INVALID` (exit 31, `blocked`) with every objection
+in the message: at that point the acceptance tests, not the implementer, are
+what the run cannot get past. A repair block 1 cannot make stops the same
+way and leaves the slice in `tests_rejected`, because that is what it is -
+`--resume` relaunches the repair, from a fresh repair worktree, rather than
+sending the implementer back at tests nobody fixed.
+
+This is not the dependent-slice check. A UI slice whose acceptance tests the
+domain sibling alone already satisfies is caught before its loop ever
+launches, by the merged-tree re-check, and stops as `TESTS_DO_NOT_FAIL` with
+a revised plan as the answer. The objection loop is about tests that cannot
+pass, not tests that already do.
 
 ## Failure decisions and issue record
 
@@ -599,13 +690,13 @@ a passing blip, not a retry/escalation of the turn itself; if the retry
 also fails, the failure reaches this table exactly as before and is
 classified and stopped the same way.
 
-| Precedence and type     | Examples                                                                                                                                                                                     | Action                                                                                                                                                               |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1: `contract`           | Malformed assignment/reply, agent commit or push, weakened acceptance test, identity mismatch, an out-of-reach or other-layer path still there at the end of the budget                      | Stop immediately; preserve; no retry/escalation. An out-of-reach path is corrected first (row 4) and reaches this row only when the budget ends with it still there. |
-| 2: `external`           | Authentication, network, launch, unavailable tool, timeout, crash, missing/invalid runner report                                                                                             | Stop immediately; preserve; no retry/escalation.                                                                                                                     |
-| 3: `human`              | Unresolved product intent, prohibited policy change needed, unmet slice dependency                                                                                                           | Stop; preserve; record required decision; no capacity escalation.                                                                                                    |
-| 4: `repairable`         | Actual assertion failure, type/lint diagnostic, valid failing gate verdict caused by implementation, misreported `changed_files`, an out-of-reach or other-layer path the agent can put back | Same-role correction until attempt 3, or until the same rejection comes back verbatim. An out-of-reach path is never escalated: it stops at row 1 instead.           |
-| 5: `capacity_exhausted` | Three validated repairable failures at this role, or two consecutive ones that are the same failure                                                                                          | Escalate one rung, or stop/preserve if solver. The unspent attempts are named in the narration and the comment.                                                      |
+| Precedence and type     | Examples                                                                                                                                                                                                                               | Action                                                                                                                                                               |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1: `contract`           | Malformed assignment/reply, agent commit or push, weakened acceptance test, identity mismatch, an out-of-reach or other-layer path still there at the end of the budget                                                                | Stop immediately; preserve; no retry/escalation. An out-of-reach path is corrected first (row 4) and reaches this row only when the budget ends with it still there. |
+| 2: `external`           | Authentication, network, launch, unavailable tool, timeout, crash, missing/invalid runner report                                                                                                                                       | Stop immediately; preserve; no retry/escalation.                                                                                                                     |
+| 3: `human`              | Unresolved product intent, prohibited policy change needed, unmet slice dependency                                                                                                                                                     | Stop; preserve; record required decision; no capacity escalation.                                                                                                    |
+| 4: `repairable`         | Actual assertion failure, type/lint diagnostic, valid failing gate verdict caused by implementation, misreported `changed_files`, an out-of-reach or other-layer path the agent can put back, an objection the driver could not verify | Same-role correction until attempt 3, or until the same rejection comes back verbatim. An out-of-reach path is never escalated: it stops at row 1 instead.           |
+| 5: `capacity_exhausted` | Three validated repairable failures at this role, or two consecutive ones that are the same failure                                                                                                                                    | Escalate one rung, or stop/preserve if solver. The unspent attempts are named in the narration and the comment.                                                      |
 
 A failing gate verdict is repairable only while the implementation could
 repair it. Each failed step's diagnostic carries its own account of what it

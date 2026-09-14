@@ -26,6 +26,7 @@ The driver already wrote these failing acceptance tests on this branch, and
 they must pass, byte-for-byte unmodified, when you are done:
 
 $test_files
+$repair_note
 
 Rules:
 
@@ -57,10 +58,15 @@ driver, and its scope is narrower, not wider: it may touch `workflow/**`,
 `ruff format --check workflow` and, over the markdown it changed, prettier
 and cspell.
 
+When the tests themselves are wrong:
+
+$objecting
+
 Reply with the schema fields: changed_files (every path the working tree
 diff touches relative to this branch's starting commit - added, modified,
 deleted and renamed files, both names of a rename, the full accumulated
 diff rather than only the paths touched in this turn, relative to the repo
 root) and summary (what you did and why). The driver compares that list
 against `git status`, so a path you deleted counts exactly like one you
-wrote.
+wrote. Add the optional objection field (kind, tests, why, proposed_fix)
+only in the case above; with it, changed_files may be empty.

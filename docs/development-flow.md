@@ -93,6 +93,7 @@ flowchart TD
         freeze["Freeze approved slice<br/>while sibling corrects or escalates"]
         dependent{"UI slice declared<br/>dependent on domain?"}
         bring_in["Driver merges the frozen domain commit<br/>into the UI branch and pushes it<br/>UI acceptance must still fail"]
+        repair_tests["Block 1's writer repairs the tests<br/>in a driver-owned repair worktree<br/>re-validated, merged into the slice branch<br/>and re-frozen; attempts start over<br/>at most 2 repairs per slice"]
         delivery_barrier{"Join all settled slices<br/>all succeeded and frozen commits unchanged?"}
         implemented["Block 3 end — implemented<br/>local driver-owned commits frozen<br/>story remains in-progress"]
         push["git push, gh pr create<br/>body ends Closes #N"]
@@ -102,6 +103,7 @@ flowchart TD
         before_turn --> implement --> turn_gate --> result
         result -- approved --> freeze --> delivery_barrier
         freeze -- "domain frozen, UI waits for it" --> bring_in --> before_turn
+        result -- "objection to the tests, verified" --> repair_tests --> before_turn
         result -- repairable --> attempts
         result -- "external/contract/human failure" --> preserve --> delivery_barrier
         attempts -- yes --> correct --> before_turn
@@ -222,6 +224,21 @@ flowchart TD
   the diagram do not fix model names. Seeded capacity defaults are
   basic/low for mechanic, intermediate/medium for builder and
   advanced/high for solver.
+- Block 1's acceptance tests are immutable inputs to implementation, but an
+  implementer may reject them: a reply may carry an objection naming the
+  tests, why no honest change inside this slice's layer makes them pass
+  together, and a proposed repair. The driver verifies it - the files are
+  this slice's own retained tests, they still fail on that working tree, and
+  the tree carries no commit and nothing outside the slice - and a verified
+  objection sends them back to block 1's writer, who repairs them in a
+  driver-owned repair worktree under block 1's own validation. The driver
+  merges the repair into the slice branch beside the implementer's
+  accumulated work, re-freezes it and runs the slice again with a fresh
+  attempt counter. An objection the driver cannot verify is an ordinary
+  failed attempt; at most two repairs per slice, after which a further
+  verified objection stops the run as `TESTS_INVALID`. This is not the
+  dependent-slice check: a UI slice its domain sibling alone already
+  satisfies is caught earlier, and asks for a revised plan.
 - The block 2/3 policy gives each role level one initial implementation
   attempt and up to two repairs in the same agent, session and worktree. Two
   is enough when they fail the same way: a diagnostic that comes back

@@ -33,6 +33,11 @@ Test kind: $test_kind
 Acceptance tests that must pass unmodified:
 $test_files
 
+When the diagnostic cannot be repaired because the tests themselves are
+wrong:
+
+$objecting
+
 Reply with the existing schema fields: changed_files (every path the
 working tree diff touches relative to this branch's starting commit - added,
 modified, deleted and renamed files, both names of a rename, the full
@@ -40,4 +45,5 @@ accumulated diff including everything that was already rejected rather than
 only the paths touched in this correction, relative to the repo root) and
 summary (what you changed for this correction). The driver compares that
 list against `git status`, so a path you deleted counts exactly like one you
-wrote.
+wrote. Add the optional objection field (kind, tests, why, proposed_fix)
+only in the case above; with it, changed_files may be empty.

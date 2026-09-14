@@ -5,7 +5,9 @@ The detail lives in fitflow/steps/, one module per box. Block 1 plans and
 writes failing acceptance tests; block 2 selects each slice's capability
 rung (mechanic, builder or solver) and passes the pre-launch barrier;
 block 3 runs the bounded implementation loops, validates every turn,
-corrects, escalates and joins at the final barrier; block 4 builds the
+corrects, escalates, sends the acceptance tests back to block 1's writer
+when an implementer's verified objection shows they cannot all pass, and
+joins at the final barrier; block 4 builds the
 integration branch, opens the PR, runs the reviewer unless the change is
 mechanical, verifies CI itself and merges; block 5 ships that merge - its
 tag, main's own CI, the QA deploy, the flaky decision, production, the
