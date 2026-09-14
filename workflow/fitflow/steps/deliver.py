@@ -28,6 +28,7 @@ from fitflow import (
 from fitflow.outcome import FlowFailure, Outcome
 from fitflow.review import Finding
 from fitflow.runstate import RunRecord
+from fitflow.steps import objection
 from fitflow.steps.implement import resume_review_fix, review_fix_turn, verify_frozen
 
 
@@ -418,8 +419,12 @@ def _settle_interrupted_fixes(record: RunRecord) -> None:
     request - its retained turn re-judged on the bytes it left, or the turn
     the driver never saw end relaunched - so the join sees a frozen slice
     again. `_rejoin_fixes` then carries whatever those turns changed onto
-    the integration branch."""
+    the integration branch. A slice parked on the repair a fix turn's
+    objection asked for has that repair relaunched first, and then carries
+    on with its fix request."""
     for piece in record.ordered():
+        if piece.state == "tests_rejected" and objection.in_fix_request(piece):
+            objection.repair(record, piece)
         if piece.state == "fixing":
             narrate.line(f"♻️  #{piece.number} ({piece.layer}) finishing its interrupted fix")
             resume_review_fix(record, piece)

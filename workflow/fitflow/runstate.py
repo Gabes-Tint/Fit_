@@ -140,7 +140,10 @@ def verify_team_ownership(piece: "SliceRecord") -> None:
 # set returns the slice to "assigned" with the same role, revision,
 # assignment, session and worktree and a fresh attempt counter, because the
 # tests it is judged by are new inputs; a repair that cannot be made stops
-# the run and the slice lands in "failed". Every unlisted transition is
+# the run and the slice lands in "failed". A block 4 fix turn's verified
+# objection parks the slice there too, and its re-frozen set returns it to
+# "fixing" instead, with its attempt counter untouched: the fix request
+# goes on against the repaired tests (#463). Every unlisted transition is
 # prohibited.
 _TRANSITIONS: dict[str, frozenset[str]] = {
     "assigned": frozenset({"assigned", "running"}),
@@ -150,7 +153,7 @@ _TRANSITIONS: dict[str, frozenset[str]] = {
     ),
     "correcting": frozenset({"running"}),
     "escalating": frozenset({"assigned", "failed"}),
-    "tests_rejected": frozenset({"assigned", "failed"}),
+    "tests_rejected": frozenset({"assigned", "fixing", "failed"}),
     "succeeded": frozenset({"fixing"}),
     # "fixing" -> "fixing" is a resumed request re-confirming the state it
     # was already in before it relaunches its voided turn, the same no-op

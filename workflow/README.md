@@ -73,6 +73,12 @@ which is how six of seven tests get delivered instead of none (#421). The
 first repair is the role that wrote the tests - the mechanic, or the rung
 block 1 escalated to; a second is made by the role that objected, with every
 objection and repair so far in its brief.
+The channel is open in block 4 too: a review or CI fix turn may object on
+the same terms, judged against the freeze commit its fix request started
+from. A verified objection there costs only the turn, not a fix attempt;
+the repaired tests are re-frozen onto the slice branch, the slice stays
+`fixing` on the same fix attempt, and the freeze that ends the request
+carries the repair onto the integration branch before the next review round.
 An objection the driver cannot verify is an ordinary failed attempt;
 at most two repairs per slice, and a verified objection after those stops as
 `TESTS_INVALID` with every objection in the comment. The scope check puts the gates the
