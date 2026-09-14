@@ -1,23 +1,34 @@
-"""End-to-end tests for block 1 run record retention and resumption.
-A run that stops before block 2 can be resumed from its block 1 record,
-relaunching the writer at the same revision with retained diagnostic and
-rejections in its brief, without calling the planner again.
+"""End-to-end tests for block 1's run record: a run that stops before block 2
+leaves `runs/story-<n>.json` behind, and `go.py <n> --resume` continues block 1
+from it.
 
-Black-box like the other suites: every assertion is on exit codes, logs,
-the retained record and the fake-world state.
+Black-box like test_resume_and_reset.py: a first run stops somewhere real
+inside block 1 - the ladder test_pick_and_plan.py's #437 scenarios climb - and
+a second invocation continues it. Every assertion is on exit codes, logs, the
+retained record, the prompts the fake aarmy was sent and the fake-world state.
 """
 
-from conftest import (
-    delegate_slice,
-    mechanic_signals,
-    run_flow,
-)
+import json
+import os
+import signal
+import subprocess
+import time
+
+from conftest import delegate_slice, mechanic_signals, run_flow, start_flow
+
+from fitflow import agents
+
+TEST_FILE = "src/lib/block1-record.spec.ts"
+IMPLEMENTATION = {"src/lib/block1-record.ts": "export const block1Record = true;\n"}
+CHANGED = ["src/lib/block1-record.ts"]
+LADDER = ("mechanic", "builder", "solver")
 
 
-def _given_planned_story(world, number: int, layer: str = "domain") -> str:
-    """Script block 1 planning: one slice with planner answers.
-    Tests are not written yet - individual tests control that."""
-    world.given_story(number, title="Block 1 record story", labels=["story"])
+def _slug(number: int) -> str:
+    return f"story-{number}-domain"
+
+
+def _planner_plans(world, number: int) -> None:
     world.planner_answers_whose_call(
         number,
         owner="orchestrator",
@@ -32,7 +43,7 @@ def _given_planned_story(world, number: int, layer: str = "domain") -> str:
         spans_domain_and_ui=False,
         slices=[
             {
-                "layer": layer,
+                "layer": "domain",
                 "title": "Block 1 record work",
                 "brief": "Add the behavior the acceptance test names.",
                 "acceptance": ["The named behavior is observable."],
@@ -40,387 +51,225 @@ def _given_planned_story(world, number: int, layer: str = "domain") -> str:
             }
         ],
     )
-    test_file = "src/lib/block1-record.spec.ts"
-    return test_file
 
 
-def _delegate_mechanic(world, number: int, layer: str = "domain") -> None:
-    world.planner_answers_delegate(number, [delegate_slice(number, layer, mechanic_signals())])
+def _given_planned_story(world, number: int) -> None:
+    world.given_story(number, title="Block 1 record story", labels=["story"])
+    _planner_plans(world, number)
+    # block 1's acceptance run sees the tests fail, block 3's sees them pass
+    world.scripted_test_outcome(TEST_FILE, ["fail", "pass"])
 
 
-def _talks(world, role: str, team: str) -> list[dict]:
+def _never_pushed(world, number: int, role: str, attempt: int) -> None:
+    world.mechanic_changes_without_pushing(
+        _slug(number),
+        files={TEST_FILE: f"// {role} attempt {attempt}, never pushed\n"},
+        test_files=[TEST_FILE],
+        role=role,
+    )
+
+
+def _stopped_with_tests_never_pushed(world, number: int) -> None:
+    """Every rung commits the tests and never pushes them. Each one stops
+    early on its second identical rejection, the ladder climbs to the
+    solver, and the solver's stop is the run's: TESTS_NOT_PUSHED."""
+    _given_planned_story(world, number)
+    for role in LADDER:
+        for attempt in (1, 2):
+            _never_pushed(world, number, role, attempt)
+    result = run_flow(world, number)
+    assert result.returncode == 23, result.stdout + result.stderr
+
+
+def _stopped_after_the_builder_took_over(world, number: int) -> None:
+    """The mechanic's budget ends on a repeated rejection, the builder takes
+    over the tests, and the builder's first turn dies before it replies."""
+    _given_planned_story(world, number)
+    for attempt in (1, 2):
+        _never_pushed(world, number, "mechanic", attempt)
+    world.agent_fails(_slug(number), "builder", "provider unavailable")
+    result = run_flow(world, number)
+    assert result.returncode == 21, result.stdout + result.stderr
+    assert "the builder takes over the tests" in result.stdout
+
+
+def _pushes_the_tests_then_implements(world, number: int, writer: str) -> None:
+    """What a resume needs after block 1: the relaunched writer pushes the
+    tests, block 2 delegates to the mechanic and block 3's one turn passes."""
+    world.mechanic_writes(
+        _slug(number),
+        files={TEST_FILE: f"// the {writer} pushed them on resume\n"},
+        test_files=[TEST_FILE],
+        role=writer,
+    )
+    world.planner_answers_delegate(number, [delegate_slice(number, "domain", mechanic_signals())])
+    world.agent_implements(_slug(number), "mechanic", files=IMPLEMENTATION, changed_files=CHANGED)
+
+
+def _record(world, number: int) -> dict:
+    path = world.home / "runs" / f"story-{number}.json"
+    assert path.exists(), f"block 1 left no run record at {path}"
+    return world.run_record(number)
+
+
+def _option(call: dict, name: str) -> str:
+    argv = call["argv"]
+    return argv[argv.index(name) + 1] if name in argv else ""
+
+
+def _talks(calls: list[dict], role: str, team: str, schema: str = "") -> list[dict]:
+    """The `aarmy talk` calls to `role` on `team`; with `schema`, only the
+    turns answering that schema - `failing_tests.json` is block 1's writer."""
     return [
         call
-        for call in world.calls()
+        for call in calls
         if call.get("tool") == "aarmy"
-        and call.get("argv", [None, None])[0:2] == ["talk", role]
-        and call["argv"][call["argv"].index("--team") + 1] == team
+        and call["argv"][0:2] == ["talk", role]
+        and _option(call, "--team") == team
+        and _option(call, "--schema").endswith(schema)
     ]
 
 
-def test_block1_write_runs_record_when_mechanic_rejects(world):
-    """When block 1 mechanic writes tests but doesn't push them,
-    the runs/story-<n>.json record is written and holds the slice's number,
-    layer and branch."""
-    test_file = _given_planned_story(world, 800)
-    _delegate_mechanic(world, 800)
-    # Mechanic writes tests but doesn't push them
-    world.mechanic_changes_without_pushing(
-        "story-800-domain", files={test_file: "// failing\n"}, test_files=[test_file]
-    )
-    world.scripted_test_outcome(test_file, ["fail"])
-    # Mechanic validates the tests
-    world.mechanic_replies("story-800-domain", [test_file])
+def _issues(world) -> list[str]:
+    return sorted(json.loads((world.dir / "world.json").read_text())["issues"])
 
-    result = run_flow(world, 800)
 
-    # Should exit with TESTS_NOT_PUSHED
-    assert result.returncode == 23, result.stdout + result.stderr
-    # Record should exist and be populated
-    record_path = world.home / "runs" / "story-800.json"
-    assert record_path.exists()
-    record = world.run_record(800)
+def test_a_writer_that_never_pushes_leaves_a_block_1_record(world):
+    _stopped_with_tests_never_pushed(world, 800)
+
+    record = _record(world, 800)
     assert record["story_number"] == 800
-    slice_record = record["slices"]["domain"]
-    assert slice_record["number"] == 800
-    assert slice_record["layer"] == "domain"
-    assert slice_record["branch"] == "story-800-domain"
-    assert slice_record["test_files"] == [test_file]
+    piece = record["slices"]["domain"]
+    assert (piece["number"], piece["layer"], piece["branch"]) == (800, "domain", "story-800-domain")
+    assert piece["team"] == "story-800-domain"
+    assert piece["worktree"].endswith("story-800-domain")
+    assert piece["title"] == "Block 1 record work"
+    assert piece["brief"] == "Add the behavior the acceptance test names."
+    assert piece["acceptance"] == ["The named behavior is observable."]
+    assert piece["test_kind"] == "vitest"
+    # nothing was frozen: no tests commit
+    assert not piece["tests_sha"]
+    # the rung and revision block 1 ended on
+    assert (piece["tests_role"], piece["tests_revision"]) == ("solver", 2)
 
 
-def test_resume_relaunches_mechanic_without_new_planner_call(world):
-    """A --resume of a stopped block 1 run exits 0 with no planner call
-    and no second child issue. The log has the '♻️  Resuming #<n>' line.
-    The writer is relaunched on the same story-<n>-<layer> worktree
-    and team."""
-    test_file = _given_planned_story(world, 801)
-    _delegate_mechanic(world, 801)
-    # Mechanic writes tests but doesn't push them - stops block 1
-    world.mechanic_changes_without_pushing(
-        "story-801-domain", files={test_file: "// failing\n"}, test_files=[test_file]
-    )
-    world.scripted_test_outcome(test_file, ["fail"])
-    # Mechanic validates the tests
-    world.mechanic_replies("story-801-domain", [test_file])
-
-    first = run_flow(world, 801)
-
-    assert first.returncode == 23, first.stdout + first.stderr
-
-    # Provide implementation for the resume
-    world.agent_implements(
-        "story-801-domain",
-        "mechanic",
-        files={"src/lib/block1-record.ts": "export const block1Record = true;\n"},
-        changed_files=["src/lib/block1-record.ts"],
-    )
-    # Prepare for block 2/3
-    _delegate_mechanic(world, 801)
-    world.agent_implements(
-        "story-801-domain",
-        "mechanic",
-        files={"src/lib/block1-record.ts": "export const block1Record = true;\n"},
-        changed_files=["src/lib/block1-record.ts"],
-    )
+def test_resume_relaunches_the_writer_without_planning_again(world):
+    _stopped_with_tests_never_pushed(world, 801)
+    slug = _slug(801)
+    team = _record(world, 801)["slices"]["domain"]["team"]
+    issues = _issues(world)
+    before = len(world.calls())
+    _pushes_the_tests_then_implements(world, 801, "solver")
 
     result = run_flow(world, 801, "--resume")
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "♻️  Resuming #801" in result.stdout
     assert "🔀 Spans domain and UI?" not in result.stdout
-    # No new planner call during resume - only the original 1 planner call for planning
-    planner_talks = _talks(world, "planner", "plan-801")
-    assert len(planner_talks) == 1
-    record = world.run_record(801)
-    slice_record = record["slices"]["domain"]
-    assert slice_record["frozen_commit"] is not None
+    resumed = world.calls()[before:]
+    # block 2's delegation is the only planner turn: nothing was planned again
+    planner = _talks(resumed, "planner", "plan-801")
+    assert [_option(call, "--schema").rsplit("/", 1)[-1] for call in planner] == ["delegate.json"]
+    assert _issues(world) == issues
+    # the recorded rung is relaunched, on the same team, with its diagnostic
+    writers = _talks(resumed, "solver", slug, "failing_tests.json")
+    assert len(writers) == 1
+    assert "local HEAD not pushed on story-801-domain" in writers[0]["prompt"]
+    assert "mechanic attempt 1 —" in writers[0]["prompt"]
+    assert "builder attempt 1 —" in writers[0]["prompt"]
+    for earlier in ("mechanic", "builder"):
+        assert not _talks(resumed, earlier, slug, "failing_tests.json")
+    piece = world.run_record(801)["slices"]["domain"]
+    assert piece["team"] == team
+    assert piece["tests_sha"]
 
 
-def test_resume_after_mechanic_escalation_to_builder(world):
-    """A run that escalates from mechanic to builder in block 1 and then
-    stops, resumes at the builder stage. The record shows builder was the
-    last assigned role, and no mechanic turns run again on resume."""
-    test_file = _given_planned_story(world, 802)
-    _delegate_mechanic(world, 802)
-    world.scripted_test_outcome(test_file, ["fail"])
-    # First mechanic attempt doesn't push - block 1 continues
-    world.mechanic_changes_without_pushing(
-        "story-802-domain",
-        files={test_file: "// failing\n"},
-        test_files=[test_file],
-    )
-    # Mechanic validates
-    world.mechanic_replies("story-802-domain", [test_file])
-    # Second mechanic attempt doesn't push - block 1 continues
-    world.mechanic_changes_without_pushing(
-        "story-802-domain",
-        files={test_file: "// failing\n"},
-        test_files=[test_file],
-    )
-    # Mechanic validates
-    world.mechanic_replies("story-802-domain", [test_file])
-    # Third mechanic attempt doesn't push - block 1 escalates to builder
-    world.mechanic_changes_without_pushing(
-        "story-802-domain",
-        files={test_file: "// failing\n"},
-        test_files=[test_file],
-    )
-    # Mechanic validates (after which escalation happens)
-    world.mechanic_replies("story-802-domain", [test_file])
-    # Builder writes but doesn't push - stops block 1
-    world.mechanic_changes_without_pushing(
-        "story-802-domain",
-        files={test_file: "// failing\n"},
-        test_files=[test_file],
-        role="builder",
-    )
-    # Builder validates
-    world.mechanic_replies("story-802-domain", [test_file], role="builder")
-
-    first = run_flow(world, 802)
-
-    assert first.returncode == 23, first.stdout + first.stderr
-    assert "⏫ #802 (domain) escalating mechanic → builder" in first.stdout
-
-    # Provide builder implementation for resume
-    world.agent_implements(
-        "story-802-domain",
-        "builder",
-        files={"src/lib/block1-record.ts": "export const block1Record = true;\n"},
-        changed_files=["src/lib/block1-record.ts"],
-    )
-    # Prepare for block 2/3
-    _delegate_mechanic(world, 802)
-    world.agent_implements(
-        "story-802-domain",
-        "mechanic",
-        files={"src/lib/block1-record.ts": "export const block1Record = true;\n"},
-        changed_files=["src/lib/block1-record.ts"],
-    )
+def test_resume_after_the_ladder_climbed_continues_at_the_builder(world):
+    _stopped_after_the_builder_took_over(world, 802)
+    slug = _slug(802)
+    piece = _record(world, 802)["slices"]["domain"]
+    assert (piece["tests_role"], piece["tests_revision"]) == ("builder", 1)
+    assert not piece["tests_sha"]
+    before = len(world.calls())
+    _pushes_the_tests_then_implements(world, 802, "builder")
 
     result = run_flow(world, 802, "--resume")
 
     assert result.returncode == 0, result.stdout + result.stderr
-    record = world.run_record(802)
-    slice_record = record["slices"]["domain"]
-    # Last assignment should be builder
-    assert slice_record["assignments"][-1]["role"] == "builder"
-    # Mechanic talks in block 1 should be just the 3 mechanic attempts
-    mechanic_talks = _talks(world, "mechanic", "story-802-domain")
-    # Only 3 block 1 mechanics, no block 3 mechanic (builder handles block 3)
-    assert len(mechanic_talks) == 3
+    resumed = world.calls()[before:]
+    builder = _talks(resumed, "builder", slug, "failing_tests.json")
+    assert len(builder) == 1
+    # every rejection so far reaches the builder's relaunched turn
+    assert "mechanic attempt 1 — TESTS_NOT_PUSHED: local HEAD not pushed" in builder[0]["prompt"]
+    assert "mechanic attempt 2 — TESTS_NOT_PUSHED: local HEAD not pushed" in builder[0]["prompt"]
+    # no earlier rung runs again: the one mechanic turn is block 3's
+    assert not _talks(resumed, "mechanic", slug, "failing_tests.json")
+    assert len(_talks(resumed, "mechanic", slug)) == 1
+    piece = world.run_record(802)["slices"]["domain"]
+    assert (piece["tests_role"], piece["tests_revision"]) == ("builder", 1)
+    assert piece["tests_sha"]
 
 
-def test_fresh_go_on_story_with_block1_record_conflicts(world):
-    """A fresh go.py <n> on a story that already has a block 1 record
-    exits 30 (RUN_STATE_CONFLICT) and names --resume and --reset."""
-    test_file = _given_planned_story(world, 803)
-    _delegate_mechanic(world, 803)
-    # Mechanic writes tests but doesn't push - stops block 1
-    world.mechanic_changes_without_pushing(
-        "story-803-domain", files={test_file: "// failing\n"}, test_files=[test_file]
-    )
-    world.scripted_test_outcome(test_file, ["fail"])
-    # Mechanic validates the tests
-    world.mechanic_replies("story-803-domain", [test_file])
+def test_a_fresh_run_on_a_story_with_a_block_1_record_conflicts(world):
+    _stopped_with_tests_never_pushed(world, 803)
+    _record(world, 803)
+    # someone lifts the stopped run's hold: only the record says a run exists
+    world.given_story(803, title="Block 1 record story", labels=["story"])
+    _planner_plans(world, 803)
+    before = len(world.calls())
 
-    first = run_flow(world, 803)
-
-    assert first.returncode == 23, first.stdout + first.stderr
-    # Record should exist
-    assert (world.home / "runs" / "story-803.json").exists()
-
-    # Try a fresh run without --resume or --reset
     result = run_flow(world, 803)
 
     assert result.returncode == 30, result.stdout + result.stderr
     assert "RUN_STATE_CONFLICT" in result.stdout
     assert "--resume" in result.stdout
     assert "--reset" in result.stdout
+    for role in LADDER:
+        assert not _talks(world.calls()[before:], role, _slug(803), "failing_tests.json")
+    # the retained record is the stopped run's, not a fresh one
+    assert _record(world, 803)["slices"]["domain"]["tests_role"] == "solver"
 
 
-def test_resume_continues_incomplete_block1_work(world):
-    """A --resume continues incomplete block 1 work by relaunching the
-    writer at the same revision and team, preserving prior turn records."""
-    test_file = _given_planned_story(world, 804)
-    _delegate_mechanic(world, 804)
-    world.scripted_test_outcome(test_file, ["fail"])
-    # Mechanic's first turn doesn't push - stops block 1
-    world.mechanic_changes_without_pushing(
-        "story-804-domain",
-        files={test_file: "// failing\n"},
-        test_files=[test_file],
+def _await_a_live_turn(team: str, role: str, driver: subprocess.Popen | None = None) -> None:
+    deadline = time.monotonic() + 60
+    while not agents.turn_in_flight(team, role):
+        if driver is not None and driver.poll() is not None:
+            raise AssertionError(f"the driver exited {driver.returncode} before the {role} turn")
+        if time.monotonic() > deadline:
+            raise AssertionError(f"the {role} turn for {team} never reached the process table")
+        time.sleep(0.01)
+
+
+def test_resume_never_launches_a_block_1_writer_beside_one_still_running(world, tmp_path):
+    _given_planned_story(world, 804)
+    slug = _slug(804)
+    # the mechanic's first turn waits for a peer that never comes, so the
+    # driver is killed while block 1's writer is mid-turn
+    world.mechanic_writes(
+        slug, files={TEST_FILE: "// never finished\n"}, test_files=[TEST_FILE], rendezvous="none"
     )
-    # Mechanic validates the tests
-    world.mechanic_replies("story-804-domain", [test_file])
+    log = tmp_path / "killed-run.log"
+    driver = start_flow(world, 804, log=log)
+    try:
+        _await_a_live_turn(slug, "mechanic", driver)
+    finally:
+        os.killpg(driver.pid, signal.SIGKILL)
+        driver.wait()
+    _record(world, 804)
 
-    first = run_flow(world, 804)
-
-    assert first.returncode == 23, first.stdout + first.stderr
-    record = world.run_record(804)
-    team = record["slices"]["domain"]["team"]
-
-    # Provide new implementation for resume
-    world.agent_implements(
-        "story-804-domain",
-        "mechanic",
-        files={"src/lib/block1-record.ts": "export const block1Record = true;\n"},
-        changed_files=["src/lib/block1-record.ts"],
+    orphan = subprocess.Popen(
+        ["bash", "-c", f'exec -a "aarmy talk mechanic --team {slug}" sleep 60']
     )
-    # Prepare for block 2/3
-    _delegate_mechanic(world, 804)
-    world.agent_implements(
-        "story-804-domain",
-        "mechanic",
-        files={"src/lib/block1-record.ts": "export const block1Record = true;\n"},
-        changed_files=["src/lib/block1-record.ts"],
-    )
+    try:
+        _await_a_live_turn(slug, "mechanic")
+        before = len(world.calls())
+        result = run_flow(world, 804, "--resume")
+        outlived_the_resume = orphan.poll() is None
+    finally:
+        orphan.kill()
+        orphan.wait()
 
-    result = run_flow(world, 804, "--resume")
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    # Team should be the same
-    resumed_record = world.run_record(804)
-    assert resumed_record["slices"]["domain"]["team"] == team
-
-
-def test_block1_record_contains_slice_metadata(world):
-    """The block 1 run record holds slice metadata like number, layer,
-    branch, team, and worktree."""
-    test_file = _given_planned_story(world, 805)
-    _delegate_mechanic(world, 805)
-    # Mechanic writes tests but doesn't push them - stops block 1
-    world.mechanic_changes_without_pushing(
-        "story-805-domain", files={test_file: "// failing\n"}, test_files=[test_file]
-    )
-    world.scripted_test_outcome(test_file, ["fail"])
-    # Mechanic validates the tests
-    world.mechanic_replies("story-805-domain", [test_file])
-
-    result = run_flow(world, 805)
-
-    assert result.returncode == 23, result.stdout + result.stderr
-    record = world.run_record(805)
-    slice_record = record["slices"]["domain"]
-    # Verify slice metadata
-    assert slice_record["number"] == 805
-    assert slice_record["layer"] == "domain"
-    assert slice_record["branch"] == "story-805-domain"
-    assert "team" in slice_record
-    assert "worktree" in slice_record
-    assert slice_record["test_files"] == [test_file]
-
-
-def test_resume_preserves_ladder_progression(world):
-    """When block 1 escalates to builder and then stops, resuming brings
-    the builder prompt with context about prior mechanic rejections."""
-    test_file = _given_planned_story(world, 806)
-    _delegate_mechanic(world, 806)
-    world.scripted_test_outcome(test_file, ["fail"])
-    # First mechanic attempt doesn't push - block 1 continues
-    world.mechanic_changes_without_pushing(
-        "story-806-domain",
-        files={test_file: "// failing\n"},
-        test_files=[test_file],
-    )
-    # Mechanic validates
-    world.mechanic_replies("story-806-domain", [test_file])
-    # Second mechanic attempt doesn't push - block 1 continues
-    world.mechanic_changes_without_pushing(
-        "story-806-domain",
-        files={test_file: "// failing\n"},
-        test_files=[test_file],
-    )
-    # Mechanic validates
-    world.mechanic_replies("story-806-domain", [test_file])
-    # Third mechanic attempt doesn't push - block 1 escalates to builder
-    world.mechanic_changes_without_pushing(
-        "story-806-domain",
-        files={test_file: "// failing\n"},
-        test_files=[test_file],
-    )
-    # Mechanic validates (after which escalation happens)
-    world.mechanic_replies("story-806-domain", [test_file])
-    # Builder writes but doesn't push - stops block 1
-    world.mechanic_changes_without_pushing(
-        "story-806-domain",
-        files={test_file: "// failing\n"},
-        test_files=[test_file],
-        role="builder",
-    )
-    # Builder validates
-    world.mechanic_replies("story-806-domain", [test_file], role="builder")
-
-    first = run_flow(world, 806)
-
-    assert first.returncode == 23, first.stdout + first.stderr
-    assert "escalating mechanic → builder" in first.stdout
-
-    # Provide builder implementation for resume
-    world.agent_implements(
-        "story-806-domain",
-        "builder",
-        files={"src/lib/block1-record.ts": "export const block1Record = true;\n"},
-        changed_files=["src/lib/block1-record.ts"],
-    )
-    # Prepare for block 2/3
-    _delegate_mechanic(world, 806)
-    world.agent_implements(
-        "story-806-domain",
-        "mechanic",
-        files={"src/lib/block1-record.ts": "export const block1Record = true;\n"},
-        changed_files=["src/lib/block1-record.ts"],
-    )
-
-    result = run_flow(world, 806, "--resume")
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    record = world.run_record(806)
-    # Record should show the escalation happened
-    turns = record["slices"]["domain"]["turns"]
-    assert len(turns) >= 3  # At least three mechanic attempts before builder
-
-
-def test_no_new_planner_call_on_resume(world):
-    """A resume makes no new planner call. The retained record is reused
-    without calling the planner again."""
-    test_file = _given_planned_story(world, 807)
-    _delegate_mechanic(world, 807)
-    world.scripted_test_outcome(test_file, ["fail"])
-    # Mechanic writes tests but doesn't push - stops block 1
-    world.mechanic_changes_without_pushing(
-        "story-807-domain", files={test_file: "// failing\n"}, test_files=[test_file]
-    )
-    # Mechanic validates the tests
-    world.mechanic_replies("story-807-domain", [test_file])
-
-    first = run_flow(world, 807)
-
-    assert first.returncode == 23, first.stdout + first.stderr
-
-    # Record initial planner talk count
-    initial_planner_talks = len(_talks(world, "planner", "plan-807"))
-    assert initial_planner_talks == 1  # Only the initial planning
-
-    # Provide new implementation for resume
-    world.agent_implements(
-        "story-807-domain",
-        "mechanic",
-        files={"src/lib/block1-record.ts": "export const block1Record = true;\n"},
-        changed_files=["src/lib/block1-record.ts"],
-    )
-    # Prepare for block 2/3
-    _delegate_mechanic(world, 807)
-    world.agent_implements(
-        "story-807-domain",
-        "mechanic",
-        files={"src/lib/block1-record.ts": "export const block1Record = true;\n"},
-        changed_files=["src/lib/block1-record.ts"],
-    )
-
-    result = run_flow(world, 807, "--resume")
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    # No new planner call during resume
-    final_planner_talks = len(_talks(world, "planner", "plan-807"))
-    assert final_planner_talks == initial_planner_talks  # Same count, no new planner call
+    assert outlived_the_resume, "the fake turn ended before the driver looked for it"
+    assert result.returncode == 29, result.stdout + result.stderr
+    assert "still running on this machine" in result.stdout
+    assert not _talks(world.calls()[before:], "mechanic", slug)

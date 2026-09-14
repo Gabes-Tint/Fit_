@@ -847,6 +847,50 @@ def run_flow(
     into one real file exactly as a shell redirect (`> file.log 2>&1`)
     would - the only way to reproduce narrate.py's buffering-order bug,
     since captured pipes never interleave."""
+    env = _flow_env(world, config_path, use_default_config, ship_to, env_extra)
+    if combined_log is not None:
+        with combined_log.open("w", encoding="utf-8") as log_file:
+            return subprocess.run(
+                [sys.executable, str(GO_PY), *(str(arg) for arg in args)],
+                cwd=cwd or WORKFLOW_DIR,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=env,
+            )
+    return subprocess.run(
+        [sys.executable, str(GO_PY), *(str(arg) for arg in args)],
+        cwd=cwd or WORKFLOW_DIR,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+def start_flow(world: FakeWorld, *args: str | int, log: Path) -> subprocess.Popen:
+    """Start go.py without waiting for it, writing stdout and stderr into
+    `log`, in a session of its own: a scenario that kills the driver
+    mid-turn kills it and every turn it launched with
+    `os.killpg(process.pid, ...)`."""
+    with log.open("w", encoding="utf-8") as log_file:
+        return subprocess.Popen(
+            [sys.executable, str(GO_PY), *(str(arg) for arg in args)],
+            cwd=WORKFLOW_DIR,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            text=True,
+            env=_flow_env(world),
+            start_new_session=True,
+        )
+
+
+def _flow_env(
+    world: FakeWorld,
+    config_path: Path | None = None,
+    use_default_config: bool = False,
+    ship_to: str | None = None,
+    env_extra: dict[str, str] | None = None,
+) -> dict[str, str]:
     env = dict(os.environ)
     env["PATH"] = f"{FAKES_DIR}:{env['PATH']}"
     env["FAKE_WORLD"] = str(world.dir)
@@ -865,20 +909,4 @@ def run_flow(
         env["FIT_FLOW_AGENT_CONFIG"] = str(config_path or world.agent_config)
     else:
         env.pop("FIT_FLOW_AGENT_CONFIG", None)
-    if combined_log is not None:
-        with combined_log.open("w", encoding="utf-8") as log_file:
-            return subprocess.run(
-                [sys.executable, str(GO_PY), *(str(arg) for arg in args)],
-                cwd=cwd or WORKFLOW_DIR,
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-                text=True,
-                env=env,
-            )
-    return subprocess.run(
-        [sys.executable, str(GO_PY), *(str(arg) for arg in args)],
-        cwd=cwd or WORKFLOW_DIR,
-        capture_output=True,
-        text=True,
-        env=env,
-    )
+    return env
