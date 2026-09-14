@@ -28,7 +28,7 @@ checked, and the frozen commits are the ones being merged.
 Acceptance criteria of this run:
 
 $acceptance
-$fix_note
+$round_note
 Reply with the schema fields: verdict ("merge" or "fix") and findings
 (empty array for "merge"). Each finding: file (path in the diff, relative
 to the repo root), line (1-based in that file), category (correctness,

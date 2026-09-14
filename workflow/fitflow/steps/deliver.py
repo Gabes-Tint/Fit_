@@ -226,33 +226,28 @@ def _open_pr(story, record: RunRecord, path: Path) -> int:
 
 
 def _review_loop(story, record: RunRecord, path: Path) -> None:
+    """Review rounds and their fixes, always ending on a verdict.
+    `review.max_rounds()` budgets the fix rounds, and every one of them is
+    followed by a review - so a run whose last round repaired the findings
+    still merges, instead of stopping on a fix nothing ever looked at
+    (#462 run 1). Once the budget is spent the closing review is a verdict
+    on the diff as it stands: `merge` lands it, `fix` is the human call
+    that stops the run."""
     team = f"story-{story.number}-review"
     agents.ensure_fresh_team(team, path, story.number)
-    rounds = 0
-    while rounds < review.max_rounds():
-        rounds += 1
-        narrate.line(f"🕵️ Review round {rounds}/{review.max_rounds()}")
-        verdict, findings = _reviewer_turn(story, record, team, path, rounds)
-        with record.transition():
-            record.delivery["rounds"] = rounds
-            record.delivery["verdict"] = verdict
-            record.delivery["findings"] = [
-                {
-                    "file": finding.file,
-                    "line": finding.line,
-                    "category": finding.category,
-                    "required_fix": finding.required_fix,
-                }
-                for finding in findings
-            ]
-            record.save()
+    fixes = 0
+    while True:
+        verdict, findings = _review_round(story, record, team, path, fixes)
         if verdict == "merge":
-            narrate.line(f"✅ Reviewer approved after {rounds} round(s)")
             return
+        if review.is_closing(fixes):
+            break
+        fixes += 1
         _apply_fixes(story, record, path, findings, review.findings_diagnostic)
     _stop_for_gabriel(
         story,
-        f"the reviewer still rejected delivery after {review.max_rounds()} review rounds",
+        f"the reviewer still rejected delivery after {review.max_rounds()} fix rounds "
+        "and the closing review",
     )
     raise FlowFailure(
         Outcome.CAPACITY_EXHAUSTED,
@@ -262,8 +257,40 @@ def _review_loop(story, record: RunRecord, path: Path) -> None:
     )
 
 
+def _review_round(
+    story, record: RunRecord, team: str, path: Path, fixes: int
+) -> tuple[str, list[Finding]]:
+    """One review turn over the pushed integration head, with its verdict
+    and findings retained before anything acts on them. `fixes` is how many
+    fix rounds have already been applied, so the round number the reviewer
+    is told about is one more than that."""
+    closing = review.is_closing(fixes)
+    rounds = fixes + 1
+    if closing:
+        narrate.line(f"🕵️ Closing review after {fixes} fix round(s)")
+    else:
+        narrate.line(f"🕵️ Review round {rounds}/{review.max_rounds()}")
+    verdict, findings = _reviewer_turn(story, record, team, path, fixes, closing)
+    with record.transition():
+        record.delivery["rounds"] = rounds
+        record.delivery["verdict"] = verdict
+        record.delivery["findings"] = [
+            {
+                "file": finding.file,
+                "line": finding.line,
+                "category": finding.category,
+                "required_fix": finding.required_fix,
+            }
+            for finding in findings
+        ]
+        record.save()
+    if verdict == "merge":
+        narrate.line(f"✅ Reviewer approved after {rounds} round(s)")
+    return verdict, findings
+
+
 def _reviewer_turn(
-    story, record: RunRecord, team: str, path: Path, rounds: int
+    story, record: RunRecord, team: str, path: Path, fixes: int, closing: bool
 ) -> tuple[str, list[Finding]]:
     """One bounded reviewer loop: one initial review turn plus at most two
     corrective retries in the same reviewer session. Only a malformed reply
@@ -283,7 +310,7 @@ def _reviewer_turn(
             pr_number=record.delivery["pr_number"],
             branch=record.delivery["integration_branch"],
             acceptance=_acceptance_lines(record),
-            fix_note=_fix_note(record, rounds),
+            round_note=_round_note(record, fixes, closing),
             diagnostic=diagnostic,
         )
         reviewer_session = _require_reviewer_session(
@@ -350,13 +377,31 @@ def _verify_read_only(story, record: RunRecord, path: Path) -> None:
         )
 
 
-def _fix_note(record: RunRecord, rounds: int) -> str:
-    if rounds == 1:
-        return ""
-    return "Fixes were applied since the last review for these findings:\n" + "\n".join(
-        f"- {item['file']}:{item['line']} [{item['category']}]"
-        for item in record.delivery.get("findings", [])
-    )
+#: What the closing review is told: the fix budget is spent, so a finding
+#: raised here is never repaired - it only decides whether the PR lands or
+#: goes to a human. The reviewer must know that before it weighs a nit.
+_CLOSING_NOTE = """This is the closing review: the fix budget is spent, so nothing you ask
+for now will be repaired. Judge the diff as it stands and reply `merge`
+unless it carries a defect that must block the merge. A `fix` verdict here
+stops the run and hands the PR to a human, so raise one only for a defect
+you would not let land."""
+
+
+def _round_note(record: RunRecord, fixes: int, closing: bool) -> str:
+    """The reviewer's standing on this round: what was fixed since the last
+    one, and - on the closing round - that no further fix will follow."""
+    parts = []
+    if fixes:
+        parts.append(
+            "Fixes were applied since the last review for these findings:\n"
+            + "\n".join(
+                f"- {item['file']}:{item['line']} [{item['category']}]"
+                for item in record.delivery.get("findings", [])
+            )
+        )
+    if closing:
+        parts.append(_CLOSING_NOTE)
+    return "\n".join(parts)
 
 
 def _acceptance_lines(record: RunRecord) -> str:
