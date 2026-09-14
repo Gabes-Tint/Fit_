@@ -202,7 +202,7 @@ def run_changed_lint(worktree: Path, story_number: int) -> "LaneFailure | None":
         return None
     if result.returncode == 1:
         return LaneFailure(
-            f"lint:changed failed on the acceptance tests:\n{_tail(output)}",
+            f"lint:changed failed on the acceptance tests:\n{_output_tail(output)}",
             lanes.lint_errors(output),
         )
     raise FlowFailure(
@@ -229,7 +229,7 @@ def run_type_check(worktree: Path, story_number: int) -> "LaneFailure | None":
         return None
     if result.returncode == 1:
         return LaneFailure(
-            f"check found type errors in the acceptance tests:\n{_tail(output)}",
+            f"check found type errors in the acceptance tests:\n{_output_tail(output)}",
             lanes.type_errors(output),
         )
     raise FlowFailure(
@@ -249,7 +249,7 @@ def _both_streams(result: subprocess.CompletedProcess) -> str:
 _TOOL_OUTPUT_BUDGET = 800
 
 
-def _tail(output: str, budget: int = _TOOL_OUTPUT_BUDGET) -> str:
+def _output_tail(output: str, budget: int = _TOOL_OUTPUT_BUDGET) -> str:
     """The last `budget` characters of a tool's output, cut back to a line
     boundary. `output[-800:]` alone starts in the middle of whatever line
     the budget landed in, and #422 run 4 is what that costs: the fragment
