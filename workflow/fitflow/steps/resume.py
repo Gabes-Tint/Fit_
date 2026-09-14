@@ -256,6 +256,14 @@ def _reopen_review_fix(record: RunRecord, piece: SliceRecord) -> None:
     elif judged_failed(last):
         _require_not_stopped_for_repetition(record, piece, last)
         note = f"fix attempt {attempt} was judged failed; it will be relaunched, not re-judged"
+    elif last["result"] == "objected":
+        # the objection was verified and its repair has landed: the merge
+        # moved the tree past the digest the turn left, and there is no
+        # verdict left to re-derive - only the same attempt to relaunch
+        note = (
+            f"fix attempt {attempt} objected and its tests were repaired; "
+            "it relaunches against them"
+        )
     else:
         _require_can_be_rejudged(record, piece, last)
     with record.transition():
