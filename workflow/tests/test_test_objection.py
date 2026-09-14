@@ -6,6 +6,8 @@ Black-box like the other suites: every assertion is on go.py's exit code,
 its log, the retained record and the fake world.
 """
 
+import subprocess
+
 from conftest import (
     builder_signals,
     delegate_slice,
@@ -100,6 +102,18 @@ def _field(stdout: str, label: str) -> list[str]:
     padding narrate.fields aligns the labels with."""
     head = f"   │ {label}:"
     return [line.split(":", 1)[1].strip() for line in stdout.splitlines() if line.startswith(head)]
+
+
+def _local_branches(world) -> list[str]:
+    """Every branch the fake repository has locally, which is where the
+    driver's own repair branches live."""
+    result = subprocess.run(
+        ["git", "branch", "--format=%(refname:short)"],
+        cwd=world.repo,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.split()
 
 
 def _talks(world, role: str, team: str) -> list[dict]:
@@ -544,6 +558,87 @@ def test_resume_voids_a_repair_turn_that_died_and_relaunches_it(world):
     piece = world.run_record(470)["slices"]["domain"]
     assert piece["state"] == "succeeded"
     assert [turn["result"] for turn in piece["test_repair_turns"]] == ["void", "ok"]
+
+
+def test_resume_remakes_the_repair_branch_a_stopped_repair_left_standing(world):
+    """A repair that stops keeps its worktree and branch for audit, and the
+    branch is named from `test_repairs + 1` - which only a re-freeze moves.
+    So the relaunched repair asks for the name that is already taken, and
+    `worktrees.create_repair_worktree` is what makes that work: it removes
+    the worktree and deletes the branch before creating either."""
+    slug = _given_planned_story(world, 476, ["fail", "fail"])
+    world.scripted_test_outcome(REPAIRED, ["fail", "pass"])
+    world.agent_objects(slug, "mechanic", tests=[TEST], why=WHY)
+    # the repair turn dies before it can reply, so its worktree stands
+    world.mechanic_fails(f"{slug}-tests-1", "the repair turn died")
+
+    stopped = run_flow(world, 476)
+
+    assert stopped.returncode == 21, stopped.stdout + stopped.stderr
+    repair_worktree = world.slice_worktree_path(f"{slug}-tests-1")
+    assert repair_worktree.exists()
+    assert _local_branches(world).count(f"{slug}-tests-1") == 1
+    # and what the dead repair left in it must not reach the repaired tests
+    (repair_worktree / "src" / "lib").mkdir(parents=True, exist_ok=True)
+    (repair_worktree / "src" / "lib" / "leftover.spec.ts").write_text("// half a repair\n")
+
+    _repair(world, slug)
+    world.agent_implements(
+        slug,
+        "mechanic",
+        files={"src/lib/rows.ts": "export const brand = true;\n"},
+        changed_files=["src/lib/rows.ts"],
+    )
+
+    result = run_flow(world, 476, "--resume")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "🩹 Repairing #476 (domain) tests in block 1 (repair 1/2)" in result.stdout
+    piece = world.run_record(476)["slices"]["domain"]
+    assert piece["state"] == "succeeded" and piece["test_files"] == [REPAIRED]
+    # the repair landed from the base, not from what the dead one left
+    assert not (world.slice_worktree_path(slug) / "src/lib/leftover.spec.ts").exists()
+
+
+def test_resume_after_a_repair_block_1_could_not_make_stops_instead_of_repeating_it(world):
+    """A repair refused on both of its turns spends the budget without
+    moving `test_repairs`, so the branch name and the repair number are the
+    same ones again. Relaunching it could only reach the same refusal: the
+    resume stops and says who repairs the tests now."""
+    slug = _given_planned_story(world, 477, ["fail", "fail"])
+    world.scripted_test_outcome(REPAIRED, ["fail"])
+    world.agent_objects(slug, "mechanic", tests=[TEST], why=WHY)
+    for turn in (1, 2):
+        world.mechanic_repairs(
+            f"{slug}-tests-1",
+            files={
+                REPAIRED: f"// repaired {turn}\n",
+                "src/lib/rows.ts": f"export const sneak = {turn};\n",
+            },
+            test_files=[REPAIRED],
+            delete=[TEST] if turn == 1 else None,
+        )
+
+    stopped = run_flow(world, 477)
+
+    assert stopped.returncode == 31, stopped.stdout + stopped.stderr
+    assert world.run_record(477)["slices"]["domain"]["test_repair_spent"] == 1
+
+    # a repair is scripted for the resume; the driver must not reach it
+    _repair(world, slug)
+
+    result = run_flow(world, 477, "--resume")
+
+    assert result.returncode == 30, result.stdout + result.stderr
+    assert (
+        "story-477-domain spent both of block 1's turns on repair 1 and its acceptance "
+        "tests are still rejected" in result.stdout
+    )
+    assert "repair them by hand; audit it, then `go.py 477 --reset`" in result.stdout
+    assert "🩹 Repairing #477" not in result.stdout
+    piece = world.run_record(477)["slices"]["domain"]
+    assert piece["state"] == "tests_rejected" and piece["test_repairs"] == 0
+    assert len(piece["test_repair_turns"]) == 2
 
 
 # --- the second repair goes to the role that objected --------------------------

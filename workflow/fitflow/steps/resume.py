@@ -31,7 +31,11 @@ turn instead.
 
 A slice parked in `tests_rejected` is waiting on block 1, not on a turn of
 its own: it stays parked, its unfinished repair turn is voided like any
-other, and block 3 relaunches the repair from a fresh repair worktree.
+other, and block 3 relaunches the repair from a fresh repair worktree - the
+branch and worktree the stopped repair left behind are removed and remade
+from the slice's failing-test base. The exception is a repair block 1 was
+refused on both of its turns: nothing has moved since, so the resume stops
+on it and the tests are repaired by hand or the run is reset.
 """
 
 from fitflow import agents, audit, github, narrate, settings, turns, worktrees
@@ -161,8 +165,10 @@ def _reconcile_turn(record: RunRecord, piece: SliceRecord, last: dict) -> None:
 def _reopen_test_repair(record: RunRecord, piece: SliceRecord) -> None:
     """The slice stays where block 1 has it: block 3 relaunches the repair.
     A repair turn the driver never saw end is voided first, and one still
-    running on this machine is never relaunched beside."""
+    running on this machine is never relaunched beside. A repair whose whole
+    budget block 1 already spent is the one that is not relaunched at all."""
     _require_repair_not_in_flight(record, piece)
+    _require_a_repair_left(record, piece)
     voided = objection.void_unfinished_repair(record, piece)
     with record.transition():
         piece.resume_to("tests_rejected")
@@ -171,6 +177,25 @@ def _reopen_test_repair(record: RunRecord, piece: SliceRecord) -> None:
     narrate.line(
         f"♻️  #{piece.number} ({piece.layer}) rejected the acceptance tests{note}: "
         f"relaunching block 1's repair ({objection.repair_role(piece)})"
+    )
+
+
+def _require_a_repair_left(record: RunRecord, piece: SliceRecord) -> None:
+    """A repair block 1 was refused on both of its turns is terminal for
+    this objection. Nothing about the tests has moved since - the repair
+    branch holds what the last refused turn left, and the objection is the
+    same one - so relaunching it could only reach the same refusal, exactly
+    as a turn stopped for a repeated diagnostic is not re-judged. The driver
+    itself changing is the case this cannot see, and the answer to it is the
+    same as for any other record the driver no longer fits: reset."""
+    if not piece.test_repair_spent:
+        return
+    raise _conflict(
+        record,
+        piece,
+        f"spent both of block 1's turns on repair {piece.test_repair_spent} and its "
+        f"acceptance tests are still rejected, so a resume would only send the same repair "
+        f"at the same tests; repair them by hand",
     )
 
 

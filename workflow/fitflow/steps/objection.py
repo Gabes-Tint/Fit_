@@ -499,6 +499,7 @@ def _repair_loop(
             if failure.outcome not in failing_tests.REPAIRABLE_OUTCOMES:
                 raise _repair_stopped(record, piece, failure.outcome, failure.why) from failure
             if turn == REPAIR_TURNS:
+                _mark_repair_spent(record, piece)
                 raise _repair_stopped(
                     record,
                     piece,
@@ -511,6 +512,18 @@ def _repair_loop(
                 f"🔁 #{piece.number} ({piece.layer}) test repair retrying — ", diagnostic
             )
     raise AssertionError("unreachable: the loop always returns or raises")
+
+
+def _mark_repair_spent(record: RunRecord, piece: SliceRecord) -> None:
+    """Block 1 spent both turns of this repair and the tests came out of it
+    still rejected. `test_repairs` never moves for such a repair - only a
+    re-freeze bumps it - so nothing else on the record says the budget went:
+    a `--resume` read the counter, named the branch `<slug>-tests-<n>` again
+    and relaunched the very repair that had just been refused twice. The
+    number is kept instead, and the resume stops on it (#337 run 6)."""
+    with record.transition():
+        piece.test_repair_spent = piece.test_repairs + 1
+        record.save()
 
 
 def _repair_turn(
