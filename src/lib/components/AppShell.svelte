@@ -79,6 +79,16 @@
 	const onAuthRoute = $derived(AUTH_ROUTES.some((route) => resolve(route) === pathname));
 
 	/**
+	 * The component rig Playwright mounts a single component on (#398).
+	 *
+	 * It is not a page of the app, so it is neither gated nor dressed: the
+	 * server answers `/dev/` with a 404 unless an E2E preview server opened it,
+	 * and the Capacitor build refuses the route, so there is no journal here for
+	 * the gate to withhold — only the one component a test asked for.
+	 */
+	const onHarnessRoute = $derived(pathname === resolve('/dev/component-harness'));
+
+	/**
 	 * The whole address that was asked for, fragment included.
 	 *
 	 * The fragment is the part it would be easiest to drop and hardest to
@@ -169,7 +179,7 @@
 	 * the first and need a second mechanism for the rest.
 	 */
 	$effect(() => {
-		if (!restored || onAuthRoute || session.signedIn) return;
+		if (!restored || onAuthRoute || onHarnessRoute || session.signedIn) return;
 		// Where they were headed rides along, so signing in lands on the page they
 		// asked for rather than on the front one.
 		void goto(signInPath(here), { replaceState: true });
@@ -178,7 +188,11 @@
 
 {#if restored}
 	<div class="bg-background flex min-h-dvh justify-center">
-		{#if onAuthRoute}
+		{#if onHarnessRoute}
+			<div class="w-full min-w-0">
+				{@render children()}
+			</div>
+		{:else if onAuthRoute}
 			<!--
 				The forms carry no chrome. There is no top bar to open a drawer that
 				would list destinations this visitor cannot reach, and no journal
