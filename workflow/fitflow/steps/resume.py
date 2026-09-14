@@ -175,7 +175,9 @@ def _reopen_test_repair(record: RunRecord, piece: SliceRecord) -> None:
 
 
 def _require_repair_not_in_flight(record: RunRecord, piece: SliceRecord) -> None:
-    if agents.turn_in_flight(objection.repair_team(piece), objection.repair_role(piece)):
+    team, role = objection.repair_team(piece), objection.repair_role(piece)
+    _require_liveness_known(record, piece, team, role)
+    if agents.turn_in_flight(team, role):
         raise FlowFailure(
             Outcome.EXECUTION_HELD,
             f"{piece.slug}: a test repair turn is still running on this machine; "
@@ -228,7 +230,19 @@ def _reopen_review_fix(record: RunRecord, piece: SliceRecord) -> None:
     narrate.line(f"♻️  #{piece.number} ({piece.layer}) stopped in a review fix: {note}")
 
 
+def _require_liveness_known(record: RunRecord, piece: SliceRecord, team: str, role: str) -> None:
+    state, reason = agents.turn_liveness(team, role)
+    if state is None:
+        raise FlowFailure(
+            Outcome.RUN_STATE_CONFLICT,
+            f"{piece.slug}: could not tell whether a {role} turn is still running "
+            f"on this machine ({reason}); check for a live turn by hand, then run --reset",
+            record.story_number,
+        )
+
+
 def _require_not_in_flight(record: RunRecord, piece: SliceRecord) -> None:
+    _require_liveness_known(record, piece, piece.team, piece.role)
     if agents.turn_in_flight(piece.team, piece.role):
         raise FlowFailure(
             Outcome.EXECUTION_HELD,

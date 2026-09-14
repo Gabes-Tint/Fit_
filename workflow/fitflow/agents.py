@@ -75,17 +75,32 @@ def ensure_fresh_team(team: str, worktree: Path, story_number: int | None = None
     link.symlink_to(worktree)
 
 
-def turn_in_flight(team: str, role: str) -> bool:
+def turn_in_flight(team: str, role: str) -> bool | None:
     """Whether an `aarmy talk <role> --team <team>` is still running on
     this machine - a turn a killed driver left behind. A resume refuses to
     relaunch beside it: two agents in one worktree is the one thing the
-    per-slice team exists to prevent."""
-    result = subprocess.run(
-        ["pgrep", "-f", f"aarmy talk {role} --team {team}( |$)"],
-        capture_output=True,
-        text=True,
-    )
-    return result.returncode == 0 and result.stdout.strip() != ""
+    per-slice team exists to prevent. None means pgrep could not tell;
+    `turn_liveness` carries the reason."""
+    return turn_liveness(team, role)[0]
+
+
+def turn_liveness(team: str, role: str) -> tuple[bool | None, str]:
+    """`turn_in_flight`'s answer with its reason: True (in flight), False
+    (none), or None (unknown) beside why pgrep could not answer."""
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", f"aarmy talk {role} --team {team}( |$)"],
+            capture_output=True,
+            text=True,
+        )
+    except OSError as error:
+        return None, f"pgrep could not be run ({error})"
+    if result.returncode == 0 and result.stdout.strip() != "":
+        return True, ""
+    if result.returncode == 1:
+        return False, ""
+    stderr = (result.stderr or "").strip()
+    return None, f"pgrep exited {result.returncode}" + (f": {stderr}" if stderr else "")
 
 
 def delete_team(team: str) -> None:

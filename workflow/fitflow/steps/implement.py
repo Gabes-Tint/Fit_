@@ -98,7 +98,6 @@ _FORBIDDEN_FILES = {
     "vitest.config.ts",
     ".tool-versions",
 }
-_UI_ONLY_PREFIXES = ("src/routes/", "src/lib/components/", "src/lib/ui/")
 
 
 @dataclass(frozen=True)
@@ -903,12 +902,14 @@ def _escalate_or_stop(
 def _validate_turn(
     record: RunRecord, piece: SliceRecord, reply: dict, fix_turn: bool = False
 ) -> _Rejection | None:
-    """The driver's own independent check of one implementation turn:
-    acceptance bytes, scope, the acceptance run and the gates, all on the
-    actual diff, and only then the reply's own account of it. Returns the
-    rejection to correct from; tooling failures and the one contract
-    violation no correction may undo - a changed acceptance test - raise at
-    once and never consume a correction.
+    """The driver's own independent check of one implementation turn, in
+    order: the reply's shape and the contract stops; a fix turn's no-op
+    check; the worktree state; acceptance-byte immutability; scope; the
+    acceptance run and the gates; and finally the reply's account of the
+    diff, which is corrected rather than judged. Returns the rejection to
+    correct from; tooling failures and the one contract violation no
+    correction may undo - a changed acceptance test - raise at once and
+    never consume a correction.
 
     `fix_turn` says this is one of block 4's fix turns rather than a block 3
     implementation turn: its worktree is legitimately at the driver's freeze
