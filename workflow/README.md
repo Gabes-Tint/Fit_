@@ -43,9 +43,17 @@ report - not merely the failed step's name. When every file a failed step
 blames is one of the retained acceptance tests, the turn cannot repair it
 at all (those bytes are immutable) and the run stops at once as
 `TESTS_INVALID`, naming block 1 and the file, instead of spending three
-corrections and an escalation on it; a failure naming any other file, or
-one whose files the driver cannot extract, stays an ordinary repairable
-diagnostic. A crash, missing, stale or
+corrections and an escalation on it. A mixed failure - some acceptance
+files, some the implementer's own - stays repairable, and the diagnostic
+says which of the blamed files are block 1's and that the run will stop as
+`TESTS_INVALID` once they are all that is left failing; the turn after the
+implementer's half goes green is where that happens. A failure blaming no
+acceptance test, or one whose files the driver cannot extract, is an
+ordinary repairable diagnostic. Blamed files the slice's layer forbids are
+grouped under a heading of their own - the gate sizes its steps from the
+tree, so it blames files the scope check would reject the turn for
+touching, and #422's domain slice was handed six type errors in two UI
+components and then rejected on scope for fixing them. A crash, missing, stale or
 inconsistent gate report stops at once. A turn may also reject the
 acceptance tests instead of implementing against them, naming a whole test
 file or one test inside it as `<file>::<test title>`: the driver verifies the
@@ -155,11 +163,12 @@ story say why and how many attempts went unspent:
 🛑 Mechanic #406 stopped early: attempt 2 failed exactly as attempt 1 — TESTS_NOT_PUSHED: …
 ```
 
-A second rejection that differs in substance - a different file, test or
-count - is ordinary progress and the third attempt is still taken. Shas,
-durations, timestamps and worktree paths are normalized away before the two
-are compared, so a diagnostic that only moved with the clock still counts
-as the same one.
+A second rejection that differs in substance - a different file, test, line
+or count - is ordinary progress and the third attempt is still taken. Shas,
+durations, timestamps, `svelte-check`'s epoch-millisecond stamps, cspell's
+`(748 from cache)` and worktree paths are normalized away before the two are
+compared, so a diagnostic that only moved with the clock still counts as the
+same one.
 
 Vitest acceptance specs may define ordinary test helpers, but a spec with no
 product import is rejected when it defines a callable locally and asserts that
@@ -177,11 +186,13 @@ validates them in block 1 as what they will be: the branch must pass the
 repository's change-scoped lint (`bun run lint:changed`, repairable by the
 mechanic until the diagnostic is clean), its type lane (`bun run check`) and
 the repository gate's own content steps
-(`bun scripts/quality/gate.ts verify:fast --only duplicates,format:check,check:suppressions`) -
+(`bun scripts/quality/gate.ts verify:fast --only duplicates,format:check,check:suppressions,spellcheck`) -
 the steps block 3 will run over these same bytes once nobody can change
 them, so a ten-line clone inside an acceptance test is caught while the
 mechanic still owns the file rather than failing six implementation
-attempts (#397),
+attempts (#397), and a misspelled test title while the mechanic can still
+retype it rather than as a word block 3's solver may neither correct nor
+add to the dictionary (#422),
 and acceptance tests carry no lint suppression at all (`eslint-disable`,
 `@ts-ignore`, `@ts-expect-error` are rejected). A playwright spec must exercise a component through the
 repository-owned harness route `/dev/component-harness` (see
