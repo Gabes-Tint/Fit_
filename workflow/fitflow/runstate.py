@@ -227,6 +227,11 @@ class SliceRecord:
     # "domain" on a UI slice the planner judged cannot be implemented and
     # validated before its domain sibling exists; "" for an independent one.
     depends_on: str = ""
+    # The exported names a domain slice changes that files under the UI
+    # areas call. Non-empty means the slice stays additive - the old call
+    # shape keeps working - and that the story's ui slice adopts the new
+    # API after it, which is why that ui slice is always dependent.
+    ui_called_exports: list[str] = field(default_factory=list)
     # the sibling's frozen commit this slice's branch already carries
     sibling_merged: str = ""
     role: str = ""
@@ -243,10 +248,21 @@ class SliceRecord:
     # the implementation ledger the session and attempt checks read - and
     # `test_repair_note` is what the next implementer turn is told about the
     # tests it is now judged by.
-    # Which gate tier last passed for this slice, and when: the evidence a
-    # block 4 fix turn's gate failure in a test file the slice never touched
-    # is a flake worth one rerun rather than a verdict (#420).
+    # Which gate tier last passed for this slice, and when: the narration a
+    # turn's gate failure in a test file the slice never touched quotes back
+    # when it reruns it (#420). Evidence, not a condition - an untouched
+    # test is rerun whether or not the tier ever passed here.
     gate_passes: dict[str, str] = field(default_factory=dict)
+    # Every local flake this slice tolerated: a test file the slice's diff
+    # does not touch that failed the whole tier twice and then passed when
+    # run alone. One entry per file, with the test the gate named, the step
+    # it failed and the time - the PR body and the issue comment carry them
+    # so Gabriel sees what the driver waved through, and CI still judges it.
+    flakes: list[dict] = field(default_factory=list)
+    # How many rerun-then-solo cycles this slice has spent in this run. The
+    # rule is worth having twice and no more: past that a file that keeps
+    # failing locally is a failure, whatever the diff touches.
+    flake_cycles: int = 0
     objections: list[dict] = field(default_factory=list)
     test_repairs: int = 0
     test_repair_turns: list[dict] = field(default_factory=list)
@@ -505,6 +521,7 @@ def begin_run(story_number: int, base_sha: str, roster: dict, slices: list) -> R
                 tests_type_debt=dict(piece.tests_type_debt),
                 tests_role=piece.tests_role or "mechanic",
                 tests_revision=piece.tests_revision,
+                ui_called_exports=list(piece.ui_called_exports),
             )
             for piece in slices
         },

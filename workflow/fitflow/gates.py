@@ -106,6 +106,29 @@ _CULPRIT_PATTERNS = {
 #: does: to know whether a failure is confined to the acceptance tests.
 _TYPE_STEPS = ("check",)
 
+#: How playwright's summary spells one failed test: the project it ran
+#: under, the file and position, then the titles. It lists the failures and
+#: nothing else - a passing line carries a tick and an index before the
+#: project - so a match is a failed test by construction. This is the one
+#: test step whose output the driver reads test by test: #420's
+#: `e2e: full suite` failure named `src/routes/sync.e2e.ts` in exactly this
+#: shape, and nothing else in a gate log says which test of which file
+#: failed under which browser.
+_PLAYWRIGHT_FAILED_TEST = re.compile(
+    r"^\s*\[([\w.@-]+)\]\s+\u203a\s+([\w./@+-]+\.[jt]s):\d+:\d+\s+\u203a\s+(.+?)\s*$"
+)
+
+
+@dataclass(frozen=True)
+class FailedTest:
+    """One test a gate's test step reported as failed: the file it lives in,
+    its own title, and the project (playwright's browser) it ran under -
+    which is how a single-file rerun asks for the same run the gate made."""
+
+    file: str
+    title: str
+    project: str = ""
+
 
 @dataclass(frozen=True)
 class GateFailure:
@@ -117,16 +140,38 @@ class GateFailure:
     `culprits`, because a step whose output the driver cannot read could be
     blaming anything. `steps` are the failed step names, which say what kind
     of verdict this was.
+
+    `tests` are the individual failing tests a test step named, and `blamed`
+    is `located`'s wider sibling: whether every failed step named either the
+    files it blames or the tests that failed in it. A test step names no
+    files at all, so `located` is false for it by construction and stays
+    that way - `_check_gate_blames_the_implementation` may only ever read
+    the file-level reading. The flake rule reads `blamed`.
     """
 
     diagnostic: str
     culprits: frozenset[str]
     located: bool
     steps: frozenset[str] = frozenset()
+    tests: tuple[FailedTest, ...] = ()
+    blamed: bool = False
 
     @property
     def headline(self) -> str:
         return self.diagnostic.splitlines()[0] if self.diagnostic else ""
+
+    @property
+    def blamed_files(self) -> frozenset[str]:
+        """Every file this failure names, whichever way it named it."""
+        return self.culprits | frozenset(test.file for test in self.tests)
+
+    @property
+    def project(self) -> str:
+        """The playwright project the named failures ran under, when they
+        agree on one and said so; empty otherwise, and a rerun then asks for
+        the runner's own default."""
+        projects = {test.project for test in self.tests if test.project}
+        return next(iter(projects)) if len(projects) == 1 else ""
 
 
 @dataclass(frozen=True)
@@ -332,19 +377,32 @@ def _failure(worktree: Path, report: dict, failed: list[str], label: str) -> Gat
     """Turn the report's failed steps into the diagnostic the agent reads:
     the step names first, then each step's own account of what it found."""
     entries = _step_entries(report)
+    blames = [
+        (name, _step_failure(worktree, entries.get(name) or {"name": name})) for name in failed
+    ]
     lines = [f"{label} failed steps: {', '.join(failed)}"]
-    culprits: set[str] = set()
-    located = True
-    for name in failed:
-        detail, blamed = _step_failure(worktree, entries.get(name) or {"name": name})
+    for name, (detail, _blamed, _tests) in blames:
         lines.append(f"{name}:")
         lines.extend(f"  {text}" for text in detail or ["(the step left no readable output)"])
-        if blamed is None:
-            located = False
-        else:
-            culprits |= blamed
+    return _blame("\n".join(lines), frozenset(failed), [blame for _name, blame in blames])
+
+
+def _blame(diagnostic: str, failed: frozenset[str], blames: list[tuple]) -> GateFailure:
+    """Who the failed steps blamed, folded into one verdict. `located` is
+    the file-level reading and demands every step name files; `blamed` also
+    accepts a step that named the tests that failed in it, which is all a
+    test step ever names."""
+    culprits = frozenset(name for _detail, blamed, _tests in blames for name in blamed or ())
+    tests = tuple(dict.fromkeys(test for _detail, _blamed, found in blames for test in found))
+    located = all(blamed is not None for _detail, blamed, _tests in blames)
+    named = all(blamed is not None or found for _detail, blamed, found in blames)
     return GateFailure(
-        "\n".join(lines), frozenset(culprits), located and bool(culprits), frozenset(failed)
+        diagnostic,
+        culprits,
+        located and bool(culprits),
+        failed,
+        tests,
+        named and bool(culprits or tests),
     )
 
 
@@ -357,18 +415,33 @@ def _step_entries(report: dict) -> dict:
     }
 
 
-def _step_failure(worktree: Path, step: dict) -> tuple[list[str], frozenset[str] | None]:
-    """One failed step's compact detail, and the files it blames - or None
-    for the files when the driver cannot read them out reliably. Culprits
-    come from the whole output, never from the truncated detail: a tail that
-    happens to stop before a product file must not read as a failure
-    confined to the tests."""
+def _step_failure(
+    worktree: Path, step: dict
+) -> tuple[list[str], frozenset[str] | None, tuple[FailedTest, ...]]:
+    """One failed step's compact detail, the files it blames - or None for
+    the files when the driver cannot read them out reliably - and the
+    individual tests it reported as failed. Culprits come from the whole
+    output, never from the truncated detail: a tail that happens to stop
+    before a product file must not read as a failure confined to the
+    tests."""
     if step.get("name") == "duplicates":
         clones = _clone_report(worktree)
         if clones:
-            return [_clone_line(clone) for clone in clones], _clone_files(clones)
+            return [_clone_line(clone) for clone in clones], _clone_files(clones), ()
     output = _step_output(worktree, step)
-    return _tail(output), _blamed_files(step.get("name"), output)
+    return _tail(output), _blamed_files(step.get("name"), output), _failed_tests(output)
+
+
+def _failed_tests(output: str) -> tuple[FailedTest, ...]:
+    """Every failing test a step named in playwright's summary shape. A
+    step that says nothing in that shape names none, and the failure is
+    then only as located as its files make it."""
+    found = [
+        FailedTest(match.group(2), match.group(3).strip(), match.group(1))
+        for line in output.splitlines()
+        if (match := _PLAYWRIGHT_FAILED_TEST.match(_ANSI.sub("", line))) is not None
+    ]
+    return tuple(dict.fromkeys(found))
 
 
 def _step_output(worktree: Path, step: dict) -> str:
@@ -569,7 +642,9 @@ def _external_step(
         )
     culprits = _named_files(patterns, output)
     detail = "\n".join(f"  {line}" for line in _head(output) or ["(the gate printed nothing)"])
-    return GateFailure(f"{label} failed:\n{detail}", culprits, bool(culprits))
+    return GateFailure(
+        f"{label} failed:\n{detail}", culprits, bool(culprits), blamed=bool(culprits)
+    )
 
 
 def _named_files(patterns: tuple[re.Pattern, ...], output: str) -> frozenset[str]:

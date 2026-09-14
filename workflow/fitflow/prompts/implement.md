@@ -27,7 +27,7 @@ they must pass, byte-for-byte unmodified, when you are done:
 
 $test_files
 $repair_note
-
+$scope_note
 Rules:
 
 - Work only in this branch's worktree. Do not commit and do not push:

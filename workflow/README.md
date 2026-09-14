@@ -109,6 +109,30 @@ code, persistence, migrations and database work. A story gets one slice when
 it is wholly in either category, or exactly two ordered slices—domain then
 UI—when it spans both. There is never a third product layer.
 
+When the domain change alters an exported name that files under
+`src/routes/`, `src/lib/components/` or `src/lib/ui/` already call, the
+planner lists those names (`ui_called_exports`) and the driver makes that
+slice additive: its brief, in the driver's own words, says to add the new
+shape beside the old one - or an optional parameter that changes no existing
+call - to leave the callers alone, and to let the acceptance tests name only
+the new API. The ui slice then carries the adopt-and-clean clause, and it is
+where the call sites change. #422 is the run that found this: its domain
+brief said "Update existing callers so the app still compiles" about callers
+a domain slice may never touch, and every attempt was either out of scope or
+left the tree not compiling.
+
+No brief may ask its slice for a file its layer forbids, and the driver
+checks that mechanically before block 1 writes a test against it: a brief
+that names a forbidden product area literally, that tells a domain slice to
+update its callers or call sites, or that lists `ui_called_exports` on a
+slice that is not the domain one, goes back to the same planner session with
+the contradiction quoted, in a bounded loop of three attempts. A `workflow`
+brief may name any path - a driver story is often about one - and its
+allowlist scope check still judges the diff. Briefs that never
+stop contradicting their layer end the run as `PLAN_REJECTED` (exit 27)
+before any child issue exists. The slice contract itself - how many slices,
+in what order - is still a hard stop: no rewording repairs a third slice.
+
 A story about the driver itself is the third layer, `workflow`, and it is
 always a single slice. It may change `workflow/**`, `docs/**` and the
 repository's `cspell.json`, and nothing else; its acceptance tests are
@@ -140,6 +164,19 @@ launches the UI loop. The dependency never runs the other way - a domain slice
 that depends on the UI slice, a circular pair, and a one-slice story that
 claims a sibling are all rejected plans - and a domain slice that never freezes
 leaves the UI slice unlaunched.
+
+An additive domain slice makes that dependency the driver's own decision
+rather than the planner's: adopting the new API means editing the files the
+domain slice just changed, so its UI slice runs after it whatever the planner
+answered about `needs_sibling`. A dependent UI slice is also the one slice
+whose scope is wider than its layer: it runs on a tree that already carries
+its sibling, so `src/lib/state/`, `src/lib/domain/` and `src/lib/server/` are
+in reach as well as the UI areas, and it switches the call sites to the new
+API and removes the compatibility shape when nothing else uses it. Nothing
+widens for an independent UI slice, and nothing widens the forbidden files
+and prefixes for anyone - the gates stay out of reach of every slice. Both
+implementers are told which side is theirs in a scope note rendered from the
+same module the scope check reads.
 
 Each slice has one initial mechanic turn plus at most two corrective turns—three
 total. Corrections reuse the same mechanic identity, AI Army team/session,
@@ -501,9 +538,12 @@ that names nothing the driver can act on gets the one counted rerun:
 A fix turn is judged as strictly as an implementation turn and corrected
 the same way: it has the same three attempts, carries its own diagnostic
 into the next one, and stops early when that diagnostic comes back
-unchanged. A gate failure inside a test file the slice never touched, on a
-gate that already passed for that slice in this run, is run again once
-before it counts:
+unchanged.
+
+Every turn is judged by the whole gate tier, so it inherits tests its slice
+never touched. A gate failure confined to such tests - never the slice's own
+acceptance tests, never anything its diff touches - is run again once before
+it counts, whether or not that gate ever passed here:
 
 ```text
 🔧 Builder #1001 (ui) review fix attempt 1/3
@@ -511,6 +551,23 @@ before it counts:
 ✅ verify:changed passed on the rerun: the first run was a flake
 🔒 #1001 (ui) frozen at 3f1a90c…
 ```
+
+A second failure on the same files is answered by running them alone, in
+the project the gate named. A file that fails inside the whole suite and
+passes outside it is a local flake: it is recorded on the slice, the turn
+goes on, and CI - which is what judges that file for real - has the last
+word. The pull request body and the delivery comment carry one line per
+flake, so nothing is waved through quietly:
+
+```text
+🔁 e2e: full suite failed in src/routes/sync.e2e.ts, which this slice does not touch — rerunning once
+🔁 src/routes/sync.e2e.ts fails in the full suite and passes alone — a local flake in a file this slice does not touch; CI judges it
+🔒 #1001 (ui) frozen at 3f1a90c…
+```
+
+A file that fails alone too is simply failing, and the turn is corrected on
+it. Two of these cycles per slice per run is the whole allowance; the third
+failure counts, and the cap says so.
 
 `🛑` marks a planned stop (for example, the call is Gabriel's, the slice
 needs clarification, or a rejection came back verbatim and the remaining

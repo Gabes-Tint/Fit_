@@ -18,6 +18,11 @@ class Slice:
     test_kind: str
     test_files: list[str] = field(default_factory=list)
     commit: str = ""
+    # The exported names this slice changes that files under the UI areas
+    # call. Non-empty only on a domain slice, and what makes it additive:
+    # its brief carries the additive clause, and the ui slice of the same
+    # story runs after it and adopts the new API.
+    ui_called_exports: list[str] = field(default_factory=list)
     # How many type and type-aware lint errors each acceptance file carries
     # because the API it calls does not exist yet - block 1 accepted those,
     # and block 3 reads this to know it did.
