@@ -5,10 +5,12 @@ codes, logs, the retained record and the fake-world state.
 """
 
 import fcntl
+import os
 import subprocess
 import time
 
 from conftest import (
+    FAKES_DIR,
     builder_signals,
     delegate_slice,
     mechanic_signals,
@@ -237,6 +239,30 @@ def test_resume_never_relaunches_beside_a_turn_still_running(world):
     assert result.returncode == 29, result.stdout + result.stderr
     assert "a mechanic turn is still running on this machine" in result.stdout
     assert len(_talks(world, "mechanic", "story-603-domain")) == 2  # nothing relaunched
+
+
+def test_resume_stops_when_it_cannot_tell_whether_a_turn_is_still_running(world, tmp_path):
+    _stopped_by_an_agent_failure(world, 604)
+
+    def killed_mid_turn(state):
+        state["slices"]["domain"]["state"] = "running"
+        state["slices"]["domain"]["turns"][-1].update(status="running", result="", why="")
+
+    world.rewrite_run_record(604, killed_mid_turn)
+    broken = tmp_path / "broken-pgrep"
+    broken.mkdir()
+    pgrep = broken / "pgrep"
+    pgrep.write_text("#!/bin/sh\necho 'pgrep: cannot read /proc' >&2\nexit 2\n")
+    pgrep.chmod(0o755)
+    path = f"{broken}:{FAKES_DIR}:{os.environ['PATH']}"
+
+    result = run_flow(world, 604, "--resume", env_extra={"PATH": path})
+
+    assert result.returncode == 30, result.stdout + result.stderr
+    assert "story-604-domain" in result.stdout
+    assert "pgrep exited 2" in result.stdout
+    assert "check for a live turn by hand, then run --reset" in result.stdout
+    assert len(_talks(world, "mechanic", "story-604-domain")) == 2  # nothing relaunched
 
 
 def test_a_run_stopped_with_an_application_script_in_its_tree_resumes_and_freezes(world):

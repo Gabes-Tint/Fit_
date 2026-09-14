@@ -200,7 +200,8 @@ def _require_a_repair_left(record: RunRecord, piece: SliceRecord) -> None:
 
 
 def _require_repair_not_in_flight(record: RunRecord, piece: SliceRecord) -> None:
-    if agents.turn_in_flight(objection.repair_team(piece), objection.repair_role(piece)):
+    team, role = objection.repair_team(piece), objection.repair_role(piece)
+    if _live_turn(record, piece, team, role):
         raise FlowFailure(
             Outcome.EXECUTION_HELD,
             f"{piece.slug}: a test repair turn is still running on this machine; "
@@ -253,8 +254,22 @@ def _reopen_review_fix(record: RunRecord, piece: SliceRecord) -> None:
     narrate.line(f"♻️  #{piece.number} ({piece.layer}) stopped in a review fix: {note}")
 
 
+def _live_turn(record: RunRecord, piece: SliceRecord, team: str, role: str) -> bool:
+    """Whether a turn is still running, from one pgrep answer; an answer
+    pgrep could not give stops the resume rather than reading as none."""
+    state, reason = agents.turn_liveness(team, role)
+    if state is None:
+        raise FlowFailure(
+            Outcome.RUN_STATE_CONFLICT,
+            f"{piece.slug}: could not tell whether a {role} turn is still running "
+            f"on this machine ({reason}); check for a live turn by hand, then run --reset",
+            record.story_number,
+        )
+    return state
+
+
 def _require_not_in_flight(record: RunRecord, piece: SliceRecord) -> None:
-    if agents.turn_in_flight(piece.team, piece.role):
+    if _live_turn(record, piece, piece.team, piece.role):
         raise FlowFailure(
             Outcome.EXECUTION_HELD,
             f"{piece.slug}: a {piece.role} turn is still running on this machine; "
