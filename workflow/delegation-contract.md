@@ -971,16 +971,9 @@ succeeded. One failed validation is not that call, though. #406 lost a run
 to a fix turn that listed two files its diff never touched, the cheapest
 diagnostic there is and one a block 3 turn is simply corrected on.
 
-A fix turn is judged by the whole gate tier rather than by its own diff, so
-it inherits every test in it. A gate failure whose culprits are all test
-files this slice's diff does not touch, on a tier the ledger shows already
-passed for this slice in this run, is rerun once before it is judged, and
-the rerun is narrated with what failed, that the slice does not touch it,
-and when the tier last passed. A second failure is a verdict and spends an
-attempt like any other. A failure naming anything the diff touches, an
-unlocated failure, and a tier with no recorded earlier pass are never
-rerun. #420 lost a run to `src/routes/sync.e2e.ts`, which its slice never
-touched and which had passed in the same run twenty minutes earlier.
+Every turn - block 3's and block 4's alike - is judged by the whole gate
+tier rather than by its own diff, so it inherits every test in it. The
+flake rule below applies to all of them.
 
 After the fixes, the driver merges the new frozen commits into the
 integration branch (the superseded commits remain ancestors), pushes, and
@@ -988,6 +981,44 @@ re-reviews. Two review rounds are budgeted; exhaustion stops with
 `CAPACITY_EXHAUSTED` and `blocked` - a defect the implementer cannot fix
 under review is a human call, routed to `needs-gabriel`, not a capability
 escalation.
+
+### A test this slice does not touch, failing locally
+
+A gate failure is eligible for this rule when every file it blames is a
+test file, none of them is one of the slice's own retained acceptance
+tests, and none of them is in the slice's diff since its base (the
+committed `base..HEAD` diff plus whatever the working tree still holds
+uncommitted). A failure the driver could not read - one whose failed steps
+named neither the files they blame nor the tests that failed in them -
+concludes nothing and is never eligible. No earlier pass is required: the
+record of #420 predated the ledger that held them, so it could never have
+earned a rerun, and a fresh record earns one only after a pass in the same
+run, which is when the evidence is least needed. A recorded pass is still
+quoted in the narration when there is one.
+
+An eligible failure is answered in two steps, and then not at all:
+
+1. the whole tier is run again, once. A pass means the first run was a
+   flake and the turn goes on;
+2. a second failure on exactly the same blamed files is answered by running
+   those files alone - the same single-file invocation the acceptance step
+   uses, under the playwright project the failure named when it named one.
+   A solo pass is a local flake: it is recorded on the slice (`flakes`:
+   file, test, step and time), narrated, and the tier counts as passed for
+   this turn. A solo failure is a real failure and goes to the budget like
+   any other, as does a rerun that fails on different files.
+
+The cycle runs at most once per turn and at most twice per slice per run -
+the two halves are spent together and counted as one, and the budget
+belongs to the slice, so an escalation does not refill it. Past that the
+cap is narrated and the failure counts.
+
+Nothing here changes what CI does: block 4's red-check handling is
+untouched, and the recorded flakes appear one line each in the pull
+request body and in the delivery comment on the issue, so the one thing
+the driver waved through locally is in front of Gabriel and judged by CI.
+Run #420 was lost to `src/routes/sync.e2e.ts`, which its slice never
+touched, which passed alone, and which CI was green on.
 
 ### Claims, CI and merge
 

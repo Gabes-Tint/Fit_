@@ -455,9 +455,12 @@ that names nothing the driver can act on gets the one counted rerun:
 A fix turn is judged as strictly as an implementation turn and corrected
 the same way: it has the same three attempts, carries its own diagnostic
 into the next one, and stops early when that diagnostic comes back
-unchanged. A gate failure inside a test file the slice never touched, on a
-gate that already passed for that slice in this run, is run again once
-before it counts:
+unchanged.
+
+Every turn is judged by the whole gate tier, so it inherits tests its slice
+never touched. A gate failure confined to such tests - never the slice's own
+acceptance tests, never anything its diff touches - is run again once before
+it counts, whether or not that gate ever passed here:
 
 ```text
 🔧 Builder #1001 (ui) review fix attempt 1/3
@@ -465,6 +468,23 @@ before it counts:
 ✅ verify:changed passed on the rerun: the first run was a flake
 🔒 #1001 (ui) frozen at 3f1a90c…
 ```
+
+A second failure on the same files is answered by running them alone, in
+the project the gate named. A file that fails inside the whole suite and
+passes outside it is a local flake: it is recorded on the slice, the turn
+goes on, and CI - which is what judges that file for real - has the last
+word. The pull request body and the delivery comment carry one line per
+flake, so nothing is waved through quietly:
+
+```text
+🔁 e2e: full suite failed in src/routes/sync.e2e.ts, which this slice does not touch — rerunning once
+🔁 src/routes/sync.e2e.ts fails in the full suite and passes alone — a local flake in a file this slice does not touch; CI judges it
+🔒 #1001 (ui) frozen at 3f1a90c…
+```
+
+A file that fails alone too is simply failing, and the turn is corrected on
+it. Two of these cycles per slice per run is the whole allowance; the third
+failure counts, and the cap says so.
 
 `🛑` marks a planned stop (for example, the call is Gabriel's, the slice
 needs clarification, or a rejection came back verbatim and the remaining
