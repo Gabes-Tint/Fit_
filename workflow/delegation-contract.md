@@ -434,9 +434,11 @@ Python:
 - `uv run --project workflow ruff format --check workflow`
 - `bun x prettier --check <changed markdown>`
 - `bun x cspell --no-progress <changed files cspell reads>`
-- `uv run --project workflow pytest -q --rootdir . workflow/tests`, in block 3
-  (writing its cache to the ignored `workflow/.pytest_cache`, so the gate leaves
-  nothing behind in the tree it judges)
+- `uv run --project workflow pytest -q -n auto --rootdir . workflow/tests`, in
+  block 3 (writing its cache to the ignored `workflow/.pytest_cache`, so the
+  gate leaves nothing behind in the tree it judges, and distributing the run
+  across one xdist worker per core so the gate costs a minute and a half
+  rather than twelve)
 
 Prettier runs only over the changed `.md` files under `workflow/` and `docs/`,
 so a turn that changed no prose does not run it. cspell runs over every
