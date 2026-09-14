@@ -453,6 +453,14 @@ reviewer:
         self.world.setdefault("check_outcomes", {})[f"pr-{pr_number}"] = outcomes
         self._save()
 
+    def given_failed_log(self, text: str) -> None:
+        """What `gh run view <id> --log-failed` prints for this run's failed
+        jobs. The default names no repository file, so a scenario that wants
+        the driver to locate a culprit says the line itself."""
+        self._load()
+        self.world["failed_log"] = text
+        self._save()
+
     # --- block 5 ---------------------------------------------------------
 
     def given_tag(self, name: str, pr_number: int | None = None) -> None:
@@ -534,12 +542,17 @@ reviewer:
         outcome: str | list[str],
         message: str | None = None,
         location: str | None = None,
+        titles: list[str] | None = None,
     ) -> None:
-        """Outcome: fail, fail_defect, pass, import_error, not_found, or
-        tool_error. A list is consumed one value per runner invocation.
-        `message` and `location` are the error a `fail_defect` invocation
-        reports and the file it says threw it; a plain `fail` always reports
-        an ordinary failed expectation."""
+        """Outcome: fail, timed_out, fail_defect, pass, skipped,
+        import_error, not_found, or tool_error. A list is consumed one value
+        per runner invocation. `message` and `location` are the error a
+        `fail_defect` invocation reports and the file it says threw it; a
+        plain `fail` always reports an ordinary failed expectation and a
+        `timed_out` one the message playwright writes when an expectation
+        waits for UI that never appears. `titles` names the tests the file
+        reports, all with that outcome - for scenarios about what the
+        driver says of each test rather than of the file."""
         self._load()
         self.world.setdefault("test_outcomes", {})[file] = outcome
         scripted = {}
@@ -549,12 +562,78 @@ reviewer:
             scripted["location"] = location
         if scripted:
             self.world.setdefault("test_messages", {})[file] = scripted
+        if titles is not None:
+            self.world.setdefault("test_titles", {})[file] = titles
+        self._save()
+
+    def given_pytest_results(
+        self, file: str, outcome: str | list[str], message: str | None = None
+    ) -> None:
+        """The driver's own suite, as the fake `uv` reports it for a workflow
+        slice: fail, fail_defect, pass, collect_error (the module will not
+        import, which interrupts pytest's whole run), not_found or
+        tool_error. A list is consumed one value per invocation, and its
+        last value stays sticky. `message` is the reason the summary line
+        carries."""
+        self.scripted_test_outcome(file, outcome, message=message)
+
+    def given_ruff_failure(
+        self, file: str, gate: str = "ruff check", outcome: str | list[str] = "fail"
+    ) -> None:
+        """The driver's own lint gate rejects `file`: `gate` is "ruff check"
+        or "ruff format", and the diagnostic names the file and a line the
+        way ruff's arrow line does. A list of outcomes is consumed one value
+        per invocation, so a scenario can script a repaired second turn."""
+        self._load()
+        self.world.setdefault("gate_outcomes", {})[gate] = outcome
+        self.world["ruff_failure_file"] = file
+        self._save()
+
+    def given_markdown_failure(
+        self, file: str, gate: str = "prettier", outcome: str | list[str] = "fail"
+    ) -> None:
+        """`prettier` or `cspell` rejects this changed markdown file."""
+        self._load()
+        self.world.setdefault("gate_outcomes", {})[gate] = outcome
+        self.world["markdown_failure_file"] = file
         self._save()
 
     def given_check_fails_on(self, file: str) -> None:
-        """The repository's type lane rejects this acceptance test file."""
+        """The repository's type lane rejects this file, with its default
+        "argument of the wrong type" error and no TS code - svelte-check's
+        own shape."""
         self._load()
         self.world["check_failure_file"] = file
+        self._save()
+
+    def given_type_errors_in(
+        self, files: list[str], codes: list[str] | None = None, message: str | None = None
+    ) -> None:
+        """Exactly which errors a scripted `check` failure reports: one per
+        file, with the TS code at the same index when `codes` is given.
+        A code makes the fake print tsc's shape, which carries it; no code
+        makes it print svelte-check's, which does not."""
+        self._load()
+        self.world["type_errors"] = [
+            {
+                "file": file,
+                "code": (codes or [])[index] if index < len(codes or []) else "",
+                "message": message or "",
+            }
+            for index, file in enumerate(files)
+        ]
+        self._save()
+
+    def given_lint_errors_in(
+        self, files: list[str], rules: list[str], message: str | None = None
+    ) -> None:
+        """Exactly which problems a scripted `lint:changed` failure reports:
+        one per file, breaking the rule at the same index."""
+        self._load()
+        self.world["lint_errors"] = [
+            {"file": file, "rule": rules[index], "message": message or ""}
+            for index, file in enumerate(files)
+        ]
         self._save()
 
     def given_gate_outcomes(self, **outcomes) -> None:

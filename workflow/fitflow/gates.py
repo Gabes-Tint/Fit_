@@ -19,6 +19,13 @@ the diagnostic. Those three steps judge bytes rather than behavior, so they
 give the same verdict in block 1 as they will in block 3 - where the test
 file is immutable and nobody is allowed to repair it (#397).
 
+The two lanes return a `LaneFailure`, which carries the same output parsed
+error by error (`fitflow.lanes`) beside the diagnostic. Block 1 needs that
+finer reading because a story introducing a new API produces type and
+type-aware lint errors inside the acceptance file by construction, and
+those are part of failing as intended; everything else is still a
+rejection.
+
 Verdicts come from the gate's own report
 (`reports/quality/gate-verify-changed.json`), never from a missing one:
 exit 0 with a fresh `ok` report passes; exit 1 with named failed steps is a
@@ -26,6 +33,11 @@ repairable diagnostic; a crash (exit 97), a missing, stale or unparsable
 report, or a report contradicting the exit code is an external tool
 failure that stops the run — never an implementation verdict, never a
 success. No full local CI tier is implied.
+
+`run_workflow_gates` covers the third layer. A slice whose code is the
+driver itself changes Python and prose, which none of the bun lanes size or
+run, so ruff, ruff format and - over changed markdown - prettier and cspell
+take their place, in block 1 and in every block 3 turn alike.
 
 A judged failure carries the detail, not just the step names: the gate
 report points at each failed step's captured log, and `duplicates` also
@@ -42,6 +54,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from fitflow import lanes
 from fitflow.outcome import FlowFailure, Outcome
 
 _CRASH_EXIT_CODE = 97
@@ -77,6 +90,12 @@ _CULPRIT_PATTERNS = {
     "lint:changed": re.compile(r"^([\w./@+-]+\.(?:ts|js|mjs|cjs|svelte|json|md|css|html))\s*$"),
 }
 
+#: The type lane names its files inside its diagnostics rather than on a
+#: line of their own, so `lanes.type_errors` reads them out instead of a
+#: pattern. Block 3 needs them located for the same reason every other step
+#: does: to know whether a failure is confined to the acceptance tests.
+_TYPE_STEPS = ("check",)
+
 
 @dataclass(frozen=True)
 class GateFailure:
@@ -86,21 +105,34 @@ class GateFailure:
     the files the failed steps named, and `located` says whether every
     failed step named some: when it is false nothing may be concluded from
     `culprits`, because a step whose output the driver cannot read could be
-    blaming anything.
+    blaming anything. `steps` are the failed step names, which say what kind
+    of verdict this was.
     """
 
     diagnostic: str
     culprits: frozenset[str]
     located: bool
+    steps: frozenset[str] = frozenset()
 
     @property
     def headline(self) -> str:
         return self.diagnostic.splitlines()[0] if self.diagnostic else ""
 
 
-def run_changed_lint(worktree: Path, story_number: int) -> str | None:
+@dataclass(frozen=True)
+class LaneFailure:
+    """One judged (exit 1) run of a single-command lane - `lint:changed` or
+    `check`. `diagnostic` is what the mechanic is told; `reading` is the
+    same output parsed error by error, for the block 1 checks that must ask
+    which errors those were rather than only that there were some."""
+
+    diagnostic: str
+    reading: lanes.LaneReading
+
+
+def run_changed_lint(worktree: Path, story_number: int) -> "LaneFailure | None":
     """Run the repository's change-scoped lint in the slice worktree and
-    return a repairable diagnostic, or None when it passes. Block 1 runs it
+    return a repairable failure, or None when it passes. Block 1 runs it
     over the failing-test branch: acceptance tests become immutable inputs,
     so tests whose own lint is broken are never accepted. Exit 1 with lint
     output is a repairable diagnostic; any other exit is an external tool
@@ -109,14 +141,15 @@ def run_changed_lint(worktree: Path, story_number: int) -> str | None:
     # both streams can carry real diagnostics: eslint prints the error body
     # to stdout in some configurations and to stderr in others, so neither
     # stream alone may be the verdict (#382)
-    output = "\n".join(
-        stream.strip() for stream in (result.stderr, result.stdout) if stream.strip()
-    )
+    output = _both_streams(result)
     if result.returncode == 0:
         narrate_gates(0, "lint:changed")
         return None
     if result.returncode == 1:
-        return f"lint:changed failed on the acceptance tests: {output[-800:]}"
+        return LaneFailure(
+            f"lint:changed failed on the acceptance tests: {output[-800:]}",
+            lanes.lint_errors(output),
+        )
     raise FlowFailure(
         Outcome.TOOL_FAILED,
         f"lint:changed crashed (exit {result.returncode}): {output[-800:]}",
@@ -125,30 +158,35 @@ def run_changed_lint(worktree: Path, story_number: int) -> str | None:
     )
 
 
-def run_type_check(worktree: Path, story_number: int) -> str | None:
+def run_type_check(worktree: Path, story_number: int) -> "LaneFailure | None":
     """Run the repository's own type lane (`bun run check`: `svelte-kit sync`
     then `svelte-check` against `tsconfig.json`) over the failing-test branch
-    and return a repairable diagnostic, or None when it passes.
+    and return a repairable failure, or None when it passes.
 
     `check` is a static step of both CI and `verify:changed`, so main is green
     on it by construction and this branch adds only test files: a type error
     here is the acceptance tests'. Exit 1 with the checker's output is a
     repairable diagnostic; any other exit is an external tool failure."""
     result = _launch(["bun", "run", "check"], worktree, story_number, "check")
-    output = "\n".join(
-        stream.strip() for stream in (result.stderr, result.stdout) if stream.strip()
-    )
+    output = _both_streams(result)
     if result.returncode == 0:
         narrate_gates(0, "check")
         return None
     if result.returncode == 1:
-        return f"check found type errors in the acceptance tests: {output[-800:]}"
+        return LaneFailure(
+            f"check found type errors in the acceptance tests: {output[-800:]}",
+            lanes.type_errors(output),
+        )
     raise FlowFailure(
         Outcome.TOOL_FAILED,
         f"check crashed (exit {result.returncode}): {output[-800:]}",
         story_number,
         add_blocked=True,
     )
+
+
+def _both_streams(result: subprocess.CompletedProcess) -> str:
+    return "\n".join(stream.strip() for stream in (result.stderr, result.stdout) if stream.strip())
 
 
 def run_failing_branch_steps(worktree: Path, story_number: int) -> "GateFailure | None":
@@ -295,7 +333,9 @@ def _failure(worktree: Path, report: dict, failed: list[str], label: str) -> Gat
             located = False
         else:
             culprits |= blamed
-    return GateFailure("\n".join(lines), frozenset(culprits), located and bool(culprits))
+    return GateFailure(
+        "\n".join(lines), frozenset(culprits), located and bool(culprits), frozenset(failed)
+    )
 
 
 def _step_entries(report: dict) -> dict:
@@ -344,19 +384,36 @@ def _step_output(worktree: Path, step: dict) -> str:
 def _tail(output: str) -> list[str]:
     """The last few meaningful lines, ANSI stripped and length capped: a
     gate log is thousands of lines of table and the verdict is at the end."""
-    lines = [
+    return _clip(_meaningful(output)[-_DETAIL_LINES:], drop_first=True)
+
+
+def _head(output: str) -> list[str]:
+    """The first few meaningful lines, for a tool that lists its findings
+    from the top and ends with a count - ruff, prettier and cspell all do.
+    Their tail is the end of the last finding and says least of all."""
+    return _clip(_meaningful(output)[:_DETAIL_LINES], drop_first=False)
+
+
+def _meaningful(output: str) -> list[str]:
+    return [
         text
         for text in (_ANSI.sub("", raw).rstrip() for raw in output.splitlines())
         if text.strip()
-    ][-_DETAIL_LINES:]
+    ]
+
+
+def _clip(lines: list[str], drop_first: bool) -> list[str]:
     while lines and sum(len(text) + 1 for text in lines) > _DETAIL_CHARS:
         if len(lines) == 1:
             return [lines[0][:_DETAIL_CHARS]]
-        lines.pop(0)
+        lines.pop(0 if drop_first else -1)
     return lines
 
 
 def _blamed_files(name: object, output: str) -> frozenset[str] | None:
+    if name in _TYPE_STEPS:
+        reading = lanes.type_errors(output)
+        return frozenset(error.file for error in reading.errors) if reading.complete else None
     pattern = _CULPRIT_PATTERNS.get(name) if isinstance(name, str) else None
     if pattern is None:
         return None
@@ -410,6 +467,109 @@ def _clone_files(clones: list[dict]) -> frozenset[str]:
         if sides is not None:
             names |= {sides[0]["name"], sides[1]["name"]}
     return frozenset(names)
+
+
+# --- the driver's own gates ----------------------------------------------
+#
+# A workflow slice changes Python and prose, so `verify:changed`,
+# `lint:changed` and `check` have nothing to say about it: they size and run
+# the repository's TypeScript. These four run in their place, in both block 1
+# and block 3, and they are the same four CI's "Workflow driver" job runs
+# plus the repository's markdown pair. Each names the files and lines it
+# rejects, so the failure comes back located and block 3 can tell a gate that
+# blames only the acceptance tests from one that blames the implementation.
+
+_RUFF = ["uv", "run", "--project", "workflow", "ruff"]
+#: ruff points at a file with an arrow line under the rule; older releases
+#: put `path:line:col:` at the start of the diagnostic instead.
+_RUFF_ARROW = re.compile(r"^\s*-->\s+([\w./@+-]+\.py):\d+:\d+\s*$")
+_RUFF_INLINE = re.compile(r"^([\w./@+-]+\.py):\d+:\d+:\s")
+_PRETTIER_WARN = _CULPRIT_PATTERNS["format:check"]
+_CSPELL_ISSUE = re.compile(r"^([\w./@+-]+):\d+:\d+ - ")
+
+#: Where a workflow slice's prose lives. The markdown pair runs only over
+#: the files the turn actually changed, the way `lint:changed` does.
+_MARKDOWN_ROOTS = ("workflow/", "docs/")
+
+
+def run_workflow_gates(
+    worktree: Path, story_number: int, changed: list[str]
+) -> "GateFailure | None":
+    """Run the driver's own gates over a workflow slice's tree and return a
+    repairable failure, or None when they pass.
+
+    Exit 1 is the verdict; any other exit is an external tool failure that
+    stops the run, never an implementation verdict - the same rule the bun
+    gates follow."""
+    for label, argv, patterns in _workflow_steps(changed):
+        failure = _external_step(worktree, story_number, label, argv, patterns)
+        if failure is not None:
+            return failure
+        narrate_gates(0, label)
+    return None
+
+
+def workflow_gate_names(changed: list[str]) -> tuple[str, ...]:
+    """The gates a workflow turn actually runs, in order. The markdown pair
+    is scoped to the files the turn changed, so it is absent from a turn
+    that changed no prose - and the narration must not claim it ran."""
+    return tuple(label for label, _argv, _patterns in _workflow_steps(changed))
+
+
+def changed_markdown(changed: list[str]) -> list[str]:
+    return sorted(
+        name for name in changed if name.endswith(".md") and name.startswith(_MARKDOWN_ROOTS)
+    )
+
+
+def _workflow_steps(changed: list[str]) -> list[tuple[str, list[str], tuple[re.Pattern, ...]]]:
+    steps = [
+        ("ruff check", [*_RUFF, "check", "workflow"], (_RUFF_ARROW, _RUFF_INLINE)),
+        ("ruff format", [*_RUFF, "format", "--check", "workflow"], (_RUFF_ARROW,)),
+    ]
+    markdown = changed_markdown(changed)
+    if markdown:
+        steps.append(
+            ("prettier", ["bun", "x", "prettier", "--check", *markdown], (_PRETTIER_WARN,))
+        )
+        steps.append(
+            ("cspell", ["bun", "x", "cspell", "--no-progress", *markdown], (_CSPELL_ISSUE,))
+        )
+    return steps
+
+
+def _external_step(
+    worktree: Path,
+    story_number: int,
+    label: str,
+    argv: list[str],
+    patterns: tuple[re.Pattern, ...],
+) -> "GateFailure | None":
+    result = _launch(argv, worktree, story_number, label)
+    output = "\n".join(
+        stream.strip() for stream in (result.stdout, result.stderr) if stream.strip()
+    )
+    if result.returncode == 0:
+        return None
+    if result.returncode != 1:
+        raise FlowFailure(
+            Outcome.TOOL_FAILED,
+            f"{label} crashed (exit {result.returncode}): {output[-800:]}",
+            story_number,
+            add_blocked=True,
+        )
+    culprits = _named_files(patterns, output)
+    detail = "\n".join(f"  {line}" for line in _head(output) or ["(the gate printed nothing)"])
+    return GateFailure(f"{label} failed:\n{detail}", culprits, bool(culprits))
+
+
+def _named_files(patterns: tuple[re.Pattern, ...], output: str) -> frozenset[str]:
+    return frozenset(
+        match.group(1)
+        for pattern in patterns
+        for line in output.splitlines()
+        if (match := pattern.match(line)) is not None
+    )
 
 
 def narrate_gates(steps_run: int, tool: str = "verify:changed") -> None:

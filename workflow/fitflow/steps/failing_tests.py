@@ -8,7 +8,7 @@ session/worktree. The full independent validation runs after every turn.
 
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from fitflow import (
     acceptance,
@@ -17,11 +17,11 @@ from fitflow import (
     failure_reason,
     gates,
     github,
+    lanes,
     narrate,
     turns,
     worktrees,
 )
-from fitflow.acceptance import TEST_FILE
 from fitflow.outcome import FlowFailure, Outcome
 from fitflow.slice import Slice
 
@@ -32,6 +32,17 @@ _REPAIRABLE_OUTCOMES = {
 }
 # The same verdicts the block 3 objection loop's own repair budget retries.
 REPAIRABLE_OUTCOMES = frozenset(_REPAIRABLE_OUTCOMES)
+
+
+class ReasonedRefusal(FlowFailure):
+    """The mechanic wrote no acceptance test and said why it could not.
+
+    Every other block 1 rejection describes something on the branch that a
+    second turn could change. This one describes the mechanic's reading of
+    the brief, and a retry puts the same brief to the same agent in the
+    same session: it stops the run at once, carrying the reason to the
+    story, instead of spending two more turns reproducing it - which is
+    what #423 did, three identical refusals deep."""
 
 
 @dataclass(frozen=True)
@@ -112,7 +123,9 @@ def _run_mechanic(prepared: PreparedSlice) -> None:
     turns.repair_loop(
         f"Mechanic #{piece.number}",
         attempt_turn,
-        lambda failure: failure.outcome in _REPAIRABLE_OUTCOMES,
+        lambda failure: (
+            failure.outcome in _REPAIRABLE_OUTCOMES and not isinstance(failure, ReasonedRefusal)
+        ),
     )
 
 
@@ -145,16 +158,40 @@ def _run_attempt(prepared: PreparedSlice, attempt: int, diagnostic: str) -> None
                 ("Why they fail", reply["why_they_fail"]),
             ]
         )
-    _verify_pushed(slug, path, test_files, piece.test_kind, piece.number)
+    _check_not_a_reasoned_refusal(test_files, reply["why_they_fail"], piece.number)
+    debt = _verify_pushed(prepared, test_files)
     _verify_tests_fail(path, test_files, piece.number)
     piece.test_files = list(test_files)
+    piece.tests_type_debt = debt
     piece.commit = worktrees.local_head(path)
     _comment(piece.number, slug, path, test_files, reply["why_they_fail"])
 
 
-def _verify_pushed(
-    slug: str, path, test_files: list[str], test_kind: str, story_number: int
-) -> None:
+def _check_not_a_reasoned_refusal(test_files: list[str], why: str, story_number: int) -> None:
+    """A reply with no test files and a stated reason is a refusal, not a
+    slip: the mechanic is telling the driver that this brief cannot be
+    turned into a failing acceptance test. The prompt asks for exactly that
+    shape when the mechanic believes it, and the run stops on it with the
+    reason. An empty reply with no reason is the ordinary repairable
+    "reported no test files"."""
+    if test_files or not why.strip():
+        return
+    raise ReasonedRefusal(
+        Outcome.TESTS_NOT_PUSHED,
+        "the mechanic wrote no acceptance tests and gave a reason a retry cannot change: "
+        + why.strip(),
+        story_number,
+    )
+
+
+def _verify_pushed(prepared: PreparedSlice, test_files: list[str]) -> dict[str, int]:
+    """Every check the branch must pass before its bytes become immutable.
+    Returns the type debt the acceptance tests carry: how many type and
+    type-aware lint errors each one has because the API it calls does not
+    exist yet. Block 3 reads it to tell "the implementation has not provided
+    the signature yet" from "block 1 accepted a broken test"."""
+    piece, slug, path = prepared.piece, prepared.slug, prepared.path
+    story_number = piece.number
     if not worktrees.is_clean(path):
         raise FlowFailure(Outcome.TESTS_NOT_PUSHED, f"tree not clean on {slug}", story_number)
     if worktrees.remote_head(slug) != worktrees.local_head(path):
@@ -165,30 +202,65 @@ def _verify_pushed(
         raise FlowFailure(Outcome.TESTS_NOT_PUSHED, "mechanic reported no test files", story_number)
     changed = worktrees.changed_files(path, slug)
     _check_reported_files_are_on_branch(slug, test_files, changed, story_number)
-    _check_every_changed_file_is_a_test(slug, changed, story_number)
-    _check_files_match_test_kind(slug, changed, test_kind, story_number)
+    _check_every_changed_file_is_a_test(slug, piece.layer, changed, story_number)
+    _check_files_match_test_kind(slug, changed, test_files, piece.test_kind, story_number)
+    _check_test_files_are_where_they_belong(slug, piece.layer, changed, story_number)
     _check_test_quality(slug, path, test_files, story_number)
-    _check_failing_branch_lint(path, story_number)
-    _check_failing_branch_types(path, story_number)
-    _check_failing_branch_gate_steps(path, story_number)
+    debt = _check_failing_branch_gates(piece.layer, piece.number, path, test_files, changed)
     narrate.line(
         f"🔍 Verify #{story_number}: tree clean ✔ · pushed ✔ · files on branch ✔ · "
-        "only tests ✔ · lint ✔ · types ✔ · " + ", ".join(gates.FAILING_BRANCH_STEPS) + " ✔"
+        "only tests ✔ · " + _branch_gate_summary(piece.layer, changed)
     )
+    return debt
+
+
+def _merged(first: dict[str, int], second: dict[str, int]) -> dict[str, int]:
+    return {name: first.get(name, 0) + second.get(name, 0) for name in first | second}
+
+
+def _branch_gate_summary(layer: str, changed: list[str], placement: bool = True) -> str:
+    if layer == "workflow":
+        return " · ".join(f"{name} ✔" for name in gates.workflow_gate_names(changed))
+    placed = "placed right ✔ · " if placement else ""
+    return placed + "lint ✔ · types ✔ · " + ", ".join(gates.FAILING_BRANCH_STEPS) + " ✔"
+
+
+def _check_failing_branch_gates(
+    layer: str, story_number: int, path, test_files: list[str], changed: list[str]
+) -> dict[str, int]:
+    """The gates the acceptance tests must already pass, and the type debt
+    the two type-aware lanes accepted. A workflow slice changes Python and
+    prose, so the repository's TypeScript lanes have nothing to say about
+    it and the driver's own four run instead - and a Python test names no
+    TypeScript API, so such a slice never carries debt."""
+    if layer == "workflow":
+        failure = gates.run_workflow_gates(path, story_number, changed)
+        if failure is not None:
+            raise FlowFailure(Outcome.TESTS_INVALID, failure.diagnostic, story_number)
+        return {}
+    debt = _check_failing_branch_lint(path, test_files, story_number)
+    debt = _merged(debt, _check_failing_branch_types(path, test_files, story_number))
+    _check_failing_branch_gate_steps(path, story_number)
+    return debt
 
 
 def validate_repaired_tests(
     slug: str,
     path: Path,
     base: str,
+    layer: str,
     test_files: list[str],
     test_kind: str,
     story_number: int,
-) -> None:
+) -> dict[str, int]:
     """Block 1's own verdict on a set of acceptance tests it repaired after
     an implementer's verified objection (steps/objection.py), taken in the
     driver-owned repair worktree: the same content, kind, gate and failure
-    checks a first writing faces.
+    checks a first writing faces. Returns the type debt the repaired tests
+    carry, which replaces the rejected set's: the tests block 3 is now
+    judged against are these, and `tests_type_debt` is how block 3 tells
+    "the implementation has not provided the signature yet" from "block 1
+    accepted a broken test".
 
     Two things differ, and only two. The diff is measured against the
     slice's failing-test base rather than `origin/main`, because a dependent
@@ -205,18 +277,16 @@ def validate_repaired_tests(
     _check_repaired_files_exist(slug, path, test_files, story_number)
     changed = worktrees.changed_between(path, base)
     _check_the_repair_touched_the_tests(slug, changed, test_files, story_number)
-    _check_every_changed_file_is_a_test(slug, changed, story_number)
-    _check_files_match_test_kind(slug, changed, test_kind, story_number)
+    _check_every_changed_file_is_a_test(slug, layer, changed, story_number)
+    _check_files_match_test_kind(slug, changed, test_files, test_kind, story_number)
     _check_test_quality(slug, path, test_files, story_number)
-    _check_failing_branch_lint(path, story_number)
-    _check_failing_branch_types(path, story_number)
-    _check_failing_branch_gate_steps(path, story_number)
+    debt = _check_failing_branch_gates(layer, story_number, path, test_files, changed)
     narrate.line(
-        f"🔍 Verify #{story_number} repair: tree clean ✔ · only tests ✔ · lint ✔ · types ✔ · "
-        + ", ".join(gates.FAILING_BRANCH_STEPS)
-        + " ✔"
+        f"🔍 Verify #{story_number} repair: tree clean ✔ · only tests ✔ · "
+        + _branch_gate_summary(layer, changed, placement=False)
     )
     _verify_tests_fail(path, test_files, story_number)
+    return debt
 
 
 def _check_repaired_files_exist(slug: str, path, test_files: list[str], story_number: int) -> None:
@@ -247,10 +317,14 @@ def _check_test_quality(slug: str, path, test_files: list[str], story_number: in
     """The acceptance tests become immutable implementation inputs, so their
     content must satisfy their own gates now: no lint suppressions, and a
     playwright spec must exercise the component through the harness route
-    instead of importing product code in the browser context."""
+    instead of importing product code in the browser context.
+
+    Both rules read TypeScript, so a workflow slice's Python tests skip
+    them: their equivalent is `ruff check workflow`, which the workflow
+    gates run over the whole package, tests included."""
     for test_file in test_files:
         target = path / test_file
-        if not target.exists():
+        if not target.exists() or test_file.endswith(".py"):
             continue
         for diagnostic in (
             acceptance.rejects_suppression(target),
@@ -262,20 +336,106 @@ def _check_test_quality(slug: str, path, test_files: list[str], story_number: in
                 )
 
 
-def _check_failing_branch_lint(path, story_number: int) -> None:
-    diagnostic = gates.run_changed_lint(path, story_number)
-    if diagnostic is not None:
-        raise FlowFailure(Outcome.TESTS_INVALID, diagnostic, story_number)
+def _check_failing_branch_lint(path, test_files: list[str], story_number: int) -> dict[str, int]:
+    """The acceptance tests' own change-scoped lint. A story that adds an
+    export makes the type-aware rules see `any` flowing out of an import
+    that does not resolve yet: #424's spec produced 186 `no-unsafe-*`
+    errors and could not be written any other way. Those are accepted while
+    they stay inside the acceptance files; every other rule is still the
+    mechanic's to fix now."""
+    failure = gates.run_changed_lint(path, story_number)
+    if failure is None:
+        return {}
+    return _accept_or_reject(
+        failure, test_files, lanes.tolerated_lint_error, "lint:changed", "lint errors", story_number
+    )
 
 
-def _check_failing_branch_types(path, story_number: int) -> None:
+def _check_failing_branch_types(path, test_files: list[str], story_number: int) -> dict[str, int]:
     """A test that calls a helper with an argument of the wrong type throws
     instead of asserting, so it can never pass however the behavior is
     implemented (#399). The repository's own type lane sees that before the
-    tests become immutable inputs."""
-    diagnostic = gates.run_type_check(path, story_number)
-    if diagnostic is not None:
-        raise FlowFailure(Outcome.TESTS_INVALID, diagnostic, story_number)
+    tests become immutable inputs.
+
+    It also sees the story's new signature, which by construction does not
+    exist yet: #423's tests called `toggleSet(exerciseIndex, setIndex)`
+    against a one-argument method and the lane said so, three times, with
+    no correction available that was not a suppression. A type error the
+    implementation will answer, inside an acceptance file, is part of
+    failing as intended; the runtime verdict below still has to hold."""
+    failure = gates.run_type_check(path, story_number)
+    if failure is None:
+        return {}
+    return _accept_or_reject(
+        failure, test_files, lanes.tolerated_type_error, "check", "type errors", story_number
+    )
+
+
+def _accept_or_reject(
+    failure: gates.LaneFailure,
+    test_files: list[str],
+    tolerated,
+    lane: str,
+    noun: str,
+    story_number: int,
+) -> dict[str, int]:
+    """Accept a lane failure that is entirely the story's missing API
+    showing through the acceptance tests, and reject every other one."""
+    debt = _missing_api_debt(failure.reading, test_files, tolerated)
+    if debt is None:
+        raise FlowFailure(
+            Outcome.TESTS_INVALID,
+            _why_not_the_missing_api(failure, test_files, tolerated),
+            story_number,
+        )
+    narrate.line(
+        f"🧪 Gates: {lane} — {sum(debt.values())} {noun} inside the acceptance tests, "
+        "expected before the implementation exists ✔"
+    )
+    return debt
+
+
+def _missing_api_debt(reading, test_files: list[str], tolerated) -> dict[str, int] | None:
+    """How many tolerated errors each acceptance file carries, or None the
+    moment the lane reported anything else: an error outside the acceptance
+    files, a rule the implementation will not answer, or output the driver
+    could not read in full."""
+    if not reading.complete:
+        return None
+    debt: dict[str, int] = {}
+    for error in reading.errors:
+        owner = acceptance.owning_test(error.file, test_files)
+        if owner is None or not tolerated(error):
+            return None
+        debt[owner] = debt.get(owner, 0) + 1
+    return debt or None
+
+
+def _why_not_the_missing_api(failure: gates.LaneFailure, test_files: list[str], tolerated) -> str:
+    """The lane's own diagnostic, and - when the driver read the output in
+    full - which part of it is the mechanic's to fix: the errors outside
+    the acceptance tests, or the rules no implementation will answer."""
+    if not failure.reading.complete:
+        return failure.diagnostic
+    outside = sorted(
+        {
+            error.file
+            for error in failure.reading.errors
+            if acceptance.owning_test(error.file, test_files) is None
+        }
+    )
+    if outside:
+        return (
+            f"{failure.diagnostic}\nthese errors are outside the acceptance tests, "
+            f"where this branch may not change anything: {', '.join(outside)}"
+        )
+    rejected = sorted(
+        {error.described() for error in failure.reading.errors if not tolerated(error)}
+    )
+    return (
+        f"{failure.diagnostic}\nthe implementation will not make these go away, "
+        f"so fix them here: {'; '.join(rejected[:3])}"
+    )
 
 
 def _check_failing_branch_gate_steps(path, story_number: int) -> None:
@@ -316,9 +476,15 @@ def _check_reported_files_are_on_branch(
             )
 
 
-def _check_every_changed_file_is_a_test(slug: str, changed: list[str], story_number: int) -> None:
+def _check_every_changed_file_is_a_test(
+    slug: str, layer: str, changed: list[str], story_number: int
+) -> None:
+    """Only test-side files may change here. For a workflow slice the whole
+    of `workflow/tests/` is test-side - a new flow scenario needs its
+    `given_*` helper in `conftest.py` and often a scripted answer in a fake,
+    and none of that is driver code."""
     for changed_file in changed:
-        if not TEST_FILE.search(changed_file):
+        if not acceptance.is_test_file(layer, changed_file):
             raise FlowFailure(
                 Outcome.TESTS_NOT_PUSHED,
                 f"non-test file changed on {slug}: {changed_file}",
@@ -327,22 +493,91 @@ def _check_every_changed_file_is_a_test(slug: str, changed: list[str], story_num
 
 
 def _check_files_match_test_kind(
-    slug: str, changed: list[str], test_kind: str, story_number: int
+    slug: str, changed: list[str], test_files: list[str], test_kind: str, story_number: int
 ) -> None:
-    mismatched = [
-        path for path in changed if path.endswith(".e2e.ts") != (test_kind == "playwright")
-    ]
+    mismatched = [path for path in changed if not acceptance.matches_test_kind(test_kind, path)]
     if mismatched:
         raise FlowFailure(
             Outcome.TESTS_NOT_PUSHED,
             f"{test_kind} slice changed wrong-kind test on {slug}: {mismatched[0]}",
             story_number,
         )
+    uncollected = [
+        path for path in test_files if not acceptance.names_an_acceptance_test(test_kind, path)
+    ]
+    if uncollected:
+        raise FlowFailure(
+            Outcome.TESTS_NOT_PUSHED,
+            f"{test_kind} slice reported {uncollected[0]} as an acceptance test on {slug}, "
+            "and the runner collects no test from it",
+            story_number,
+        )
+
+
+#: Where each kind of acceptance test must live, and why.
+#:
+#: `playwright.config.ts` sets no `testDir` - its `testMatch` is
+#: `**/*.e2e.{ts,js}` from the repository root - so playwright itself accepts
+#: an `*.e2e.ts` anywhere. The binding constraint is the coverage lane:
+#: `test:coverage:client` in package.json includes `src/lib/**/*.{ts,svelte}`
+#: as source and excludes only `src/**/*.{test,spec}.{js,ts}`, so an
+#: `*.e2e.ts` under `src/lib/` is counted as a source file that no unit test
+#: ever loads - 0% lines against a per-file threshold of 80%. Every
+#: `*.e2e.ts` in the repository lives under `src/routes/`, and that is the
+#: rule. #397's UI slice put one in `src/lib/components/`, block 3's
+#: `verify:changed` never ran coverage, and CI failed deterministically on
+#: the pull request where nobody could repair the file any more.
+_E2E_DIR = "src/routes/"
+
+#: A vitest spec is named after the module it covers and sits beside it, so
+#: it lives under `src/` like that module. `src/lib/foo.ts` ->
+#: `src/lib/foo.spec.ts`, a component -> `foo.svelte.spec.ts`.
+_SPEC_DIR = "src/"
+
+
+def _check_test_files_are_where_they_belong(
+    slug: str, layer: str, changed: list[str], story_number: int
+) -> None:
+    """Placement, not naming: a test in the wrong folder can pass every gate
+    block 1 runs and still fail CI on the pull request.
+
+    Both rules read the repository's TypeScript layout - the coverage lane's
+    view of `src/` - so a workflow slice is exempt: its own placement rule is
+    enforced above, where `workflow/tests/**` is the only tree it may change
+    and only a `test_*.py` inside it may be reported as an acceptance test."""
+    if layer == "workflow":
+        return
+    for changed_file in changed:
+        expected = _misplaced(changed_file)
+        if expected is not None:
+            raise FlowFailure(
+                Outcome.TESTS_INVALID,
+                f"{changed_file} is in the wrong folder on {slug}: {expected}",
+                story_number,
+            )
+
+
+def _misplaced(changed_file: str) -> str | None:
+    """Why this test file's folder is wrong, or None when it belongs."""
+    if changed_file.endswith(".e2e.ts"):
+        if changed_file.startswith(_E2E_DIR):
+            return None
+        return (
+            f"a playwright acceptance test must live under {_E2E_DIR} - the coverage "
+            f"lane counts an .e2e.ts anywhere else under src/ as uncovered source; "
+            f"move it to {_E2E_DIR}{PurePosixPath(changed_file).name}"
+        )
+    if not changed_file.startswith(_SPEC_DIR):
+        return (
+            f"a vitest spec must sit next to the module it covers, under {_SPEC_DIR} "
+            "(foo.ts -> foo.spec.ts, a component -> foo.svelte.spec.ts)"
+        )
+    return None
 
 
 def _verify_tests_fail(path, test_files: list[str], story_number: int) -> None:
     for test_file in test_files:
-        if not test_file.endswith(".e2e.ts"):
+        if not test_file.endswith((".e2e.ts", ".py")):
             diagnostic = acceptance.rejects_local_stand_in(path / test_file)
             if diagnostic:
                 raise FlowFailure(Outcome.TESTS_DO_NOT_FAIL, diagnostic, story_number)

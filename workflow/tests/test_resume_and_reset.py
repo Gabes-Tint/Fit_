@@ -280,6 +280,56 @@ def test_a_resumed_run_relaunches_the_correction_a_forbidden_change_earned(world
     assert "🔒 #607 (domain) frozen at" in result.stdout
 
 
+def _stopped_early_by_a_repeated_diagnostic(world, number: int) -> None:
+    """A first run whose agent kept the same out-of-reach file through its
+    corrective turn: the second rejection is the first one verbatim, so the
+    loop stopped there instead of spending the third attempt."""
+    _given_planned_story(world, number)
+    _delegate_mechanic(world, number)
+    for _ in range(2):
+        world.agent_implements(
+            f"story-{number}-domain",
+            "mechanic",
+            files={**IMPLEMENTATION, "quality/thresholds.json": "{}\n"},
+            changed_files=["quality/thresholds.json", *CHANGED],
+        )
+    first = run_flow(world, number)
+    assert first.returncode == 22, first.stdout + first.stderr
+    assert "stopped early: attempt 2 failed exactly as attempt 1" in first.stdout
+    assert world.run_record(number)["slices"]["domain"]["turns"][-1]["repeated"] is True
+
+
+def test_a_run_stopped_for_a_repeated_diagnostic_stays_stopped_on_resume(world):
+    """Re-deriving that turn's verdict is a function of the bytes it left:
+    with the worktree untouched it can only reach the same diagnostic and
+    stop on it again, so the resume refuses instead of spending the turn."""
+    _stopped_early_by_a_repeated_diagnostic(world, 608)
+
+    result = run_flow(world, 608, "--resume")
+
+    assert result.returncode == 30, result.stdout + result.stderr
+    assert "was stopped early: mechanic attempt 2 failed exactly as attempt 1" in result.stdout
+    assert "nothing in the worktree has changed since" in result.stdout
+    # block 1's turn and the two the stopped run spent: no new agent call
+    assert len(_talks(world, "mechanic", "story-608-domain")) == 3
+
+
+def test_a_worktree_changed_after_an_early_stop_gets_the_ordinary_digest_refusal(world):
+    """The repetition refusal never masks the digest: bytes that moved
+    since the turn ended are not that turn's work, and that is what the
+    resumed run says."""
+    _stopped_early_by_a_repeated_diagnostic(world, 609)
+    (world.slice_worktree_path("story-609-domain") / "quality/thresholds.json").write_text(
+        '{"edited": "by hand"}\n'
+    )
+
+    result = run_flow(world, 609, "--resume")
+
+    assert result.returncode == 30, result.stdout + result.stderr
+    assert "worktree changed since mechanic attempt 2 ended" in result.stdout
+    assert "was stopped early" not in result.stdout
+
+
 def test_resume_refuses_a_worktree_that_changed_since_the_turn_ended(world):
     _stopped_by_a_gate_crash(world, 604)
     (world.slice_worktree_path("story-604-domain") / "src/lib/delegate.ts").write_text(
@@ -575,3 +625,42 @@ def test_reset_refuses_while_a_run_owns_the_story(world):
     assert result.returncode == 29, result.stdout + result.stderr
     assert world.slice_worktree_path("story-634-domain").exists()
     assert (world.home / "runs" / "story-634.json").exists()
+
+
+def test_resume_after_a_red_ci_the_driver_can_read_takes_a_ci_fix_round(world):
+    """#397's own stop, resumed: the record says the one rerun is spent and
+    the checks are still red. The fix-round budget is not the rerun's, so the
+    resumed run reads the log and fixes what it names instead of stopping at
+    CAPACITY_EXHAUSTED again."""
+    _given_planned_story(world, 613)
+    _delegate_mechanic(world, 613)
+    world.agent_implements(
+        "story-613-domain", "mechanic", files=IMPLEMENTATION, changed_files=CHANGED
+    )
+    world.given_checks(500, ["fail", "pending", "fail"])
+    first = run_flow(world, 613)
+    assert first.returncode == 28, first.stdout + first.stderr
+    assert world.run_record(613)["delivery"]["rerun_used"] is True
+
+    world.given_failed_log(
+        "ERROR: Coverage for lines (0%) does not meet global threshold (80%) "
+        "for src/lib/delegate.ts"
+    )
+    world.given_checks(500, ["fail", "pending", "pass"])
+    world.agent_implements(
+        "story-613-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = 2;\n"},
+        changed_files=CHANGED,
+    )
+
+    result = run_flow(world, 613, "--resume")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "CI is red" in result.stdout
+    assert "CI fix round 1/2 on PR #500: src/lib/delegate.ts" in result.stdout
+    assert "Merged PR #500" in result.stdout
+    record = world.run_record(613)
+    assert record["delivery"]["ci_fix_rounds"] == 1
+    # the spent rerun stays spent; the fix rounds are their own budget
+    assert record["delivery"]["rerun_used"] is True

@@ -19,7 +19,11 @@ Decide whose call this story is to plan and build.
 Gabriel's call if the story requires a product decision, spends real money,
 touches infrastructure or secrets, lowers a quality gate, or deletes data.
 Otherwise it is the orchestrator's call - the default for ordinary
-maintainability and feature work.
+maintainability and feature work, including ordinary work on this
+development flow's own driver under `workflow/`. A story whose code is the
+driver's own is not Gabriel's call for that reason alone: the flow plans and
+implements it like any other story and withholds only the final merge,
+which Gabriel makes himself.
 
 Reply with the schema fields: owner (orchestrator or gabriel), category (none,
 product, spend, infra, secrets, gate-lowering, or data-deletion - none unless

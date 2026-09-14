@@ -72,7 +72,10 @@ Block 4 never merges such a change (below). Reaching into a path that is
 out of reach, or into the other layer, costs a correction rather than the
 run: the driver names the offending paths and asks the same agent to put
 them back, and only a budget that ends with the change still there stops as
-`AGENT_BROKE_CONTRACT`. The driver
+`AGENT_BROKE_CONTRACT`. Block 3's loop stops early on a repeated rejection
+exactly as block 1's does, and an early stop escalates a rung just as
+exhaustion would, so the stronger role still gets its own full budget; only
+an exhausted ladder stops the run. The driver
 commits, freezes and joins at the final barrier; agents never commit or
 push. Every agent turn carries the session id the AI Army CLI printed, and the driver persists it
 with the turn: corrections must come from the same session, an escalated
@@ -81,12 +84,26 @@ stops the run. Before every turn the driver also re-verifies that the AI
 Army team's worktree link still resolves to exactly the retained slice
 worktree before launching anything.
 
-Slicing is strictly binary. `ui` means frontend/interface work in Svelte
-components and routes, normally browser-tested. `domain` means every non-UI
-change, including framework-free logic, server/backend code, persistence,
-migrations and database work. A story gets one slice when it is wholly in
-either category, or exactly two ordered slices—domain then UI—when it spans
-both. There is never a third layer.
+Slicing the product is strictly binary. `ui` means frontend/interface work in
+Svelte components and routes, normally browser-tested. `domain` means every
+non-UI change to the product, including framework-free logic, server/backend
+code, persistence, migrations and database work. A story gets one slice when
+it is wholly in either category, or exactly two ordered slices—domain then
+UI—when it spans both. There is never a third product layer.
+
+A story about the driver itself is the third layer, `workflow`, and it is
+always a single slice. It may change `workflow/**`, `docs/**` and the
+repository's `cspell.json`, and nothing else; its acceptance tests are
+`workflow/tests/test_*.py` run under
+`uv run --project workflow pytest -q <files>`, written in this suite's own
+style — a flow test (a fake world plus a `go.py` run) or a unit test of one
+`fitflow` module. Block 1 may also change `workflow/tests/conftest.py` and
+the fakes under `workflow/tests/fakes/`, which are test-side too, but only a
+`test_*.py` file counts as an acceptance test. Its gates are the driver's
+own — `ruff check`, `ruff format --check`, and prettier and cspell over
+changed markdown — in place of the bun lanes, which only know the
+repository's TypeScript. Block 4 still withholds the merge: a driver story
+ends `NEEDS_GABRIEL` (exit 11) with its pull request open and green.
 
 The driver creates child issues, worktrees and teams sequentially. A one-slice
 story then runs one mechanic. A two-slice story runs its domain and UI mechanics
@@ -116,6 +133,24 @@ and other tooling/infrastructure failures stop immediately. A corrective prompt
 quotes the concrete diagnostic and permits changes only to the acceptance
 tests. Parallel slices run these retry loops independently; the barrier advances
 only after every loop succeeds.
+
+Three is a ceiling, not a quota: a rejection that comes back verbatim after
+a corrective turn ends the loop where it stands, because the diagnostic,
+not the agent, is what would have to change. #406 spent three mechanic
+turns and ten minutes on one line the driver's own test-file rule got
+wrong, which no reply could have fixed. The run stops with the outcome
+exhaustion would have produced, and both the log and the comment on the
+story say why and how many attempts went unspent:
+
+```text
+🛑 Mechanic #406 stopped early: attempt 2 failed exactly as attempt 1 — TESTS_NOT_PUSHED: …
+```
+
+A second rejection that differs in substance - a different file, test or
+count - is ordinary progress and the third attempt is still taken. Shas,
+durations, timestamps and worktree paths are normalized away before the two
+are compared, so a diagnostic that only moved with the clock still counts
+as the same one.
 
 Vitest acceptance specs may define ordinary test helpers, but a spec with no
 product import is rejected when it defines a callable locally and asserts that
@@ -147,6 +182,26 @@ fixture is - production files stay off-limits to the mechanic. The harness
 is a test-only surface: the web server 404s `/dev/` without the
 `FIT_COMPONENT_HARNESS=yes` runtime flag and the Capacitor build refuses it
 outright, so it never mounts a component in the shipped app.
+
+The type lane and the lint lane have one exception, without which a story
+that introduces a new function, method, prop or export could never pass
+block 1: its failing tests have to name the API before it exists. Errors
+that say exactly that - `@typescript-eslint/no-unsafe-*` from an import
+that does not resolve yet, and the TypeScript codes for a missing property,
+a changed argument count, a missing export or a missing local module - are
+accepted while every one of them is inside an acceptance file the mechanic
+reported. Anything else, and any error naming any other file, is still a
+rejection with the file or the rule named. The accepted ones are narrated
+and recorded on the slice, and block 3 grants no tolerance of its own: its
+`verify:changed` runs `lint` and `check` over the implementation, which a
+correct implementation leaves clean by providing the signatures the tests
+call. #422 is the run that found this: both of its slices exhausted three
+mechanic attempts, one refusing to write a test at all and the other on 186
+`no-unsafe-*` errors.
+
+A mechanic that replies with no test files and a reason is refusing the
+brief rather than slipping, and a retry only reproduces it: the run stops
+at once with that reason on the story.
 
 Failing is not enough either. The driver reads every failed test's error
 message out of the runner's JSON report and requires a failed expectation: a
@@ -308,6 +363,7 @@ The run narrates itself as it goes, and saves the same text to
    │ Reason:         ordinary work
 🔀 Whose call? → 🧑‍💻 orchestrator's
 🔀 Spans domain and UI? → ✂️ yes, split into 2
+🧪 Gates: check — 4 type errors inside the acceptance tests, expected before the implementation exists ✔
 🔍 Verify #1000: tree clean ✔ · pushed ✔ · files on branch ✔ · only tests ✔ · lint ✔
 🧪 src/lib/merge.spec.ts → failed, as it should ✔
 🏁 Planned #140 → #1000 domain, #1001 ui · next: block 2, delegate
@@ -352,9 +408,23 @@ pass, the driver verifies that and sends them back to block 1's writer:
 🔧 Solver #1001 (ui) attempt 1/3
 ```
 
-`🛑` marks a planned stop (for example, the call is Gabriel's or the slice
-needs clarification) and `❌` a failure. The exit code says which one; see
-[Exit codes](#exit-codes).
+Block 4 narrates what CI said before it decides what to do about it. A red
+check whose log names a file one of the slices owns buys a fix turn; one
+that names nothing the driver can act on gets the one counted rerun:
+
+```text
+🩺 CI is red: Unit and component coverage
+   │ ERROR: Coverage for lines (0%) does not meet global threshold (80%) for src/lib/LogRow.ts
+🛠 CI fix round 1/2 on PR #418: src/lib/LogRow.ts
+🛠 Findings routed to slices: ui
+⇪ Pushed fixes; integration head 9c4d1b0…
+🟢 CI green on PR #418 (7 checks)
+```
+
+`🛑` marks a planned stop (for example, the call is Gabriel's, the slice
+needs clarification, or a rejection came back verbatim and the remaining
+attempts were left unspent) and `❌` a failure. The exit code says which
+one; see [Exit codes](#exit-codes).
 
 ### After a run
 
@@ -529,22 +599,22 @@ Defined in `fitflow/outcome.py`. Every stop and failure is also a comment on
 the story; blocks 2-3 terminal failures additionally label the story
 `blocked`.
 
-| code | name                 | meaning                                                                                                                                                                                                               |
-| ---- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | PLANNED              | the whole flow ran (aliases IMPLEMENTED, DELIVERED, SHIPPED); also `--reset` done (RESET)                                                                                                                             |
-| 2    | (usage)              | bad arguments, a bad `agents.yaml`, or a missing deploy target for `FIT_FLOW_SHIP_TO`                                                                                                                                 |
-| 10   | NOTHING_TO_PICK      | no open story is free to pick                                                                                                                                                                                         |
-| 11   | NEEDS_GABRIEL        | the call is Gabriel's, or a slice needs clarification: labelled, assigned, question posted; also a PR that changes the driver, left open for his merge                                                                |
-| 20   | CANNOT_PICK          | the named issue does not exist, is closed, is not a story, or is held; with `--resume`, also no retained run, a human hold, or a run already shipped                                                                  |
-| 21   | AGENT_FAILED         | an agent turn failed or never gave a reply that fits its schema                                                                                                                                                       |
-| 22   | AGENT_BROKE_CONTRACT | slices break the rules, an agent weakened an acceptance test or committed, an identity mismatch, or an out-of-reach path left there through the whole correction budget                                               |
-| 23   | TESTS_NOT_PUSHED     | the mechanic's work is not committed, pushed, or tests only                                                                                                                                                           |
-| 24   | TESTS_DO_NOT_FAIL    | a test file passed, or never ran                                                                                                                                                                                      |
-| 25   | WORKTREE_EXISTS      | the slice's worktree or branch already exists                                                                                                                                                                         |
-| 26   | TOOL_FAILED          | `gh`, `git` or `bun` failed unexpectedly, or a reply could not be parsed                                                                                                                                              |
-| 27   | PLAN_REJECTED        | the delegation contract was rejected (bad signals, no evidence, dependent slices); replan                                                                                                                             |
-| 28   | CAPACITY_EXHAUSTED   | a slice's solver exhausted its 3 attempts; everything preserved                                                                                                                                                       |
-| 29   | EXECUTION_HELD       | another `go.py` run already owns this story's lock; with `--resume`, a turn is still running here                                                                                                                     |
-| 30   | RUN_STATE_CONFLICT   | an earlier run left its retained state behind: `--resume` continues it, `--reset` archives it; with `--resume`, the record and the worktrees disagree (bytes changed, a review fix was interrupted, the PR is closed) |
-| 31   | TESTS_INVALID        | the acceptance tests fail their own gate (lint, types, a suppression, a test that throws), or an implementer's verified objection showed they cannot all pass and block 1 could not repair them                       |
-| 32   | DEPLOY_FAILED        | a deploy or its smoke check failed after the merge: labelled `needs-gabriel`, never rolled back                                                                                                                       |
+| code | name                 | meaning                                                                                                                                                                                                                                                                                       |
+| ---- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | PLANNED              | the whole flow ran (aliases IMPLEMENTED, DELIVERED, SHIPPED); also `--reset` done (RESET)                                                                                                                                                                                                     |
+| 2    | (usage)              | bad arguments, a bad `agents.yaml`, or a missing deploy target for `FIT_FLOW_SHIP_TO`                                                                                                                                                                                                         |
+| 10   | NOTHING_TO_PICK      | no open story is free to pick                                                                                                                                                                                                                                                                 |
+| 11   | NEEDS_GABRIEL        | the call is Gabriel's, or a slice needs clarification: labelled, assigned, question posted; also a PR that changes the driver, left open for his merge                                                                                                                                        |
+| 20   | CANNOT_PICK          | the named issue does not exist, is closed, is not a story, or is held; with `--resume`, also no retained run, a human hold, or a run already shipped                                                                                                                                          |
+| 21   | AGENT_FAILED         | an agent turn failed or never gave a reply that fits its schema                                                                                                                                                                                                                               |
+| 22   | AGENT_BROKE_CONTRACT | slices break the rules, an agent weakened an acceptance test or committed, an identity mismatch, or an out-of-reach path left there through the whole correction budget                                                                                                                       |
+| 23   | TESTS_NOT_PUSHED     | the mechanic's work is not committed, pushed, or tests only                                                                                                                                                                                                                                   |
+| 24   | TESTS_DO_NOT_FAIL    | a test file passed, only skipped its tests, or never ran                                                                                                                                                                                                                                      |
+| 25   | WORKTREE_EXISTS      | the slice's worktree or branch already exists                                                                                                                                                                                                                                                 |
+| 26   | TOOL_FAILED          | `gh`, `git` or `bun` failed unexpectedly, or a reply could not be parsed                                                                                                                                                                                                                      |
+| 27   | PLAN_REJECTED        | the delegation contract was rejected (bad signals, no evidence, dependent slices); replan                                                                                                                                                                                                     |
+| 28   | CAPACITY_EXHAUSTED   | a slice's solver spent its budget (three attempts, or two that failed identically), review did not converge, or CI stayed red after 2 CI fix rounds (or after the one rerun, when its log named nothing the driver could act on); everything preserved                                        |
+| 29   | EXECUTION_HELD       | another `go.py` run already owns this story's lock; with `--resume`, a turn is still running here                                                                                                                                                                                             |
+| 30   | RUN_STATE_CONFLICT   | an earlier run left its retained state behind: `--resume` continues it, `--reset` archives it; with `--resume`, the record and the worktrees disagree (bytes changed, a review fix was interrupted, the PR is closed)                                                                         |
+| 31   | TESTS_INVALID        | the acceptance tests fail their own gate: lint, types, a suppression, a test that throws, a test in the wrong folder, or a red CI that blames nothing but a retained test; also an implementer's verified objection that showed they cannot all pass together, which block 1 could not repair |
+| 32   | DEPLOY_FAILED        | a deploy or its smoke check failed after the merge: labelled `needs-gabriel`, never rolled back                                                                                                                                                                                               |

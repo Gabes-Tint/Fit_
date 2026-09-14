@@ -283,8 +283,8 @@ def repair(record: RunRecord, piece: SliceRecord) -> None:
     audit.worktree_created(slug)
     narrate.line(f"🌿 Worktree {slug} · branch {slug} at {piece.failing_sha[:12]}")
     agents.ensure_fresh_team(slug, path, piece.number)
-    test_files, why = _repair_loop(record, piece, slug, path)
-    _refreeze(record, piece, path, test_files, why)
+    test_files, why, debt = _repair_loop(record, piece, slug, path)
+    _refreeze(record, piece, path, test_files, why, debt)
     worktrees.remove_slice_worktree(path)
     worktrees.delete_local_branch(slug)
     agents.delete_team(slug)
@@ -292,7 +292,7 @@ def repair(record: RunRecord, piece: SliceRecord) -> None:
 
 def _repair_loop(
     record: RunRecord, piece: SliceRecord, slug: str, path: Path
-) -> tuple[list[str], str]:
+) -> tuple[list[str], str, dict[str, int]]:
     """The repair's own bounded budget, independent of the implementer's: a
     block 1 verdict the mechanic can repair becomes the next turn's
     diagnostic, and the last turn's stops the run. An agent or tool failure
@@ -329,7 +329,7 @@ def _repair_loop(
 
 def _repair_turn(
     record: RunRecord, piece: SliceRecord, slug: str, path: Path, turn: int, diagnostic: str
-) -> tuple[list[str], str]:
+) -> tuple[list[str], str, dict[str, int]]:
     entry = _begin_repair_turn(record, piece, slug, turn)
     try:
         reply, session = _talk(piece, slug, diagnostic)
@@ -346,10 +346,16 @@ def _repair_turn(
                 ("Why they fail", reply["why_they_fail"]),
             ]
         )
-    failing_tests.validate_repaired_tests(
-        slug, path, piece.failing_sha, test_files, piece.test_kind, record.story_number
+    debt = failing_tests.validate_repaired_tests(
+        slug,
+        path,
+        piece.failing_sha,
+        piece.layer,
+        test_files,
+        piece.test_kind,
+        record.story_number,
     )
-    return test_files, reply["why_they_fail"]
+    return test_files, reply["why_they_fail"], debt
 
 
 def _talk(piece: SliceRecord, slug: str, diagnostic: str) -> tuple[dict, str]:
@@ -429,14 +435,21 @@ def _repair_stopped(
 
 
 def _refreeze(
-    record: RunRecord, piece: SliceRecord, path: Path, test_files: list[str], why: str
+    record: RunRecord,
+    piece: SliceRecord,
+    path: Path,
+    test_files: list[str],
+    why: str,
+    debt: dict[str, int],
 ) -> None:
     """The repaired tests become this slice's inputs: merged into the slice
     branch beside the implementer's uncommitted work, pushed, and recorded.
     `tests_sha` - and with it `acceptance_sha`, the bytes an implementation
     turn may not change - becomes the repair commit; `failing_sha`, the base
     every later check compares HEAD, origin and the diff against, becomes the
-    merge."""
+    merge; and `tests_type_debt` becomes the debt block 1 accepted on the
+    repaired tests, because the rejected set's debt was recorded about files
+    that no longer judge this slice."""
     repair_sha = worktrees.local_head(path)
     slice_path = worktrees.slice_worktree_path(piece.slug)
     _merge_repair(record, piece, slice_path, repair_sha)
@@ -452,6 +465,7 @@ def _refreeze(
         piece.tests_sha = repair_sha
         piece.failing_sha = merged
         piece.test_files = list(test_files)
+        piece.tests_type_debt = dict(debt)
         piece.test_repairs += 1
         piece.attempts = 0
         piece.test_repair_note = note

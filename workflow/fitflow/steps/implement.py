@@ -8,6 +8,12 @@ same issue, team, branch, worktree and accumulated implementation. An
 exhausted solver stops the run and preserves everything. External and
 contract failures stop immediately without consuming a correction.
 
+Two attempts are enough when they fail the same way: a diagnostic that
+comes back identical after a corrective turn (fitflow.diagnostics) ends
+the role's budget where it stands and escalates exactly as exhaustion
+would - the remaining attempts would only reproduce it, while the
+stronger role is the thing that has not been tried.
+
 A turn may also reject the acceptance tests instead of implementing against
 them. The driver verifies that objection itself (steps/objection.py) and,
 when it stands, sends the tests back to block 1's writer, re-freezes the
@@ -43,6 +49,7 @@ from fitflow import (
     turns,
     worktrees,
 )
+from fitflow.diagnostics import same_diagnostic
 from fitflow.outcome import FlowFailure, Outcome
 from fitflow.runstate import RunRecord, SliceRecord, retained_inputs
 from fitflow.steps import objection
@@ -103,16 +110,21 @@ class _Rejection:
     breach: str | None = None
 
 
-def forbidden_brief() -> str:
+def forbidden_brief(layer: str = "") -> str:
     """The prohibition the scope check enforces, rendered for the
     implementer's brief from the same constants it validates against, so
     the rule the agent is told and the rule it is judged by cannot drift.
     #337 stopped on `scripts/eval/` precisely because the brief said
-    "quality/gate policy files" and named no path at all."""
+    "quality/gate policy files" and named no path at all.
+
+    A layer that owns one of these repository-wide files - the workflow
+    layer owns `cspell.json`, whose new word travels with the prose that
+    needs it - must not be told it is out of reach, for the same reason."""
+    files = sorted(name for name in _FORBIDDEN_FILES if not layers.permits_gate_file(layer, name))
     return "\n".join(
         [
             f"- anything under {_listed(_FORBIDDEN_PREFIXES)}",
-            f"- any file named {_listed(sorted(_FORBIDDEN_FILES))}, wherever it sits",
+            f"- any file named {_listed(files)}, wherever it sits",
             "- any snapshot (`*.snap`) or lock file (`*.lock`)",
             "- the acceptance test files listed above",
         ]
@@ -390,7 +402,12 @@ def _settle_or_repair(record: RunRecord, piece: SliceRecord, reply: dict, attemp
 def _settle(record: RunRecord, piece: SliceRecord, reply: dict, attempt: int) -> bool:
     """Judge one completed turn. True once the slice is frozen; False when
     the loop must launch again (a correction, or the escalated role's first
-    attempt); raises when the run stops."""
+    attempt); raises when the run stops.
+
+    A rejection identical to the previous attempt's spends no further
+    attempt: an agent told the same thing twice and reaching the same
+    verdict has shown the diagnostic, not the reply, is what needs to
+    change."""
     try:
         refused = objection.consider(record, piece, reply, scope_breach)
         rejection = _Rejection(refused) if refused else _validate_turn(record, piece, reply)
@@ -400,18 +417,81 @@ def _settle(record: RunRecord, piece: SliceRecord, reply: dict, attempt: int) ->
     if rejection is None:
         _freeze(record, piece)
         return True
-    with record.transition():
-        piece.diagnostics.append(rejection.diagnostic)
+    # the last attempt has no successor to save: it is exhaustion either way
+    repeated = attempt < turns.BUDGET and same_diagnostic(
+        _previous_diagnostic(piece, attempt), rejection.diagnostic
+    )
+    _record_diagnostic(record, piece, rejection.diagnostic, repeated)
     narrate.headed(f"🩺 #{piece.number} ({piece.layer}) diagnostic: ", rejection.diagnostic)
-    if attempt < turns.BUDGET:
+    if attempt < turns.BUDGET and not repeated:
         _to_correcting(record, piece, attempt)
         return False
+    _end_of_budget(record, piece, rejection, attempt, repeated)
+    return False
+
+
+def _previous_diagnostic(piece: SliceRecord, attempt: int) -> str:
+    """The diagnostic the attempt immediately before this one was rejected
+    with, or "" when there is none: the role's first attempt, or the first
+    attempt of an escalated role, which must never read as a repetition -
+    the stronger role is exactly the thing that has not been tried yet."""
+    for entry in reversed(piece.turns[:-1]):
+        if entry["result"] == "void":
+            continue  # a resume voided it and the attempt was relaunched
+        if (entry["role"], entry["revision"], entry["attempt"]) == (
+            piece.role,
+            piece.revision,
+            attempt - 1,
+        ):
+            return entry.get("diagnostic", "")
+        return ""
+    return ""
+
+
+def _record_diagnostic(
+    record: RunRecord, piece: SliceRecord, diagnostic: str, repeated: bool
+) -> None:
+    """The rejection, on the slice's diagnostics and on the turn that
+    earned it. `repeated` marks the turn the loop stopped on rather than
+    corrected from, so the audit and `--resume` can both see it."""
+    with record.transition():
+        piece.diagnostics.append(diagnostic)
+        piece.turns[-1]["diagnostic"] = diagnostic
+        if repeated:
+            piece.turns[-1]["repeated"] = True
+        record.save()
+
+
+def _end_of_budget(
+    record: RunRecord, piece: SliceRecord, rejection: _Rejection, attempt: int, repeated: bool
+) -> None:
+    """This role is done with the slice, either because its attempts ran
+    out or because the diagnostic came back identical and the rest would
+    only reproduce it. Both end the same way: a contract breach stops the
+    run, and anything else escalates one rung, so the stronger role still
+    gets its chance."""
+    if repeated:
+        narrate.headed(
+            f"🛑 {piece.role.capitalize()} #{piece.number} ({piece.layer}) stopped early: "
+            f"attempt {attempt} failed exactly as attempt {attempt - 1} — ",
+            rejection.diagnostic,
+        )
     if rejection.breach is not None:
-        failure = _contract(record, piece, rejection.breach)
+        breach = rejection.breach
+        if repeated:
+            breach = f"{breach} ({turns.unspent_attempts(attempt)})"
+        failure = _contract(record, piece, breach)
         _settle_as_failed(record, piece, failure.why)
         raise failure
-    _escalate_or_stop(record, piece, rejection.diagnostic)
-    return False
+    _escalate_or_stop(record, piece, rejection.diagnostic, _budget_note(attempt, repeated))
+
+
+def _budget_note(attempt: int, repeated: bool) -> str:
+    """How this role's budget ended, for the escalation reason and the stop
+    message: spent to the last attempt, or deliberately left unspent."""
+    if repeated:
+        return turns.unspent_attempts(attempt)
+    return f"exhausted its {turns.BUDGET} attempts"
 
 
 def _settle_as_failed(record: RunRecord, piece: SliceRecord, why: str) -> None:
@@ -559,7 +639,7 @@ def _talk(piece: SliceRecord, prompt_name: str, attempt: int) -> tuple[dict, str
         brief=piece.brief,
         acceptance="\n".join(f"- {item}" for item in piece.acceptance),
         test_files="\n".join(piece.test_files),
-        forbidden=forbidden_brief(),
+        forbidden=forbidden_brief(piece.layer),
         attempt=str(attempt),
         diagnostic=piece.diagnostics[-1] if piece.diagnostics else "",
         prior_diagnostics="\n".join(f"- {item}" for item in piece.diagnostics) or "(none)",
@@ -611,14 +691,16 @@ def review_fix_turn(record: RunRecord, piece: SliceRecord, diagnostic: str) -> N
     _freeze(record, piece)
 
 
-def _escalate_or_stop(record: RunRecord, piece: SliceRecord, diagnostic: str) -> None:
+def _escalate_or_stop(
+    record: RunRecord, piece: SliceRecord, diagnostic: str, budget_note: str
+) -> None:
     if piece.role == "solver":
         with record.transition():
             piece.move("failed")
             record.save()
         raise FlowFailure(
             Outcome.CAPACITY_EXHAUSTED,
-            f"{piece.slug}: solver exhausted its 3 attempts — last diagnostic: {diagnostic}",
+            f"{piece.slug}: solver {budget_note} — last diagnostic: {diagnostic}",
             record.story_number,
             add_blocked=True,
         )
@@ -635,7 +717,7 @@ def _escalate_or_stop(record: RunRecord, piece: SliceRecord, diagnostic: str) ->
         "signals": prior["signals"],
         "evidence": prior["evidence"],
         "reason": (
-            f"Escalation revision {revision}: {old_role} exhausted its 3 attempts "
+            f"Escalation revision {revision}: {old_role} {budget_note} "
             f"(last diagnostic: {diagnostic}); raised exactly one level, signals unchanged."
         ),
     }
@@ -727,10 +809,10 @@ def _validate_behavior(
             )
         _check_acceptance_is_sound(record, piece, verdict)
         return _Rejection(verdict.why)
-    gate_failure = gates.run_turn_gates(path, record.story_number)
+    gate_failure = _run_turn_gates(record, piece, path, changed)
     if gate_failure is not None:
         _check_gate_blames_the_implementation(record, piece, gate_failure)
-        return _Rejection(gate_failure.diagnostic)
+        return _Rejection(_gate_rejection(piece, gate_failure))
     mismatch = _report_mismatch(reply["changed_files"], changed)
     if mismatch is not None:
         return _Rejection(mismatch)
@@ -739,6 +821,17 @@ def _validate_behavior(
         "no gate files ✔"
     )
     return None
+
+
+def _run_turn_gates(
+    record: RunRecord, piece: SliceRecord, path, changed: list[str]
+) -> "gates.GateFailure | None":
+    """The gates this turn is judged by. A workflow slice changes Python and
+    prose, which `verify:changed` neither sizes nor runs, so the driver's own
+    gates stand in its place - the same four block 1 ran over the tests."""
+    if piece.layer == "workflow":
+        return gates.run_workflow_gates(path, record.story_number, changed)
+    return gates.run_turn_gates(path, record.story_number)
 
 
 def _check_gate_blames_the_implementation(
@@ -753,11 +846,12 @@ def _check_gate_blames_the_implementation(
 
     Conservative by construction: a failure the driver could not locate, or
     one that names any other file, stays an ordinary repairable
-    diagnostic."""
+    diagnostic. So does the one failure inside the acceptance tests that an
+    implementation turn can answer - see `_owed_signatures`."""
     if not failure.located:
         return
     blamed = _acceptance_culprits(failure.culprits, piece.test_files)
-    if blamed is None:
+    if blamed is None or _owed_signatures(piece, failure, blamed):
         return
     raise FlowFailure(
         Outcome.TESTS_INVALID,
@@ -770,25 +864,55 @@ def _check_gate_blames_the_implementation(
     )
 
 
+#: The `verify:changed` steps an implementation turn answers by writing
+#: product code rather than by changing the file they name. Every other step
+#: (`duplicates`, `format:check`, `check:suppressions`, a spec) is answered
+#: only inside the file itself.
+_SIGNATURE_STEPS = frozenset({"check", "lint", "lint:changed"})
+
+
+def _owed_signatures(piece: SliceRecord, failure: gates.GateFailure, blamed: list[str]) -> bool:
+    """Whether this gate failure says the implementation is unfinished
+    rather than that the acceptance tests are broken.
+
+    Block 1 accepted type and type-aware lint errors inside these files
+    because the API they call did not exist yet, and recorded them as
+    `tests_type_debt`. The same lanes still failing on the same files after
+    an implementation turn is that debt unpaid: the signatures the product
+    now offers are not the ones the tests call. That is the implementer's
+    own diagnostic and an ordinary correction - the fix is in the product
+    code, and the test bytes never have to move. Any other step, or a file
+    block 1 recorded no debt for, stays block 1's defect."""
+    if not failure.steps & _SIGNATURE_STEPS:
+        return False
+    return all(name in piece.tests_type_debt for name in blamed)
+
+
+def _gate_rejection(piece: SliceRecord, failure: gates.GateFailure) -> str:
+    """The diagnostic a repairable gate failure corrects from. An unpaid
+    signature debt gets the tsc/eslint lines with the one thing the
+    implementer has to understand about them said first."""
+    blamed = _acceptance_culprits(failure.culprits, piece.test_files) if failure.located else None
+    if blamed is None or not _owed_signatures(piece, failure, blamed):
+        return failure.diagnostic
+    return (
+        f"the type and lint lanes still fail inside {', '.join(blamed)}: the acceptance tests "
+        "call signatures the implementation does not provide yet. Add or widen them in the "
+        "product code - the test bytes are immutable and correct. "
+        f"{failure.diagnostic}"
+    )
+
+
 def _acceptance_culprits(culprits, test_files: list[str]) -> list[str] | None:
     """The acceptance tests a gate failure blames, or None the moment it
-    blames anything else. Steps report their own relative paths - jscpd's
-    are relative to its scan roots - so a culprit matches a test by path
-    suffix, never by equality alone."""
+    blames anything else."""
     blamed = []
     for name in sorted(culprits):
-        test = _matching_test(name, test_files)
+        test = acceptance.owning_test(name, test_files)
         if test is None:
             return None
         blamed.append(test)
     return sorted(set(blamed)) or None
-
-
-def _matching_test(name: str, test_files: list[str]) -> str | None:
-    for test in test_files:
-        if test == name or test.endswith(f"/{name}") or name.endswith(f"/{test}"):
-            return test
-    return None
 
 
 def _check_acceptance_is_sound(record: RunRecord, piece: SliceRecord, verdict) -> None:
@@ -913,7 +1037,7 @@ def _out_of_reach(piece: SliceRecord):
 
     def reason(changed_file: str) -> str | None:
         basename = PurePosixPath(changed_file).name
-        if (
+        if not layers.permits_gate_file(piece.layer, changed_file) and (
             changed_file.startswith(_FORBIDDEN_PREFIXES)
             or basename in _FORBIDDEN_FILES
             or basename.endswith((".snap", ".lock"))

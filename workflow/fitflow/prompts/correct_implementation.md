@@ -18,7 +18,9 @@ $forbidden
 
 Everything else in the repository is in reach, including the driver's own
 code under `workflow/` and the application tooling under `scripts/` that is
-not listed above.
+not listed above - except in a slice whose test kind is `pytest`, which is a
+change to the driver itself and may touch only `workflow/**`, `docs/**` and
+`cspell.json`.
 
 Original brief:
 $brief

@@ -16,6 +16,8 @@ from pathlib import Path
 
 from fitflow import (
     agents,
+    ci_log,
+    gates,
     github,
     narrate,
     review,
@@ -62,7 +64,7 @@ def _deliver(story, record: RunRecord) -> None:
             narrate.line(f"✅ Review verdict retained: merge, after {rounds} round(s)")
         else:
             _review_loop(story, record, path)
-        _claims(story, record)
+        _claims(story, record, path)
         _withhold_driver_merge(story, record, path)
         _merge(story, record)
     except FlowFailure as failure:
@@ -244,7 +246,7 @@ def _review_loop(story, record: RunRecord, path: Path) -> None:
         if verdict == "merge":
             narrate.line(f"✅ Reviewer approved after {rounds} round(s)")
             return
-        _apply_fixes(story, record, path, findings)
+        _apply_fixes(story, record, path, findings, review.findings_diagnostic)
     _stop_for_gabriel(
         story,
         f"the reviewer still rejected delivery after {review.max_rounds()} review rounds",
@@ -362,13 +364,17 @@ def _acceptance_lines(record: RunRecord) -> str:
     return "\n".join(lines)
 
 
-def _apply_fixes(story, record: RunRecord, path: Path, findings: list[Finding]) -> None:
+def _apply_fixes(story, record: RunRecord, path: Path, findings: list[Finding], describe) -> None:
+    """One fix turn per affected slice, then the new frozen commits are
+    joined into the integration branch and pushed. `describe` turns a
+    slice's own findings into its diagnostic: the reviewer's wording for a
+    review round, the failed jobs' log for a CI fix round."""
     affected = review.route_findings(record, findings)
-    narrate.line(f"🛠 Review findings routed to slices: {', '.join(affected)}")
+    narrate.line(f"🛠 Findings routed to slices: {', '.join(affected)}")
     for layer in affected:
         piece = record.slices[layer]
         slice_findings = [finding for finding in findings if review.owns(piece.layer, finding.file)]
-        review_fix_turn(record, piece, review.findings_diagnostic(slice_findings))
+        review_fix_turn(record, piece, describe(slice_findings))
         _merge_or_reject(
             story,
             path,
@@ -403,14 +409,14 @@ def _stop_for_gabriel(story, why: str) -> None:
 # --- claims, CI, merge ----------------------------------------------------------
 
 
-def _claims(story, record: RunRecord) -> None:
+def _claims(story, record: RunRecord, path: Path) -> None:
     """The driver's own read of the PR's checks: the required check green,
-    one counted rerun, pending past the timeout is a tool failure. Checks
-    that have not registered yet - the normal state seconds after a PR
-    opens - are pending like any other, and so is the required check before
-    its needs finish."""
+    pending past the timeout is a tool failure. Checks that have not
+    registered yet - the normal state seconds after a PR opens - are pending
+    like any other, and so is the required check before its needs finish. A
+    red check is judged from its own log: a located defect gets a fix round,
+    anything else the one counted rerun."""
     pr_number = int(record.delivery["pr_number"])
-    branch = record.delivery["integration_branch"]
     deadline = time.monotonic() + settings.CI_TIMEOUT
     while True:
         checks = github.pr_checks(pr_number)
@@ -429,7 +435,7 @@ def _claims(story, record: RunRecord) -> None:
                 # in-progress run - wait for the run to settle first
                 _await_checks(story, pr_number, deadline, waiting)
                 continue
-            _react_to_red(story, record, branch, pr_number, failed, deadline)
+            _react_to_red(story, record, path, pr_number, failed, deadline)
             continue
         if waiting:
             _await_checks(story, pr_number, deadline, waiting)
@@ -445,27 +451,179 @@ _FAILED_STATES = {"FAILURE", "CANCELLED", "TIMED_OUT"}
 _GREEN_STATES = {"SUCCESS", "SKIPPED", "NEUTRAL"}
 
 
+#: Fix rounds block 4 will spend on a red CI whose log it could read,
+#: counted in `delivery.ci_fix_rounds`. Separate from the review rounds and
+#: from the one counted rerun, because they answer different questions: a
+#: rerun asks whether that was a flake, and a fix round answers a question
+#: the job log already settled.
+_MAX_CI_FIX_ROUNDS = 2
+
+
 def _react_to_red(
-    story, record: RunRecord, branch: str, pr_number: int, failed: list[str], deadline: float
+    story,
+    record: RunRecord,
+    path: Path,
+    pr_number: int,
+    failed: list[str],
+    deadline: float,
 ) -> None:
+    """A red check, judged before it is retried. The failed jobs' own log
+    says which of the two cases this is: a defect with a repository file's
+    name on it, which an implementer can fix, or a failure the driver cannot
+    locate, which is what the one counted rerun is for. #397 spent that
+    rerun, and then the run, on "Coverage ... for
+    src/lib/components/LogRow.e2e.ts" printed twice, identically."""
+    branch = record.delivery["integration_branch"]
+    failure = _diagnose_red(branch, failed)
+    findings = _ci_findings(story, record, pr_number, failure)
+    if not findings:
+        _rerun_or_stop(story, record, branch, pr_number, failed, deadline, failure)
+        return
+    _ci_fix_round(story, record, path, pr_number, failed, findings, failure)
+    _await_fresh_checks(story, pr_number, deadline, failed)
+
+
+def _diagnose_red(branch: str, failed: list[str]) -> gates.GateFailure:
+    run_id = github.failed_run(branch)
+    log = github.failed_run_log(run_id) if run_id is not None else ""
+    failure = ci_log.diagnose(failed, log)
+    narrate.headed("🩺 ", failure.diagnostic)
+    return failure
+
+
+def _ci_findings(
+    story, record: RunRecord, pr_number: int, failure: gates.GateFailure
+) -> list[Finding]:
+    """The red CI's culprits as findings an implementer can act on, or an
+    empty list when nothing in the log is this run's to fix. Conservative in
+    the same way a gate failure is: an unlocated failure concludes nothing,
+    and a file no slice of this run owns is not this run's defect."""
+    if not failure.located:
+        return []
+    owned = [name for name in sorted(failure.culprits) if _owned_by_a_slice(record, name)]
+    if not owned:
+        return []
+    fixable = [name for name in owned if not _is_retained_test(record, name)]
+    if not fixable:
+        _stop_on_acceptance_culprits(story, pr_number, owned, failure)
+    return [
+        Finding(
+            file=name,
+            line=1,
+            category="ci",
+            required_fix=ci_log.blamed_lines(failure.diagnostic, name),
+        )
+        for name in fixable
+    ]
+
+
+def _owned_by_a_slice(record: RunRecord, file: str) -> bool:
+    return any(review.owns(piece.layer, file) for piece in record.ordered())
+
+
+def _is_retained_test(record: RunRecord, file: str) -> bool:
+    """Whether the log blames one of the acceptance tests block 1 froze. The
+    log names repository-root paths, the same spelling the retained list
+    uses, so equality is the whole test."""
+    return any(file in piece.test_files for piece in record.ordered())
+
+
+def _stop_on_acceptance_culprits(
+    story, pr_number: int, owned: list[str], failure: gates.GateFailure
+) -> None:
+    """Every file the red CI blames is a retained acceptance test, whose
+    bytes no implementation turn may change - block 3's rule, and the reason
+    `_check_gate_blames_the_implementation` exists beside it. Moving such a
+    file is not a fix turn's work either: the retained `test_files` list is
+    what every later check reads, and a turn that renamed a test would leave
+    that list naming a path the acceptance run, the immutability check and
+    the freeze can no longer find. So the run stops and names block 1, which
+    is the only place the file can still be repaired - and block 1's
+    placement check is what stops it being written there in the first
+    place."""
+    raise FlowFailure(
+        Outcome.TESTS_INVALID,
+        f"CI is red on PR #{pr_number} and every file it blames is a retained "
+        f"acceptance test ({', '.join(owned)}), whose bytes no implementation turn may "
+        f"change: {failure.diagnostic}; repair the test in block 1 and run the story again",
+        story.number,
+        add_blocked=True,
+    )
+
+
+def _ci_fix_round(
+    story,
+    record: RunRecord,
+    path: Path,
+    pr_number: int,
+    failed: list[str],
+    findings: list[Finding],
+    failure: gates.GateFailure,
+) -> None:
+    spent = int(record.delivery.get("ci_fix_rounds", 0))
+    if spent >= _MAX_CI_FIX_ROUNDS:
+        raise FlowFailure(
+            Outcome.CAPACITY_EXHAUSTED,
+            f"CI is still red on PR #{pr_number} after {spent} CI fix round(s): "
+            f"{failure.diagnostic}",
+            story.number,
+            add_blocked=True,
+        )
+    with record.transition():
+        record.delivery["ci_fix_rounds"] = spent + 1
+        record.delivery["ci_failed"] = list(failed)
+        record.save()
+    named = ", ".join(finding.file for finding in findings)
+    narrate.line(f"🛠 CI fix round {spent + 1}/{_MAX_CI_FIX_ROUNDS} on PR #{pr_number}: {named}")
+    _apply_fixes(story, record, path, findings, _ci_fix_diagnostic)
+
+
+def _ci_fix_diagnostic(findings: list[Finding]) -> str:
+    """The fix turn's diagnostic: what CI said, quoted per file."""
+    lines = ["CI failed on the pull request; the failed jobs' log blames these files:"]
+    for finding in findings:
+        lines.append(f"- {finding.file}:")
+        lines.extend(f"    {row}" for row in finding.required_fix.splitlines())
+    lines.append(
+        "Fix the cause in your worktree. The retained acceptance tests' bytes must not "
+        "change, and nothing outside your slice's layer may change either."
+    )
+    return "\n".join(lines)
+
+
+def _rerun_or_stop(
+    story,
+    record: RunRecord,
+    branch: str,
+    pr_number: int,
+    failed: list[str],
+    deadline: float,
+    failure: gates.GateFailure,
+) -> None:
+    """Nothing in the log this run can act on - no repository path in it at
+    all (an artifact upload 403, a lost runner), or only paths no slice of
+    this run owns. That is the flake's case, and it gets the one counted
+    rerun it always got."""
     if record.delivery.get("rerun_used"):
         raise FlowFailure(
             Outcome.CAPACITY_EXHAUSTED,
-            f"CI is red on PR #{pr_number} after the one allowed rerun: {', '.join(failed)}",
+            f"CI is red on PR #{pr_number} after the one allowed rerun: "
+            f"{', '.join(failed)} — {failure.headline}",
             story.number,
             add_blocked=True,
         )
     _rerun(story, record, branch, failed)
-    _await_rerun_registration(story, pr_number, deadline, failed)
+    _await_fresh_checks(story, pr_number, deadline, failed)
 
 
-def _await_rerun_registration(story, pr_number: int, deadline: float, reran: list[str]) -> None:
-    """`gh pr checks` can still report the stale FAILURE for the very
-    checks just reran - the rerun has not registered yet, and
-    `gh run rerun --failed` does not make that instantaneous. Reading that
-    stale red as a second, genuine failure would spend the one counted
-    rerun before it ever ran, so wait for each reran check to leave its
-    failed state before resuming normal judgement."""
+def _await_fresh_checks(story, pr_number: int, deadline: float, reran: list[str]) -> None:
+    """`gh pr checks` can still report the stale FAILURE for the very checks
+    a rerun or a pushed fix just replaced - the new run has not registered
+    yet, and neither `gh run rerun --failed` nor a push makes that
+    instantaneous. Reading that stale red as a second, genuine failure would
+    spend the rerun's outcome, or a CI fix round, before it ever ran, so
+    wait for each of them to leave its failed state before resuming normal
+    judgement."""
     while True:
         checks = github.pr_checks(pr_number)
         states = {check.name: check.state for check in checks}
@@ -473,7 +631,7 @@ def _await_rerun_registration(story, pr_number: int, deadline: float, reran: lis
         if not still_failed:
             return
         narrate.line(
-            f"⏳ Waiting for the rerun to register on PR #{pr_number}: {', '.join(still_failed)}"
+            f"⏳ Waiting for the new run to register on PR #{pr_number}: {', '.join(still_failed)}"
         )
         _await_checks(story, pr_number, deadline, still_failed)
 

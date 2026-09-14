@@ -36,12 +36,27 @@ line ranges before you change anything.
 The tests must fail because the requested behavior is missing, not because of
 syntax, imports, or test-runner errors: each one fails on an expectation the
 implementation would satisfy, never on a thrown TypeError, ReferenceError or
-SyntaxError. They must also be type-correct against the helpers they import -
-read each helper's signature in its source before calling it, because the
-driver runs the repository's type lane over this branch. Change no production files,
+SyntaxError. They must also be type-correct against the helpers that already
+exist - read each helper's signature in its source before calling it, because
+the driver runs the repository's type lane over this branch. Where the story
+introduces a new function, method, prop or export, keep calling it as the brief
+describes it: the type lane's complaints about it, and the
+`@typescript-eslint/no-unsafe-*` errors that follow from it, are accepted while
+they stay inside your test files, and the implementation is what makes them go
+away. Never hide them with `@ts-expect-error`, a cast to `any` or a stub.
+Change no production files,
 configuration, dependencies, gates, thresholds, snapshots, or lock files.
 Keep every changed test in the requested test kind: playwright means only
 `*.e2e.ts`; vitest means no `*.e2e.ts`.
+
+When the test kind is `pytest` the slice is a change to this flow's own
+driver, and the paragraphs above about eslint, the harness route, prettier
+and the repository's content gates do not apply. Instead: every changed file
+stays under `workflow/tests/`, only `workflow/tests/test_*.py` files may be
+reported in `test_files`, the tests must satisfy `ruff check workflow` and
+`ruff format --check workflow`, and a test that pytest cannot even collect is
+rejected exactly as a thrown TypeError is elsewhere - fix the import, do not
+stub the module.
 
 Original brief:
 $brief

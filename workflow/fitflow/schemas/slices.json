@@ -18,13 +18,13 @@
 				"properties": {
 					"layer": {
 						"type": "string",
-						"enum": ["domain", "ui"],
-						"description": "ui is Svelte interface work; domain is every non-UI change, including backend and database work."
+						"enum": ["domain", "ui", "workflow"],
+						"description": "ui is Svelte interface work; domain is every non-UI change to the product, including backend and database work; workflow is a change to the driver itself under workflow/ and the docs that describe it."
 					},
 					"title": { "type": "string" },
 					"brief": { "type": "string" },
 					"acceptance": { "type": "array", "items": { "type": "string" } },
-					"test_kind": { "type": "string", "enum": ["vitest", "playwright"] }
+					"test_kind": { "type": "string", "enum": ["vitest", "playwright", "pytest"] }
 				}
 			}
 		}

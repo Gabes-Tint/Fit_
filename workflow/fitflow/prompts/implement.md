@@ -51,6 +51,13 @@ Everything else in the repository is in reach, including the driver's own
 code under `workflow/` and the application tooling under `scripts/` that is
 not listed above.
 
+A slice whose test kind is `pytest` is itself a change to this flow's own
+driver, and its scope is narrower, not wider: it may touch `workflow/**`,
+`docs/**` and `cspell.json`, and nothing else - never `src/`, `scripts/`,
+`quality/` or `.github/`. Its gates are `ruff check workflow`,
+`ruff format --check workflow` and, over the markdown it changed, prettier
+and cspell.
+
 When the tests themselves are wrong:
 
 $objecting

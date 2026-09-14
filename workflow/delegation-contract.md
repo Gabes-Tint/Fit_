@@ -14,9 +14,9 @@ invariants; behavioral changes belong in the driver and its tests.
 ## Inputs and ownership
 
 The driver retains block 1's ordered list of one or two slices (`domain`, then
-`ui` when both exist). Each slice already has an issue number, brief, acceptance
-criteria, test kind, failing test paths, branch, worktree and team. Block 2
-must reuse those identities. It does not split again, create replacement issues
+`ui` when both exist, or a single `workflow` slice). Each slice already has an
+issue number, brief, acceptance criteria, test kind, failing test paths,
+branch, worktree and team. Block 2 must reuse those identities. It does not split again, create replacement issues
 or worktrees, or ask a worker to rediscover the brief.
 
 That order is also the dependency order. A UI slice usually renders what its
@@ -36,8 +36,11 @@ to repository content at the recorded commit; mutable issue text is not enough.
 The driver owns classification, validation and transitions. An agent may
 extract signals or propose evidence, but a role name or a claim that tests
 passed is never the verdict. Work is confined to the assigned worktree, with
-no writes to its sibling or the shared checkout. Workflow source, prompts,
-agent configuration and gate policy cannot be changed during this run.
+no writes to its sibling or the shared checkout. The driver's own source,
+prompts, agent configuration and gate policy cannot be changed _for_ this run:
+a `workflow` slice edits its worktree's copy like any other file, the running
+driver is the shared checkout's code, and nothing it produces takes effect
+until Gabriel merges it.
 
 Before the failing-test commit is accepted, the driver validates it as what
 it will become: an immutable input. It runs the repository's change-scoped
@@ -50,6 +53,71 @@ verdict on this branch is exactly the verdict block 3 will get on the same
 bytes; any failure returns a precise, repairable diagnostic (outcome
 `TESTS_INVALID`, exit 31) to the same mechanic retry loop and never reaches
 implementation.
+
+### Fails as intended includes the API that does not exist yet
+
+Two of those lanes have one sanctioned exception, because without it a
+story that introduces a new function, method, prop or export cannot pass
+block 1 at all. The failing tests have to name the API before it exists, so
+the type lane reports errors inside the test file - a property that is not
+on the type, an argument count the current signature does not take, an
+export or module that cannot be found - and eslint's type-aware rules then
+see `any` flowing out of that unresolved import. The mechanic cannot
+legally remove either: `@ts-expect-error`, a cast to `any` and a stub are
+rejected elsewhere in block 1, and the acceptance bytes are immutable by
+the time the implementation lands. #422 proved it end to end - #423's
+mechanic refused to write a test at all ("cannot be written as type-correct
+tests on a test-only branch"), and #424's produced 186
+`@typescript-eslint/no-unsafe-*` errors - and both exhausted their three
+attempts.
+
+So the driver parses each lane's output error by error and asks two
+questions of every one of them. **Which file?** Every error must be inside
+a test file the mechanic reported; one naming a helper under `tests/`, a
+fixture or a product file is a rejection, and the diagnostic names those
+files. **Which rule?** Tolerated are exactly the
+`@typescript-eslint/no-unsafe-*` family (`-call`, `-member-access`,
+`-assignment`, `-argument`, `-return`), and the TypeScript diagnostics
+`TS2339`/`TS2551` (property does not exist), `TS2554`/`TS2555` (argument
+count), `TS2345` (argument type), `TS2305`/`TS2724` (no exported member)
+and `TS2307` (cannot find module) - the last only when the module path is
+inside this repository, because a missing `vitest` is a broken checkout,
+not a missing API. Every other rule and code is a rejection: a formatting
+rule, an unused import, `no-console` or a parsing error does not become
+true when the implementation lands. Output the driver could not read in
+full is also a rejection, so an unreadable lane is never softer than a
+readable one.
+
+An accepted failure is narrated (`🧪 Gates: check — 4 type errors inside
+the acceptance tests, expected before the implementation exists ✔`) and
+recorded on the slice as `tests_type_debt`, acceptance file to error count,
+which is what block 3 reads below.
+
+Nothing else about block 1 changes. The runtime verdict still has to hold
+in full: the tests must run, fail, and fail on an expectation the
+implementation would satisfy. A file that throws - a `TypeError`, a
+`ReferenceError`, a syntax error - is rejected exactly as before, and so is
+a vitest file that dies before its first assertion; the sanctioned pattern
+for a module that does not exist yet is still the dynamic import inside the
+assertion, which produces a real failed expectation. The type lane's
+opinion about a file and the runner's verdict on it are independent, and
+both must pass. This does weaken one thing: #399's case - a helper called
+with an argument of the wrong type - now passes the type lane when it is
+inside an acceptance file, because it is indistinguishable from the new
+parameter a story adds. It is still caught, by the runtime verdict that
+sees it throw, and by block 3's gates below.
+
+### A mechanic that refuses
+
+A block 1 reply with an empty `test_files` and a stated `why_they_fail` is
+a refusal: the mechanic is saying this brief cannot be turned into a
+failing acceptance test. That is a statement about the brief, not about the
+branch, and a retry puts the same brief to the same agent in the same
+session - #423 produced the identical refusal three times. The run stops at
+once as `TESTS_NOT_PUSHED` (exit 23) with the mechanic's own reason in the
+diagnostic and in the story comment, consuming no further turn. An empty
+reply with no reason at all remains the ordinary repairable "reported no
+test files".
 
 Failing is also not enough on its own: the driver reads each failed test's
 error message out of the runner's JSON report and requires it to be a failed
@@ -70,6 +138,99 @@ implementation lands, and an implementation worker cannot legally fix it.
 Consequently the mechanic must write assertions that lint clean both before
 and after the behavior exists (for a missing module: dynamic import through
 the promise chain with `unknown`-typed binding, not suppression).
+
+Failing means what the runner's report says, and the report says more than
+`failed`. A result is proof the expectation bit only when it is `passed`,
+and proof that nothing was tried only when it is skipped (playwright
+`skipped`; vitest `pending`, `skipped` or `todo`); every other status is a
+failure, playwright's `timedOut` and `interrupted` included. That matters
+because an expectation waiting for UI that does not exist yet - the
+ordinary shape of a UI acceptance test before its implementation - times
+out rather than failing an assertion, and counting only `failed` rejected
+correct tests as `TESTS_DO_NOT_FAIL`. A file whose tests were all skipped
+is treated like a file the runner never ran: it neither passed nor failed,
+so block 1 rejects it and block 3 refuses to read it as a passing
+acceptance run. Every rejection for not failing carries the runner's own
+per-test verdict - each test title with the status it was given - and a
+file the report never mentioned is rejected naming the files it did
+contain, so the mechanic can see which assertion did not bite instead of
+only that none did.
+
+## Where an acceptance test lives
+
+Placement is checked in block 1, before the bytes become immutable. A
+playwright acceptance test (`*.e2e.ts`) must live under `src/routes/`, where
+every one in the repository already does; a vitest spec sits beside the
+module it covers, under `src/`. A file in the wrong folder is a repairable
+diagnostic naming the file and the folder it belongs in, exactly like the
+wrong-test-kind check beside it.
+
+The rule comes from the coverage lane, not from playwright:
+`playwright.config.ts` sets no `testDir`, so it would run an `*.e2e.ts`
+anywhere, while `test:coverage:client` includes `src/lib/**/*.{ts,svelte}`
+as source and excludes only `*.spec.ts`/`*.test.ts`. An `*.e2e.ts` under
+`src/lib/` is therefore a source file no unit test ever loads: 0% lines
+against a per-file threshold of 80%. Block 3's `verify:changed` does not run
+coverage, so nothing saw it until CI, on a pull request where nobody could
+change the file any more (#397).
+
+The rule reads the repository's TypeScript layout, so it is a product
+rule: a `workflow` slice's Python tests are placed by their own rule, below.
+
+## The workflow layer
+
+A story about this flow's own driver is a slice like any other, at the third
+layer: `workflow`. Its code, its tests and the prose describing it all live in
+two directories, so its boundary is an allowlist rather than a partition - a
+`workflow` slice may change `workflow/**`, `docs/**` and the repository's
+`cspell.json`, and a path outside those (`src/`, `scripts/`, `quality/`,
+`.github/`) is a boundary rejection naming the file. The product layers are
+untouched by this: `domain` and `ui` reject each other's areas exactly as
+before.
+
+It is always the only slice of its story. `spans_domain_and_ui` is false, it
+never appears beside `domain` or `ui`, and `needs_sibling` therefore never
+applies - a one-slice story has no sibling to wait for, which the driver
+already rejects. The rung is chosen from the same nine signals, by the same
+precedence table.
+
+Its test kind is `pytest`. The acceptance tests are `workflow/tests/test_*.py`
+and run under `uv run --project workflow pytest -q <files>` from the
+repository root. Block 1 proves they fail and block 3 proves they pass, from
+pytest's own short summary (`-rA`): a `FAILED` line carries the assertion that
+is waiting for the behavior, and an `ERROR` line is a module pytest could not
+collect - a broken test, not one failing because the behavior is missing, and
+it goes back to the mechanic as such, exactly as a thrown `TypeError` does in
+a vitest slice.
+
+The whole of `workflow/tests/` is test-side, so block 1 may also change
+`workflow/tests/conftest.py` and a fake under `workflow/tests/fakes/`: a new
+flow scenario needs its `given_*` helper and usually a scripted answer from a
+fake, and neither is driver code. Only a `workflow/tests/test_*.py` file may
+be reported as an acceptance test - pytest collects nothing from a
+`conftest.py` or a fake, so naming one is a `TESTS_NOT_PUSHED` correction.
+
+Its gates are the driver's own, in both block 1 and every block 3 turn, in
+place of `verify:changed` / `lint:changed` / `check` / `gate.ts verify:fast`,
+which size and run the repository's TypeScript and have nothing to say about
+Python:
+
+- `uv run --project workflow ruff check workflow`
+- `uv run --project workflow ruff format --check workflow`
+- `bun x prettier --check <changed markdown>`
+- `bun x cspell --no-progress <changed markdown>`
+
+The markdown pair runs only over the changed `.md` files under `workflow/` and
+`docs/`, so a turn that changed no prose does not run it. Each of the four
+names the files and lines it rejects, so the failure comes back located and
+block 3's `TESTS_INVALID` rule works unchanged: a gate failure confined to the
+retained acceptance tests stops the run instead of spending an implementer's
+corrections on bytes it may not change.
+
+Block 4 is unchanged and is the point of the layer's existence: the pull
+request is opened, CI runs, and then the merge is withheld. The driver never
+merges its own code, so the run ends `NEEDS_GABRIEL` (exit 11) with the PR
+open and every worktree in place.
 
 ## The component harness
 
@@ -349,7 +510,9 @@ them; the next validation judges the whole diff again. It costs an ordinary
 correction and is never escalated to a stronger role - no model is the
 answer to "you changed a file you may not change" - and when the budget
 ends with the change still present the run stops as `AGENT_BROKE_CONTRACT`
-(exit 22). Acceptance-test bytes are the exception: they are judged before
+(exit 22). A corrective turn that leaves the same path there ends the
+budget on the spot: the rejection came back verbatim, so the attempt after
+it would only reproduce it. Acceptance-test bytes are the exception: they are judged before
 scope and terminally, because their immutability is the contract itself. Any local commit happens under driver control before final validation; a
 successful slice has a clean, recorded implementation commit and evidence for
 those exact bytes. Implementation agents do not push or open PRs. Block 1's
@@ -369,20 +532,35 @@ at most nine implementation turns, a builder start six and a solver start
 three, tripled at most once more per repaired test set and excluding block 1
 turns.
 
-| From             | Condition/action                                                                  | To               |
-| ---------------- | --------------------------------------------------------------------------------- | ---------------- |
-| `assigned`       | Launch gate passes; reserve attempt 1                                             | `running`        |
-| `running`        | Worker ends normally with a valid reply                                           | `validating`     |
-| `validating`     | All independent checks pass at the recorded commit                                | `succeeded`      |
-| `validating`     | Repairable failure and attempt less than 3                                        | `correcting`     |
-| `correcting`     | Same role, identity, session and worktree; reserve next attempt                   | `running`        |
-| `validating`     | Repairable failure at attempt 3, role below solver                                | `escalating`     |
-| `escalating`     | Immediate next role, matching frozen configuration, new revision and attempt zero | `assigned`       |
-| `validating`     | Repairable failure at attempt 3 on solver                                         | `failed`         |
-| `validating`     | Verified objection to the acceptance tests, fewer than two repairs spent          | `tests_rejected` |
-| `tests_rejected` | Block 1 repaired the tests, the driver re-froze them, attempts reset to zero      | `assigned`       |
-| `tests_rejected` | The repaired tests do not merge into the slice's own branch                       | `failed`         |
-| Any active state | External failure, contract violation or required human decision                   | `failed`         |
+Three is a ceiling, not a quota. A correction is worth taking only when the
+agent can act on what it was told, and a diagnostic that comes back
+identical after one says the opposite: the agent already tried, the verdict
+did not move, and the attempts left would only reproduce it. So when the
+rejection of attempt N+1 is the rejection of attempt N, the role's budget
+ends there, exactly as exhaustion would end it - escalating one rung, or
+stopping the run on a solver or a contract breach - and the narration, the
+turn ledger (`"repeated": true`) and the comment on the story all say how
+many attempts went unspent. "Identical" is judged on substance: the
+diagnostics are compared with their commit shas, durations, timestamps and
+absolute worktree paths normalized away, so a rejection naming a different
+file, test or count is a different rejection and its correction is worth
+the attempt. The stronger role always gets its own full budget: an
+escalated role's first attempt has no predecessor to repeat.
+
+| From             | Condition/action                                                                               | To               |
+| ---------------- | ---------------------------------------------------------------------------------------------- | ---------------- |
+| `assigned`       | Launch gate passes; reserve attempt 1                                                          | `running`        |
+| `running`        | Worker ends normally with a valid reply                                                        | `validating`     |
+| `validating`     | All independent checks pass at the recorded commit                                             | `succeeded`      |
+| `validating`     | Repairable failure differing from the previous attempt's, and attempt less than 3              | `correcting`     |
+| `correcting`     | Same role, identity, session and worktree; reserve next attempt                                | `running`        |
+| `validating`     | Repairable failure at attempt 3, or one identical to the previous attempt's, role below solver | `escalating`     |
+| `escalating`     | Immediate next role, matching frozen configuration, new revision and attempt zero              | `assigned`       |
+| `validating`     | Repairable failure at attempt 3, or one identical to the previous attempt's, on solver         | `failed`         |
+| `validating`     | Verified objection to the acceptance tests, fewer than two repairs spent                       | `tests_rejected` |
+| `tests_rejected` | Block 1 repaired the tests, the driver re-froze them, attempts reset to zero                   | `assigned`       |
+| `tests_rejected` | The repaired tests do not merge into the slice's own branch                                    | `failed`         |
+| Any active state | External failure, contract violation or required human decision                                | `failed`         |
 
 Escalation preserves issue, team, branch, worktree, brief and accumulated
 implementation. The old role's worker must have ended. The next role uses its
@@ -393,8 +571,9 @@ stop as a tool failure. Corrections within a role always reuse its session.
 
 All unlisted transitions are prohibited. In particular: no downgrade, skipped
 rung, early escalation based on an agent's self-assessment, fourth turn at one
-role, or automatic transition out of `succeeded` or `failed`. Exhaustion is the
-only capacity escalation trigger. A request for a stronger model still needs
+role, or automatic transition out of `succeeded` or `failed`. A spent budget is
+the only capacity escalation trigger - spent to attempt 3, or ended early by a
+rejection that repeated verbatim. A request for a stronger model still needs
 the normal independent diagnostic and correction budget.
 
 Persist a turn identity before launching and its completion before choosing
@@ -471,7 +650,9 @@ the implementer's uncommitted work, and pushes it. `tests_sha` - and with it
 `acceptance_sha`, the bytes an implementation turn may not change - becomes
 the repair commit; `failing_sha`, the base every later check compares HEAD,
 origin and the diff against, becomes the merge; `test_files` becomes the
-repaired list. The slice returns to `assigned` with the same role, revision,
+repaired list; and `tests_type_debt` becomes the debt block 1 accepted on
+the repaired tests, because the rejected set's was recorded about files that
+no longer judge this slice. The slice returns to `assigned` with the same role, revision,
 assignment, session and worktree and `attempts` reset to zero: the tests it
 is judged by are new inputs, so the role gets its full budget against them,
 and its next initial turn is told the tests were repaired and how.
@@ -514,8 +695,8 @@ classified and stopped the same way.
 | 1: `contract`           | Malformed assignment/reply, agent commit or push, weakened acceptance test, identity mismatch, an out-of-reach or other-layer path still there at the end of the budget                                                                | Stop immediately; preserve; no retry/escalation. An out-of-reach path is corrected first (row 4) and reaches this row only when the budget ends with it still there. |
 | 2: `external`           | Authentication, network, launch, unavailable tool, timeout, crash, missing/invalid runner report                                                                                                                                       | Stop immediately; preserve; no retry/escalation.                                                                                                                     |
 | 3: `human`              | Unresolved product intent, prohibited policy change needed, unmet slice dependency                                                                                                                                                     | Stop; preserve; record required decision; no capacity escalation.                                                                                                    |
-| 4: `repairable`         | Actual assertion failure, type/lint diagnostic, valid failing gate verdict caused by implementation, misreported `changed_files`, an out-of-reach or other-layer path the agent can put back, an objection the driver could not verify | Same-role correction until attempt 3. An out-of-reach path is never escalated: it stops at row 1 instead.                                                            |
-| 5: `capacity_exhausted` | Three validated repairable failures at this role                                                                                                                                                                                       | Escalate one rung, or stop/preserve if solver.                                                                                                                       |
+| 4: `repairable`         | Actual assertion failure, type/lint diagnostic, valid failing gate verdict caused by implementation, misreported `changed_files`, an out-of-reach or other-layer path the agent can put back, an objection the driver could not verify | Same-role correction until attempt 3, or until the same rejection comes back verbatim. An out-of-reach path is never escalated: it stops at row 1 instead.           |
+| 5: `capacity_exhausted` | Three validated repairable failures at this role, or two consecutive ones that are the same failure                                                                                                                                    | Escalate one rung, or stop/preserve if solver. The unspent attempts are named in the narration and the comment.                                                      |
 
 A failing gate verdict is repairable only while the implementation could
 repair it. Each failed step's diagnostic carries its own account of what it
@@ -529,6 +710,21 @@ once as `TESTS_INVALID` (exit 31, `blocked`) naming block 1 and the file,
 rather than consuming three corrections and an escalation on it. The rule
 is deliberately conservative: a failure naming any non-test file, and any
 failure whose files the driver cannot extract, stays row 4.
+
+Block 3 itself grants no tolerance. `verify:changed`'s `lint` and `check`
+steps must be clean over the implementation, which a correct implementation
+achieves by providing the signatures the tests call. There is exactly one
+exception to the paragraph above, and `tests_type_debt` is what tells it
+apart: when the failed steps are `check`, `lint` or `lint:changed` and
+every acceptance file they blame is one block 1 recorded type debt for,
+the failure says the implementation is unfinished, not that the test is
+broken. The tests named an API, block 1 accepted that they did, and the
+product still does not offer it in the shape they call - a diagnostic for
+the implementer, carrying the tsc and eslint lines and the sentence that
+the fix belongs in the product code. It is an ordinary row 4 correction.
+Any other failed step (`duplicates`, `format:check`, `check:suppressions`,
+a spec), or a blamed acceptance file with no recorded debt, is block 1's
+defect and stops the run as before.
 
 Coordinated cancellation is a future invariant: it should become a terminal
 stop with reason `cancelled`, stop new turns, terminate and reap owned workers
@@ -668,10 +864,44 @@ The driver never trusts the PR's own state: it runs `gh pr checks` itself
 and reads the parsed check list. The required check `all-green` must be
 present and successful, and no check may have failed. A missing,
 unparsable or pending-past-timeout check state is an external tool failure,
-never green. On red, the driver reruns the failed checks exactly once
-(`gh run list` + `gh run rerun --failed`, the count persisted in the run
-record) and polls again; a second red stops the run with
-`CAPACITY_EXHAUSTED` and `blocked` - "then investigate" is a human act.
+never green.
+
+A red check is judged from its own log before it is retried. The driver
+reads the failed jobs' log (`gh run view <run-id> --log-failed`), keeps the
+lines that carry an error marker and the repository paths those lines name,
+and narrates them under a `🩺` head. What happens next depends only on
+what it could read:
+
+- **Located, and a slice of this run owns the file.** The culprits become
+  findings (category `ci`, the blaming log lines as `required_fix`) and the
+  owning slices each take a CI fix turn through the same machinery a review
+  fix uses: the same role, session and worktree, the full block 3
+  re-validation - acceptance still passes unmodified, scope, no gate files
+  - a new driver-made freeze commit, the join re-merged and pushed. At most
+    two such rounds, counted in `delivery.ci_fix_rounds`, a budget of its own
+    that neither the review rounds nor the one counted rerun touch - a
+    resumed run whose rerun is already spent still gets its fix rounds. Still
+    red after both: `CAPACITY_EXHAUSTED` and `blocked`, with the diagnostic
+    in the message.
+- **Located, but every file it blames is a retained acceptance test.**
+  There is no fix turn that could repair it: those bytes are immutable to
+  every implementation turn, and moving the file is not a fix turn's work
+  either - the retained `test_files` list is what the acceptance run, the
+  immutability check and the freeze all read, and a turn that renamed a
+  test would leave that list naming a path none of them can find. The run
+  stops with `TESTS_INVALID` and `blocked`, naming the test and block 1,
+  which is the only place it can still be repaired.
+- **Not located** - no repository path in the log at all (an artifact
+  upload 403, a lost runner), or only paths no slice of this run owns.
+  Nothing may be concluded from a log the driver could not read, so this is
+  the flake's case: the failed checks are rerun exactly once (`gh run list`
+  - `gh run rerun --failed`, the count persisted in the run record) and the
+    driver polls again; a second red stops the run with `CAPACITY_EXHAUSTED`
+    and `blocked` - "then investigate" is a human act.
+
+A rerun and a pushed fix are both slow to register, so after either the
+driver waits for each failed check to leave its failed state before judging
+again: a stale red is not a second failure.
 
 The merge is withheld for one diff: after CI is green and before the merge
 command, the driver reads the PR's own diff against main, and a path under
@@ -887,6 +1117,7 @@ re-derive:
 | no turn at all (the launch barrier failed)                     | `assigned`; the loop launches attempt 1                                                                                                                                                                  |
 | status `running` (the driver died mid-turn)                    | refused (`EXECUTION_HELD`) while an `aarmy talk` for that team and role still runs on this machine; otherwise voided                                                                                     |
 | completed with a valid reply (validation stopped or never ran) | the working tree's digest must equal the one recorded when the turn ended, else `RUN_STATE_CONFLICT`; then `running` with its verdict pending, and block 3 re-validates that reply without an agent call |
+| completed and marked `"repeated": true`                        | refused (`RUN_STATE_CONFLICT`): the verdict is a function of bytes that have not changed, so re-validating could only reach the same diagnostic and stop on it again; reset                              |
 | completed without a reply (launch failed, reply malformed)     | voided                                                                                                                                                                                                   |
 | already voided by an earlier resume                            | back to the launch                                                                                                                                                                                       |
 | a review fix, or state `fixing`/`escalating`                   | refused (`RUN_STATE_CONFLICT`): reset                                                                                                                                                                    |

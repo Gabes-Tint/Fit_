@@ -6,7 +6,10 @@ turn actually reached. A turn that ended with a valid reply has its
 verdict re-derived from that reply and the worktree it left - the same
 bytes, proven by the digest recorded when the turn ended, and no new agent
 call - so a run stopped by a driver defect continues once the driver is
-fixed. A turn the driver never saw end, or one that failed before it
+fixed. The exception is a turn the loop stopped early on because its
+diagnostic repeated verbatim: on an unchanged tree that re-derivation
+could only reach the same diagnostic, so the run stays stopped and says
+so. A turn the driver never saw end, or one that failed before it
 produced a reply, is voided and relaunched under the same attempt number:
 counters are not reset, the ledger keeps the voided entry, and a turn
 still running on this machine is never relaunched beside. A slice with no
@@ -198,9 +201,29 @@ def _reopen_for_validation(record: RunRecord, piece: SliceRecord, last: dict) ->
             f"worktree changed since {piece.role} attempt {last['attempt']} ended; "
             "audit it, then reset",
         )
+    _require_not_stopped_for_repetition(record, piece, last)
     with record.transition():
         piece.resume_to("running")
         record.save()
+
+
+def _require_not_stopped_for_repetition(record: RunRecord, piece: SliceRecord, last: dict) -> None:
+    """A turn the loop stopped on because its diagnostic came back
+    identical is not re-validated on an unchanged tree: the verdict is a
+    function of these bytes, so resuming would reach the same diagnostic
+    and stop again on it. A tree that moved since is the one thing that
+    makes re-validating worth doing, and the digest check above is what
+    sees it."""
+    if not last.get("repeated"):
+        return
+    raise _conflict(
+        record,
+        piece,
+        f"was stopped early: {piece.role} attempt {last['attempt']} failed exactly as "
+        f"attempt {last['attempt'] - 1} ({last.get('diagnostic', '')}), and nothing in the "
+        f"worktree has changed since, so re-validating it would only reach the same "
+        f"diagnostic",
+    )
 
 
 def _void(record: RunRecord, piece: SliceRecord, last: dict, why: str) -> None:
