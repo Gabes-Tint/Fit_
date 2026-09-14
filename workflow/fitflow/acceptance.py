@@ -236,15 +236,21 @@ def _pytest_test_statuses(entries: list[dict], filename: str) -> list[TestStatus
     ]
 
 
+def matching_path(name: str, paths: list[str]) -> str | None:
+    """Which of `paths` a tool meant by `name`, or None when none of them.
+    Tools report their own relative paths - jscpd's are relative to its scan
+    roots, eslint's to the worktree - so a name matches by path suffix,
+    never by equality alone."""
+    for path in paths:
+        if path == name or path.endswith(f"/{name}") or name.endswith(f"/{path}"):
+            return path
+    return None
+
+
 def owning_test(name: str, test_files: list[str]) -> str | None:
     """Which retained acceptance test a tool blamed, or None when it blamed
-    something else. Tools report their own relative paths - jscpd's are
-    relative to its scan roots, eslint's to the worktree - so a name matches
-    a test by path suffix, never by equality alone."""
-    for test in test_files:
-        if test == name or test.endswith(f"/{name}") or name.endswith(f"/{test}"):
-            return test
-    return None
+    something else."""
+    return matching_path(name, test_files)
 
 
 def _is_e2e(path: str) -> bool:

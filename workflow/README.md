@@ -436,8 +436,23 @@ that names nothing the driver can act on gets the one counted rerun:
    │ ERROR: Coverage for lines (0%) does not meet global threshold (80%) for src/lib/LogRow.ts
 🛠 CI fix round 1/2 on PR #418: src/lib/LogRow.ts
 🛠 Findings routed to slices: ui
+🔧 Builder #1001 (ui) review fix attempt 1/3
 ⇪ Pushed fixes; integration head 9c4d1b0…
 🟢 CI green on PR #418 (7 checks)
+```
+
+A fix turn is judged as strictly as an implementation turn and corrected
+the same way: it has the same three attempts, carries its own diagnostic
+into the next one, and stops early when that diagnostic comes back
+unchanged. A gate failure inside a test file the slice never touched, on a
+gate that already passed for that slice in this run, is run again once
+before it counts:
+
+```text
+🔧 Builder #1001 (ui) review fix attempt 1/3
+🔁 test:e2e failed in src/routes/sync.e2e.ts, which this slice does not touch and which passed at 18:42 — rerunning once
+✅ verify:changed passed on the rerun: the first run was a flake
+🔒 #1001 (ui) frozen at 3f1a90c…
 ```
 
 `🛑` marks a planned stop (for example, the call is Gabriel's, the slice
@@ -643,8 +658,8 @@ the story; blocks 2-3 terminal failures additionally label the story
 | 25   | WORKTREE_EXISTS      | the slice's worktree or branch already exists                                                                                                                                                                                                                                                                             |
 | 26   | TOOL_FAILED          | `gh`, `git` or `bun` failed unexpectedly, or a reply could not be parsed                                                                                                                                                                                                                                                  |
 | 27   | PLAN_REJECTED        | the delegation contract was rejected (bad signals, no evidence, dependent slices); replan                                                                                                                                                                                                                                 |
-| 28   | CAPACITY_EXHAUSTED   | a slice's solver spent its budget (three attempts, or two that failed identically), review did not converge, or CI stayed red after 2 CI fix rounds (or after the one rerun, when its log named nothing the driver could act on); everything preserved                                                                    |
+| 28   | CAPACITY_EXHAUSTED   | a slice's solver spent its budget (three attempts, or two that failed identically), a block 4 fix request spent the same budget the same two ways, review did not converge, or CI stayed red after 2 CI fix rounds (or after the one rerun, when its log named nothing the driver could act on); everything preserved     |
 | 29   | EXECUTION_HELD       | another `go.py` run already owns this story's lock; with `--resume`, a turn is still running here                                                                                                                                                                                                                         |
-| 30   | RUN_STATE_CONFLICT   | an earlier run left its retained state behind: `--resume` continues it, `--reset` archives it; with `--resume`, the record and the worktrees disagree (bytes changed, a review fix was interrupted, the PR is closed)                                                                                                     |
+| 30   | RUN_STATE_CONFLICT   | an earlier run left its retained state behind: `--resume` continues it, `--reset` archives it; with `--resume`, the record and the worktrees disagree (bytes changed since the turn ended, a slice interrupted between two roles, the PR is closed)                                                                       |
 | 31   | TESTS_INVALID        | the acceptance tests fail their own gate: lint, types, a suppression, a test that throws, a test in the wrong folder, or a red CI that blames nothing but a retained test; also a verified objection that still stands after two repairs - the mechanic's, then the objecting role's - or a repair block 1 could not make |
 | 32   | DEPLOY_FAILED        | a deploy or its smoke check failed after the merge: labelled `needs-gabriel`, never rolled back                                                                                                                                                                                                                           |

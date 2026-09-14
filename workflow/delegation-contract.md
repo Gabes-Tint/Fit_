@@ -588,10 +588,13 @@ running on the machine is never relaunched beside; a turn that died or never
 produced a reply is voided and relaunched under the same attempt number. A
 slice parked in `tests_rejected` stays parked, its unfinished repair turn is
 voided the same way, and block 3 relaunches block 1's repair from a fresh
-repair worktree. An
+repair worktree. A slice interrupted inside one of block 4's fix turns is
+reconciled by the same two rules and goes back to `fixing`: the run
+continues in block 4, the fix request finishes its remaining attempts, and
+only then is the join re-verified and the new commit carried onto the
+integration branch. An
 assignment or correction with no reserved turn proceeds normally. Changed
-bytes, an interrupted review fix or an unreadable record stop and preserve
-the worktree. A resume resets no counter. The one thing that does is a
+bytes or an unreadable record stop and preserve the worktree. A resume resets no counter. The one thing that does is a
 landed block 1 repair of the acceptance tests, and only because the tests
 that counter was counting attempts against are gone (see
 [Rejecting the tests](#rejecting-the-tests)).
@@ -905,16 +908,42 @@ reviewer that wrote anything is a contract failure.
 A `fix` verdict is the one sanctioned exit from `succeeded`. Each finding is
 routed to its slice by the layer boundaries - a finding outside every slice
 is a contract failure. Affected slices, in domain-then-UI order, each take
-one fix turn: the same role, session and worktree, the findings as the
+one fix request: the same role, session and worktree, the findings as the
 diagnostic, then the full block 3 validation (scope, acceptance bytes,
 gates) and a new driver-made freeze commit. The slice transitions
-`succeeded` → `fixing` → `validating` → `succeeded`; the fix turn is
-recorded with kind `review_fix` and does not consume block 3's attempt
-budget - the review loop has its own. A fix turn that fails validation
+`succeeded` → `fixing` → `validating` → `succeeded`, and the turns are
+recorded with kind `review_fix`.
+
+A fix request is bounded exactly as a block 3 role is, and separately from
+it: three attempts in the same role, session and worktree, each corrective
+turn carrying the rejection it is answering, and the repetition rule -
+a diagnostic that comes back identical after a corrective turn ends the
+request where it stands, naming the attempts left unspent. Every attempt is
+on the slice's turn ledger, with the reply and the working tree's digest,
+under the same session continuity rules as any other turn; the attempt
+inside the request is recorded as `fix_attempt` beside the slice-wide
+`attempt`. None of this consumes block 3's budget, and a scope breach
+inside a fix turn is what #419 made it everywhere else: a correctable
+rejection, spending one attempt of this budget.
+
+A request that ends without a passing turn - exhausted or stopped early -
 stops the run with `CAPACITY_EXHAUSTED` and `blocked`: the implementer
 could not repair the finding under review, and that is a human call, not a
 new escalation - the escalation ladder is spent by definition once block 3
-succeeded.
+succeeded. One failed validation is not that call, though. #406 lost a run
+to a fix turn that listed two files its diff never touched, the cheapest
+diagnostic there is and one a block 3 turn is simply corrected on.
+
+A fix turn is judged by the whole gate tier rather than by its own diff, so
+it inherits every test in it. A gate failure whose culprits are all test
+files this slice's diff does not touch, on a tier the ledger shows already
+passed for this slice in this run, is rerun once before it is judged, and
+the rerun is narrated with what failed, that the slice does not touch it,
+and when the tier last passed. A second failure is a verdict and spends an
+attempt like any other. A failure naming anything the diff touches, an
+unlocated failure, and a tier with no recorded earlier pass are never
+rerun. #420 lost a run to `src/routes/sync.e2e.ts`, which its slice never
+touched and which had passed in the same run twenty minutes earlier.
 
 After the fixes, the driver merges the new frozen commits into the
 integration branch (the superseded commits remain ancestors), pushes, and
@@ -939,8 +968,9 @@ what it could read:
 
 - **Located, and a slice of this run owns the file.** The culprits become
   findings (category `ci`, the blaming log lines as `required_fix`) and the
-  owning slices each take a CI fix turn through the same machinery a review
-  fix uses: the same role, session and worktree, the full block 3
+  owning slices each take a CI fix request through the same machinery a
+  review fix uses, its budget, repetition rule, ledger and flake rerun
+  included: the same role, session and worktree, the full block 3
   re-validation - acceptance still passes unmodified, scope, no gate files
   - a new driver-made freeze commit, the join re-merged and pushed. At most
     two such rounds, counted in `delivery.ci_fix_rounds`, a budget of its own
@@ -1168,7 +1198,7 @@ lock, loads `runs/story-<n>.json`, and decides where the flow continues:
 | a PR number, and GitHub says it is merged       | block 5, on that merge commit; a deploy recorded live is not repeated                                         |
 | a PR number, and it is neither open nor merged  | nowhere: `RUN_STATE_CONFLICT`, reset                                                                          |
 | a slice with no accepted assignment             | block 2, on the failing tests block 1 pushed; every slice must be unlaunched                                  |
-| any slice not `succeeded`                       | block 3, after each such slice is reconciled (next table)                                                     |
+| any slice not `succeeded`                       | block 3, after each such slice is reconciled (next table) - or block 4, when every such slice is `fixing`     |
 | every slice `succeeded`, terminal `IMPLEMENTED` | block 4; a retained integration branch and PR are reused at their recorded head, and a `merge` verdict stands |
 | every slice `succeeded`, any other terminal     | block 3's report, then block 4                                                                                |
 
@@ -1185,7 +1215,8 @@ re-derive:
 | completed and marked `"repeated": true`                        | refused (`RUN_STATE_CONFLICT`): the verdict is a function of bytes that have not changed, so re-validating could only reach the same diagnostic and stop on it again; reset                              |
 | completed without a reply (launch failed, reply malformed)     | voided                                                                                                                                                                                                   |
 | already voided by an earlier resume                            | back to the launch                                                                                                                                                                                       |
-| a review fix, or state `fixing`/`escalating`                   | refused (`RUN_STATE_CONFLICT`): reset                                                                                                                                                                    |
+| a fix turn (kind `review_fix`), or state `fixing`              | the same four rules above, but back to `fixing`: block 4 finishes the fix request, re-judging a retained reply or relaunching a voided turn under the same `fix_attempt`                                 |
+| state `escalating` (interrupted between two roles)             | refused (`RUN_STATE_CONFLICT`): reset                                                                                                                                                                    |
 
 Voiding keeps the ledger entry (status `completed`, result `void`, the reason
 in `why`), decrements `attempts` by one, and returns the slice to `assigned`
