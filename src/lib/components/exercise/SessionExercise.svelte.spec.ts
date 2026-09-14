@@ -50,8 +50,22 @@ beforeEach(() => {
 	startSession();
 });
 
-function renderPanel() {
-	return render(SessionExercise, { props: { onlog: () => logged.push(1) } });
+function session() {
+	const workout = tend.state.activeWorkout;
+	if (!workout) throw new Error('test expects a running session');
+	return workout;
+}
+
+function exerciseAt(index: number) {
+	const exercise = session().exercises[index];
+	if (!exercise) throw new Error(`test expects an exercise at ${index}`);
+	return exercise;
+}
+
+function renderPanel(index = 0) {
+	return render(SessionExercise, {
+		props: { exercise: exerciseAt(index), index, onlog: () => logged.push(1) }
+	});
 }
 
 describe('SessionExercise', () => {
@@ -68,10 +82,11 @@ describe('SessionExercise', () => {
 		await expect.element(page.getByText('8 × 121.3 lb')).toBeInTheDocument();
 	});
 
-	it('names the movement and where it sits in the session', async () => {
+	it('names the movement as a region of its own, with no count of where it sits', async () => {
 		await renderPanel();
-		await expect.element(page.getByText('Exercise 1 of 2')).toBeInTheDocument();
+		await expect.element(page.getByRole('region', { name: 'Bench Press' })).toBeInTheDocument();
 		await expect.element(page.getByRole('heading', { name: 'Bench Press' })).toBeInTheDocument();
+		expect(page.getByText(/Exercise \d+ of \d+/).elements()).toHaveLength(0);
 		await expect.element(page.getByText('Chest')).toBeInTheDocument();
 	});
 
@@ -91,7 +106,7 @@ describe('SessionExercise', () => {
 	it('ticks a set into the session and reports the start of the rest', async () => {
 		await renderPanel();
 		await page.getByRole('button', { name: 'Set 1 done' }).click();
-		expect(tend.currentExercise?.sets[0]?.done).toBe(true);
+		expect(session().exercises[0]?.sets[0]?.done).toBe(true);
 		expect(logged).toHaveLength(1);
 	});
 
@@ -99,7 +114,7 @@ describe('SessionExercise', () => {
 		await renderPanel();
 		await page.getByRole('button', { name: 'Set 1 done' }).click();
 		await page.getByRole('button', { name: 'Set 1 done' }).click();
-		expect(tend.currentExercise?.sets[0]?.done).toBe(false);
+		expect(session().exercises[0]?.sets[0]?.done).toBe(false);
 		expect(logged).toHaveLength(1);
 	});
 
@@ -107,28 +122,28 @@ describe('SessionExercise', () => {
 		await renderPanel();
 		await page.getByRole('button', { name: 'Increase reps on set 1' }).click();
 		await page.getByRole('button', { name: 'Decrease load on set 2' }).click();
-		expect(tend.currentExercise?.sets[0]?.reps).toBe(11);
-		expect(tend.currentExercise?.sets[1]?.load).toBe(57.5);
+		expect(session().exercises[0]?.sets[0]?.reps).toBe(11);
+		expect(session().exercises[0]?.sets[1]?.load).toBe(57.5);
 	});
 
 	it('adds a set beyond what the routine asked for', async () => {
 		await renderPanel();
 		await page.getByText('Add set').click();
-		expect(tend.currentExercise?.sets).toHaveLength(3);
+		expect(session().exercises[0]?.sets).toHaveLength(3);
 	});
 
 	it('keeps the note with the exercise', async () => {
 		await renderPanel();
 		await page.getByLabelText('Notes').fill('Left shoulder pinching — dropped the load.');
-		expect(tend.currentExercise?.note).toBe('Left shoulder pinching — dropped the load.');
+		expect(session().exercises[0]?.note).toBe('Left shoulder pinching — dropped the load.');
 	});
 
 	it('swaps the movement without losing the session', async () => {
 		await renderPanel();
 		await page.getByRole('button', { name: 'Swap' }).click();
 		await page.getByText('Pec Deck').click();
-		expect(tend.currentExercise?.name).toBe('Pec Deck');
-		expect(tend.currentExercise?.sets).toHaveLength(2);
+		expect(session().exercises[0]?.name).toBe('Pec Deck');
+		expect(session().exercises[0]?.sets).toHaveLength(2);
 	});
 
 	it('reads a bodyweight movement back without a load', async () => {
@@ -150,20 +165,29 @@ describe('SessionExercise', () => {
 		await page.getByRole('button', { name: 'Swap' }).click();
 		await page.getByRole('button', { name: 'Close' }).click();
 		expect(page.getByText('Pec Deck').elements()).toHaveLength(0);
-		expect(tend.currentExercise?.name).toBe('Bench Press');
+		expect(session().exercises[0]?.name).toBe('Bench Press');
 	});
 
 	it('ticks a set for a caller that does not want to hear about it', async () => {
-		await render(SessionExercise, { props: {} });
+		await render(SessionExercise, { props: { exercise: exerciseAt(0), index: 0 } });
 		await page.getByRole('button', { name: 'Set 1 done' }).click();
-		expect(tend.currentExercise?.sets[0]?.done).toBe(true);
+		expect(session().exercises[0]?.sets[0]?.done).toBe(true);
 	});
 
-	it('follows the session on to the next exercise', async () => {
-		await renderPanel();
-		tend.nextExercise();
-		await expect.element(page.getByText('Exercise 2 of 2')).toBeInTheDocument();
-		await expect.element(page.getByRole('heading', { name: 'Lateral Raise' })).toBeInTheDocument();
+	it('addresses every action to the exercise it was given, leaving the others alone', async () => {
+		await renderPanel(1);
+		await page.getByRole('button', { name: 'Set 1 done' }).click();
+		await page.getByRole('button', { name: 'Increase reps on set 1' }).click();
+		await page.getByText('Add set').click();
+		await page.getByLabelText('Notes').fill('Light today');
+		const [bench, raise] = session().exercises;
+		expect(raise?.sets.map((s) => s.done)).toEqual([true, false]);
+		expect(raise?.sets[0]?.reps).toBe(13);
+		expect(raise?.note).toBe('Light today');
+		expect(bench?.sets.some((s) => s.done)).toBe(false);
+		expect(bench?.sets).toHaveLength(2);
+		expect(bench?.note).toBe('');
+		expect(logged).toHaveLength(1);
 	});
 
 	it('reads back the history of the movement it was swapped for', async () => {
@@ -174,12 +198,5 @@ describe('SessionExercise', () => {
 		await page.getByRole('button', { name: 'Swap' }).click();
 		await page.getByText('Pec Deck').click();
 		await expect.element(page.getByText('9 × 40 kg')).toBeInTheDocument();
-	});
-
-	it('renders nothing when no session is running', async () => {
-		tend.state.activeWorkout = null;
-		tend.persist();
-		await renderPanel();
-		expect(page.getByText('Add set').elements()).toHaveLength(0);
 	});
 });

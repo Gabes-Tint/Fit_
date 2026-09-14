@@ -744,7 +744,7 @@ test.describe('at 360px', () => {
 		await expect(page.getByRole('heading', { name: 'Squat', level: 1 })).toBeVisible();
 
 		await atNarrowPhone(page);
-		await page.getByRole('button', { name: 'Watch the movement' }).click();
+		await page.getByRole('button', { name: 'Watch the movement' }).first().click();
 		const modal = page.getByRole('dialog');
 		await expect(modal).toBeVisible();
 		await expectFitsViewport(page, modal);
@@ -832,7 +832,7 @@ test.describe('at 360px', () => {
 
 		// The summary's volume tile: eight reps of the squat, which is 480 kg of
 		// work read back as 1058 lb — the widest number any of these screens print.
-		await page.getByRole('button', { name: 'Set 1 done' }).click();
+		await page.getByRole('button', { name: 'Set 1 done' }).first().click();
 		await page.getByRole('button', { name: 'Finish' }).click();
 		await expect(page.getByText('Session done', { exact: true })).toBeVisible();
 		const volume = page.getByText('1058 lb', { exact: true });

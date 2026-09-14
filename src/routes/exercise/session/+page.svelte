@@ -5,12 +5,7 @@
 	import RestTimer from '$lib/components/exercise/RestTimer.svelte';
 	import ScreenHeader from '$lib/components/exercise/ScreenHeader.svelte';
 	import SessionExercise from '$lib/components/exercise/SessionExercise.svelte';
-	import {
-		elapsedSeconds,
-		formatDuration,
-		workoutSetsDone,
-		workoutSetsPlanned
-	} from '$lib/domain/workout';
+	import { elapsedSeconds, formatDuration, nextUndoneSet, setCounts } from '$lib/domain/workout';
 	import { tend } from '$lib/state/tend.svelte';
 	import Button from '$lib/ui/Button.svelte';
 	import LinkButton from '$lib/ui/LinkButton.svelte';
@@ -20,21 +15,14 @@
 	let restStartedAt = $state<number | null>(null);
 
 	const workout = $derived(tend.state.activeWorkout);
-	const exercise = $derived(tend.currentExercise);
-	const planned = $derived(exercise ? exercise.sets.length : 0);
-	const onLastExercise = $derived(
-		workout !== null && workout.exerciseIndex + 1 >= workout.exercises.length
-	);
-	// The set the button ticks is the first still-open one, not "done + one",
-	// once a later set has been ticked out of order.
-	const nextSetIndex = $derived(exercise ? exercise.sets.findIndex((s) => !s.done) : -1);
-	const setNumber = $derived(Math.min(nextSetIndex === -1 ? planned : nextSetIndex + 1, planned));
+	const counts = $derived(workout ? setCounts(workout) : { done: 0, total: 0 });
+	// The first still-open set in routine order, not "done + one", so a set
+	// ticked out of order is never logged twice.
+	const next = $derived(workout ? nextUndoneSet(workout) : null);
 	const nextLabel = $derived(
-		nextSetIndex !== -1
-			? `Log set ${nextSetIndex + 1}`
-			: onLastExercise
-				? 'Finish session'
-				: 'Next exercise'
+		next && workout
+			? `Log ${workout.exercises[next.exerciseIndex]?.name ?? ''} set ${next.setIndex + 1}`
+			: 'Finish'
 	);
 
 	// Elapsed is computed from `startedAt`, so this only refreshes `now`. It
@@ -54,19 +42,13 @@
 		void goto(resolve(filed ? '/exercise/session/summary' : '/exercise'));
 	}
 
-	function next() {
-		if (!exercise) return;
-		if (nextSetIndex !== -1) {
-			tend.toggleSet(nextSetIndex);
-			restStartedAt = Date.now();
-			return;
-		}
-		if (onLastExercise) {
+	function logNext() {
+		if (!next) {
 			finish();
 			return;
 		}
-		tend.nextExercise();
-		restStartedAt = null;
+		tend.toggleSet(next.setIndex, next.exerciseIndex);
+		restStartedAt = Date.now();
 	}
 </script>
 
@@ -74,29 +56,35 @@
 	<title>Session · Fit_</title>
 </svelte:head>
 
+<!-- Once every set is done the footer itself reads Finish, so the header's early exit steps aside. -->
+{#snippet finishEarly()}
+	<Button variant="outline" size="sm" onclick={finish}>Finish</Button>
+{/snippet}
+
 {#if workout}
 	<div class="flex flex-col gap-5 pb-4">
 		<div>
-			<ScreenHeader back="/exercise" backLabel="Leave session" title={workout.routineName}>
-				{#snippet action()}
-					<Button variant="outline" size="sm" onclick={finish}>Finish</Button>
-				{/snippet}
-			</ScreenHeader>
-			<p class="tabular text-muted-foreground pl-11 text-xs">
-				{formatDuration(elapsedSeconds(workout, now))} · set {setNumber} of {planned}
-			</p>
-			<ProgressBar
-				class="mt-2.5"
-				value={workoutSetsDone(workout)}
-				target={workoutSetsPlanned(workout)}
+			<ScreenHeader
+				back="/exercise"
+				backLabel="Leave session"
+				title={workout.routineName}
+				action={next ? finishEarly : undefined}
 			/>
+			<p class="tabular text-muted-foreground pl-11 text-xs">
+				{formatDuration(elapsedSeconds(workout, now))} · {counts.done} of {counts.total} sets
+			</p>
+			<ProgressBar class="mt-2.5" value={counts.done} target={counts.total} />
 		</div>
 
-		<SessionExercise onlog={() => (restStartedAt = Date.now())} />
+		<div class="flex flex-col gap-10">
+			{#each workout.exercises as exercise, index (index)}
+				<SessionExercise {exercise} {index} onlog={() => (restStartedAt = Date.now())} />
+			{/each}
+		</div>
 
 		<div class="bg-background sticky bottom-0 flex flex-col gap-2 pt-2 pb-3">
 			<RestTimer startedAt={restStartedAt} seconds={tend.state.restSeconds} />
-			<Button size="lg" class="w-full" onclick={next}>{nextLabel}</Button>
+			<Button size="lg" class="w-full" onclick={logNext}>{nextLabel}</Button>
 		</div>
 	</div>
 {:else}

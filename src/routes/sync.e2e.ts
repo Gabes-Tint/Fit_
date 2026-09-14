@@ -93,7 +93,7 @@ test.describe('what one device recorded', () => {
 		await page.getByRole('link', { name: 'Exercise' }).click();
 		await page.getByRole('button', { name: /Full body/ }).click();
 		await page.getByRole('button', { name: 'Start Full body' }).click();
-		await page.getByRole('button', { name: 'Set 1 done' }).click();
+		await page.getByRole('button', { name: 'Set 1 done' }).first().click();
 		await page.getByRole('button', { name: 'Finish' }).click();
 		await expect(page.getByText('Session done', { exact: true })).toBeVisible();
 		await settled(page);

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Routine, Workout, WorkoutExercise, WorkoutSet } from './types';
 import {
-	currentExercise,
 	elapsedSeconds,
 	formatClock,
 	formatDuration,
@@ -142,17 +141,6 @@ describe('the session clock', () => {
 
 	it('rounds down to whole seconds', () => {
 		expect(elapsedSeconds(workout([], { startedAt: 0 }), 1999)).toBe(1);
-	});
-});
-
-describe('the exercise on screen', () => {
-	it('is the one the index points at', () => {
-		const w = workout([exercise('Bench Press', []), exercise('Pull-up', [])], { exerciseIndex: 1 });
-		expect(currentExercise(w)?.name).toBe('Pull-up');
-	});
-
-	it('is nothing when the index has run off the end', () => {
-		expect(currentExercise(workout([], { exerciseIndex: 3 }))).toBeUndefined();
 	});
 });
 
