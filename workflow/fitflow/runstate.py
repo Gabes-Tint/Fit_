@@ -219,6 +219,11 @@ class SliceRecord:
     # "domain" on a UI slice the planner judged cannot be implemented and
     # validated before its domain sibling exists; "" for an independent one.
     depends_on: str = ""
+    # The exported names a domain slice changes that files under the UI
+    # areas call. Non-empty means the slice stays additive - the old call
+    # shape keeps working - and that the story's ui slice adopts the new
+    # API after it, which is why that ui slice is always dependent.
+    ui_called_exports: list[str] = field(default_factory=list)
     # the sibling's frozen commit this slice's branch already carries
     sibling_merged: str = ""
     role: str = ""
@@ -506,6 +511,7 @@ def begin_run(story_number: int, base_sha: str, roster: dict, slices: list) -> R
                 failing_sha=piece.commit,
                 tests_sha=piece.commit,
                 tests_type_debt=dict(piece.tests_type_debt),
+                ui_called_exports=list(piece.ui_called_exports),
             )
             for piece in slices
         },

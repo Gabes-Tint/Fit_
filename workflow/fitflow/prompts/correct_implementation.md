@@ -24,6 +24,7 @@ change to the driver itself and may touch only `workflow/**`, `docs/**` and
 
 Original brief:
 $brief
+$scope_note
 
 Acceptance criteria:
 $acceptance

@@ -26,6 +26,10 @@ slice, and the driver accepts it and runs that slice after the domain one. The
 dependency never runs the other way: a `domain` slice must not depend on the UI
 slice, both slices must not depend on each other, and the only slice of a
 one-slice story has no sibling to depend on. Each of those is a rejected plan.
+A domain slice the driver made additive (below) adds the one case where the
+dependency is not the planner's to answer: its UI slice adopts the new API at
+call sites inside the domain slice's own files, so the driver runs it after
+that slice whatever `needs_sibling` said.
 
 Before delegation the driver must retain an immutable record of these inputs,
 the validated failing-test commit, the repository base commit, and the exact
@@ -183,6 +187,60 @@ change the file any more (#397).
 
 The rule reads the repository's TypeScript layout, so it is a product
 rule: a `workflow` slice's Python tests are placed by their own rule, below.
+
+## An additive domain slice, and the UI slice that adopts it
+
+No brief may instruct its slice to change a file the slice's layer forbids.
+The driver checks that when block 2 returns the slices, before block 1 writes
+an acceptance test against the brief, and two mechanical rules decide it: a
+path under an area this layer may not change, named literally in the brief,
+and - in a `domain` brief - the instruction to update, fix, migrate or switch
+its callers or call sites. Either goes back to the same planner session with
+the contradiction quoted, in a bounded loop of three attempts; exhausting it
+is `PLAN_REJECTED` (exit 27) with no child issue created. Neither rule reads
+the prose beyond that, deliberately. A brief that only wanted to cite a UI
+file as context trips the first rule too, which costs one corrective turn and
+is the price of a check that cannot be argued with. The path rule is a
+product rule: a `workflow` brief may name any path, because a driver story is
+routinely about one - the rule that an `.e2e.ts` belongs under `src/routes/`,
+say - and its allowlist scope check still judges what the slice actually
+changes.
+
+Story #422 is what the rules are for. Its domain slice changed the exported
+signatures of `src/lib/state/tend.svelte.ts` - `toggleSet`, `addSet`,
+`noteExercise` - which routes call, and its brief said "Update existing
+callers so the app still compiles". A domain slice may not touch
+`src/routes/`, and block 1's tests demanded the new signatures, so the
+callers could not keep compiling either: attempt 2 fixed them and was
+rejected on scope, attempts 1 and 3 reverted them and failed `check`. The
+plan could not be implemented at all, whatever the implementer did.
+
+So the shape of a change the UI calls is decided at plan time. The planner
+finds the callers itself (`grep -rl` over `src/routes`,
+`src/lib/components`, `src/lib/ui`) and lists every changed export they call
+in the domain slice's `ui_called_exports`; every other slice sends an empty
+array, and a `ui` or `workflow` slice that lists one is a corrected brief.
+A non-empty list makes the slice **additive**, and the driver - not the
+planner - appends the clause to its brief: the new function beside the old
+one, or a new optional parameter that changes no existing call, never a
+changed shape; the callers untouched; the acceptance tests naming the new
+API only. Because the driver appends it, the same words reach the child
+issue, block 1's test writer and every block 3 turn.
+
+The ui slice of that story is where the call sites change. It carries the
+adopt-and-clean clause - switch the call sites to the new API, then remove
+the compatibility shape once nothing else uses it - it is always dependent,
+and its scope is the one widening in the whole layer table: `src/lib/state/`,
+`src/lib/domain/` and `src/lib/server/` on top of the UI areas, for that
+slice only, because it runs on a tree that already carries the sibling whose
+API it adopts. An independent `ui` slice is judged exactly as before, and
+nothing widens the forbidden prefixes and files: the gates are out of reach
+of every slice. Block 1 is unchanged too - the ui slice's acceptance tests
+are still playwright tests under `src/routes/`.
+
+The prose on both sides is rendered in `fitflow.layers`, from the constants
+the scope check reads, for the same reason the forbidden-file brief is: the
+rule an agent is told and the rule it is judged by cannot drift.
 
 ## The workflow layer
 
@@ -507,6 +565,14 @@ while the running driver is the main checkout's code, and the driver's
 suite is CI's own "Workflow driver" job, not a block 3 gate - so a slice
 may implement a change to the driver. Merging it is what the driver will
 not do: see the delivery gates.
+
+The layer's own boundary is the other half of that scope, and the dependent
+UI slice of an additive story is its one widening: `src/lib/state/`,
+`src/lib/domain/` and `src/lib/server/` are in its reach beside the UI
+areas, because it adopts an API its sibling has already landed on the tree
+it works on. Its scope note says so, rendered from the same module, and the
+domain slice opposite it is told instead that its exports are called from
+areas it may not touch and that every existing call must keep working.
 
 Reaching outside that scope - an out-of-reach path, a file belonging to the
 other layer, or a snapshot or lock file - is a repairable diagnostic, not
