@@ -622,10 +622,29 @@ reviewer:
     def given_markdown_failure(
         self, file: str, gate: str = "prettier", outcome: str | list[str] = "fail"
     ) -> None:
-        """`prettier` or `cspell` rejects this changed markdown file."""
+        """`prettier` or `cspell` rejects this changed file. Prettier only
+        ever sees markdown; cspell sees every changed file the repository's
+        own `spellcheck` reads, Python included."""
         self._load()
         self.world.setdefault("gate_outcomes", {})[gate] = outcome
         self.world["markdown_failure_file"] = file
+        self._save()
+
+    def given_suite_failure(
+        self,
+        file: str,
+        outcome: str | list[str] = "fail",
+        test: str = "test_the_suite_still_holds",
+    ) -> None:
+        """The layer's own pytest suite, which block 3's gates run over the
+        whole of `workflow/tests`, rejects: its short summary names `file`
+        and `test` the way pytest's own does. A list of outcomes is consumed
+        one value per invocation, so a scenario can script a repaired second
+        turn."""
+        self._load()
+        self.world.setdefault("gate_outcomes", {})["pytest"] = outcome
+        self.world["suite_failure_file"] = file
+        self.world["suite_failure_test"] = test
         self._save()
 
     def given_check_fails_on(self, file: str) -> None:

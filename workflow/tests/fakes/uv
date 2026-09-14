@@ -9,6 +9,10 @@ missing), "fail_defect" (the test throws, so it can never pass), "pass"
 whole run), "not_found" (pytest was handed a path that is not there) or
 "tool_error" (a run that judged nothing at all).
 
+`run --project workflow pytest -q -o cache_dir=... --rootdir . workflow/tests`
+- block 3's layer-suite gate, and only that exact argv - prints the short
+summary of a whole-suite run, from `gate_outcomes["pytest"]`.
+
 `run --project workflow ruff check|format --check workflow` prints ruff's
 own diagnostics, arrow line included, so the driver parses culprits out of
 the same shape the real tool prints.
@@ -43,8 +47,17 @@ def save(world):
 
 
 def record(argv):
+    """The call, and which of the driver run's own `FIT_FLOW_*` settings it
+    inherited: the layer suite spawns `go.py` runs of its own, so a gate
+    that handed them the outer run's environment would judge the machine
+    rather than the branch."""
+    entry = {
+        "tool": "uv",
+        "argv": argv,
+        "fit_flow_env": sorted(name for name in os.environ if name.startswith("FIT_FLOW_")),
+    }
     with (world_dir() / "calls.jsonl").open("a") as f:
-        f.write(json.dumps({"tool": "uv", "argv": argv}) + "\n")
+        f.write(json.dumps(entry) + "\n")
 
 
 def consume(key, section, default):
@@ -141,6 +154,42 @@ def _tally(counts):
     return ", ".join(parts) + " in 0.01s" if parts else "no tests ran in 0.01s"
 
 
+#: The whole layer's suite, as block 3's gate runs it: exactly this argv,
+#: so a test proves the driver asks for the repository-relative node ids it
+#: goes on to blame.
+SUITE_ARGV = [
+    "pytest",
+    "-q",
+    "-o",
+    "cache_dir=workflow/.pytest_cache",
+    "--rootdir",
+    ".",
+    "workflow/tests",
+]
+SUITE_TEST = "test_the_suite_still_holds"
+SUITE_FAILURE = [
+    "=========================== short test summary info ============================",
+    "FAILED {file}::{test} - AssertionError: assert 'ladder' in {{'attempts': 3}}",
+    "1 failed, 561 passed in 9.42s",
+]
+
+
+def cmd_suite():
+    """`pytest -q` over the whole of `workflow/tests`: the layer's own suite,
+    which CI runs and, until #462, the driver's gates never did."""
+    outcome, world = consume("pytest", "gate_outcomes", "pass")
+    if outcome == "tool_error":
+        print("error: the pytest environment could not be prepared", file=sys.stderr)
+        return 4
+    if outcome != "fail":
+        print("562 passed in 9.42s")
+        return 0
+    file = world.get("suite_failure_file", "workflow/tests/test_elsewhere.py")
+    test = world.get("suite_failure_test", SUITE_TEST)
+    print("\n".join(line.format(file=file, test=test) for line in SUITE_FAILURE))
+    return 1
+
+
 RUFF_CHECK_FAILURE = [
     "F401 [*] `os` imported but unused",
     " --> {file}:7:8",
@@ -184,6 +233,8 @@ def main() -> int:
         print(f"fake uv: unsupported command {argv}", file=sys.stderr)
         return 1
     rest = argv[3:]
+    if rest == SUITE_ARGV:
+        return cmd_suite()
     if rest[:1] == ["pytest"]:
         return cmd_pytest([arg for arg in rest[1:] if not arg.startswith("-")])
     if rest[:1] == ["ruff"]:
