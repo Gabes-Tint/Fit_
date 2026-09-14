@@ -117,26 +117,20 @@ _FOLLOW_THE_CALLERS = re.compile(
     re.IGNORECASE,
 )
 
-#: What the other layers' areas are called in a diagnostic.
-_AREAS = {
-    "domain": "the UI areas",
-    "ui": "the store and the domain areas",
-    "workflow": "the product tree",
-}
-
-_OUTSIDE_WORKFLOW = ("src/", "scripts/", "quality/", ".github/")
+#: What the sibling slice's areas are called in a diagnostic.
+_AREAS = {"domain": "the UI areas", "ui": "the store and the domain areas"}
 
 
-def forbidden_prefixes(layer: str, adopts_domain: bool = False) -> tuple[str, ...]:
-    """The areas a slice of this layer may not change, as prefixes. The
-    workflow layer is an allowlist, so what it may not change is named
-    directly rather than derived."""
+def _unbriefable_prefixes(layer: str, adopts_domain: bool) -> tuple[str, ...]:
+    """The areas a brief for this layer may not name. Empty for a workflow
+    slice: a driver story is routinely *about* a product path - the rule
+    that an `.e2e.ts` belongs under `src/routes/`, say - and naming it is
+    description, not an instruction to change it. Its scope check is the
+    allowlist and catches a slice that actually reaches there."""
     if layer == "domain":
         return UI_PREFIXES
     if layer == "ui":
         return () if adopts_domain else _NON_UI_PREFIXES
-    if layer == "workflow":
-        return _OUTSIDE_WORKFLOW
     return ()
 
 
@@ -145,13 +139,14 @@ def brief_contradiction(layer: str, brief: str, adopts_domain: bool = False) -> 
     layer forbids, or None when it does not.
 
     Two mechanical rules, deliberately not a reading of the prose: a path
-    under an area this layer may not change, named literally, and - in a
-    domain brief - the instruction to follow the change into its callers.
+    under a product area this layer may not change, named literally, and -
+    in a domain brief - the instruction to follow the change into its
+    callers.
     A brief that only wants to cite a UI file as context trips the first
     rule too; that costs the planner one corrective turn and is the price
     of a check that cannot be argued with. The sibling slice is where those
     files belong, and the brief can say so without naming them."""
-    for prefix in forbidden_prefixes(layer, adopts_domain):
+    for prefix in _unbriefable_prefixes(layer, adopts_domain):
         if prefix in brief:
             return (
                 f"the {layer} brief names {prefix}, which a {layer} slice may not change; "

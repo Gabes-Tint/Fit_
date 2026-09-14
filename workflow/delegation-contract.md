@@ -193,7 +193,11 @@ the contradiction quoted, in a bounded loop of three attempts; exhausting it
 is `PLAN_REJECTED` (exit 27) with no child issue created. Neither rule reads
 the prose beyond that, deliberately. A brief that only wanted to cite a UI
 file as context trips the first rule too, which costs one corrective turn and
-is the price of a check that cannot be argued with.
+is the price of a check that cannot be argued with. The path rule is a
+product rule: a `workflow` brief may name any path, because a driver story is
+routinely about one - the rule that an `.e2e.ts` belongs under `src/routes/`,
+say - and its allowlist scope check still judges what the slice actually
+changes.
 
 #422 is what the rules are for. Its domain slice changed the exported
 signatures of `src/lib/state/tend.svelte.ts` - `toggleSet`, `addSet`,

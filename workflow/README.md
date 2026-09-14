@@ -105,10 +105,12 @@ left the tree not compiling.
 
 No brief may ask its slice for a file its layer forbids, and the driver
 checks that mechanically before block 1 writes a test against it: a brief
-that names a forbidden area literally, that tells a domain slice to update
-its callers or call sites, or that lists `ui_called_exports` on a slice that
-is not the domain one, goes back to the same planner session with the
-contradiction quoted, in a bounded loop of three attempts. Briefs that never
+that names a forbidden product area literally, that tells a domain slice to
+update its callers or call sites, or that lists `ui_called_exports` on a
+slice that is not the domain one, goes back to the same planner session with
+the contradiction quoted, in a bounded loop of three attempts. A `workflow`
+brief may name any path - a driver story is often about one - and its
+allowlist scope check still judges the diff. Briefs that never
 stop contradicting their layer end the run as `PLAN_REJECTED` (exit 27)
 before any child issue exists. The slice contract itself - how many slices,
 in what order - is still a hard stop: no rewording repairs a third slice.

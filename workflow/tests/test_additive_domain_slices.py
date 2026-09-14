@@ -336,3 +336,53 @@ def test_a_ui_slice_with_no_domain_sibling_to_adopt_still_breaches_on_the_store(
         "ui slice changed the shared store outside its scope: src/lib/state/tend.svelte.ts"
         in result.stdout
     )
+
+
+def test_a_workflow_brief_may_name_the_product_paths_its_rule_is_about(world):
+    """A driver story is routinely about a product path - where an `.e2e.ts`
+    belongs - and naming one is description, not an instruction to change
+    it. The workflow slice's allowlist scope check still judges the diff."""
+    test_file = "workflow/tests/test_placement.py"
+    world.given_story(489, title="Placement rule", labels=["story"])
+    world.planner_answers_whose_call(
+        489,
+        owner="orchestrator",
+        category="none",
+        reason="ordinary driver work",
+        question="",
+        options=[],
+        recommendation="",
+    )
+    world.planner_answers_slices(
+        489,
+        spans_domain_and_ui=False,
+        slices=[
+            {
+                "layer": "workflow",
+                "title": "Placement rule",
+                "brief": "Block 1 rejects an .e2e.ts outside src/routes/.",
+                "acceptance": ["A misplaced e2e file is rejected."],
+                "test_kind": "pytest",
+                "ui_called_exports": [],
+            }
+        ],
+    )
+    world.given_pytest_results(test_file, ["fail", "pass"])
+    world.mechanic_writes(
+        "story-489-workflow",
+        files={test_file: "def test_placement():\n    assert False\n"},
+        test_files=[test_file],
+    )
+    world.planner_answers_delegate(489, [delegate_slice(489, "workflow", mechanic_signals())])
+    world.agent_implements(
+        "story-489-workflow",
+        "mechanic",
+        files={"workflow/fitflow/placement.py": "RULE = 'src/routes/'\n"},
+        changed_files=["workflow/fitflow/placement.py"],
+    )
+
+    result = run_flow(world, 489)
+
+    # a driver story ends at block 4's withheld merge, not at a rejected plan
+    assert result.returncode == 11, result.stdout + result.stderr
+    assert "Brief sent back to the same planner session" not in result.stdout
