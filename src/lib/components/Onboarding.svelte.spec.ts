@@ -89,6 +89,18 @@ describe('Onboarding', () => {
 		expect(complete).toHaveBeenCalledWith(expect.objectContaining({ useSample: false }));
 	});
 
+	it('starts first-run answers from the emptyProfile defaults', async () => {
+		const complete = vi.spyOn(tend, 'completeOnboarding').mockImplementation(() => undefined);
+		await toStepTwo();
+		await expect.element(page.getByLabelText('Age')).toHaveValue(32);
+		await expect.element(page.getByLabelText('Height cm')).toHaveValue(168);
+		await page.getByRole('button', { name: 'Continue' }).click();
+		await page.getByRole('button', { name: 'Start empty' }).click();
+		const profile = complete.mock.calls[0]?.[0].profile;
+		expect(profile?.age).toBe(32);
+		expect(profile?.restrictions).toEqual([]);
+	});
+
 	it('carries the entered name into the new profile', async () => {
 		const complete = vi.spyOn(tend, 'completeOnboarding').mockImplementation(() => undefined);
 		await render(Onboarding);
