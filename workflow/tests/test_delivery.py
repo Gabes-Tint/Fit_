@@ -824,7 +824,7 @@ def test_a_gate_failure_in_an_untouched_test_that_passed_earlier_is_rerun_once(w
 
 
 def test_a_gate_failure_that_survives_its_rerun_counts_as_a_real_failure(world):
-    """One rerun, not a licence: a second failure is a verdict and spends an
+    """One rerun, not a license: a second failure is a verdict and spends an
     attempt of the fix request's budget like any other."""
     _given_a_fix_verdict(world)
     _fix_turn_reporting(world, "2", ["src/lib/delivered.ts"])

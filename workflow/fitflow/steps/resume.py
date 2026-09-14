@@ -205,7 +205,7 @@ def _reopen_review_fix(record: RunRecord, piece: SliceRecord) -> None:
         _mark_void(record, piece, last, last["why"] or "the fix turn produced no valid reply")
         note = f"fix attempt {last.get('fix_attempt', 1)} left no reply; it will be relaunched"
     else:
-        _require_rejudgeable(record, piece, last)
+        _require_can_be_rejudged(record, piece, last)
     with record.transition():
         piece.resume_to("fixing")
         record.save()
@@ -225,13 +225,13 @@ def _require_not_in_flight(record: RunRecord, piece: SliceRecord) -> None:
 def _reopen_for_validation(record: RunRecord, piece: SliceRecord, last: dict) -> None:
     """A turn that ended with a valid reply is judged again, on the bytes
     it left; bytes that moved since are not that turn's work."""
-    _require_rejudgeable(record, piece, last)
+    _require_can_be_rejudged(record, piece, last)
     with record.transition():
         piece.resume_to("running")
         record.save()
 
 
-def _require_rejudgeable(record: RunRecord, piece: SliceRecord, last: dict) -> None:
+def _require_can_be_rejudged(record: RunRecord, piece: SliceRecord, last: dict) -> None:
     """What a retained reply must satisfy before its verdict is re-derived:
     the worktree still there, its bytes exactly the ones the turn left, and
     a verdict that is not already known to repeat."""
