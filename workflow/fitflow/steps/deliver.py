@@ -28,7 +28,7 @@ from fitflow import (
 from fitflow.outcome import FlowFailure, Outcome
 from fitflow.review import Finding
 from fitflow.runstate import RunRecord
-from fitflow.steps.implement import review_fix_turn, verify_frozen
+from fitflow.steps.implement import resume_review_fix, review_fix_turn, verify_frozen
 
 
 def run(story, record: RunRecord) -> Outcome:
@@ -50,10 +50,12 @@ def run(story, record: RunRecord) -> Outcome:
 
 def _deliver(story, record: RunRecord) -> None:
     try:
+        _settle_interrupted_fixes(record)
         verify_frozen(record)
         narrate.line("🚦 Pre-delivery barrier: every slice still at its frozen commit")
         path = _integrate(story, record)
         _open_pr(story, record, path)
+        _rejoin_fixes(story, record, path)
         if review.is_mechanical(record):
             record.delivery["verdict"] = "mechanical"
             record.save()
@@ -365,8 +367,9 @@ def _acceptance_lines(record: RunRecord) -> str:
 
 
 def _apply_fixes(story, record: RunRecord, path: Path, findings: list[Finding], describe) -> None:
-    """One fix turn per affected slice, then the new frozen commits are
-    joined into the integration branch and pushed. `describe` turns a
+    """One fix request per affected slice - itself a bounded loop of fix
+    turns (steps/implement.review_fix_turn) - then the new frozen commits
+    are joined into the integration branch and pushed. `describe` turns a
     slice's own findings into its diagnostic: the reviewer's wording for a
     review round, the failed jobs' log for a CI fix round."""
     affected = review.route_findings(record, findings)
@@ -375,29 +378,64 @@ def _apply_fixes(story, record: RunRecord, path: Path, findings: list[Finding], 
         piece = record.slices[layer]
         slice_findings = [finding for finding in findings if review.owns(piece.layer, finding.file)]
         review_fix_turn(record, piece, describe(slice_findings))
-        _merge_or_reject(
-            story,
-            path,
-            piece.frozen_commit,
-            lambda error, piece=piece: (
-                f"the review fix for {piece.slug} conflicts with the integration branch "
-                f"{record.delivery['integration_branch']}; a revised plan in a new run "
-                f"is required ({error})"
-            ),
+        _rejoin(story, record, path, piece)
+    _push_fixes(record, path)
+
+
+def _rejoin(story, record: RunRecord, path: Path, piece) -> None:
+    """One slice's new frozen commit, merged into the integration branch."""
+    _merge_or_reject(
+        story,
+        path,
+        piece.frozen_commit,
+        lambda error: (
+            f"the review fix for {piece.slug} conflicts with the integration branch "
+            f"{record.delivery['integration_branch']}; a revised plan in a new run "
+            f"is required ({error})"
+        ),
+    )
+    if not worktrees.is_ancestor(path, piece.frozen_commit):
+        raise FlowFailure(
+            Outcome.TOOL_FAILED,
+            f"{piece.slug}'s new frozen commit is not an ancestor of the integration branch",
+            story.number,
+            add_blocked=True,
         )
-        if not worktrees.is_ancestor(path, piece.frozen_commit):
-            raise FlowFailure(
-                Outcome.TOOL_FAILED,
-                f"{piece.slug}'s new frozen commit is not an ancestor of the integration branch",
-                story.number,
-                add_blocked=True,
-            )
+
+
+def _push_fixes(record: RunRecord, path: Path) -> None:
     head = worktrees.local_head(path)
     worktrees.push_branch(path, record.delivery["integration_branch"])
     with record.transition():
         record.delivery["integration_sha"] = head
         record.save()
     narrate.line(f"⇪ Pushed fixes; integration head {head[:12]}")
+
+
+def _settle_interrupted_fixes(record: RunRecord) -> None:
+    """A resumed run's unfinished fix requests, before the join is
+    re-verified: each slice `--resume` put back into `fixing` finishes its
+    request - its retained turn re-judged on the bytes it left, or the turn
+    the driver never saw end relaunched - so the join sees a frozen slice
+    again. `_rejoin_fixes` then carries whatever those turns changed onto
+    the integration branch."""
+    for piece in record.ordered():
+        if piece.state == "fixing":
+            narrate.line(f"♻️  #{piece.number} ({piece.layer}) finishing its interrupted fix")
+            resume_review_fix(record, piece)
+
+
+def _rejoin_fixes(story, record: RunRecord, path: Path) -> None:
+    """Any frozen commit the integration branch does not already carry - a
+    resumed fix's, since every other one is merged as it is made."""
+    outstanding = [
+        piece for piece in record.ordered() if not worktrees.is_ancestor(path, piece.frozen_commit)
+    ]
+    if not outstanding:
+        return
+    for piece in outstanding:
+        _rejoin(story, record, path, piece)
+    _push_fixes(record, path)
 
 
 def _stop_for_gabriel(story, why: str) -> None:

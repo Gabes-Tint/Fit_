@@ -1776,13 +1776,13 @@ def test_acceptance_tests_that_clone_themselves_are_rejected_in_block_1(world):
     result = run_flow(world)
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "TESTS_INVALID: duplicates, format:check, check:suppressions failed steps" in (
+    assert "TESTS_INVALID: duplicates, format:check, check:suppressions, spellcheck failed" in (
         result.stdout
     )
     # the diagnostic says where the clone is, not merely that there is one
     assert "lib/cloned.spec.ts:40-49 ↔ lib/cloned.spec.ts:90-99 (10 lines)" in result.stdout
     assert "🔁 Mechanic #220 retrying after attempt 1" in result.stdout
-    assert "🧪 Gates: duplicates, format:check, check:suppressions ✔" in result.stdout
+    assert "🧪 Gates: duplicates, format:check, check:suppressions, spellcheck ✔" in result.stdout
     assert "Implemented #220" in result.stdout
     # the mechanic was told exactly where to look
     correction = _mechanic_talks(world)[1]["prompt"]
@@ -1846,6 +1846,50 @@ def test_unformatted_acceptance_tests_are_rejected_in_block_1(world):
     assert "failed steps: format:check" in result.stdout
     assert f"[warn] {test_file}" in result.stdout
     assert "Implemented #222" in result.stdout
+
+
+def test_misspelled_acceptance_tests_are_rejected_in_block_1(world):
+    """A typo in a test file is an ordinary block 1 correction while the
+    mechanic still owns the bytes. On #422 a misspelled verb in a test title
+    reached block 3 instead, where the file is immutable and `cspell.json`
+    is a workflow file: three solver attempts, then
+    CAPACITY_EXHAUSTED."""
+    _given_single_domain_slice(world, 223, "Acceptance tests cspell accepts")
+    slug = "story-223-domain"
+    test_file = "src/lib/badge.spec.ts"
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// attempt 1: a title with a word cspell does not know\n"},
+        test_files=[test_file],
+    )
+    world.mechanic_writes(
+        slug,
+        files={test_file: "// corrective attempt: the title spelled right\n"},
+        test_files=[test_file],
+    )
+    world.given_gate_outcomes(**{"verify:fast": ["fail", "pass"]})
+    world.given_failed_gate_steps("verify:fast", "spellcheck")
+    world.given_gate_failure_file(test_file)
+    world.scripted_test_outcome(test_file, ["fail", "pass"])
+    world.planner_answers_delegate(223, [delegate_slice(223, "domain", mechanic_signals())])
+    world.agent_implements(
+        slug,
+        "mechanic",
+        files={"src/lib/badge.ts": "export const badge = true;\n"},
+        changed_files=["src/lib/badge.ts"],
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "failed steps: spellcheck" in result.stdout
+    assert f"{test_file}:2277:6 - Unknown word" in result.stdout
+    assert "🔁 Mechanic #223 retrying after attempt 1" in result.stdout
+    assert "Implemented #223" in result.stdout
+    # the mechanic was told the word and where it is, not merely that a
+    # step failed
+    correction = _mechanic_talks(world)[1]["prompt"]
+    assert f"{test_file}:2277:6 - Unknown word" in correction
 
 
 def test_a_misplaced_e2e_file_is_sent_back_to_the_mechanic_with_the_expected_folder(world):

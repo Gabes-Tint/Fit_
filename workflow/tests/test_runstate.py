@@ -58,6 +58,33 @@ def test_review_fix_reopens_a_succeeded_slice() -> None:
     assert piece.state == "validating"
 
 
+def test_a_rejected_fix_turn_takes_a_corrective_one() -> None:
+    """Block 4's fix request is bounded like a block 3 role: a rejected fix
+    turn goes back to `fixing` for its correction, and a resumed one
+    re-confirms `fixing` before it relaunches."""
+    piece = _record()
+    piece.move("running")
+    piece.move("validating")
+    piece.move("succeeded")
+    piece.move("fixing")
+    piece.move("validating")
+    piece.move("fixing")
+    piece.resume_to("fixing")
+    piece.move("failed")
+    assert piece.state == "failed"
+
+
+def test_a_failed_fix_turn_reopens_as_fixing_on_resume() -> None:
+    piece = _record()
+    piece.move("running")
+    piece.move("validating")
+    piece.move("succeeded")
+    piece.move("fixing")
+    piece.move("failed")
+    piece.resume_to("fixing")
+    assert piece.state == "fixing"
+
+
 def test_prohibited_transition_raises() -> None:
     piece = _record()
     with pytest.raises(RuntimeError, match=r"prohibited slice transition assigned → validating"):
