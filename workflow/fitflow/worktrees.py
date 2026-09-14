@@ -177,18 +177,26 @@ def changed_since(worktree: Path, ref: str) -> list[str]:
 
 
 def changed_between(worktree: Path, ref: str) -> list[str]:
-    """Committed changes from `ref` to HEAD plus untracked working-tree
-    files - the accumulated diff when the driver has already frozen a
-    commit on top of `ref`."""
-    result = _git("diff", "--name-only", f"{ref}..HEAD", cwd=worktree)
-    committed = [line for line in result.stdout.splitlines() if line]
-    untracked = []
+    """The whole accumulated diff from `ref` to what is on disk now, when
+    the driver has already frozen a commit on top of `ref`: everything
+    committed since, everything a later turn modified without committing,
+    and everything it left untracked.
+
+    `git diff --name-only <ref>` - a single ref, not a range - is what
+    carries the uncommitted half. `<ref>..HEAD` drops it, and a fix turn
+    edits tracked files without ever committing, so the range read them as
+    unchanged and called the reply that named them a liar (#420 run 3 lost
+    a run to exactly that). Deletions and renames come out as they do from
+    `changed_since`: a deleted path by its own name, a rename by its new
+    one."""
+    result = _git("diff", "--name-only", ref, cwd=worktree)
+    changed = [line for line in result.stdout.splitlines() if line]
     for line in _git(
         "status", "--porcelain", "--untracked-files=all", cwd=worktree
     ).stdout.splitlines():
         if line.startswith("??"):
-            untracked.append(line[3:].strip())
-    return committed + untracked
+            changed.append(line[3:].strip())
+    return list(dict.fromkeys(changed))
 
 
 def working_tree_digest(worktree: Path) -> str:
