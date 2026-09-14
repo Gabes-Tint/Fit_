@@ -277,9 +277,27 @@ describe('redoing setup', () => {
 	});
 
 	it('pre-fills the fields from the current profile', async () => {
-		tend.patchActive((p) => ({ ...p, name: 'Jordan', age: 51, heightCm: 190 }));
+		tend.patchActive((p) => ({
+			...p,
+			name: 'Jordan',
+			age: 51,
+			heightCm: 190,
+			goal: 'maintain',
+			sex: 'male',
+			activity: 'active',
+			restrictions: ['vegan']
+		}));
 		await render(YouPage);
 		await page.getByRole('button', { name: 'Redo setup' }).click();
+		const pressed = (name: string | RegExp) =>
+			expect.element(page.getByRole('button', { name })).toHaveAttribute('aria-pressed', 'true');
+		await pressed(/^Maintain/);
+		await expect
+			.element(page.getByRole('button', { name: /^Lose/ }))
+			.toHaveAttribute('aria-pressed', 'false');
+		await pressed(/^male$/i);
+		await pressed('Train most days');
+		await pressed('Vegan');
 		await expect.element(page.getByLabelText('Name')).toHaveValue('Jordan');
 		await expect.element(page.getByLabelText('Age')).toHaveValue(51);
 		await expect.element(page.getByLabelText('Height cm')).toHaveValue(190);
