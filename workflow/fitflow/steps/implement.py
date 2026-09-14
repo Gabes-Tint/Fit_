@@ -18,7 +18,10 @@ A turn may also reject the acceptance tests instead of implementing against
 them. The driver verifies that objection itself (steps/objection.py) and,
 when it stands, sends the tests back to block 1's writer, re-freezes the
 repaired set onto the slice branch and relaunches the slice with a fresh
-attempt counter. A refused objection is an ordinary failed attempt.
+attempt counter. A refused objection is an ordinary failed attempt. Block
+4's fix turns may object on the same terms: a verified objection there
+costs only the turn, and the fix request goes on, on the same fix attempt,
+against the repaired tests.
 
 Two independent slices run their loops in parallel; a succeeded slice is
 frozen - committed by the driver, never rerun while its sibling corrects or
@@ -710,7 +713,9 @@ def resume_review_fix(record: RunRecord, piece: SliceRecord) -> None:
     That turn is relaunched, one attempt further on."""
     last = piece.turns[-1]
     attempt = int(last.get("fix_attempt", 1))
-    if last["result"] == "void" or last.get("reply") is None:
+    # an objected turn's objection was verified and its repair has landed:
+    # the request goes on at the attempt that objected
+    if last["result"] in ("void", "objected") or last.get("reply") is None:
         _fix_attempts(record, piece, attempt)
         return
     if judged_failed(last):
@@ -720,7 +725,12 @@ def resume_review_fix(record: RunRecord, piece: SliceRecord) -> None:
         f"♻️  #{piece.number} ({piece.layer}) re-validating its review fix attempt "
         f"{attempt} from its retained reply, without a new agent call"
     )
-    if _settle_fix(record, piece, attempt):
+    try:
+        if _settle_fix(record, piece, attempt):
+            return
+    except objection.Objected:
+        objection.repair(record, piece)
+        _fix_attempts(record, piece, attempt)
         return
     _fix_attempts(record, piece, attempt + 1)
 
@@ -739,15 +749,26 @@ def _relaunch_failed_fix(record: RunRecord, piece: SliceRecord, attempt: int) ->
         f"♻️  #{piece.number} ({piece.layer}) has spent its {turns.BUDGET} fix attempts: "
         "granting one grace attempt after a driver-side rejection"
     )
-    _launch_fix_turn(record, piece, attempt + 1)
-    _settle_fix(record, piece, attempt + 1)
+    _fix_attempts(record, piece, attempt + 1, last=attempt + 1)
 
 
-def _fix_attempts(record: RunRecord, piece: SliceRecord, first: int) -> None:
-    for attempt in range(first, turns.BUDGET + 1):
+def _fix_attempts(
+    record: RunRecord, piece: SliceRecord, first: int, last: int = turns.BUDGET
+) -> None:
+    """Fix attempts `first` to `last`. A turn whose objection to the tests
+    the driver verified is not an attempt spent: block 1 repairs the tests,
+    and the same attempt is launched again against them. The repair budget
+    bounds that loop - a third verified objection stops the run."""
+    attempt = first
+    while attempt <= last:
         _launch_fix_turn(record, piece, attempt)
-        if _settle_fix(record, piece, attempt):
-            return
+        try:
+            if _settle_fix(record, piece, attempt):
+                return
+        except objection.Objected:
+            objection.repair(record, piece)
+            continue
+        attempt += 1
     raise AssertionError("unreachable: the last attempt settles or raises")
 
 
@@ -777,9 +798,17 @@ def _launch_fix_turn(record: RunRecord, piece: SliceRecord, attempt: int) -> Non
 def _settle_fix(record: RunRecord, piece: SliceRecord, attempt: int) -> bool:
     """Judge one completed fix turn. True once the slice is frozen again,
     False when another corrective turn is owed, and raises when the request
-    is spent."""
+    is spent - or `objection.Objected` when the turn's objection to the tests
+    verified, which the caller answers with block 1's repair.
+
+    The objection is considered first, exactly as block 3's `_settle` does:
+    one the driver refuses is this attempt's diagnostic like any other."""
+    reply = piece.turns[-1]["reply"]
     try:
-        rejection = _validate_turn(record, piece, piece.turns[-1]["reply"], fix_turn=True)
+        refused = objection.consider(record, piece, reply, scope_breach, fix_turn=True)
+        rejection = (
+            _Rejection(refused) if refused else _validate_turn(record, piece, reply, fix_turn=True)
+        )
     except FlowFailure as failure:
         _settle_as_failed(record, piece, failure.why)
         raise
