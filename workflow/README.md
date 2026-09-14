@@ -91,6 +91,28 @@ code, persistence, migrations and database work. A story gets one slice when
 it is wholly in either category, or exactly two ordered slices—domain then
 UI—when it spans both. There is never a third product layer.
 
+When the domain change alters an exported name that files under
+`src/routes/`, `src/lib/components/` or `src/lib/ui/` already call, the
+planner lists those names (`ui_called_exports`) and the driver makes that
+slice additive: its brief, in the driver's own words, says to add the new
+shape beside the old one - or an optional parameter that changes no existing
+call - to leave the callers alone, and to let the acceptance tests name only
+the new API. The ui slice then carries the adopt-and-clean clause, and it is
+where the call sites change. #422 is the run that found this: its domain
+brief said "Update existing callers so the app still compiles" about callers
+a domain slice may never touch, and every attempt was either out of scope or
+left the tree not compiling.
+
+No brief may ask its slice for a file its layer forbids, and the driver
+checks that mechanically before block 1 writes a test against it: a brief
+that names a forbidden area literally, that tells a domain slice to update
+its callers or call sites, or that lists `ui_called_exports` on a slice that
+is not the domain one, goes back to the same planner session with the
+contradiction quoted, in a bounded loop of three attempts. Briefs that never
+stop contradicting their layer end the run as `PLAN_REJECTED` (exit 27)
+before any child issue exists. The slice contract itself - how many slices,
+in what order - is still a hard stop: no rewording repairs a third slice.
+
 A story about the driver itself is the third layer, `workflow`, and it is
 always a single slice. It may change `workflow/**`, `docs/**` and the
 repository's `cspell.json`, and nothing else; its acceptance tests are
@@ -122,6 +144,19 @@ launches the UI loop. The dependency never runs the other way - a domain slice
 that depends on the UI slice, a circular pair, and a one-slice story that
 claims a sibling are all rejected plans - and a domain slice that never freezes
 leaves the UI slice unlaunched.
+
+An additive domain slice makes that dependency the driver's own decision
+rather than the planner's: adopting the new API means editing the files the
+domain slice just changed, so its UI slice runs after it whatever the planner
+answered about `needs_sibling`. A dependent UI slice is also the one slice
+whose scope is wider than its layer: it runs on a tree that already carries
+its sibling, so `src/lib/state/`, `src/lib/domain/` and `src/lib/server/` are
+in reach as well as the UI areas, and it switches the call sites to the new
+API and removes the compatibility shape when nothing else uses it. Nothing
+widens for an independent UI slice, and nothing widens the forbidden files
+and prefixes for anyone - the gates stay out of reach of every slice. Both
+implementers are told which side is theirs in a scope note rendered from the
+same module the scope check reads.
 
 Each slice has one initial mechanic turn plus at most two corrective turns—three
 total. Corrections reuse the same mechanic identity, AI Army team/session,
