@@ -308,9 +308,20 @@ def owning_test(name: str, test_files: list[str]) -> str | None:
 
 #: A test as its own source spells it: `it("...")`, `test('...')` or a
 #: chained sibling of either (`it.each`, `test.skip`), with the title in
-#: the quotes. A Python test is a name rather than a string, one
-#: `def test_*` per test.
-_TS_TEST_BLOCK = re.compile(r"""\b(?:it|test)(?:\.\w+)*\s*\(\s*(['"`])(.*?)\1""", re.DOTALL)
+#: the quotes.
+#:
+#: `describe` is not one of those siblings. `test.describe("...")` names a
+#: block of tests and is no test itself, and reading its title as one is
+#: how #337 run 6 stopped: a repair renamed a describe block, the driver
+#: read the old name as a test the repair had deleted, and refused a
+#: correction that had removed nothing. The lookahead is what keeps
+#: `test.describe(...)` and `test.describe.serial(...)` out while
+#: `it.skip`, `test.only` and `test.fixme` stay in; a bare `describe(...)`
+#: never matched at all, because the name starts with neither `it` nor
+#: `test`.
+_TS_TEST_BLOCK = re.compile(
+    r"""\b(?:it|test)(?:\.(?!describe\b)\w+)*\s*\(\s*(['"`])(.*?)\1""", re.DOTALL
+)
 _PY_TEST_BLOCK = re.compile(r"^\s*def (test_\w+)", re.MULTILINE)
 
 
