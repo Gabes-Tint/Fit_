@@ -12,17 +12,20 @@ async function openPlan(page: Page) {
 	await expect(page.getByRole('button', { name: /^Mon / })).toBeVisible();
 }
 
+async function setupSundaySept13WithRoutine(page: Page, baseURL: string) {
+	const SUNDAY_SEPT_13 = new Date('2026-09-13T09:00:00');
+	await page.clock.setFixedTime(SUNDAY_SEPT_13);
+	await openExerciseTabEmpty(page, baseURL ?? '');
+	await pickFullBodyTemplate(page);
+	await openPlan(page);
+}
+
 test.describe('week planner "Today" label', () => {
 	test('displays "Today, Sun 13" on the current day when today is September 13', async ({
 		page,
 		baseURL
 	}) => {
-		const SUNDAY_SEPT_13 = new Date('2026-09-13T09:00:00');
-		await page.clock.setFixedTime(SUNDAY_SEPT_13);
-		await openExerciseTabEmpty(page, baseURL ?? '');
-		await pickFullBodyTemplate(page);
-
-		await openPlan(page);
+		await setupSundaySept13WithRoutine(page, baseURL ?? '');
 
 		const todayButton = page.getByRole('button', { name: /^Today, Sun 13/ });
 		await expect(todayButton).toBeVisible();
@@ -30,22 +33,12 @@ test.describe('week planner "Today" label', () => {
 	});
 
 	test('includes "Today, Sun 13" in the button accessible name', async ({ page, baseURL }) => {
-		const SUNDAY_SEPT_13 = new Date('2026-09-13T09:00:00');
-		await page.clock.setFixedTime(SUNDAY_SEPT_13);
-		await openExerciseTabEmpty(page, baseURL ?? '');
-		await pickFullBodyTemplate(page);
-
-		await openPlan(page);
+		await setupSundaySept13WithRoutine(page, baseURL ?? '');
 		await expect(page.getByRole('button', { name: /^Today, Sun 13/ })).toBeVisible();
 	});
 
 	test('does not show "Today" on other days of the same week', async ({ page, baseURL }) => {
-		const SUNDAY_SEPT_13 = new Date('2026-09-13T09:00:00');
-		await page.clock.setFixedTime(SUNDAY_SEPT_13);
-		await openExerciseTabEmpty(page, baseURL ?? '');
-		await pickFullBodyTemplate(page);
-
-		await openPlan(page);
+		await setupSundaySept13WithRoutine(page, baseURL ?? '');
 
 		const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 		for (const day of days) {
@@ -56,12 +49,7 @@ test.describe('week planner "Today" label', () => {
 	});
 
 	test('removes "Today" label when navigating to previous week', async ({ page, baseURL }) => {
-		const SUNDAY_SEPT_13 = new Date('2026-09-13T09:00:00');
-		await page.clock.setFixedTime(SUNDAY_SEPT_13);
-		await openExerciseTabEmpty(page, baseURL ?? '');
-		await pickFullBodyTemplate(page);
-
-		await openPlan(page);
+		await setupSundaySept13WithRoutine(page, baseURL ?? '');
 		await expect(page.getByRole('button', { name: /^Today, Sun 13/ })).toBeVisible();
 
 		await page.getByRole('button', { name: 'Previous week' }).click();
@@ -70,12 +58,7 @@ test.describe('week planner "Today" label', () => {
 	});
 
 	test('removes "Today" label when navigating to next week', async ({ page, baseURL }) => {
-		const SUNDAY_SEPT_13 = new Date('2026-09-13T09:00:00');
-		await page.clock.setFixedTime(SUNDAY_SEPT_13);
-		await openExerciseTabEmpty(page, baseURL ?? '');
-		await pickFullBodyTemplate(page);
-
-		await openPlan(page);
+		await setupSundaySept13WithRoutine(page, baseURL ?? '');
 		await expect(page.getByRole('button', { name: /^Today, Sun 13/ })).toBeVisible();
 
 		await page.getByRole('button', { name: 'Next week' }).click();
@@ -87,12 +70,7 @@ test.describe('week planner "Today" label', () => {
 		page,
 		baseURL
 	}) => {
-		const SUNDAY_SEPT_13 = new Date('2026-09-13T09:00:00');
-		await page.clock.setFixedTime(SUNDAY_SEPT_13);
-		await openExerciseTabEmpty(page, baseURL ?? '');
-		await pickFullBodyTemplate(page);
-
-		await openPlan(page);
+		await setupSundaySept13WithRoutine(page, baseURL ?? '');
 		await expect(page.getByRole('button', { name: /^Today, Sun 13/ })).toBeVisible();
 
 		await page.getByRole('button', { name: 'Previous week' }).click();
@@ -102,12 +80,7 @@ test.describe('week planner "Today" label', () => {
 	});
 
 	test('fits viewport at 360px wide with rest day', async ({ page, baseURL }) => {
-		const SUNDAY_SEPT_13 = new Date('2026-09-13T09:00:00');
-		await page.clock.setFixedTime(SUNDAY_SEPT_13);
-		await openExerciseTabEmpty(page, baseURL ?? '');
-		await pickFullBodyTemplate(page);
-
-		await openPlan(page);
+		await setupSundaySept13WithRoutine(page, baseURL ?? '');
 
 		await atNarrowPhone(page);
 		const todayButton = page.getByRole('button', { name: /^Today, Sun 13/ });
