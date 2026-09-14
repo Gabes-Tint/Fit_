@@ -646,7 +646,17 @@ def _talk(piece: SliceRecord, prompt_name: str, attempt: int) -> tuple[dict, str
         prior_diagnostics="\n".join(f"- {item}" for item in piece.diagnostics) or "(none)",
         objecting=objection.brief(),
         repair_note=_repair_note(piece),
+        scope_note=_scope_note(piece),
     )
+
+
+def _scope_note(piece: SliceRecord) -> str:
+    """What this slice's scope is beyond its layer's ordinary boundary -
+    the additive obligation of a domain slice the UI calls, or the widened
+    reach of the ui slice that adopts it - rendered from the same module
+    the scope check reads, and empty for every other slice."""
+    note = layers.scope_note(piece.layer, piece.ui_called_exports, _adopts_domain(piece))
+    return f"\n{note}\n" if note else ""
 
 
 def _repair_note(piece: SliceRecord) -> str:
@@ -1151,9 +1161,14 @@ def _outside_this_layer(piece: SliceRecord, failure: gates.GateFailure) -> str:
     turn that went and fixed them - two contradictory instructions across
     two turns. This decides nothing new; `scope_breach` still says what is
     out of reach, and this only reads the same rule over the culprits the
-    gate produced."""
+    gate produced - including its one widening, so the store and the domain
+    modules a dependent ui slice was briefed to adopt are never headed as
+    off-limits to the slice whose own work they are."""
+    adopts_domain = _adopts_domain(piece)
     outside = sorted(
-        name for name in failure.culprits if layers.rejects_for_layer(piece.layer, name) is not None
+        name
+        for name in failure.culprits
+        if layers.rejects_for_layer(piece.layer, name, adopts_domain) is not None
     )
     if not outside:
         return ""
@@ -1292,7 +1307,14 @@ def scope_breach(piece: SliceRecord, changed: list[str]) -> str | None:
 
 
 def _out_of_reach(piece: SliceRecord):
-    """Why one changed path is outside this slice, or None when it belongs."""
+    """Why one changed path is outside this slice, or None when it belongs.
+
+    A dependent ui slice runs on a tree that already carries its domain
+    sibling and was briefed to adopt that sibling's new API at the call
+    sites, so the store and the domain areas are inside its reach; every
+    other slice is judged by its layer alone. Nothing widens the forbidden
+    files and prefixes - the gates stay out of reach of every slice."""
+    adopts_domain = _adopts_domain(piece)
 
     def reason(changed_file: str) -> str | None:
         basename = PurePosixPath(changed_file).name
@@ -1302,9 +1324,15 @@ def _out_of_reach(piece: SliceRecord):
             or basename.endswith((".snap", ".lock"))
         ):
             return f"forbidden file changed: {changed_file}"
-        return layers.rejects_for_layer(piece.layer, changed_file)
+        return layers.rejects_for_layer(piece.layer, changed_file, adopts_domain)
 
     return reason
+
+
+def _adopts_domain(piece: SliceRecord) -> bool:
+    """Whether this slice adopts its domain sibling's API: the ui slice the
+    driver runs after the domain slice, on a merge of its frozen commit."""
+    return piece.layer == "ui" and piece.depends_on == "domain"
 
 
 def _check_acceptance_unchanged(

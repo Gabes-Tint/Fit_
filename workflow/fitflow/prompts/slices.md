@@ -38,6 +38,32 @@ repository's own style - either a flow test (a fake world plus a `go.py`
 run, asserting on the exit code, the narrated log and the fake world
 afterwards) or a unit test of one `fitflow` module.
 
+## Each brief stays inside its own slice's layer
+
+A brief is an instruction to one slice, and that slice may only change files
+inside its own layer: a `domain` slice may never change `src/routes/`,
+`src/lib/components/` or `src/lib/ui/`; a `ui` slice may never change
+`src/lib/domain/`, `src/lib/server/` or `src/lib/state/`; a `workflow` slice
+may change nothing under `src/`, `scripts/`, `quality/` or `.github/`. The
+driver rejects a brief that names one of those areas or tells a domain slice
+to update its callers or call sites, and asks you to rewrite it - nothing in
+a brief may ask its slice for a file the slice may not touch.
+
+## A domain change the UI calls
+
+When this story changes an exported function, method or constant that files
+under `src/routes/`, `src/lib/components/` or `src/lib/ui/` already call,
+find those callers first (`grep -rl <name> src/routes src/lib/components
+src/lib/ui`) and list every such changed export in the domain slice's
+`ui_called_exports`. The driver then requires that slice to stay additive -
+the new shape beside the old one, or a new optional parameter that changes
+no existing call - and hands the call sites to the `ui` slice, which runs
+after it and adopts the new API. Do not write that instruction into the
+brief yourself; the driver appends it.
+
+Every other slice sends `ui_called_exports: []`. A `ui` or `workflow` slice
+always does, and so does a domain slice whose change no UI file calls.
+
 Does this story span both product categories, sit entirely in UI, entirely
 in non-UI domain work, or entirely in the driver?
 
@@ -50,5 +76,7 @@ Reply with the schema fields: spans_domain_and_ui (true or false), and slices
   Each slice needs:
   layer (domain, ui or workflow), title (short), brief (what to build, for
   whoever implements it), acceptance (a list of observable, testable
-  criteria), and test_kind (vitest for a domain slice, playwright for a ui
-  slice, pytest for a workflow slice).
+  criteria), test_kind (vitest for a domain slice, playwright for a ui
+  slice, pytest for a workflow slice), and ui_called_exports (the changed
+  exports the UI already calls, empty for every slice but an additive
+  domain one).
