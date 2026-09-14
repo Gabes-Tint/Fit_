@@ -102,12 +102,12 @@ test.describe('once a routine is in the rotation', () => {
 		await page.getByRole('link', { name: 'Plan', exact: true }).click();
 		await expect(page.getByRole('link', { name: 'Year' })).toBeVisible();
 
-		await page.getByRole('button', { name: /^Mon / }).click();
+		await page.getByRole('button', { name: /^(Today, )?Mon / }).click();
 		await page.getByRole('button', { name: /Full body/ }).click();
 		await expect(page.getByText('Session 1 of the day')).toBeVisible();
 		await page.getByRole('button', { name: 'Close' }).click();
 
-		await expect(page.getByRole('button', { name: /^Mon .*Full body/ })).toBeVisible();
+		await expect(page.getByRole('button', { name: /^(Today, )?Mon .*Full body/ })).toBeVisible();
 		await expect(page.getByText('1 of 7 days planned')).toBeVisible();
 
 		// The year view counts the week the day sits in, and leads back into it.
@@ -146,13 +146,13 @@ test.describe('once a routine is in the rotation', () => {
 
 	test('has no detectable accessibility violations while planning', async ({ page }) => {
 		await page.getByRole('link', { name: 'Plan', exact: true }).click();
-		await expect(page.getByRole('button', { name: /^Mon / })).toBeVisible();
+		await expect(page.getByRole('button', { name: /^(Today, )?Mon / })).toBeVisible();
 		expect(await axeViolations(page)).toEqual([]);
 	});
 
 	test('has no detectable accessibility violations picking a day', async ({ page }) => {
 		await page.getByRole('link', { name: 'Plan', exact: true }).click();
-		await page.getByRole('button', { name: /^Mon / }).click();
+		await page.getByRole('button', { name: /^(Today, )?Mon / }).click();
 		await expect(page.getByRole('dialog')).toBeVisible();
 		expect(await axeViolations(page)).toEqual([]);
 	});
@@ -271,7 +271,7 @@ test.describe('deleting a routine', () => {
 		await page.getByRole('link', { name: 'Done', exact: true }).click();
 		await page.getByRole('link', { name: 'Plan', exact: true }).click();
 		// Monday is already past; Wednesday and Friday are still ahead.
-		await planOn(page, /^Mon /);
+		await planOn(page, /^(Today, )?Mon /);
 		await planOn(page, /^Wed /);
 		await planOn(page, /^Fri /);
 		await page.getByRole('link', { name: 'Back' }).click();
@@ -313,7 +313,7 @@ test.describe('deleting a routine', () => {
 
 		await page.getByRole('link', { name: 'Plan', exact: true }).click();
 		await expect(page.getByText('Nothing to plan yet')).toHaveCount(0);
-		await expect(page.getByRole('button', { name: /^Mon .*Full body/ })).toBeVisible();
+		await expect(page.getByRole('button', { name: /^(Today, )?Mon .*Full body/ })).toBeVisible();
 	});
 
 	test('dismissing with Keep leaves the routine alone', async ({ page }) => {

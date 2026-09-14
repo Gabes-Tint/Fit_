@@ -44,7 +44,7 @@
 			const iso = addDaysISO(monday, index);
 			return {
 				iso,
-				label: `${name} ${parseISODate(iso).getDate()}`,
+				label: `${iso === today ? 'Today, ' : ''}${name} ${parseISODate(iso).getDate()}`,
 				on: optionsOn(allOptions, routineIdsOn(tend.state.trainingPlan, iso)),
 				isToday: iso === today
 			};
