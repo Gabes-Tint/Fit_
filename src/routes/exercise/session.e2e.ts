@@ -3,7 +3,9 @@ import { test } from '../../../tests/preview-server';
 import {
 	openExerciseTabEmpty as onboard,
 	pickFullBodyTemplate as pickFullBody,
-	expectFitsViewport
+	atNarrowPhone,
+	expectFitsViewport,
+	expectHittable
 } from '../../../tests/e2e-support';
 
 test.describe('live workout with all exercises on one page', () => {
@@ -81,28 +83,14 @@ test.describe('live workout with all exercises on one page', () => {
 	});
 
 	test('Notes field is not inside any exercise region', async ({ page }) => {
-		const notesInput = page.getByPlaceholder('How did the session go?');
-
-		// Verify at least three exercises exist (Squat, Bench Press, Seated Row)
-		await expect(page.getByRole('heading', { name: 'Squat', level: 1 })).toBeVisible();
-		await expect(page.getByRole('heading', { name: 'Bench Press', level: 1 })).toBeVisible();
-		await expect(page.getByRole('heading', { name: 'Seated Row', level: 1 })).toBeVisible();
-
-		// Check if Notes field is contained within the Squat region
-		const isNotesInSquat = await notesInput.evaluate((notesEl, squatSelector) => {
-			const squatEl = document.querySelector(squatSelector);
-			if (!squatEl) return false;
-			const notesRect = notesEl.getBoundingClientRect();
-			const squatRect = squatEl.getBoundingClientRect();
-			return (
-				notesRect.x >= squatRect.x &&
-				notesRect.x + notesRect.width <= squatRect.x + squatRect.width &&
-				notesRect.y >= squatRect.y &&
-				notesRect.y + notesRect.height <= squatRect.y + squatRect.height
-			);
-		}, '[role="region"][name="Squat"]');
-
-		expect(isNotesInSquat).toBe(false);
+		// Every exercise block is a region named after the movement, so the claim
+		// is answered by asking each region for a Notes field of its own.
+		for (const name of ['Squat', 'Bench Press', 'Seated Row']) {
+			const region = page.getByRole('region', { name });
+			await expect(region).toBeVisible();
+			await expect(region.getByLabel('Notes')).toHaveCount(0);
+		}
+		await expect(page.getByLabel('Notes')).toHaveCount(1);
 	});
 
 	test('typing in Notes field stores text on workout', async ({ page }) => {
@@ -282,8 +270,7 @@ test.describe('live workout with all exercises on one page', () => {
 	});
 
 	test('Notes field at 360px viewport is not hidden behind sticky footer', async ({ page }) => {
-		// Set viewport to 360px wide
-		await page.setViewportSize({ width: 360, height: 800 });
+		await atNarrowPhone(page);
 
 		// Add 2 more sets to each of the three exercises to have 5 sets per exercise
 		const squatSection = page
@@ -307,19 +294,14 @@ test.describe('live workout with all exercises on one page', () => {
 		await seatedRowAddSet.click();
 		await seatedRowAddSet.click();
 
-		// Verify the Notes field is visible
 		const notesInput = page.getByPlaceholder('How did the session go?');
 		await expect(notesInput).toBeVisible();
 
-		// Verify that the page content fits the viewport
-		await expectFitsViewport(page);
+		// Nothing overflows sideways, and the field itself sits inside the 360px.
+		await expectFitsViewport(page, notesInput);
 
-		// The notes field should be visible without being scrolled out of view
-		const isNotesFullyVisible = await notesInput.evaluate((el) => {
-			const rect = el.getBoundingClientRect();
-			return rect.top >= 0 && rect.bottom <= window.innerHeight;
-		});
-
-		expect(isNotesFullyVisible).toBe(true);
+		// Scrolled to, the sticky rest-timer strip must not be what a tap lands on.
+		await notesInput.scrollIntoViewIfNeeded();
+		await expectHittable(notesInput);
 	});
 });

@@ -6,7 +6,6 @@
 	import { lastPerformance } from '$lib/domain/workout';
 	import { tend } from '$lib/state/tend.svelte';
 	import { cn } from '$lib/ui/cn';
-	import Textarea from '$lib/ui/Textarea.svelte';
 	import FormCheckModal from './FormCheckModal.svelte';
 	import { SET_GRID } from './sheet-grids';
 	import SetRow from './SetRow.svelte';
@@ -33,7 +32,6 @@
 	let swapOpen = $state(false);
 
 	const headingId = $derived(`session-exercise-${index}`);
-	const noteId = $derived(`session-exercise-${index}-note`);
 	const last = $derived(lastPerformance(tend.state.workouts, exercise.name));
 	/** Loads are stored in kilograms; this is the unit every one of them is read in. */
 	const unit = $derived(tend.state.loadUnit);
@@ -119,21 +117,6 @@
 		>
 			Add set
 		</button>
-	</div>
-
-	<div>
-		<label
-			for={noteId}
-			class="text-muted-foreground mb-1.5 block pl-1 text-[0.625rem] tracking-[0.14em] uppercase"
-		>
-			Notes
-		</label>
-		<Textarea
-			id={noteId}
-			class="min-h-16"
-			placeholder="Anything worth remembering next time"
-			bind:value={() => exercise.note, (note: string) => tend.noteExercise(note, index)}
-		/>
 	</div>
 </section>
 
