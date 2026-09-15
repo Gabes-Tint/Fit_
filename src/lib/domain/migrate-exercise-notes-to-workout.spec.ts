@@ -249,15 +249,44 @@ describe('what the rung refuses to repair', () => {
 	});
 
 	// A row that is not an object has no note to collect and none to strip, so it
-	// is copied across untouched rather than spread into an object of its indices.
+	// is copied across untouched rather than spread into an object of its indices —
+	// which is what a string exercise would become.
 	it('carries an exercise that is not an object across unchanged', async () => {
 		const { migrate_5_to_6 } = await import('./migrate-exercise-notes-to-workout');
 		const upgraded = migrate_5_to_6(
-			v5([{ id: 'w-1', exercises: [null, { name: 'Rows', note: 'ok' }] }])
+			v5([{ id: 'w-1', exercises: [null, 'just a name', { name: 'Rows', note: 'ok' }] }])
 		);
 		expect(upgraded.workouts).toEqual([
-			{ id: 'w-1', note: 'Rows: ok', exercises: [null, { name: 'Rows' }] }
+			{ id: 'w-1', note: 'Rows: ok', exercises: [null, 'just a name', { name: 'Rows' }] }
 		]);
+	});
+
+	// A note that is not text is not a note. Writing it into the workout's note
+	// would put `Bench Press: 42` in front of somebody as something they wrote.
+	it('collects nothing from an exercise whose note is not text', async () => {
+		const { migrate_5_to_6 } = await import('./migrate-exercise-notes-to-workout');
+		const upgraded = migrate_5_to_6(
+			v5([
+				{
+					id: 'w-1',
+					exercises: [
+						{ name: 'Bench Press', note: 42 },
+						{ name: 'Rows', note: 'ok' }
+					]
+				}
+			])
+		);
+		expect(upgraded.workouts).toEqual([
+			{ id: 'w-1', note: 'Rows: ok', exercises: [{ name: 'Bench Press' }, { name: 'Rows' }] }
+		]);
+	});
+
+	// A workout row that is a string is not an object with numbered keys: the
+	// `typeof` half of the object test is what keeps it from being spread apart.
+	it('leaves a workout row that is a bare string as the string it was', async () => {
+		const { migrate_5_to_6 } = await import('./migrate-exercise-notes-to-workout');
+		const upgraded = migrate_5_to_6(v5([], 'nonsense'));
+		expect(upgraded.activeWorkout).toBe('nonsense');
 	});
 
 	it('leaves an absent session in progress absent', async () => {
