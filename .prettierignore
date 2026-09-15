@@ -17,3 +17,6 @@ bun.lockb
 
 # Agent worktrees: a whole second checkout, not this branch's source
 /.claude/worktrees/
+
+# The flow viewer's build output
+/workflow/viewer/dist/
