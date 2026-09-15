@@ -1410,11 +1410,18 @@ describe('running a session', () => {
 		});
 	});
 
-	it('keeps a note against the movement it was written about', () => {
-		const store = inSession();
-		store.noteExercise('bar felt heavy', 0);
-		expect(store.state.activeWorkout?.exercises[0]?.note).toBe('bar felt heavy');
-		expect(store.state.activeWorkout?.exercises[1]?.note).toBe('');
+	it('sets the workout note and persists it', async () => {
+		const store = inSession() as TendStore & { noteWorkout: (note: string) => void };
+		expect(store).toHaveProperty('noteWorkout');
+		store.noteWorkout('Felt heavy throughout');
+		expect((store.state.activeWorkout as unknown as { note?: string } | null)?.note).toBe(
+			'Felt heavy throughout'
+		);
+		await vi.waitFor(() => {
+			expect((stored().activeWorkout as unknown as { note?: string } | null)?.note).toBe(
+				'Felt heavy throughout'
+			);
+		});
 	});
 
 	it('swaps the movement without losing the sets already logged', () => {
@@ -1487,7 +1494,7 @@ describe('a session nobody is running', () => {
 		store.toggleSet(0, 0);
 		store.bumpSet(0, 'load', 1, 0);
 		store.addSet(0);
-		store.noteExercise('nothing', 0);
+		store.noteWorkout('nothing');
 		store.swapExercise('Squat', 0);
 		expect(store.state.activeWorkout).toBeNull();
 		expect(localStorage.getItem('tend.v1')).toBeNull();
@@ -1532,6 +1539,17 @@ describe('filing a session', () => {
 		const filed = store.finishWorkout();
 		expect(filed?.exercises.flatMap((e) => e.sets).every((set) => !set.done)).toBe(true);
 		expect(stored().workouts[0]?.id).toBe(filed?.id);
+	});
+
+	it('files the workout with its note intact', () => {
+		const store = inSession() as TendStore & { noteWorkout: (note: string) => void };
+		expect(store).toHaveProperty('noteWorkout');
+		store.noteWorkout('Felt great');
+		const filed = store.finishWorkout();
+		expect((filed as unknown as { note?: string } | null)?.note).toBe('Felt great');
+		expect((stored().workouts[0] as unknown as { note?: string } | undefined)?.note).toBe(
+			'Felt great'
+		);
 	});
 });
 
@@ -1779,9 +1797,9 @@ describe('training across a reload', () => {
 		store.toggleSet(0, 0);
 		store.flushPersist();
 		expect(stored().activeWorkout?.exercises[0]?.sets[0]?.done).toBe(true);
-		store.noteExercise('felt strong', 0);
+		store.noteWorkout('felt strong');
 		store.flushPersist();
-		expect(stored().activeWorkout?.exercises[0]?.note).toBe('felt strong');
+		expect(stored().activeWorkout?.note).toBe('felt strong');
 		store.state.activeWorkout = null;
 		store.persist();
 		expect(stored().activeWorkout).toBeNull();
@@ -2281,14 +2299,6 @@ describe('per-exercise store actions', () => {
 		expect(store.state.activeWorkout?.exercises[1]?.sets.at(-1)?.reps).toBe(lastReps);
 		expect(store.state.activeWorkout?.exercises[1]?.sets.at(-1)?.load).toBe(lastLoad);
 		expect(store.state.activeWorkout?.exercises[0]?.sets.length).toBe(3);
-	});
-
-	it('noteExercise with exerciseIndex stores the note on a specific exercise', () => {
-		const store = inSession();
-		store.noteExercise('slow', 2);
-		expect(store.state.activeWorkout?.exercises[2]?.note).toBe('slow');
-		expect(store.state.activeWorkout?.exercises[0]?.note).toBe('');
-		expect(store.state.activeWorkout?.exercises[1]?.note).toBe('');
 	});
 
 	it('swapExercise with exerciseIndex swaps a specific exercise', () => {

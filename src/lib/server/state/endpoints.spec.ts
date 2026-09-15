@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase } from '../db';
 import { registerAccount } from '../users/accounts';
 import type { Account, Auth } from '../users/types';
+import { SCHEMA_VERSION, stateFormat } from '../../domain/state-document';
 import { MAX_STATE_BODY_BYTES } from '../../domain/state-size';
 import { readState, readStateBody, writeState } from './endpoints';
 import type { StateEvent } from './endpoints';
@@ -11,6 +12,13 @@ import type { StateEvent } from './endpoints';
 const CHEAP = { n: 2 ** 12, r: 8, p: 1 };
 
 const SITE = 'https://fit.example/api/state';
+
+/**
+ * The label the endpoint stamps on what it answers with. Read off the schema
+ * version rather than written out, so a rung on the ladder does not leave three
+ * expectations asserting the version before last.
+ */
+const FORMAT = stateFormat(SCHEMA_VERSION);
 
 type RequestOptions = {
 	body?: unknown;
@@ -107,7 +115,7 @@ describe('readState', () => {
 		expect(response.status).toBe(200);
 		expect(await bodyOf(response)).toEqual({
 			version: 0,
-			format: 'tend.v5',
+			format: FORMAT,
 			body: null,
 			updatedAt: null
 		});
@@ -153,7 +161,7 @@ describe('readState', () => {
 		const response = readState(db, eventFor(otherAuth));
 		expect(await bodyOf(response)).toEqual({
 			version: 0,
-			format: 'tend.v5',
+			format: FORMAT,
 			body: null,
 			updatedAt: null
 		});
@@ -242,7 +250,7 @@ describe('writeState', () => {
 		expect(await bodyOf(response)).toEqual({
 			error: { code: 'stale-version' },
 			version: 0,
-			format: 'tend.v5',
+			format: FORMAT,
 			body: null
 		});
 		expect(db.prepare('select count(*) as n from household_state').get()?.['n']).toBe(0);

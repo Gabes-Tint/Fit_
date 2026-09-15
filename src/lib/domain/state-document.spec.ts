@@ -147,12 +147,13 @@ const STORED_BEFORE_THE_LADDER = {
 const BENCH_KG = 20.41165665;
 
 /**
- * The same household once the whole ladder has run. Four rungs changed it: the
+ * The same household once the whole ladder has run. Six rungs changed it: the
  * routine lost the `freq` that used to decide its days and gained the flag that
  * says it has not been deleted, the single week it had planned became the two
  * dated days version 1 drew for a twice-a-week routine — Monday 7 and Thursday
  * 10 September, the Monday and Thursday of training week 36 of 2026 — and every
- * load became kilograms. Everything else is untouched, which is the claim this
+ * load became kilograms, the left-handed flag arrived, and the exercise's note
+ * moved onto the workout under the exercise's name. Everything else is untouched, which is the claim this
  * fixture exists to hold the ladder to.
  */
 const AFTER_THE_LADDER = {
@@ -181,11 +182,11 @@ const AFTER_THE_LADDER = {
 			startedAt: 1757000000000,
 			finishedAt: 1757003600000,
 			exerciseIndex: 0,
+			note: 'Bench press: felt strong',
 			exercises: [
 				{
 					name: 'Bench press',
 					group: 'chest',
-					note: 'felt strong',
 					sets: [
 						{ reps: 8, load: BENCH_KG, done: true },
 						{ reps: 8, load: BENCH_KG, done: true },
@@ -273,7 +274,8 @@ describe('what a migrated document still holds', () => {
 	it('keeps the workouts, down to the set that was not finished', () => {
 		expect(state().workouts).toEqual(AFTER_THE_LADDER.workouts);
 		expect(state().workouts[0]?.exercises[0]?.sets[2]?.done).toBe(false);
-		expect(state().workouts[0]?.exercises[0]?.note).toBe('felt strong');
+		expect(state().workouts[0]?.note).toBe('Bench press: felt strong');
+		expect(state().workouts[0]?.exercises[0]).not.toHaveProperty('note');
 	});
 
 	// The household read in pounds, so its numbers were pounds; version 4 stores
@@ -568,5 +570,49 @@ describe('parsing the text storage hands back', () => {
 
 	it.each(['{not json', '', 'null', '[]'])('refuses text that is not a document: %s', (raw) => {
 		expect(parseStateDocument(raw)).toMatchObject({ ok: false, reason: 'malformed' });
+	});
+});
+
+describe('migration to version 6: exercise notes to workout', () => {
+	it('is declared as version 6', () => {
+		expect(SCHEMA_VERSION).toBe(6);
+	});
+
+	it('has a rung for it in the ladder', () => {
+		expect(MIGRATIONS).toHaveLength(6);
+	});
+
+	it('upgrades a v5 document and stamps it version 6', async () => {
+		const mod = await import('./migrate-exercise-notes-to-workout');
+		const migrate_5_to_6 = mod.migrate_5_to_6;
+		const v5Document = {
+			schemaVersion: 5,
+			onboarded: true,
+			activeProfileId: 'p-1',
+			profiles: [],
+			weekPlan: [],
+			pantry: [],
+			routines: [],
+			trainingPlan: [],
+			loadUnit: 'kg',
+			restSeconds: 90,
+			units: 'metric',
+			leftHanded: false,
+			workouts: [
+				{
+					id: 'w-1',
+					routineId: 'r-1',
+					routineName: 'Upper',
+					date: '2026-09-01',
+					startedAt: 1000,
+					finishedAt: 2000,
+					exerciseIndex: 0,
+					exercises: [{ name: 'Bench Press', group: 'Chest', note: 'heavy', sets: [] }]
+				}
+			],
+			activeWorkout: null
+		};
+		const upgraded = migrate_5_to_6(v5Document);
+		expect(upgraded.schemaVersion).toBe(6);
 	});
 });

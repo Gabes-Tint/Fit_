@@ -25,17 +25,16 @@ describe('per-exercise actions given an exercise index', () => {
 		store.toggleSet(0, 0);
 		store.bumpSet(0, 'reps', 1, 0);
 		store.addSet(0);
-		store.noteExercise('slow', 0);
 		store.swapExercise('Leg Press', 0);
 		const [first, second] = exercises(store);
-		expect(first).toMatchObject({ name: 'Leg Press', group: 'Legs', note: 'slow' });
+		expect(first).toMatchObject({ name: 'Leg Press', group: 'Legs' });
 		expect(first?.sets).toEqual([
 			{ reps: 9, load: 60, done: true },
 			{ reps: 8, load: 60, done: false },
 			{ reps: 8, load: 60, done: false },
 			{ reps: 8, load: 60, done: false }
 		]);
-		expect(second).toMatchObject({ name: 'Bench Press', note: '' });
+		expect(second).toMatchObject({ name: 'Bench Press' });
 		expect(second?.sets).toEqual([
 			{ reps: 8, load: 45, done: false },
 			{ reps: 8, load: 45, done: false },
@@ -49,7 +48,6 @@ describe('per-exercise actions given an exercise index', () => {
 		store.toggleSet(0, -1);
 		store.bumpSet(0, 'load', 1, -1);
 		store.addSet(-1);
-		store.noteExercise('slow', -1);
 		store.swapExercise('Leg Press', -1);
 		expect($state.snapshot(store.state.activeWorkout)).toEqual(before);
 	});

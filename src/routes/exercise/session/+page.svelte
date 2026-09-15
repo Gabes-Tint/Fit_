@@ -10,6 +10,10 @@
 	import Button from '$lib/ui/Button.svelte';
 	import LinkButton from '$lib/ui/LinkButton.svelte';
 	import ProgressBar from '$lib/ui/ProgressBar.svelte';
+	import Textarea from '$lib/ui/Textarea.svelte';
+
+	/** The label's `for`, spelled once so the two cannot drift apart. */
+	const NOTE_ID = 'session-note';
 
 	let now = $state(Date.now());
 	let restStartedAt = $state<number | null>(null);
@@ -80,6 +84,29 @@
 			{#each workout.exercises as exercise, index (index)}
 				<SessionExercise {exercise} {index} onlog={() => (restStartedAt = Date.now())} />
 			{/each}
+		</div>
+
+		<!--
+			One note for the whole trip, at the end of the page rather than under
+			each movement: what somebody writes after a session is a sentence about
+			the session, and cutting it into a fragment per exercise filed it under
+			whichever block happened to be on screen (#477). It sits last so the
+			page reads in the order the session runs, and `scroll-mb-32` keeps it
+			clear of the sticky footer when focus scrolls it into view.
+		-->
+		<div class="scroll-mb-32">
+			<label
+				for={NOTE_ID}
+				class="text-muted-foreground mb-1.5 block pl-1 text-[0.625rem] tracking-[0.14em] uppercase"
+			>
+				Notes
+			</label>
+			<Textarea
+				id={NOTE_ID}
+				class="min-h-24"
+				placeholder="How did the session go?"
+				bind:value={() => workout.note, (note: string) => tend.noteWorkout(note)}
+			/>
 		</div>
 
 		<div class="bg-background sticky bottom-0 flex flex-col gap-2 pt-2 pb-3">

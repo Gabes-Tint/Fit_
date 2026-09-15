@@ -1,6 +1,7 @@
 import { migrate_3_to_4 } from './migrate-canonical-loads';
 import { migrate_4_to_5 } from './migrate-left-handed';
 import { migrate_2_to_3 } from './migrate-deleted-routines';
+import { migrate_5_to_6 } from './migrate-exercise-notes-to-workout';
 import { migrate_1_to_2 } from './migrate-planned-days';
 import {
 	DEFAULT_LEFT_HANDED,
@@ -33,7 +34,7 @@ import {
  */
 
 /** The shape this build reads and writes. Bumped by every shape change. */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 /**
  * A document with no `schemaVersion` at all: everything written before this
@@ -132,7 +133,8 @@ export const MIGRATIONS: readonly Migration[] = [
 	migrate_1_to_2,
 	migrate_2_to_3,
 	migrate_3_to_4,
-	migrate_4_to_5
+	migrate_4_to_5,
+	migrate_5_to_6
 ];
 
 /**

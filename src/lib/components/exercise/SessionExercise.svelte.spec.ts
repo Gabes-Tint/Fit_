@@ -35,7 +35,7 @@ function fileEarlier(reps: number, load: number, name = 'Bench Press') {
 	const earlier: Workout = {
 		...workoutFromRoutine(pushA(), { id: 'w-old', date: todayISO(), startedAt: 0 }),
 		finishedAt: 1,
-		exercises: [{ name, group: 'Chest', note: '', sets: [{ reps, load, done: true }] }]
+		exercises: [{ name, group: 'Chest', sets: [{ reps, load, done: true }] }]
 	};
 	tend.state.workouts.push(earlier);
 	tend.persist();
@@ -132,10 +132,12 @@ describe('SessionExercise', () => {
 		expect(session().exercises[0]?.sets).toHaveLength(3);
 	});
 
-	it('keeps the note with the exercise', async () => {
+	// Supersedes 'keeps the note with the exercise': one note is written for the
+	// whole session, on the page, so the block carries no field of its own (#477).
+	it('offers no note of its own', async () => {
 		await renderPanel();
-		await page.getByLabelText('Notes').fill('Left shoulder pinching — dropped the load.');
-		expect(session().exercises[0]?.note).toBe('Left shoulder pinching — dropped the load.');
+		expect(page.getByLabelText('Notes').elements()).toHaveLength(0);
+		expect(page.getByPlaceholder('How did the session go?').elements()).toHaveLength(0);
 	});
 
 	it('swaps the movement without losing the session', async () => {
@@ -179,14 +181,11 @@ describe('SessionExercise', () => {
 		await page.getByRole('button', { name: 'Set 1 done' }).click();
 		await page.getByRole('button', { name: 'Increase reps on set 1' }).click();
 		await page.getByText('Add set').click();
-		await page.getByLabelText('Notes').fill('Light today');
 		const [bench, raise] = session().exercises;
 		expect(raise?.sets.map((s) => s.done)).toEqual([true, false]);
 		expect(raise?.sets[0]?.reps).toBe(13);
-		expect(raise?.note).toBe('Light today');
 		expect(bench?.sets.some((s) => s.done)).toBe(false);
 		expect(bench?.sets).toHaveLength(2);
-		expect(bench?.note).toBe('');
 		expect(logged).toHaveLength(1);
 	});
 

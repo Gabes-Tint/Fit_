@@ -28,9 +28,8 @@ function filed(date: string, done: boolean): Workout {
 		startedAt: 0,
 		finishedAt: 1,
 		exerciseIndex: 0,
-		exercises: [
-			{ name: 'Bench Press', group: 'Chest', note: '', sets: [{ reps: 8, load: 45, done }] }
-		]
+		note: '',
+		exercises: [{ name: 'Bench Press', group: 'Chest', sets: [{ reps: 8, load: 45, done }] }]
 	};
 }
 

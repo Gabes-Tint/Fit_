@@ -16,10 +16,10 @@ export function workoutFromRoutine(
 		startedAt: args.startedAt,
 		finishedAt: null,
 		exerciseIndex: 0,
+		note: '',
 		exercises: routine.exercises.map((e) => ({
 			name: e.name,
 			group: e.group,
-			note: '',
 			sets: Array.from({ length: e.sets }, () => ({ reps: e.reps, load: e.load, done: false }))
 		}))
 	};

@@ -602,10 +602,15 @@ export class TendStore {
 		this.persist();
 	}
 
-	noteExercise(note: string, exerciseIndex: number) {
-		const exercise = this.liveExercise(exerciseIndex);
-		if (!exercise) return;
-		exercise.note = note;
+	/**
+	 * One note for the whole session. Debounced like the set edits beside it:
+	 * the field is typed into a character at a time and each keystroke would
+	 * otherwise rewrite the entire document.
+	 */
+	noteWorkout(note: string) {
+		const workout = this.state.activeWorkout;
+		if (!workout) return;
+		workout.note = note;
 		this.persistSoon();
 	}
 

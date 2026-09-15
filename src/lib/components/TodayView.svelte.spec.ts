@@ -22,12 +22,12 @@ function finishedWorkout(date = todayISO()): Workout {
 		startedAt: 0,
 		finishedAt: 1,
 		exerciseIndex: 0,
+		note: '',
 		exercises: [
 			{
 				name: 'Bench Press',
 				group: 'Chest',
-				sets: [{ reps: 5, load: 60, done: true }],
-				note: ''
+				sets: [{ reps: 5, load: 60, done: true }]
 			}
 		]
 	};
