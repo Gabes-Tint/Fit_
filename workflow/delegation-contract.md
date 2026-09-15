@@ -128,9 +128,11 @@ below is computed over the union exactly as it was over a lone lane.
 Rejections that make the later checks meaningless still short-circuit, and
 the gates do not run at all: a non-test file on the branch, a test file in a
 folder it may not live in, a reported file that is not in the diff, a
-suppression directive or a browser-context import inside a test. A crashed
-gate (`TOOL_FAILED`) also stops where it stands - an external tool failure
-is not a verdict on the tests, so there is nothing to aggregate it with. For
+suppression directive or a browser-context import inside a test. A gate that
+only crashed (`TOOL_FAILED`) also stops where it stands - an external tool
+failure is not a verdict on the tests, so there is nothing to aggregate it
+with; a gate that returned a verdict beside a crashed lane did judge the
+tests, and aggregates like any other rejection. For
 a `workflow` slice the driver's own four gates keep stopping at their first
 failing step, because they are a sequence of separate commands rather than
 one gate run; that first failure is still aggregated with the acceptance run.
@@ -709,6 +711,19 @@ reports must belong to this turn's actual content and requested commands,
 contain every required result and valid artifacts, and have passing exits.
 Missing reports, runner crashes or stale reports cannot be treated as failed
 assertions or as success. No full local CI tier is implied.
+
+A gate run can be red both ways at once, and its exit code says which red
+governs. A step that measured something and found it wanting returns a
+verdict; a step that died before measuring anything returns none, and the
+report keeps them in separate lists. Exit 1 means at least one real verdict
+exists, so the run is a rejection the implementer is given to repair, and
+the crashed lanes are named alongside it as having produced no verdict -
+never as findings, because nothing was measured for anyone to fix. Only
+when crashes are all there is does the tier report the crash exit code, and
+only that is the external tool failure that stops the run. Judging the
+mixed report as a crash cost #477 a run: four red specs made the mutation
+lane's dry run die, the report named the specs under `failed` and the lane
+under `crashed`, and a repairable rejection ended the run `blocked`.
 
 The driver determines affected specs, e2e files and mutation lanes from the
 actual diff under the recorded policy, not just the agent's reported files.

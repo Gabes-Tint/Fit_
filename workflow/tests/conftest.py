@@ -687,10 +687,15 @@ reviewer:
 
     def given_gate_outcomes(self, **outcomes) -> None:
         """Scripted results for `npm run <script>` and `bun run
-        test:mutation:<lane>`: pass, fail, or tool_error. A list is
-        consumed one value per invocation. `verify:fast` scripts block 1's
+        test:mutation:<lane>`: pass, fail, crash_only, or tool_error. A list
+        is consumed one value per invocation. `verify:fast` scripts block 1's
         content steps over the failing-test branch - `duplicates`,
-        `format:check`, `check:suppressions` and `spellcheck` together."""
+        `format:check`, `check:suppressions` and `spellcheck` together.
+
+        `crash_only` is the tier whose every red step crashed: it writes a
+        report with no failed step, names the crashed ones, and exits with
+        the gate's crash code, which is what `summaryExitCode` gives a
+        summary holding crashes alone."""
         self._load()
         self.world.setdefault("gate_outcomes", {}).update(outcomes)
         self._save()
@@ -701,6 +706,16 @@ reviewer:
         verify:fast content steps."""
         self._load()
         self.world.setdefault("gate_failed_steps", {})[tier] = list(steps)
+        self._save()
+
+    def given_crashed_gate_steps(self, tier: str, *steps: str) -> None:
+        """Which steps that gate reports as crashed - no verdict either
+        way - alongside whatever it reports as failed. A tier can carry
+        both at once: a red spec makes Stryker's dry run die, so the report
+        names the spec under `failed` and the mutation lane under
+        `crashed`, and exits 1 because a real verdict exists."""
+        self._load()
+        self.world.setdefault("gate_crashed_steps", {})[tier] = list(steps)
         self._save()
 
     def given_duplicate_clone(

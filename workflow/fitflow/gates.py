@@ -38,6 +38,16 @@ report, or a report contradicting the exit code is an external tool
 failure that stops the run — never an implementation verdict, never a
 success. No full local CI tier is implied.
 
+The two reds can arrive together, and exit 1 is what tells them apart: a
+report carrying both failed and crashed steps means some step did return a
+verdict, and the run is a rejection the implementer can repair. Only
+crashes exit 97 (`scripts/quality/run-outcome.ts`), so a report holding
+nothing but crashes stops the run. Reading the two as one cost #477 a run:
+four red specs made Stryker's dry run die before any mutant, the report
+named both, and the rejection the solver could have fixed ended the run
+blocked instead. The crashed lanes are still named in the diagnostic —
+marked as having produced no verdict, so nobody works them as debt.
+
 `run_workflow_gates` covers the third layer. A slice whose code is the
 driver itself changes Python and prose, which none of the bun lanes size or
 run, so ruff, ruff format, prettier over changed markdown, cspell over every
@@ -344,8 +354,14 @@ def _verdict(
             )
         narrate_gates(int(report.get("stepsRun", 0) or 0), label)
         return None
-    if result.returncode == 1 and failed and not crashed:
-        return _failure(worktree, report, failed, label)
+    if result.returncode == 1 and failed:
+        # exit 1 is the gate's own word that some step returned a real
+        # verdict (`scripts/quality/run-outcome.ts`: crashes alone report
+        # the crash code instead). A lane that crashed beside it proves
+        # nothing either way, and must not turn the verdict that does exist
+        # into a run-ending tool failure - #477 lost a repairable rejection
+        # exactly that way, when four red specs killed Stryker's dry run.
+        return _failure(worktree, report, failed, label, crashed)
     raise FlowFailure(
         Outcome.TOOL_FAILED,
         f"{label} crashed (exit {result.returncode}); "
@@ -403,14 +419,24 @@ def _parsed(report_path: Path, story_number: int, label: str) -> dict:
 # --- the detail a failed step carries ------------------------------------
 
 
-def _failure(worktree: Path, report: dict, failed: list[str], label: str) -> GateFailure:
+def _failure(
+    worktree: Path, report: dict, failed: list[str], label: str, crashed: list[str] = ()
+) -> GateFailure:
     """Turn the report's failed steps into the diagnostic the agent reads:
-    the step names first, then each step's own account of what it found."""
+    the step names first, then each step's own account of what it found.
+
+    A lane that crashed in the same run is named too, and named as having
+    produced no verdict: it is not a finding, and an implementer told only
+    that `test:mutation:changed:client` was red would go hunting surviving
+    mutants nobody ever measured. Crashed lanes contribute no culprits and
+    no failed tests for the same reason - they blamed nobody."""
     entries = _step_entries(report)
     blames = [
         (name, _step_failure(worktree, entries.get(name) or {"name": name})) for name in failed
     ]
     lines = [f"{label} failed steps: {', '.join(failed)}"]
+    if crashed:
+        lines.append(f"crashed (no verdict, not a finding): {', '.join(crashed)}")
     for name, (detail, _blamed, _tests) in blames:
         lines.append(f"{name}:")
         lines.extend(f"  {text}" for text in detail or ["(the step left no readable output)"])

@@ -2249,6 +2249,71 @@ def test_a_mixed_gate_failure_stops_as_tests_invalid_once_only_block_ones_half_i
     assert "blocked" in world.issue(477)["labels"]
 
 
+def test_a_gate_verdict_beside_a_crashed_lane_is_still_a_repairable_rejection(world):
+    """Run #477: the solver's code had four genuinely red specs, so
+    Stryker's dry run died before it reached a mutant. The report named the
+    specs under `failed` and the mutation lane under `crashed`, and the
+    gate exited 1 because a real verdict existed - and the driver read the
+    crash as an external tool failure, blocked the issue and ended the run
+    on a rejection the solver could have repaired. A crashed lane proves
+    nothing; the failed step is still the verdict."""
+    _given_planned_story(world, 479)
+    _delegate_mechanic(world, 479)
+    world.given_gate_outcomes(**{"verify:changed": ["fail", "pass"]})
+    world.given_failed_gate_steps("verify:changed", "test:unit:server")
+    world.given_crashed_gate_steps("verify:changed", "test:mutation:changed:client")
+    _implement(
+        world,
+        "story-479-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = true;\n"},
+    )
+    _implement(
+        world,
+        "story-479-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = 2;\n"},
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "TOOL_FAILED" not in result.stdout
+    assert "blocked" not in world.issue(479)["labels"]
+    # the rejection reached the implementer as its next attempt
+    assert "correcting after attempt 1" in result.stdout
+    correction = _talks(world, "mechanic", "story-479-domain")[2]["prompt"]
+    assert "verify:changed failed steps: test:unit:server" in correction
+    # and the crashed lane is named as having produced no verdict, so the
+    # implementer does not go hunting for surviving mutants that nobody
+    # ever measured
+    assert "crashed (no verdict, not a finding): test:mutation:changed:client" in correction
+    assert "🔒 #479 (domain) frozen at" in result.stdout
+
+
+def test_a_gate_that_only_crashed_is_still_an_external_stop(world):
+    """The other half of the contract: crashes alone leave no verdict, the
+    tier reports the crash code rather than 1, and that is an external
+    failure however complete its report is."""
+    _given_planned_story(world, 480)
+    _delegate_mechanic(world, 480)
+    world.given_gate_outcomes(**{"verify:changed": "crash_only"})
+    world.given_crashed_gate_steps("verify:changed", "test:mutation:changed:client")
+    _implement(
+        world,
+        "story-480-domain",
+        "mechanic",
+        files={"src/lib/delegate.ts": "export const delegate = true;\n"},
+    )
+
+    result = run_flow(world)
+
+    assert result.returncode == 26, result.stdout + result.stderr
+    assert "verify:changed crashed (exit 97)" in result.stdout
+    assert "crashed=['test:mutation:changed:client']" in result.stdout
+    assert "blocked" in world.issue(480)["labels"]
+
+
 def test_a_gate_culprit_outside_the_slices_layer_is_headed_as_off_limits(world):
     """`verify:changed` sizes its steps from the tree, so a domain slice's
     gate can fail inside a UI component the slice may not touch. #422's
