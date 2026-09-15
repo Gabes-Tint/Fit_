@@ -20,7 +20,9 @@
 		"reports/**",
 		"test-results/**",
 		// The workflow subproject's local uv environment.
-		"workflow/.venv/**"
+		"workflow/.venv/**",
+		// The flow viewer: a separate Vite project, its dependencies and build.
+		"workflow/viewer/**"
 	],
 	"words": [
 		"aarmy",

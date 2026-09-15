@@ -24,7 +24,8 @@ export default defineConfig(
 	// `build` output inside a worktree never comes up either, anchors or not.
 	// Checked in #198 by counting what ESLint reports: 527 files, none of them
 	// under `.claude/`.
-	{ ignores: ['android/**', '/build/**', '/.svelte-kit/**'] },
+	// workflow/viewer is a separate Vite project with its own package.json and svelte-check.
+	{ ignores: ['android/**', '/build/**', '/.svelte-kit/**', 'workflow/viewer/**'] },
 	js.configs.recommended,
 	ts.configs.recommendedTypeChecked,
 	svelte.configs.recommended,
