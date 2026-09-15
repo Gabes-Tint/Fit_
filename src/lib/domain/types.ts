@@ -314,7 +314,6 @@ export type WorkoutExercise = {
 	name: string;
 	group: MuscleGroup;
 	sets: WorkoutSet[];
-	note: string;
 };
 
 /**
@@ -331,6 +330,13 @@ export type Workout = {
 	finishedAt: number | null;
 	exerciseIndex: number;
 	exercises: WorkoutExercise[];
+	/**
+	 * How the session went, in the person's own words, written once for the
+	 * whole trip rather than cut into a fragment under each movement. Always
+	 * present from schema version 6 on: `migrate_5_to_6` gives every workout
+	 * already filed the notes its exercises carried, joined and attributed.
+	 */
+	note: string;
 };
 
 /**

@@ -14,11 +14,11 @@ function workout(done: number, startedAt = 0): Workout {
 		startedAt,
 		finishedAt: null,
 		exerciseIndex: 0,
+		note: '',
 		exercises: [
 			{
 				name: 'Bench Press',
 				group: 'Chest',
-				note: '',
 				sets: Array.from({ length: 3 }, (_, i) => ({ reps: 8, load: 45, done: i < done }))
 			}
 		]

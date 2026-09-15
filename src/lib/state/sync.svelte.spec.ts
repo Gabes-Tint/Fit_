@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyProfile } from '$lib/domain/profile';
 import type { TendState } from '$lib/domain/types';
-import { OUTDATED_MESSAGE, SCHEMA_VERSION } from '$lib/domain/state-document';
+import { OUTDATED_MESSAGE, SCHEMA_VERSION, stateFormat } from '$lib/domain/state-document';
 import { REFUSED_STORAGE_KEY, STORAGE_KEY, TendStore } from './tend.svelte';
 import { fingerprint } from './outstanding-write';
 import { SYNC_STORAGE_KEY, SyncStore, type SyncRecord } from './sync.svelte';
@@ -208,7 +208,7 @@ describe('the first sync a device does', () => {
 		await sync.start(HOUSEHOLD);
 
 		const body = sent[1]?.body as { format: string; body: TendState } | undefined;
-		expect(body?.format).toBe('tend.v5');
+		expect(body?.format).toBe(stateFormat(SCHEMA_VERSION));
 		expect(body?.body.onboarded).toBe(true);
 		expect(body?.body.activeProfileId).toBe('p-1');
 	});

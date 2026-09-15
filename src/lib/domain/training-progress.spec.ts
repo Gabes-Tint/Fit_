@@ -27,7 +27,7 @@ function set(load: number, reps = 8, done = true): WorkoutSet {
 }
 
 function ex(name: string, group: MuscleGroup, sets: WorkoutSet[]) {
-	return { name, group, sets, note: '' };
+	return { name, group, sets };
 }
 
 let counter = 0;
@@ -42,6 +42,7 @@ function done(date: string, exercises: ReturnType<typeof ex>[]): Workout {
 		startedAt: 0,
 		finishedAt: 1,
 		exerciseIndex: 0,
+		note: '',
 		exercises
 	};
 }

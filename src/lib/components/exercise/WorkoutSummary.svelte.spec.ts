@@ -29,13 +29,11 @@ function fileTwoWeeksOfPressing() {
 	const press = (load: number) => ({
 		name: 'Bench Press',
 		group: 'Chest' as const,
-		note: '',
 		sets: [{ reps: 8, load, done: true }]
 	});
 	const raise = {
 		name: 'Lateral Raise',
 		group: 'Shoulders' as const,
-		note: '',
 		sets: [{ reps: 12, load: 8, done: true }]
 	};
 	const base = {
@@ -43,7 +41,8 @@ function fileTwoWeeksOfPressing() {
 		routineName: 'Push A',
 		startedAt: STARTED,
 		finishedAt: STARTED + 2730 * 1000,
-		exerciseIndex: 0
+		exerciseIndex: 0,
+		note: ''
 	};
 	tend.state.workouts.push(
 		{ ...base, id: 'w-last', date: addDaysISO(todayISO(), -7), exercises: [press(40), raise] },
@@ -129,7 +128,7 @@ describe('WorkoutSummary', () => {
 		const filed = tend.state.workouts.at(-1);
 		// Beside the movement that did happen: the read-back only appears at all
 		// once something was ticked.
-		filed?.exercises.push({ name: 'Pull-up', group: 'Back', note: '', sets: [] });
+		filed?.exercises.push({ name: 'Pull-up', group: 'Back', sets: [] });
 		await render(WorkoutSummary);
 		await expect.element(page.getByText('Pull-up')).toBeInTheDocument();
 		// Its own row, beside the movement that was reached but not ticked.

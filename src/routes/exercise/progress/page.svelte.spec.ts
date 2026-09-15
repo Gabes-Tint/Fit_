@@ -21,9 +21,8 @@ function filed(done: boolean): Workout {
 		startedAt: 0,
 		finishedAt: 1,
 		exerciseIndex: 0,
-		exercises: [
-			{ name: 'Bench Press', group: 'Chest', note: '', sets: [{ reps: 10, load: 60, done }] }
-		]
+		note: '',
+		exercises: [{ name: 'Bench Press', group: 'Chest', sets: [{ reps: 10, load: 60, done }] }]
 	};
 }
 

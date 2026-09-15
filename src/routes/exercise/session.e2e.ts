@@ -75,32 +75,77 @@ test.describe('live workout with all exercises on one page', () => {
 		await expect(seatedRowSet1Button).toHaveAttribute('aria-pressed', 'false');
 	});
 
-	test('notes field persists per-exercise', async ({ page }) => {
-		// Find the notes field for the third exercise (Seated Row)
-		const seatedRowSection = page
-			.getByRole('region')
-			.filter({ has: page.getByText('Seated Row', { exact: true }) });
-		const seatedRowNotes = seatedRowSection.getByLabel('Notes');
+	test('renders exactly one Notes field at session level', async ({ page }) => {
+		// The session-level Notes field should have placeholder "How did the session go?"
+		await expect(page.getByPlaceholder('How did the session go?')).toHaveCount(1);
+	});
 
-		// Type a note in Seated Row
-		await seatedRowNotes.fill('Good form today');
-		await expect(seatedRowNotes).toHaveValue('Good form today');
+	test('Notes field is not inside any exercise region', async ({ page }) => {
+		const notesInput = page.getByPlaceholder('How did the session go?');
 
-		// Check that Squat and Bench Press notes are empty
+		// Verify at least three exercises exist (Squat, Bench Press, Seated Row)
+		await expect(page.getByRole('heading', { name: 'Squat', level: 1 })).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'Bench Press', level: 1 })).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'Seated Row', level: 1 })).toBeVisible();
+
+		// Check if Notes field is contained within the Squat region
+		const isNotesInSquat = await notesInput.evaluate((notesEl, squatSelector) => {
+			const squatEl = document.querySelector(squatSelector);
+			if (!squatEl) return false;
+			const notesRect = notesEl.getBoundingClientRect();
+			const squatRect = squatEl.getBoundingClientRect();
+			return (
+				notesRect.x >= squatRect.x &&
+				notesRect.x + notesRect.width <= squatRect.x + squatRect.width &&
+				notesRect.y >= squatRect.y &&
+				notesRect.y + notesRect.height <= squatRect.y + squatRect.height
+			);
+		}, '[role="region"][name="Squat"]');
+
+		expect(isNotesInSquat).toBe(false);
+	});
+
+	test('typing in Notes field stores text on workout', async ({ page }) => {
+		const notesInput = page.getByPlaceholder('How did the session go?');
+		await notesInput.fill('Great session today');
+		await expect(notesInput).toHaveValue('Great session today');
+	});
+
+	test('text in Notes field persists when sets are ticked', async ({ page }) => {
+		const notesInput = page.getByPlaceholder('How did the session go?');
+		await notesInput.fill('Test note for session');
+
+		// Tick a set in the first exercise
 		const squatSection = page
 			.getByRole('region')
 			.filter({ has: page.getByText('Squat', { exact: true }) });
-		const squatNotes = squatSection.getByLabel('Notes');
-		await expect(squatNotes).toHaveValue('');
+		const squatSet1Button = squatSection.getByRole('button', { name: 'Set 1 done' }).first();
+		await squatSet1Button.click();
 
+		// Verify text is still there
+		await expect(notesInput).toHaveValue('Test note for session');
+	});
+
+	test('note persists after ticking sets in multiple exercises', async ({ page }) => {
+		const notesInput = page.getByPlaceholder('How did the session go?');
+		await notesInput.fill('My workout note');
+
+		// Tick a set in Squat
+		const squatSection = page
+			.getByRole('region')
+			.filter({ has: page.getByText('Squat', { exact: true }) });
+		const squatSet1 = squatSection.getByRole('button', { name: 'Set 1 done' }).first();
+		await squatSet1.click();
+
+		// Tick a set in Bench Press
 		const benchSection = page
 			.getByRole('region')
 			.filter({ has: page.getByText('Bench Press', { exact: true }) });
-		const benchNotes = benchSection.getByLabel('Notes');
-		await expect(benchNotes).toHaveValue('');
+		const benchSet1 = benchSection.getByRole('button', { name: 'Set 1 done' }).first();
+		await benchSet1.click();
 
-		// Seated Row note should still be there
-		await expect(seatedRowNotes).toHaveValue('Good form today');
+		// Verify note is still there
+		await expect(notesInput).toHaveValue('My workout note');
 	});
 
 	test('footer button labels the next undone set and reads Finish when all sets done', async ({
@@ -234,5 +279,47 @@ test.describe('live workout with all exercises on one page', () => {
 
 		// Check that nothing overflows the viewport
 		await expectFitsViewport(page);
+	});
+
+	test('Notes field at 360px viewport is not hidden behind sticky footer', async ({ page }) => {
+		// Set viewport to 360px wide
+		await page.setViewportSize({ width: 360, height: 800 });
+
+		// Add 2 more sets to each of the three exercises to have 5 sets per exercise
+		const squatSection = page
+			.getByRole('region')
+			.filter({ has: page.getByText('Squat', { exact: true }) });
+		const squatAddSet = squatSection.getByRole('button', { name: 'Add set' });
+		await squatAddSet.click();
+		await squatAddSet.click();
+
+		const benchSection = page
+			.getByRole('region')
+			.filter({ has: page.getByText('Bench Press', { exact: true }) });
+		const benchAddSet = benchSection.getByRole('button', { name: 'Add set' });
+		await benchAddSet.click();
+		await benchAddSet.click();
+
+		const seatedRowSection = page
+			.getByRole('region')
+			.filter({ has: page.getByText('Seated Row', { exact: true }) });
+		const seatedRowAddSet = seatedRowSection.getByRole('button', { name: 'Add set' });
+		await seatedRowAddSet.click();
+		await seatedRowAddSet.click();
+
+		// Verify the Notes field is visible
+		const notesInput = page.getByPlaceholder('How did the session go?');
+		await expect(notesInput).toBeVisible();
+
+		// Verify that the page content fits the viewport
+		await expectFitsViewport(page);
+
+		// The notes field should be visible without being scrolled out of view
+		const isNotesFullyVisible = await notesInput.evaluate((el) => {
+			const rect = el.getBoundingClientRect();
+			return rect.top >= 0 && rect.bottom <= window.innerHeight;
+		});
+
+		expect(isNotesFullyVisible).toBe(true);
 	});
 });

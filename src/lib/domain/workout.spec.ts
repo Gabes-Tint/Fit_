@@ -29,7 +29,7 @@ function set(load: number, reps: number, done: boolean): WorkoutSet {
 }
 
 function exercise(name: string, sets: WorkoutSet[]): WorkoutExercise {
-	return { name, group: 'Chest', sets, note: '' };
+	return { name, group: 'Chest', sets };
 }
 
 function workout(exercises: WorkoutExercise[], overrides: Partial<Workout> = {}): Workout {
@@ -41,6 +41,7 @@ function workout(exercises: WorkoutExercise[], overrides: Partial<Workout> = {})
 		startedAt: 0,
 		finishedAt: null,
 		exerciseIndex: 0,
+		note: '',
 		exercises,
 		...overrides
 	};
@@ -68,10 +69,9 @@ describe('opening a routine into a workout', () => {
 		expect(w.exercises[0]?.sets[0]).toEqual({ reps: 8, load: 45, done: false });
 	});
 
-	it('opens every set untouched, and every note empty', () => {
+	it('opens every set untouched', () => {
 		const w = workoutFromRoutine(ROUTINE, OPENED);
 		for (const e of w.exercises) {
-			expect(e.note).toBe('');
 			for (const s of e.sets) expect(s.done).toBe(false);
 		}
 	});
@@ -89,6 +89,12 @@ describe('opening a routine into a workout', () => {
 
 	it('carries a bodyweight movement over as a zero load', () => {
 		expect(workoutFromRoutine(ROUTINE, OPENED).exercises[1]?.sets[0]?.load).toBe(0);
+	});
+
+	it('opens the session note empty, and keeps no note on any exercise', () => {
+		const w = workoutFromRoutine(ROUTINE, OPENED);
+		expect(w.note).toBe('');
+		for (const e of w.exercises) expect(e).not.toHaveProperty('note');
 	});
 });
 
